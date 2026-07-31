@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace ClasslessRPG
 {
@@ -11,6 +12,9 @@ namespace ClasslessRPG
         Health health;
         Camera cam;
         public Vector3 AimPoint { get; private set; }
+        public Health CombatTarget { get; private set; }
+        Vector3 destination;
+        bool dragging;
 
         void Start()
         {
@@ -18,6 +22,7 @@ namespace ClasslessRPG
             abilities = GetComponent<AbilitySystem>();
             health = GetComponent<Health>();
             cam = Camera.main;
+            destination = transform.position;
             health.IsPlayer = true;
             health.Configure(stats.MaxHealth);
         }
@@ -31,22 +36,47 @@ namespace ClasslessRPG
 
             if (Enabled)
             {
-                var move = new Vector3(Input.GetAxisRaw("Horizontal"), 0, Input.GetAxisRaw("Vertical")).normalized;
+                if (Input.GetMouseButtonDown(0) && !(EventSystem.current && EventSystem.current.IsPointerOverGameObject()))
+                {
+                    if (Physics.Raycast(ray, out var hit, 100f))
+                    {
+                        var clickedHealth = hit.collider.GetComponentInParent<Health>();
+                        if (clickedHealth && !clickedHealth.IsPlayer) CombatTarget = clickedHealth;
+                        else if (clickedHealth == health) dragging = true;
+                        else { CombatTarget = null; destination = AimPoint; }
+                    }
+                }
+                if (dragging && Input.GetMouseButton(0)) { destination = AimPoint; CombatTarget = null; }
+                if (Input.GetMouseButtonUp(0)) dragging = false;
+
+                if (CombatTarget && !CombatTarget.IsDead)
+                {
+                    destination = CombatTarget.transform.position;
+                    float distance = Vector3.Distance(transform.position, destination);
+                    if (distance <= 1.65f) { abilities.UseBasic(CombatTarget.transform.position); destination = transform.position; }
+                }
+                else if (CombatTarget && CombatTarget.IsDead) CombatTarget = null;
+
+                var delta = destination - transform.position; delta.y = 0;
+                var move = delta.magnitude > .12f ? delta.normalized : Vector3.zero;
                 transform.position += move * stats.MoveSpeed * Time.deltaTime;
                 transform.position = new Vector3(Mathf.Clamp(transform.position.x, -12.5f, 12.5f), .65f, Mathf.Clamp(transform.position.z, -8.5f, 8.5f));
                 if (move.sqrMagnitude > .01f) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(move), Time.deltaTime * 12f);
             }
 
-            if (Input.GetMouseButton(0)) abilities.UseBasic(AimPoint);
-            if (Input.GetKeyDown(KeyCode.Space)) abilities.UseDash(AimPoint);
-            if (Input.GetKeyDown(KeyCode.Q)) abilities.UsePower(AimPoint);
-            if (Input.GetKeyDown(KeyCode.E)) abilities.UseFireball(AimPoint);
+            if (Input.GetKeyDown(KeyCode.Space)) CastDash();
+            if (Input.GetKeyDown(KeyCode.Q)) CastPower();
+            if (Input.GetKeyDown(KeyCode.E)) CastFireball();
             if (Input.GetKeyDown(KeyCode.Alpha1)) Allocate(AttributeType.Strength);
             if (Input.GetKeyDown(KeyCode.Alpha2)) Allocate(AttributeType.Dexterity);
             if (Input.GetKeyDown(KeyCode.Alpha3)) Allocate(AttributeType.Intelligence);
             if (Input.GetKeyDown(KeyCode.Alpha4)) Allocate(AttributeType.Vitality);
             if (Input.GetKeyDown(KeyCode.Alpha5)) Allocate(AttributeType.Spirit);
         }
+
+        public void CastDash() => abilities.UseDash(CombatTarget ? CombatTarget.transform.position : AimPoint);
+        public void CastPower() => abilities.UsePower(CombatTarget ? CombatTarget.transform.position : AimPoint);
+        public void CastFireball() => abilities.UseFireball(CombatTarget ? CombatTarget.transform.position : AimPoint);
 
         void Allocate(AttributeType type)
         {

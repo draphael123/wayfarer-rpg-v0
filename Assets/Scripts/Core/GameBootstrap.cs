@@ -29,11 +29,11 @@ namespace ClasslessRPG
         {
             var camGo = new GameObject("Main Camera");
             camGo.tag = "MainCamera";
-            var cam = camGo.AddComponent<Camera>(); cam.fieldOfView = 48; cam.backgroundColor = new Color(.025f, .045f, .075f); cam.clearFlags = CameraClearFlags.SolidColor;
-            camGo.transform.SetPositionAndRotation(new Vector3(0, 14, -14), Quaternion.Euler(43, 0, 0));
+            var cam = camGo.AddComponent<Camera>(); cam.orthographic = true; cam.orthographicSize = 9.2f; cam.backgroundColor = new Color(.055f, .09f, .12f); cam.clearFlags = CameraClearFlags.SolidColor;
+            camGo.transform.SetPositionAndRotation(new Vector3(0, 13, -16), Quaternion.Euler(36, 0, 0));
             new GameObject("Combat FX").AddComponent<CombatFX>();
 
-            var light = new GameObject("Moon Key Light").AddComponent<Light>(); light.type = LightType.Directional; light.intensity = 1.25f; light.color = new Color(.68f, .78f, 1f); light.transform.rotation = Quaternion.Euler(48, -35, 0);
+            var light = new GameObject("Warm Key Light").AddComponent<Light>(); light.type = LightType.Directional; light.intensity = 1.35f; light.color = new Color(1f, .82f, .58f); light.transform.rotation = Quaternion.Euler(48, -35, 0);
             var floor = RuntimeArt.Primitive("Ancient Arena", PrimitiveType.Cube, new Vector3(0, -.3f, 0), new Vector3(28, .6f, 20), new Color(.075f, .13f, .14f));
             floor.GetComponent<Renderer>().material.SetFloat("_Smoothness", .12f);
             for (int x = -12; x <= 12; x += 4) for (int z = -8; z <= 8; z += 4)
@@ -52,6 +52,7 @@ namespace ClasslessRPG
             var hp = p.AddComponent<Health>(); hp.IsPlayer = true;
             p.AddComponent<AbilitySystem>(); p.AddComponent<PlayerController>();
             RuntimeArt.CharacterVisual(p.transform, new Color(.12f, .43f, .72f));
+            p.AddComponent<WorldHealthBar>();
             player = p.transform;
             new GameObject("HUD").AddComponent<GameHUD>().Initialize(p);
         }
@@ -81,6 +82,7 @@ namespace ClasslessRPG
             var go = new GameObject(type.ToString()); go.transform.position = new Vector3(Mathf.Cos(angle) * 10f, type == EnemyType.Ogre ? .9f : .55f, Mathf.Sin(angle) * 7f);
             var col = go.AddComponent<CapsuleCollider>(); col.height = type == EnemyType.Ogre ? 2.3f : 1.6f; col.radius = type == EnemyType.Ogre ? .72f : .42f;
             var hp = go.AddComponent<Health>(); hp.Max = type == EnemyType.Ogre ? 180 : (type == EnemyType.Archer ? 48 : 62); hp.ExperienceReward = type == EnemyType.Ogre ? 45 : 14; hp.Configure(hp.Max);
+            go.AddComponent<WorldHealthBar>();
             hp.Died += EnemyDied;
             var color = type == EnemyType.Ogre ? new Color(.38f, .18f, .12f) : (type == EnemyType.Archer ? new Color(.5f, .18f, .5f) : new Color(.2f, .55f, .24f));
             RuntimeArt.CharacterVisual(go.transform, color, type == EnemyType.Ogre);

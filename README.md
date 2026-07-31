@@ -20,9 +20,8 @@ The project also includes an editor build command for WebGL (`BuildPrototype.Bui
 
 ## Controls
 
-- WASD — move
-- Mouse — aim
-- Left mouse — basic attack
+- Drag the hero — move and reposition
+- Tap an enemy — target, approach, and auto-attack
 - Space — dash
 - Q — Power Strike (requires Strength 8)
 - E — Fireball (requires Intelligence 10)

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 
 namespace ClasslessRPG
 {
@@ -8,17 +9,32 @@ namespace ClasslessRPG
         CharacterStats stats;
         Health health;
         AbilitySystem abilities;
+        PlayerController controller;
         Text left, right, banner;
 
         public void Initialize(GameObject player)
         {
-            stats = player.GetComponent<CharacterStats>(); health = player.GetComponent<Health>(); abilities = player.GetComponent<AbilitySystem>();
+            stats = player.GetComponent<CharacterStats>(); health = player.GetComponent<Health>(); abilities = player.GetComponent<AbilitySystem>(); controller = player.GetComponent<PlayerController>();
             var canvas = gameObject.AddComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             gameObject.AddComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             gameObject.AddComponent<GraphicRaycaster>();
             left = Label("Vitals", new Vector2(22, -20), new Vector2(.47f, .42f), TextAnchor.UpperLeft, 20);
             right = Label("Build", new Vector2(-22, -20), new Vector2(.47f, .38f), TextAnchor.UpperRight, 18, true);
             banner = Label("Banner", new Vector2(0, -16), new Vector2(.7f, .12f), TextAnchor.UpperCenter, 24);
+            if (!EventSystem.current) { var events = new GameObject("Event System"); events.AddComponent<EventSystem>(); events.AddComponent<StandaloneInputModule>(); }
+            AbilityButton("DASH", new Vector2(-150, 42), new Color(.15f, .55f, .85f), controller.CastDash);
+            AbilityButton("POWER\nSTR 8", new Vector2(0, 42), new Color(.8f, .27f, .12f), controller.CastPower);
+            AbilityButton("FIREBALL\nINT 10", new Vector2(150, 42), new Color(.65f, .15f, .75f), controller.CastFireball);
+        }
+
+        void AbilityButton(string title, Vector2 position, Color color, UnityEngine.Events.UnityAction action)
+        {
+            var go = new GameObject(title); go.transform.SetParent(transform, false);
+            var image = go.AddComponent<Image>(); image.color = new Color(color.r, color.g, color.b, .9f);
+            var button = go.AddComponent<Button>(); button.targetGraphic = image; button.onClick.AddListener(action);
+            var rect = go.GetComponent<RectTransform>(); rect.anchorMin = new Vector2(.5f, 0); rect.anchorMax = new Vector2(.5f, 0); rect.pivot = new Vector2(.5f, 0); rect.anchoredPosition = position; rect.sizeDelta = new Vector2(132, 62);
+            var label = new GameObject("Label").AddComponent<Text>(); label.transform.SetParent(go.transform, false); label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); label.text = title; label.fontSize = 16; label.fontStyle = FontStyle.Bold; label.alignment = TextAnchor.MiddleCenter; label.color = Color.white;
+            label.rectTransform.anchorMin = Vector2.zero; label.rectTransform.anchorMax = Vector2.one; label.rectTransform.offsetMin = Vector2.zero; label.rectTransform.offsetMax = Vector2.zero;
         }
 
         Text Label(string name, Vector2 pos, Vector2 size, TextAnchor anchor, int fontSize, bool fromRight = false)
@@ -35,7 +51,7 @@ namespace ClasslessRPG
         void Update()
         {
             if (!stats) return;
-            left.text = $"<size=26>WAYFARER</size>   Lv {stats.Level}\nHP  {Mathf.CeilToInt(health.Current)} / {Mathf.CeilToInt(health.Max)}\nXP  {stats.Experience} / {stats.ExperienceToNext}\n\n<size=16>WASD move   Mouse aim / attack\nSPACE dash   Q power strike   E fireball</size>";
+            left.text = $"<size=26>WAYFARER</size>   Lv {stats.Level}\nHP  {Mathf.CeilToInt(health.Current)} / {Mathf.CeilToInt(health.Max)}\nXP  {stats.Experience} / {stats.ExperienceToNext}\n\n<size=16>Drag the hero to move\nTap an enemy to target and auto-attack</size>";
             string power = abilities.PowerUnlocked ? Cooldown(abilities.PowerCooldown) : $"LOCKED — needs STR 8";
             string fire = abilities.FireUnlocked ? Cooldown(abilities.FireCooldown) : $"LOCKED — needs INT 10";
             right.text = $"<size=24>ATTRIBUTES</size>   {stats.AttributePoints} points\n[1] Strength       {stats.Attributes.Strength}\n[2] Dexterity      {stats.Attributes.Dexterity}\n[3] Intelligence   {stats.Attributes.Intelligence}\n[4] Vitality       {stats.Attributes.Vitality}\n[5] Spirit         {stats.Attributes.Spirit}\n\nQ  POWER STRIKE  {power}\nE  FIREBALL       {fire}";
