@@ -2,6 +2,10 @@
 
 A playable Unity 6 vertical slice for a classless fantasy action RPG.
 
+## Play online
+
+[Launch Wayfarer V0](https://wayfarer-rpg-v0.vercel.app)
+
 ## Open and play
 
 1. Open this folder in Unity Hub with Unity 6000.5.5f1 (or a compatible Unity 6 editor).
@@ -10,7 +14,7 @@ A playable Unity 6 vertical slice for a classless fantasy action RPG.
 
 The scene builds itself at runtime; there are no packages or external assets to download.
 
-A prebuilt Windows version is included at `Builds/Windows/WayfarerV0.exe`.
+A prebuilt Windows version is available in the local workspace at `Builds/Windows/WayfarerV0.exe`; generated builds are intentionally excluded from Git.
 
 The project also includes an editor build command for WebGL (`BuildPrototype.BuildWebGL`) for browser deployment.
 
