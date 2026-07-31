@@ -1,0 +1,10 @@
+<linker>
+  <!-- GameObject.CreatePrimitive adds these collider types internally. IL2CPP
+       cannot discover that dependency, so WebGL builds must retain them. -->
+  <assembly fullname="UnityEngine.PhysicsModule">
+    <type fullname="UnityEngine.BoxCollider" preserve="all" />
+    <type fullname="UnityEngine.SphereCollider" preserve="all" />
+    <type fullname="UnityEngine.CapsuleCollider" preserve="all" />
+    <type fullname="UnityEngine.MeshCollider" preserve="all" />
+  </assembly>
+</linker>
