@@ -25,6 +25,7 @@ The project also includes an editor build command for WebGL (`BuildPrototype.Bui
 - Space — dash
 - Q — Power Strike (requires Strength 8)
 - E — Fireball (requires Intelligence 10)
+- Escape — pause and open field settings
 - 1–5 — spend earned attribute points on Strength, Dexterity, Intelligence, Vitality, or Spirit
 - R — restart after defeat
 
@@ -35,7 +36,9 @@ The project also includes an editor build command for WebGL (`BuildPrototype.Bui
 - Three enemy behaviors: goblin pursuit, archer kiting, and slow heavy ogre
 - Wave encounters, XP, levels, and attribute point allocation
 - Hit flash, impact particles, trails, floating damage, emissive effects, and camera shake
-- Runtime primitive art so every placeholder is editable and replaceable
+- Original hand-painted character and arena artwork with runtime billboard presentation
+- Original synthesized combat, interface, level-up, and ambient audio with volume controls
+- Hero selection card, command rail, visible hotkeys, cooldown states, target markers, and pause/settings overlay
 
 ## Architecture
 

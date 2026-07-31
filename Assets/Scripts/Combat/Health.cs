@@ -31,6 +31,7 @@ namespace ClasslessRPG
             Current = Mathf.Max(0, Current - amount);
             Changed?.Invoke(Current, Max);
             CombatFX.Hit(hitPoint, effectColor, amount);
+            AudioDirector.Play(GameSound.Hit, UnityEngine.Random.Range(.92f, 1.08f));
             StopAllCoroutines();
             StartCoroutine(Flash());
             if (Current <= 0)

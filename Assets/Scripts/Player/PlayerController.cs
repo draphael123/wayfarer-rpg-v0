@@ -13,6 +13,7 @@ namespace ClasslessRPG
         Camera cam;
         public Vector3 AimPoint { get; private set; }
         public Health CombatTarget { get; private set; }
+        public bool IsSelected { get; private set; } = true;
         Vector3 destination;
         bool dragging;
 
@@ -41,12 +42,12 @@ namespace ClasslessRPG
                     if (Physics.Raycast(ray, out var hit, 100f))
                     {
                         var clickedHealth = hit.collider.GetComponentInParent<Health>();
-                        if (clickedHealth && !clickedHealth.IsPlayer) CombatTarget = clickedHealth;
-                        else if (clickedHealth == health) dragging = true;
-                        else { CombatTarget = null; destination = AimPoint; }
+                        if (clickedHealth && !clickedHealth.IsPlayer) SelectTarget(clickedHealth);
+                        else if (clickedHealth == health) { IsSelected = true; dragging = true; }
+                        else { SelectTarget(null); destination = AimPoint; }
                     }
                 }
-                if (dragging && Input.GetMouseButton(0)) { destination = AimPoint; CombatTarget = null; }
+                if (dragging && Input.GetMouseButton(0)) { destination = AimPoint; SelectTarget(null); }
                 if (Input.GetMouseButtonUp(0)) dragging = false;
 
                 if (CombatTarget && !CombatTarget.IsDead)
@@ -55,12 +56,12 @@ namespace ClasslessRPG
                     float distance = Vector3.Distance(transform.position, destination);
                     if (distance <= 1.65f) { abilities.UseBasic(CombatTarget.transform.position); destination = transform.position; }
                 }
-                else if (CombatTarget && CombatTarget.IsDead) CombatTarget = null;
+                else if (CombatTarget && CombatTarget.IsDead) SelectTarget(null);
 
                 var delta = destination - transform.position; delta.y = 0;
                 var move = delta.magnitude > .12f ? delta.normalized : Vector3.zero;
                 transform.position += move * stats.MoveSpeed * Time.deltaTime;
-                transform.position = new Vector3(Mathf.Clamp(transform.position.x, -12.5f, 12.5f), .65f, Mathf.Clamp(transform.position.z, -8.5f, 8.5f));
+                transform.position = new Vector3(Mathf.Clamp(transform.position.x, -12.5f, 12.5f), .65f, Mathf.Clamp(transform.position.z, -5.5f, 7.5f));
                 if (move.sqrMagnitude > .01f) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(move), Time.deltaTime * 12f);
             }
 
@@ -74,9 +75,21 @@ namespace ClasslessRPG
             if (Input.GetKeyDown(KeyCode.Alpha5)) Allocate(AttributeType.Spirit);
         }
 
-        public void CastDash() => abilities.UseDash(CombatTarget ? CombatTarget.transform.position : AimPoint);
-        public void CastPower() => abilities.UsePower(CombatTarget ? CombatTarget.transform.position : AimPoint);
-        public void CastFireball() => abilities.UseFireball(CombatTarget ? CombatTarget.transform.position : AimPoint);
+        void SelectTarget(Health target)
+        {
+            if (CombatTarget) CombatTarget.GetComponent<TargetMarker>()?.SetSelected(false);
+            CombatTarget = target;
+            if (CombatTarget)
+            {
+                CombatTarget.GetComponent<TargetMarker>()?.SetSelected(true);
+                CombatFX.Burst(CombatTarget.transform.position + Vector3.up * .4f, new Color(1f, .72f, .2f), .32f);
+                AudioDirector.Play(GameSound.Click, 1.12f);
+            }
+        }
+
+        public void CastDash() { if (IsSelected) abilities.UseDash(CombatTarget ? CombatTarget.transform.position : AimPoint); }
+        public void CastPower() { if (IsSelected) abilities.UsePower(CombatTarget ? CombatTarget.transform.position : AimPoint); }
+        public void CastFireball() { if (IsSelected) abilities.UseFireball(CombatTarget ? CombatTarget.transform.position : AimPoint); }
 
         void Allocate(AttributeType type)
         {

@@ -27,6 +27,7 @@ namespace ClasslessRPG
         {
             if (Time.time < basicReady) return;
             basicReady = Time.time + .48f / (1 + stats.Attributes.Dexterity * .025f);
+            AudioDirector.Play(GameSound.Slash, Random.Range(.94f, 1.07f));
             Face(aim);
             Melee(stats.AttackDamage, 1.8f, 70f, new Color(1f, .83f, .35f));
         }
@@ -35,6 +36,7 @@ namespace ClasslessRPG
         {
             if (Time.time < dashReady) return;
             dashReady = Time.time + 2.4f / stats.CooldownRate;
+            AudioDirector.Play(GameSound.Click, 1.25f);
             StartCoroutine(DashRoutine(aim));
         }
 
@@ -42,6 +44,7 @@ namespace ClasslessRPG
         {
             if (!PowerUnlocked || Time.time < powerReady) return;
             powerReady = Time.time + 4.5f / stats.CooldownRate;
+            AudioDirector.Play(GameSound.Heavy);
             Face(aim);
             Melee(stats.AttackDamage * 2.4f, 2.25f, 110f, new Color(1f, .35f, .12f));
             CombatFX.Shake(.18f, .16f);
@@ -51,6 +54,7 @@ namespace ClasslessRPG
         {
             if (!FireUnlocked || Time.time < fireReady) return;
             fireReady = Time.time + 3.2f / stats.CooldownRate;
+            AudioDirector.Play(GameSound.Fire);
             Face(aim);
             var orb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             orb.name = "Fireball";

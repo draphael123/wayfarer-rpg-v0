@@ -8,9 +8,9 @@ namespace ClasslessRPG
     [Serializable]
     public sealed class AttributeSet
     {
-        public int Strength = 5;
+        public int Strength = 8;
         public int Dexterity = 5;
-        public int Intelligence = 5;
+        public int Intelligence = 10;
         public int Vitality = 5;
         public int Spirit = 5;
 
@@ -59,6 +59,7 @@ namespace ClasslessRPG
                 Experience -= ExperienceToNext;
                 Level++;
                 AttributePoints += 3;
+                AudioDirector.Play(GameSound.Level);
             }
             Changed?.Invoke();
         }

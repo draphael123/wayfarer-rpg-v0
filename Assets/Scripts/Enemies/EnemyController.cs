@@ -18,9 +18,9 @@ namespace ClasslessRPG
             health = GetComponent<Health>();
             switch (type)
             {
-                case EnemyType.Goblin: speed = 3.2f; damage = 9; range = 1.3f; cooldown = 1.1f; break;
-                case EnemyType.Archer: speed = 2.5f; damage = 7; range = 6.5f; cooldown = 1.7f; break;
-                default: speed = 1.65f; damage = 18; range = 1.7f; cooldown = 2.2f; break;
+                case EnemyType.Goblin: speed = 2.85f; damage = 5; range = 1.3f; cooldown = 1.25f; break;
+                case EnemyType.Archer: speed = 2.3f; damage = 4; range = 6.5f; cooldown = 1.9f; break;
+                default: speed = 1.55f; damage = 12; range = 1.7f; cooldown = 2.35f; break;
             }
         }
 
@@ -57,5 +57,17 @@ namespace ClasslessRPG
             CombatFX.Line(start, player.transform.position + Vector3.up * .5f, new Color(1f, .45f, .15f));
             player.Damage(damage, player.transform.position + Vector3.up, new Color(1f, .3f, .15f));
         }
+    }
+
+    public sealed class TargetMarker : MonoBehaviour
+    {
+        GameObject ring;
+        void Start()
+        {
+            ring = RuntimeArt.Primitive("Targeted enemy", PrimitiveType.Cylinder, transform.position + Vector3.down * .5f, new Vector3(.58f, .016f, .58f), new Color(.9f, .22f, .12f), transform);
+            ring.GetComponent<Collider>().enabled = false;
+            ring.SetActive(false);
+        }
+        public void SetSelected(bool selected) { if (ring) ring.SetActive(selected); }
     }
 }
