@@ -1,0 +1,22 @@
+# Unity generated content
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+
+# Builds and IDE files
+[Bb]uilds/
+.vs/
+.idea/
+*.csproj
+*.sln
+*.user
+*.pidb
+*.booproj
+
+# OS files and local deployment state
+.DS_Store
+Thumbs.db
+.vercel/
