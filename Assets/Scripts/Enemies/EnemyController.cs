@@ -47,7 +47,7 @@ namespace ClasslessRPG
                     nextAttack = Time.time + cooldown;
                     if (Type == EnemyType.Archer) Shoot(playerHealth);
                     else if (Type == EnemyType.Ogre) StartCoroutine(HeavyAttack(playerHealth));
-                    else playerHealth.Damage(damage, Target.position + Vector3.up, new Color(.95f, .25f, .2f));
+                    else { GetComponentInChildren<SpriteBillboard>()?.Play(CharacterMotion.BasicAttack); playerHealth.Damage(damage, Target.position + Vector3.up, new Color(.95f, .25f, .2f)); }
                 }
             }
             else if ((transform.position - home).sqrMagnitude > 1f)
@@ -56,6 +56,7 @@ namespace ClasslessRPG
 
         void Shoot(Health player)
         {
+            GetComponentInChildren<SpriteBillboard>()?.Play(CharacterMotion.Cast);
             var start = transform.position + Vector3.up * .7f;
             CombatFX.Line(start, player.transform.position + Vector3.up * .5f, new Color(1f, .45f, .15f));
             player.Damage(damage, player.transform.position + Vector3.up, new Color(1f, .3f, .15f));
@@ -64,6 +65,7 @@ namespace ClasslessRPG
         IEnumerator HeavyAttack(Health player)
         {
             attacking = true;
+            GetComponentInChildren<SpriteBillboard>()?.Play(CharacterMotion.HeavyAttack);
             var sprite = GetComponentInChildren<SpriteRenderer>();
             if (sprite) sprite.color = new Color(1f, .5f, .28f);
             CombatFX.Burst(transform.position + Vector3.up * 1.4f, new Color(1f, .38f, .12f), .55f);

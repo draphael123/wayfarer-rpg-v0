@@ -26,6 +26,7 @@ namespace ClasslessRPG
         public void UseBasic(Vector3 aim)
         {
             if (Time.time < basicReady) return;
+            GetComponentInChildren<SpriteBillboard>()?.Play(CharacterMotion.BasicAttack);
             basicReady = Time.time + .48f / (1 + stats.Attributes.Dexterity * .025f);
             AudioDirector.Play(GameSound.Slash, Random.Range(.94f, 1.07f));
             Face(aim);
@@ -35,6 +36,7 @@ namespace ClasslessRPG
         public void UseDash(Vector3 aim)
         {
             if (Time.time < dashReady) return;
+            GetComponentInChildren<SpriteBillboard>()?.Play(CharacterMotion.Dash);
             dashReady = Time.time + 2.4f / stats.CooldownRate;
             AudioDirector.Play(GameSound.Click, 1.25f);
             StartCoroutine(DashRoutine(aim));
@@ -43,6 +45,7 @@ namespace ClasslessRPG
         public void UsePower(Vector3 aim)
         {
             if (!PowerUnlocked || Time.time < powerReady) return;
+            GetComponentInChildren<SpriteBillboard>()?.Play(CharacterMotion.HeavyAttack);
             powerReady = Time.time + 4.5f / stats.CooldownRate;
             AudioDirector.Play(GameSound.Heavy);
             Face(aim);
@@ -53,6 +56,7 @@ namespace ClasslessRPG
         public void UseFireball(Vector3 aim)
         {
             if (!FireUnlocked || Time.time < fireReady) return;
+            GetComponentInChildren<SpriteBillboard>()?.Play(CharacterMotion.Cast);
             fireReady = Time.time + 3.2f / stats.CooldownRate;
             AudioDirector.Play(GameSound.Fire);
             Face(aim);

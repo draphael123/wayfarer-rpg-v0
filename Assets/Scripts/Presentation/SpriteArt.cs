@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace ClasslessRPG
 {
+    public enum CharacterMotion { BasicAttack, HeavyAttack, Cast, Dash, Hit }
+
     public sealed class SpriteBillboard : MonoBehaviour
     {
         Camera cam;
@@ -9,17 +11,48 @@ namespace ClasslessRPG
         Vector3 basePosition, lastRootPosition;
         SpriteRenderer sprite;
         float phase;
+        CharacterMotion motion;
+        float motionStarted, motionDuration;
+        public void Play(CharacterMotion next)
+        {
+            motion = next; motionStarted = Time.time;
+            motionDuration = next switch
+            {
+                CharacterMotion.BasicAttack => .28f,
+                CharacterMotion.HeavyAttack => .48f,
+                CharacterMotion.Cast => .42f,
+                CharacterMotion.Dash => .22f,
+                _ => .2f
+            };
+        }
         void Start() { cam = Camera.main; sprite = GetComponent<SpriteRenderer>(); baseScale = transform.localScale; basePosition = transform.localPosition; lastRootPosition = transform.parent.position; phase = Random.value * 5f; }
         void LateUpdate()
         {
             if (!cam) return;
-            transform.rotation = cam.transform.rotation;
+            float motionT = motionDuration > 0 ? Mathf.Clamp01((Time.time - motionStarted) / motionDuration) : 1f;
+            bool activeMotion = motionT < 1f;
             float breathe = 1f + Mathf.Sin(Time.time * 2.2f + phase) * .012f;
-            transform.localScale = baseScale * breathe;
             float movement = (transform.parent.position - lastRootPosition).sqrMagnitude;
-            float bob = movement > .0001f ? Mathf.Abs(Mathf.Sin(Time.time * 11f + phase)) * .09f : 0;
-            transform.localPosition = basePosition + Vector3.up * bob;
             if (sprite) sprite.flipX = transform.parent.forward.x < -.05f;
+            float facing = sprite && sprite.flipX ? -1f : 1f;
+            float bob = movement > .0001f ? Mathf.Abs(Mathf.Sin(Time.time * 12f + phase)) * .11f : 0;
+            float tilt = movement > .0001f ? Mathf.Sin(Time.time * 12f + phase) * 2.8f : 0;
+            float lunge = 0, squashX = 1, squashY = 1;
+            if (activeMotion)
+            {
+                float arc = Mathf.Sin(motionT * Mathf.PI);
+                switch (motion)
+                {
+                    case CharacterMotion.BasicAttack: lunge = arc * .32f; tilt += Mathf.Lerp(-12f, 18f, motionT) * arc; squashX += arc * .12f; squashY -= arc * .07f; break;
+                    case CharacterMotion.HeavyAttack: lunge = arc * .48f; tilt += Mathf.Lerp(-20f, 24f, motionT) * arc; squashX += arc * .2f; squashY -= arc * .12f; break;
+                    case CharacterMotion.Cast: bob += arc * .28f; squashX += arc * .08f; squashY += arc * .14f; tilt += Mathf.Sin(motionT * Mathf.PI * 2f) * 5f; break;
+                    case CharacterMotion.Dash: lunge = arc * .65f; tilt -= facing * 12f * arc; squashX += arc * .26f; squashY -= arc * .12f; break;
+                    case CharacterMotion.Hit: lunge = -arc * .28f; tilt -= facing * 10f * arc; squashX -= arc * .08f; squashY += arc * .08f; break;
+                }
+            }
+            transform.position = transform.parent.position + Vector3.up * (basePosition.y + bob) + cam.transform.right * (lunge * facing);
+            transform.rotation = cam.transform.rotation * Quaternion.Euler(0, 0, tilt * facing);
+            transform.localScale = Vector3.Scale(baseScale * breathe, new Vector3(squashX, squashY, 1));
             lastRootPosition = transform.parent.position;
         }
     }
