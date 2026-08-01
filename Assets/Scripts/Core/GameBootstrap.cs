@@ -49,7 +49,7 @@ namespace ClasslessRPG
             var stats = p.AddComponent<CharacterStats>();
             var hp = p.AddComponent<Health>(); hp.IsPlayer = true;
             p.AddComponent<AbilitySystem>(); p.AddComponent<PlayerController>();
-            SpriteArt.CharacterVisual(p.transform, 0, 1.68f);
+            RiggedHeroVisual.Create(p.transform);
             var selection = RuntimeArt.Primitive("Selected hero ring", PrimitiveType.Cylinder, new Vector3(-5.2f, .03f, 0), new Vector3(.62f, .018f, .62f), new Color(.2f, .72f, .78f));
             selection.GetComponent<Collider>().enabled = false;
             selection.transform.SetParent(p.transform, true);
