@@ -106,6 +106,14 @@ namespace ClasslessRPG
             FloatingText.Create(enemy.transform.position + Vector3.up * 2.2f, $"+{enemy.ExperienceReward} XP", new Color(.35f, .9f, 1f));
         }
 
-        public static void Restart() => SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        public static void Restart()
+        {
+            Time.timeScale = 1f;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            BrowserRuntime.ReloadPage();
+#else
+            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+#endif
+        }
     }
 }
