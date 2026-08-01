@@ -7,8 +7,9 @@ namespace ClasslessRPG
         Camera cam;
         Vector3 baseScale;
         Vector3 basePosition, lastRootPosition;
+        SpriteRenderer sprite;
         float phase;
-        void Start() { cam = Camera.main; baseScale = transform.localScale; basePosition = transform.localPosition; lastRootPosition = transform.parent.position; phase = Random.value * 5f; }
+        void Start() { cam = Camera.main; sprite = GetComponent<SpriteRenderer>(); baseScale = transform.localScale; basePosition = transform.localPosition; lastRootPosition = transform.parent.position; phase = Random.value * 5f; }
         void LateUpdate()
         {
             if (!cam) return;
@@ -18,6 +19,7 @@ namespace ClasslessRPG
             float movement = (transform.parent.position - lastRootPosition).sqrMagnitude;
             float bob = movement > .0001f ? Mathf.Abs(Mathf.Sin(Time.time * 11f + phase)) * .09f : 0;
             transform.localPosition = basePosition + Vector3.up * bob;
+            if (sprite) sprite.flipX = transform.parent.forward.x < -.05f;
             lastRootPosition = transform.parent.position;
         }
     }
@@ -34,10 +36,9 @@ namespace ClasslessRPG
         {
             if (characterSprites[index]) return characterSprites[index];
             characters ??= Resources.Load<Texture2D>("Art/Characters");
-            float halfW = characters.width * .5f, halfH = characters.height * .5f;
-            int column = index % 2, rowFromTop = index / 2;
-            var rect = new Rect(column * halfW, (1 - rowFromTop) * halfH, halfW, halfH);
-            return characterSprites[index] = Sprite.Create(characters, rect, new Vector2(.5f, .08f), 235f, 0, SpriteMeshType.FullRect);
+            float width = characters.width / 4f;
+            var rect = new Rect(index * width, 0, width, characters.height);
+            return characterSprites[index] = Sprite.Create(characters, rect, new Vector2(.5f, .083f), 235f, 0, SpriteMeshType.FullRect);
         }
 
         public static Sprite Arena()

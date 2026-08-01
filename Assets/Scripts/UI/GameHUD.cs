@@ -6,10 +6,10 @@ namespace ClasslessRPG
 {
     public sealed class GameHUD : MonoBehaviour
     {
-        static readonly Color Ink = new(.09f, .075f, .065f, .96f);
-        static readonly Color Parchment = new(.84f, .73f, .52f, .96f);
-        static readonly Color Brass = new(.82f, .58f, .22f, 1f);
-        static readonly Color Cream = new(.97f, .91f, .75f, 1f);
+        static readonly Color Ink = new(.17f, .105f, .055f, .97f);
+        static readonly Color Parchment = new(.91f, .78f, .52f, .98f);
+        static readonly Color Brass = new(.68f, .38f, .12f, 1f);
+        static readonly Color Cream = new(1f, .94f, .72f, 1f);
         CharacterStats stats; Health health; AbilitySystem abilities; PlayerController controller;
         Text heroText, buildText, banner, waveLabel, targetText, tutorialText, dashLabel, powerLabel, fireLabel;
         Text shakeLabel;
@@ -35,8 +35,8 @@ namespace ClasslessRPG
             SetRect(waveLabel.rectTransform, new Vector2(.5f, .62f), new Vector2(.5f, .62f), Vector2.zero, new Vector2(520, 90), new Vector2(.5f, .5f));
             targetText = TextLabel("Target identity", transform, "", 16, TextAnchor.UpperCenter, Cream);
             SetRect(targetText.rectTransform, new Vector2(.5f, 1), new Vector2(.5f, 1), new Vector2(0, -76), new Vector2(340, 52), new Vector2(.5f, 1));
-            tutorialText = TextLabel("First battle help", transform, "DRAG WAYFARER TO MOVE   •   CLICK A FOE TO ATTACK   •   SPACE / Q / E USE ABILITIES", 14, TextAnchor.MiddleCenter, Parchment);
-            SetRect(tutorialText.rectTransform, new Vector2(.5f, 0), new Vector2(.5f, 0), new Vector2(0, 132), new Vector2(760, 34), new Vector2(.5f, 0));
+            tutorialText = TextLabel("First battle help", transform, "DRAG FROM THE HERO TO MOVE   •   DRAG TO A FOE TO ATTACK   •   SPACE / Q / E USE ABILITIES", 14, TextAnchor.MiddleCenter, Parchment);
+            SetRect(tutorialText.rectTransform, new Vector2(.5f, 0), new Vector2(.5f, 0), new Vector2(145, 108), new Vector2(760, 30), new Vector2(.5f, 0));
             Invoke(nameof(ClearTutorial), 9f);
             CreateStartScreen();
             CreateDefeatScreen();
@@ -44,28 +44,28 @@ namespace ClasslessRPG
 
         void CreateHeroCard()
         {
-            var panel = Panel("Hero card", transform, new Color(.08f, .10f, .11f, .94f));
-            SetRect(panel, new Vector2(0, 1), new Vector2(0, 1), new Vector2(18, -18), new Vector2(332, 126), new Vector2(0, 1));
-            AddBorder(panel.transform, Brass, 3);
+            var panel = Panel("Hero card", transform, new Color(.24f, .14f, .07f, .97f));
+            SetRect(panel, Vector2.zero, Vector2.zero, new Vector2(16, 14), new Vector2(330, 94), Vector2.zero);
+            AddBorder(panel.transform, new Color(.92f, .7f, .3f), 3);
             var portrait = new GameObject("Selected hero portrait", typeof(RectTransform), typeof(Image)); portrait.transform.SetParent(panel.transform, false);
             var portraitImage = portrait.GetComponent<Image>(); portraitImage.sprite = SpriteArt.Character(0); portraitImage.preserveAspect = true; portraitImage.color = Color.white;
-            SetRect(portrait.GetComponent<RectTransform>(), new Vector2(0, .5f), new Vector2(0, .5f), new Vector2(56, 0), new Vector2(104, 110), new Vector2(.5f, .5f));
+            SetRect(portrait.GetComponent<RectTransform>(), new Vector2(0, .5f), new Vector2(0, .5f), new Vector2(48, 0), new Vector2(86, 88), new Vector2(.5f, .5f));
             portraitFrame = portraitImage;
             heroText = TextLabel("Hero identity", panel.transform, "WAYFARER", 18, TextAnchor.UpperLeft, Cream);
-            SetRect(heroText.rectTransform, new Vector2(0, 1), new Vector2(0, 1), new Vector2(116, -12), new Vector2(196, 48), new Vector2(0, 1));
-            hpFill = Bar(panel.transform, new Vector2(116, -58), new Color(.75f, .16f, .13f));
-            xpFill = Bar(panel.transform, new Vector2(116, -88), new Color(.2f, .68f, .72f));
+            SetRect(heroText.rectTransform, new Vector2(0, 1), new Vector2(0, 1), new Vector2(94, -9), new Vector2(222, 42), new Vector2(0, 1));
+            hpFill = Bar(panel.transform, new Vector2(94, -49), new Color(.73f, .12f, .09f));
+            xpFill = Bar(panel.transform, new Vector2(94, -72), new Color(.19f, .58f, .64f));
         }
 
         void CreateCommandRail()
         {
             var rail = Panel("Command rail", transform, Ink);
-            SetRect(rail, new Vector2(.5f, 0), new Vector2(.5f, 0), new Vector2(0, 14), new Vector2(560, 108), new Vector2(.5f, 0));
-            AddBorder(rail.transform, Brass, 4);
+            SetRect(rail, new Vector2(.5f, 0), new Vector2(.5f, 0), new Vector2(165, 14), new Vector2(520, 94), new Vector2(.5f, 0));
+            AddBorder(rail.transform, new Color(.92f, .7f, .3f), 3);
             TextLabel("Command title", rail.transform, "SELECTED HERO  •  COMMANDS", 13, TextAnchor.UpperCenter, Parchment).rectTransform.SetInsetAndSizeFromParentEdge(RectTransform.Edge.Top, 5, 22);
-            CreateAbility(rail.transform, 0, "DASH", "SPACE", new Vector2(-176, 10), new Color(.13f, .54f, .76f), controller.CastDash, out dashPlate, out dashLabel);
-            CreateAbility(rail.transform, 1, "POWER STRIKE", "Q", new Vector2(0, 10), new Color(.78f, .25f, .12f), controller.CastPower, out powerPlate, out powerLabel);
-            CreateAbility(rail.transform, 2, "FIREBALL", "E", new Vector2(176, 10), new Color(.46f, .2f, .68f), controller.CastFireball, out firePlate, out fireLabel);
+            CreateAbility(rail.transform, 0, "DASH", "SPACE", new Vector2(-164, 8), new Color(.16f, .45f, .56f), controller.CastDash, out dashPlate, out dashLabel);
+            CreateAbility(rail.transform, 1, "POWER STRIKE", "Q", new Vector2(0, 8), new Color(.65f, .25f, .1f), controller.CastPower, out powerPlate, out powerLabel);
+            CreateAbility(rail.transform, 2, "FIREBALL", "E", new Vector2(164, 8), new Color(.45f, .22f, .4f), controller.CastFireball, out firePlate, out fireLabel);
         }
 
         void CreateAbility(Transform parent, int iconIndex, string title, string key, Vector2 pos, Color color, UnityEngine.Events.UnityAction action, out Image plate, out Text label)
@@ -73,11 +73,11 @@ namespace ClasslessRPG
             var go = new GameObject(title, typeof(RectTransform), typeof(Image), typeof(Button)); go.transform.SetParent(parent, false);
             plate = go.GetComponent<Image>(); plate.color = color;
             var button = go.GetComponent<Button>(); button.targetGraphic = plate; button.onClick.AddListener(() => { AudioDirector.Play(GameSound.Click); action(); });
-            SetRect(go.GetComponent<RectTransform>(), new Vector2(.5f, 0), new Vector2(.5f, 0), pos, new Vector2(164, 68), new Vector2(.5f, 0));
+            SetRect(go.GetComponent<RectTransform>(), new Vector2(.5f, 0), new Vector2(.5f, 0), pos, new Vector2(152, 62), new Vector2(.5f, 0));
             AddBorder(go.transform, new Color(1f, .84f, .46f, .9f), 2);
             var icon = new GameObject("Icon", typeof(RectTransform), typeof(Image)); icon.transform.SetParent(go.transform, false);
             var iconImage = icon.GetComponent<Image>(); iconImage.sprite = SpriteArt.AbilityIcon(iconIndex); iconImage.preserveAspect = true; iconImage.raycastTarget = false;
-            SetRect(icon.GetComponent<RectTransform>(), new Vector2(0, .5f), new Vector2(0, .5f), new Vector2(31, 0), new Vector2(56, 56), new Vector2(.5f, .5f));
+            SetRect(icon.GetComponent<RectTransform>(), new Vector2(0, .5f), new Vector2(0, .5f), new Vector2(29, 0), new Vector2(52, 52), new Vector2(.5f, .5f));
             label = TextLabel("Ability label", go.transform, $"<size=12>[{key}]</size>\n{title}", 16, TextAnchor.MiddleCenter, Color.white);
             label.rectTransform.anchorMin = new Vector2(0, 0); label.rectTransform.anchorMax = Vector2.one; label.rectTransform.offsetMin = new Vector2(58, 3); label.rectTransform.offsetMax = new Vector2(-3, -3);
         }
@@ -85,7 +85,7 @@ namespace ClasslessRPG
         void CreateBuildCard()
         {
             var panel = Panel("Build card", transform, new Color(.08f, .10f, .11f, .9f));
-            SetRect(panel, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-18, -76), new Vector2(260, 230), new Vector2(1, 1));
+            SetRect(panel, new Vector2(0, 1), new Vector2(0, 1), new Vector2(16, -16), new Vector2(220, 188), new Vector2(0, 1));
             AddBorder(panel.transform, new Color(.55f, .42f, .24f, 1), 2);
             buildText = TextLabel("Attributes", panel.transform, "", 16, TextAnchor.UpperLeft, Cream); Stretch(buildText.rectTransform, 14);
         }
@@ -211,7 +211,7 @@ namespace ClasslessRPG
 
         Image Bar(Transform parent, Vector2 pos, Color color)
         {
-            var back = Panel("Bar back", parent, new Color(.05f, .045f, .04f, 1)); SetRect(back, new Vector2(0, 1), new Vector2(0, 1), pos, new Vector2(190, 16), new Vector2(0, 1));
+            var back = Panel("Bar back", parent, new Color(.05f, .045f, .04f, 1)); SetRect(back, new Vector2(0, 1), new Vector2(0, 1), pos, new Vector2(218, 13), new Vector2(0, 1));
             var fill = Panel("Bar fill", back.transform, color); Stretch(fill, 2); fill.type = Image.Type.Filled; fill.fillMethod = Image.FillMethod.Horizontal; fill.fillOrigin = 0; return fill;
         }
         static Image Panel(string name, Transform parent, Color color) { var go = new GameObject(name, typeof(RectTransform), typeof(Image)); go.transform.SetParent(parent, false); var image = go.GetComponent<Image>(); image.color = color; return image; }

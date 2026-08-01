@@ -18,6 +18,8 @@ namespace ClasslessRPG
         Vector3 destination;
         bool dragging;
         float nextStep;
+        LineRenderer commandLine;
+        Vector3 dragPoint;
         public bool PowerQueued { get; private set; }
 
         void Start()
@@ -29,6 +31,12 @@ namespace ClasslessRPG
             destination = transform.position;
             health.IsPlayer = true;
             health.Configure(stats.MaxHealth);
+            commandLine = new GameObject("Command tether").AddComponent<LineRenderer>();
+            commandLine.transform.SetParent(transform, false);
+            commandLine.positionCount = 2; commandLine.startWidth = .08f; commandLine.endWidth = .035f;
+            commandLine.material = RuntimeArt.Material(new Color(1f, .85f, .3f), true);
+            commandLine.useWorldSpace = true; commandLine.sortingOrder = 40; commandLine.numCapVertices = 5;
+            commandLine.enabled = false;
             if (!Selected) SelectUnit();
         }
 
@@ -48,12 +56,27 @@ namespace ClasslessRPG
                     {
                         var clickedHealth = hit.collider.GetComponentInParent<Health>();
                         if (clickedHealth && !clickedHealth.IsPlayer) SelectTarget(clickedHealth);
-                        else if (clickedHealth == health) { SelectUnit(); dragging = true; }
+                        else if (clickedHealth == health) { SelectUnit(); dragging = true; dragPoint = transform.position; commandLine.enabled = true; }
                         else { SelectTarget(null); destination = AimPoint; }
                     }
                 }
-                if (dragging && Input.GetMouseButton(0)) { destination = AimPoint; SelectTarget(null); }
-                if (Input.GetMouseButtonUp(0)) dragging = false;
+                if (dragging && Input.GetMouseButton(0))
+                {
+                    dragPoint = AimPoint; SelectTarget(null);
+                    commandLine.SetPosition(0, transform.position + Vector3.up * 1.05f);
+                    commandLine.SetPosition(1, dragPoint + Vector3.up * .08f);
+                }
+                if (Input.GetMouseButtonUp(0) && dragging)
+                {
+                    dragging = false; commandLine.enabled = false;
+                    bool assignedTarget = false;
+                    if (Physics.Raycast(ray, out var releaseHit, 100f))
+                    {
+                        var releasedHealth = releaseHit.collider.GetComponentInParent<Health>();
+                        if (releasedHealth && !releasedHealth.IsPlayer) { SelectTarget(releasedHealth); assignedTarget = true; }
+                    }
+                    if (!assignedTarget) destination = dragPoint;
+                }
 
                 if (CombatTarget && !CombatTarget.IsDead)
                 {
@@ -76,7 +99,7 @@ namespace ClasslessRPG
                     nextStep = Time.time + .34f;
                     AudioDirector.Play(GameSound.Step, Random.Range(.94f, 1.06f));
                 }
-                transform.position = new Vector3(Mathf.Clamp(transform.position.x, -12.5f, 12.5f), .65f, Mathf.Clamp(transform.position.z, -5.5f, 7.5f));
+                transform.position = new Vector3(Mathf.Clamp(transform.position.x, -11.5f, 11.5f), .65f, Mathf.Clamp(transform.position.z, -3.1f, 3.1f));
                 if (move.sqrMagnitude > .01f) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(move), Time.deltaTime * 12f);
             }
 
