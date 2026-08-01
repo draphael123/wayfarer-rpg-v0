@@ -6,9 +6,10 @@ namespace ClasslessRPG
     public sealed class CombatFX : MonoBehaviour
     {
         static CombatFX instance;
+        public static bool ShakeEnabled { get; private set; } = true;
         Camera cam;
         Vector3 cameraBase;
-        void Awake() { instance = this; cam = Camera.main; }
+        void Awake() { instance = this; cam = Camera.main; ShakeEnabled = PlayerPrefs.GetInt("camera-shake", 1) == 1; }
         void LateUpdate() { if (cam) cameraBase = Vector3.Lerp(cameraBase, Vector3.zero, Time.deltaTime * 16); }
 
         public static void Hit(Vector3 point, Color color, float damage)
@@ -52,7 +53,8 @@ namespace ClasslessRPG
             Destroy(line.gameObject, .09f);
         }
 
-        public static void Shake(float strength, float duration) { if (instance) instance.StartCoroutine(instance.ShakeRoutine(strength, duration)); }
+        public static void Shake(float strength, float duration) { if (instance && ShakeEnabled) instance.StartCoroutine(instance.ShakeRoutine(strength, duration)); }
+        public static void ToggleShake() { ShakeEnabled = !ShakeEnabled; PlayerPrefs.SetInt("camera-shake", ShakeEnabled ? 1 : 0); }
         IEnumerator ShakeRoutine(float strength, float duration)
         {
             var original = cam.transform.localPosition;

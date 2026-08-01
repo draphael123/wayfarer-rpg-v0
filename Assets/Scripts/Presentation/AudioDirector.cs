@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace ClasslessRPG
 {
-    public enum GameSound { Click, Slash, Heavy, Fire, Hit, Level }
+    public enum GameSound { Click, Slash, Heavy, Fire, Hit, Level, Step }
     public sealed class AudioDirector : MonoBehaviour
     {
         public static AudioDirector Instance { get; private set; }
@@ -14,9 +14,20 @@ namespace ClasslessRPG
         void Awake()
         {
             Instance = this;
+            MasterVolume = PlayerPrefs.GetFloat("master-volume", MasterVolume);
+            MusicVolume = PlayerPrefs.GetFloat("music-volume", MusicVolume);
             effects = gameObject.AddComponent<AudioSource>(); effects.spatialBlend = 0;
             ambience = gameObject.AddComponent<AudioSource>(); ambience.loop = true; ambience.spatialBlend = 0;
-            clips = new[] { Tone("click", 620, .07f, .18f), Tone("slash", 190, .13f, .32f, true), Tone("heavy", 82, .22f, .5f, true), Tone("fire", 430, .28f, .34f, true), Tone("hit", 115, .11f, .38f, true), Tone("level", 520, .55f, .24f) };
+            clips = new[]
+            {
+                Load("ui-click", Tone("click", 620, .07f, .18f)),
+                Load("sword-slash", Tone("slash", 190, .13f, .32f, true)),
+                Load("heavy-impact", Tone("heavy", 82, .22f, .5f, true)),
+                Tone("fire", 430, .28f, .34f, true),
+                Load("armor-hit", Tone("hit", 115, .11f, .38f, true)),
+                Tone("level", 520, .55f, .24f),
+                Load("footstep", Tone("step", 145, .08f, .12f, true))
+            };
             ambience.clip = Ambience(); ambience.Play();
         }
 
@@ -26,6 +37,9 @@ namespace ClasslessRPG
             if (!Instance) return;
             Instance.effects.pitch = pitch; Instance.effects.PlayOneShot(Instance.clips[(int)sound], .75f);
         }
+        public static void SetMaster(float value) { MasterVolume = value; PlayerPrefs.SetFloat("master-volume", value); }
+        public static void SetMusic(float value) { MusicVolume = value; PlayerPrefs.SetFloat("music-volume", value); }
+        AudioClip Load(string name, AudioClip fallback) => Resources.Load<AudioClip>("Audio/" + name) ?? fallback;
 
         AudioClip Tone(string name, float frequency, float duration, float volume, bool noise = false)
         {

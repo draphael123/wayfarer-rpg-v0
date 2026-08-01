@@ -6,6 +6,7 @@ namespace ClasslessRPG
     [RequireComponent(typeof(CharacterStats), typeof(Health), typeof(AbilitySystem))]
     public sealed class PlayerController : MonoBehaviour
     {
+        public static PlayerController Selected { get; private set; }
         public bool Enabled = true;
         CharacterStats stats;
         AbilitySystem abilities;
@@ -13,9 +14,11 @@ namespace ClasslessRPG
         Camera cam;
         public Vector3 AimPoint { get; private set; }
         public Health CombatTarget { get; private set; }
-        public bool IsSelected { get; private set; } = true;
+        public bool IsSelected { get; private set; }
         Vector3 destination;
         bool dragging;
+        float nextStep;
+        public bool PowerQueued { get; private set; }
 
         void Start()
         {
@@ -26,10 +29,12 @@ namespace ClasslessRPG
             destination = transform.position;
             health.IsPlayer = true;
             health.Configure(stats.MaxHealth);
+            if (!Selected) SelectUnit();
         }
 
         void Update()
         {
+            if (Time.timeScale == 0) return;
             if (health.IsDead) { if (Input.GetKeyDown(KeyCode.R)) GameBootstrap.Restart(); return; }
             var plane = new Plane(Vector3.up, Vector3.zero);
             var ray = cam.ScreenPointToRay(Input.mousePosition);
@@ -43,7 +48,7 @@ namespace ClasslessRPG
                     {
                         var clickedHealth = hit.collider.GetComponentInParent<Health>();
                         if (clickedHealth && !clickedHealth.IsPlayer) SelectTarget(clickedHealth);
-                        else if (clickedHealth == health) { IsSelected = true; dragging = true; }
+                        else if (clickedHealth == health) { SelectUnit(); dragging = true; }
                         else { SelectTarget(null); destination = AimPoint; }
                     }
                 }
@@ -54,13 +59,23 @@ namespace ClasslessRPG
                 {
                     destination = CombatTarget.transform.position;
                     float distance = Vector3.Distance(transform.position, destination);
-                    if (distance <= 1.65f) { abilities.UseBasic(CombatTarget.transform.position); destination = transform.position; }
+                    if (distance <= 1.65f)
+                    {
+                        if (PowerQueued) { abilities.UsePower(CombatTarget.transform.position); PowerQueued = false; }
+                        else abilities.UseBasic(CombatTarget.transform.position);
+                        destination = transform.position;
+                    }
                 }
                 else if (CombatTarget && CombatTarget.IsDead) SelectTarget(null);
 
                 var delta = destination - transform.position; delta.y = 0;
                 var move = delta.magnitude > .12f ? delta.normalized : Vector3.zero;
                 transform.position += move * stats.MoveSpeed * Time.deltaTime;
+                if (move.sqrMagnitude > .01f && Time.time >= nextStep)
+                {
+                    nextStep = Time.time + .34f;
+                    AudioDirector.Play(GameSound.Step, Random.Range(.94f, 1.06f));
+                }
                 transform.position = new Vector3(Mathf.Clamp(transform.position.x, -12.5f, 12.5f), .65f, Mathf.Clamp(transform.position.z, -5.5f, 7.5f));
                 if (move.sqrMagnitude > .01f) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(move), Time.deltaTime * 12f);
             }
@@ -75,10 +90,19 @@ namespace ClasslessRPG
             if (Input.GetKeyDown(KeyCode.Alpha5)) Allocate(AttributeType.Spirit);
         }
 
+        void SelectUnit()
+        {
+            if (Selected && Selected != this) Selected.IsSelected = false;
+            Selected = this;
+            IsSelected = true;
+            AudioDirector.Play(GameSound.Click, 1.18f);
+        }
+
         void SelectTarget(Health target)
         {
             if (CombatTarget) CombatTarget.GetComponent<TargetMarker>()?.SetSelected(false);
             CombatTarget = target;
+            if (!CombatTarget) PowerQueued = false;
             if (CombatTarget)
             {
                 CombatTarget.GetComponent<TargetMarker>()?.SetSelected(true);
@@ -87,9 +111,19 @@ namespace ClasslessRPG
             }
         }
 
-        public void CastDash() { if (IsSelected) abilities.UseDash(CombatTarget ? CombatTarget.transform.position : AimPoint); }
-        public void CastPower() { if (IsSelected) abilities.UsePower(CombatTarget ? CombatTarget.transform.position : AimPoint); }
-        public void CastFireball() { if (IsSelected) abilities.UseFireball(CombatTarget ? CombatTarget.transform.position : AimPoint); }
+        public void CastDash() { if (Selected == this) abilities.UseDash(CombatTarget ? CombatTarget.transform.position : AimPoint); }
+        public void CastPower()
+        {
+            if (Selected != this || !abilities.PowerUnlocked || abilities.PowerCooldown > 0) return;
+            if (CombatTarget && Vector3.Distance(transform.position, CombatTarget.transform.position) > 1.75f)
+            {
+                PowerQueued = true;
+                destination = CombatTarget.transform.position;
+                AudioDirector.Play(GameSound.Click, .9f);
+            }
+            else abilities.UsePower(CombatTarget ? CombatTarget.transform.position : AimPoint);
+        }
+        public void CastFireball() { if (Selected == this) abilities.UseFireball(CombatTarget ? CombatTarget.transform.position : AimPoint); }
 
         void Allocate(AttributeType type)
         {

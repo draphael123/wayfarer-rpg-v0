@@ -1,11 +1,16 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace ClasslessRPG
 {
     public static class RuntimeArt
     {
+        static readonly Dictionary<int, Material> materials = new();
         public static Material Material(Color color, bool emissive = false)
         {
+            var color32 = (Color32)color;
+            int key = unchecked(((((color32.r * 397) + color32.g) * 397 + color32.b) * 397 + color32.a) * 2 + (emissive ? 1 : 0));
+            if (materials.TryGetValue(key, out var cached) && cached) return cached;
             var shader = Resources.Load<Shader>("PrototypeLit");
             var material = new Material(shader) { color = color };
             if (emissive && material.HasProperty("_EmissionColor"))
@@ -13,6 +18,7 @@ namespace ClasslessRPG
                 material.EnableKeyword("_EMISSION");
                 material.SetColor("_EmissionColor", color * 2.2f);
             }
+            materials[key] = material;
             return material;
         }
 

@@ -30,6 +30,7 @@ public static class BuildPrototype
         PlayerSettings.companyName = "Wayfarer Prototype";
         PlayerSettings.productName = "Wayfarer V0";
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
+        PlayerSettings.WebGL.template = "PROJECT:Wayfarer";
         Directory.CreateDirectory("Builds/WebGL");
         var options = new BuildPlayerOptions
         {

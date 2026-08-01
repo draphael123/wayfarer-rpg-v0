@@ -37,8 +37,16 @@ namespace ClasslessRPG
             if (Current <= 0)
             {
                 Died?.Invoke(this);
-                if (!IsPlayer) Destroy(gameObject, .18f);
+                if (!IsPlayer) StartCoroutine(DeathRoutine());
             }
+        }
+
+        public void Restore(float amount)
+        {
+            if (IsDead) return;
+            Current = Mathf.Min(Max, Current + amount);
+            Changed?.Invoke(Current, Max);
+            CombatFX.Burst(transform.position + Vector3.up, new Color(.25f, 1f, .56f), .38f);
         }
 
         IEnumerator Flash()
@@ -52,6 +60,22 @@ namespace ClasslessRPG
             foreach (var r in renderers) r.material.color = Color.white;
             yield return new WaitForSeconds(.07f);
             for (int i = 0; i < renderers.Length; i++) if (renderers[i]) renderers[i].material.color = baseColors[i];
+        }
+
+        IEnumerator DeathRoutine()
+        {
+            foreach (var collider in GetComponentsInChildren<Collider>()) collider.enabled = false;
+            var originalScale = transform.localScale;
+            float started = Time.time, duration = .42f;
+            while (Time.time - started < duration)
+            {
+                float t = (Time.time - started) / duration;
+                transform.localScale = Vector3.Lerp(originalScale, originalScale * .18f, t * t);
+                transform.position += Vector3.up * Time.deltaTime * .35f;
+                transform.rotation *= Quaternion.Euler(0, 0, Time.deltaTime * 70f);
+                yield return null;
+            }
+            Destroy(gameObject);
         }
     }
 }

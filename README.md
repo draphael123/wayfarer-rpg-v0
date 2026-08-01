@@ -38,6 +38,7 @@ The project also includes an editor build command for WebGL (`BuildPrototype.Bui
 - Hit flash, impact particles, trails, floating damage, emissive effects, and camera shake
 - Original hand-painted character and arena artwork with runtime billboard presentation
 - Original synthesized combat, interface, level-up, and ambient audio with volume controls
+- CC0 weapon, impact, interface, and footstep sounds from [Kenney's RPG Audio pack](https://kenney.nl/assets/rpg-audio) (license included with the assets)
 - Hero selection card, command rail, visible hotkeys, cooldown states, target markers, and pause/settings overlay
 
 ## Architecture

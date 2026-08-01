@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace ClasslessRPG
@@ -11,6 +12,7 @@ namespace ClasslessRPG
         Health health;
         float speed, damage, range, cooldown, nextAttack;
         Vector3 home;
+        bool attacking;
 
         public void Configure(EnemyType type, Transform target)
         {
@@ -26,7 +28,7 @@ namespace ClasslessRPG
 
         void Update()
         {
-            if (!Target || health.IsDead) return;
+            if (!Target || health.IsDead || attacking) return;
             var playerHealth = Target.GetComponent<Health>();
             if (playerHealth.IsDead) return;
             var delta = Target.position - transform.position; delta.y = 0;
@@ -44,6 +46,7 @@ namespace ClasslessRPG
                 {
                     nextAttack = Time.time + cooldown;
                     if (Type == EnemyType.Archer) Shoot(playerHealth);
+                    else if (Type == EnemyType.Ogre) StartCoroutine(HeavyAttack(playerHealth));
                     else playerHealth.Damage(damage, Target.position + Vector3.up, new Color(.95f, .25f, .2f));
                 }
             }
@@ -56,6 +59,22 @@ namespace ClasslessRPG
             var start = transform.position + Vector3.up * .7f;
             CombatFX.Line(start, player.transform.position + Vector3.up * .5f, new Color(1f, .45f, .15f));
             player.Damage(damage, player.transform.position + Vector3.up, new Color(1f, .3f, .15f));
+        }
+
+        IEnumerator HeavyAttack(Health player)
+        {
+            attacking = true;
+            var sprite = GetComponentInChildren<SpriteRenderer>();
+            if (sprite) sprite.color = new Color(1f, .5f, .28f);
+            CombatFX.Burst(transform.position + Vector3.up * 1.4f, new Color(1f, .38f, .12f), .55f);
+            yield return new WaitForSeconds(.55f);
+            if (player && !player.IsDead && Vector3.Distance(transform.position, player.transform.position) <= range + .65f)
+            {
+                player.Damage(damage, player.transform.position + Vector3.up, new Color(1f, .22f, .08f));
+                CombatFX.Shake(.22f, .16f);
+            }
+            if (sprite) sprite.color = Color.white;
+            attacking = false;
         }
     }
 

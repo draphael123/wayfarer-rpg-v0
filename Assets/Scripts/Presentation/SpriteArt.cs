@@ -6,14 +6,19 @@ namespace ClasslessRPG
     {
         Camera cam;
         Vector3 baseScale;
+        Vector3 basePosition, lastRootPosition;
         float phase;
-        void Start() { cam = Camera.main; baseScale = transform.localScale; phase = Random.value * 5f; }
+        void Start() { cam = Camera.main; baseScale = transform.localScale; basePosition = transform.localPosition; lastRootPosition = transform.parent.position; phase = Random.value * 5f; }
         void LateUpdate()
         {
             if (!cam) return;
             transform.rotation = cam.transform.rotation;
             float breathe = 1f + Mathf.Sin(Time.time * 2.2f + phase) * .012f;
             transform.localScale = baseScale * breathe;
+            float movement = (transform.parent.position - lastRootPosition).sqrMagnitude;
+            float bob = movement > .0001f ? Mathf.Abs(Mathf.Sin(Time.time * 11f + phase)) * .09f : 0;
+            transform.localPosition = basePosition + Vector3.up * bob;
+            lastRootPosition = transform.parent.position;
         }
     }
 
@@ -21,19 +26,33 @@ namespace ClasslessRPG
     {
         static Texture2D characters;
         static Texture2D arena;
+        static Texture2D abilities;
+        static readonly Sprite[] characterSprites = new Sprite[4];
+        static readonly Sprite[] abilitySprites = new Sprite[3];
+        static Sprite arenaSprite;
         public static Sprite Character(int index)
         {
+            if (characterSprites[index]) return characterSprites[index];
             characters ??= Resources.Load<Texture2D>("Art/Characters");
             float halfW = characters.width * .5f, halfH = characters.height * .5f;
             int column = index % 2, rowFromTop = index / 2;
             var rect = new Rect(column * halfW, (1 - rowFromTop) * halfH, halfW, halfH);
-            return Sprite.Create(characters, rect, new Vector2(.5f, .08f), 235f, 0, SpriteMeshType.FullRect);
+            return characterSprites[index] = Sprite.Create(characters, rect, new Vector2(.5f, .08f), 235f, 0, SpriteMeshType.FullRect);
         }
 
         public static Sprite Arena()
         {
+            if (arenaSprite) return arenaSprite;
             arena ??= Resources.Load<Texture2D>("Art/ForestArena");
-            return Sprite.Create(arena, new Rect(0, 0, arena.width, arena.height), new Vector2(.5f, .5f), 100f, 0, SpriteMeshType.FullRect);
+            return arenaSprite = Sprite.Create(arena, new Rect(0, 0, arena.width, arena.height), new Vector2(.5f, .5f), 100f, 0, SpriteMeshType.FullRect);
+        }
+
+        public static Sprite AbilityIcon(int index)
+        {
+            if (abilitySprites[index]) return abilitySprites[index];
+            abilities ??= Resources.Load<Texture2D>("Art/Abilities");
+            float width = abilities.width / 3f;
+            return abilitySprites[index] = Sprite.Create(abilities, new Rect(index * width, 0, width, abilities.height), new Vector2(.5f, .5f), 220f, 0, SpriteMeshType.FullRect);
         }
 
         public static SpriteRenderer CharacterVisual(Transform root, int index, float scale = 1f)

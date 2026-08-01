@@ -10,11 +10,12 @@ namespace ClasslessRPG
         Transform player;
         int wave;
         int living;
+        GameHUD hud;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Boot()
         {
-            if (FindFirstObjectByType<GameBootstrap>()) return;
+            if (FindAnyObjectByType<GameBootstrap>()) return;
             new GameObject("Game Bootstrap").AddComponent<GameBootstrap>();
         }
 
@@ -54,7 +55,7 @@ namespace ClasslessRPG
             selection.transform.SetParent(p.transform, true);
             p.AddComponent<WorldHealthBar>();
             player = p.transform;
-            new GameObject("HUD").AddComponent<GameHUD>().Initialize(p);
+            hud = new GameObject("HUD").AddComponent<GameHUD>(); hud.Initialize(p);
         }
 
         IEnumerator Waves()
@@ -64,7 +65,13 @@ namespace ClasslessRPG
             {
                 if (living == 0)
                 {
+                    if (wave > 0)
+                    {
+                        player.GetComponent<Health>().Restore(player.GetComponent<Health>().Max * .16f);
+                        yield return new WaitForSeconds(2.5f);
+                    }
                     wave++;
+                    hud.SetWave(wave);
                     int count = Mathf.Min(1 + wave, 6);
                     for (int i = 0; i < count; i++)
                     {
@@ -96,6 +103,7 @@ namespace ClasslessRPG
         {
             living--;
             player.GetComponent<CharacterStats>().GainExperience(enemy.ExperienceReward);
+            FloatingText.Create(enemy.transform.position + Vector3.up * 2.2f, $"+{enemy.ExperienceReward} XP", new Color(.35f, .9f, 1f));
         }
 
         public static void Restart() => SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
