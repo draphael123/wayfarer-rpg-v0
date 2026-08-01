@@ -47,8 +47,16 @@ namespace ClasslessRPG
             var panel = Panel("Hero card", transform, new Color(.24f, .14f, .07f, .97f));
             SetRect(panel, Vector2.zero, Vector2.zero, new Vector2(16, 14), new Vector2(330, 94), Vector2.zero);
             AddBorder(panel.transform, new Color(.92f, .7f, .3f), 3);
-            var portrait = new GameObject("Selected hero portrait", typeof(RectTransform), typeof(Image)); portrait.transform.SetParent(panel.transform, false);
-            var portraitImage = portrait.GetComponent<Image>(); portraitImage.sprite = HeroPartArt.Available ? HeroPartArt.Get(HeroPart.Head) : SpriteArt.Character(0); portraitImage.preserveAspect = true; portraitImage.color = Color.white;
+            var portrait = new GameObject("Selected hero portrait", typeof(RectTransform)); portrait.transform.SetParent(panel.transform, false);
+            Image portraitImage;
+            if (HeroPartArt.Available && heroVisual)
+            {
+                PortraitLayer(portrait.transform, "Skin", HeroPartArt.GetHeadSkinDye(), heroVisual.Appearance.SkinColor);
+                PortraitLayer(portrait.transform, "Hair", HeroPartArt.GetHeadHairDye(), heroVisual.Appearance.HairColor);
+                portraitImage = PortraitLayer(portrait.transform, "Face lines", HeroPartArt.GetHeadBase(), Color.white);
+                PortraitLayer(portrait.transform, "Eyes", HeroPartArt.GetHeadEye(heroVisual.Appearance.EyeIndex), Color.white);
+            }
+            else portraitImage = PortraitLayer(portrait.transform, "Fallback", SpriteArt.Character(0), Color.white);
             SetRect(portrait.GetComponent<RectTransform>(), new Vector2(0, .5f), new Vector2(0, .5f), new Vector2(48, 0), new Vector2(86, 88), new Vector2(.5f, .5f));
             portraitFrame = portraitImage;
             heroText = TextLabel("Hero identity", panel.transform, "WAYFARER", 18, TextAnchor.UpperLeft, Cream);
@@ -216,6 +224,7 @@ namespace ClasslessRPG
             var fill = Panel("Bar fill", back.transform, color); Stretch(fill, 2); fill.type = Image.Type.Filled; fill.fillMethod = Image.FillMethod.Horizontal; fill.fillOrigin = 0; return fill;
         }
         static Image Panel(string name, Transform parent, Color color) { var go = new GameObject(name, typeof(RectTransform), typeof(Image)); go.transform.SetParent(parent, false); var image = go.GetComponent<Image>(); image.color = color; return image; }
+        static Image PortraitLayer(Transform parent, string name, Sprite sprite, Color color) { var go = new GameObject(name, typeof(RectTransform), typeof(Image)); go.transform.SetParent(parent, false); var image = go.GetComponent<Image>(); image.sprite = sprite; image.preserveAspect = true; image.color = color; image.raycastTarget = false; Stretch(image.rectTransform, 0); return image; }
         static GameObject Button(string name, Transform parent, string copy, Color color, UnityEngine.Events.UnityAction action) { var image = Panel(name, parent, color); var button = image.gameObject.AddComponent<Button>(); button.targetGraphic = image; button.onClick.AddListener(action); var label = TextLabel("Label", image.transform, copy, 15, TextAnchor.MiddleCenter, Cream); Stretch(label.rectTransform, 2); return image.gameObject; }
         static Text TextLabel(string name, Transform parent, string copy, int size, TextAnchor anchor, Color color) { var go = new GameObject(name, typeof(RectTransform), typeof(Text)); go.transform.SetParent(parent, false); var t = go.GetComponent<Text>(); t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); t.text = copy; t.fontSize = size; t.fontStyle = FontStyle.Bold; t.alignment = anchor; t.color = color; t.supportRichText = true; return t; }
         static void AddBorder(Transform parent, Color color, float thickness) { var outline = parent.gameObject.AddComponent<Outline>(); outline.effectColor = color; outline.effectDistance = new Vector2(thickness, -thickness); }

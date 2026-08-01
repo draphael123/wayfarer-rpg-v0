@@ -2,6 +2,43 @@ using UnityEngine;
 
 namespace ClasslessRPG
 {
+    public readonly struct VillagerAppearance
+    {
+        public readonly int HairIndex, EyeIndex, SkinIndex, ClothIndex;
+        public Color HairColor => HairIndex switch
+        {
+            1 => new Color(.52f, .2f, .07f),
+            2 => new Color(.78f, .56f, .2f),
+            3 => new Color(.1f, .085f, .07f),
+            _ => new Color(.36f, .19f, .065f)
+        };
+        public Color SkinColor => SkinIndex switch
+        {
+            1 => new Color(.82f, .57f, .34f),
+            2 => new Color(.5f, .31f, .2f),
+            _ => new Color(1f, .78f, .53f)
+        };
+
+        public VillagerAppearance(int hair, int eyes, int skin, int cloth)
+        {
+            HairIndex = Mathf.Abs(hair) % 4;
+            EyeIndex = Mathf.Abs(eyes) % 3;
+            SkinIndex = Mathf.Abs(skin) % 3;
+            ClothIndex = Mathf.Abs(cloth) % 3;
+        }
+
+        public static VillagerAppearance FromSeed(int seed)
+        {
+            int value = seed == 0 ? 7919 : seed;
+            int Next(int maximum)
+            {
+                unchecked { value = value * 1103515245 + 12345; }
+                return Mathf.Abs((value >> 16) % maximum);
+            }
+            return new VillagerAppearance(Next(4), Next(3), Next(3), Next(3));
+        }
+    }
+
     public sealed class RiggedHeroVisual : MonoBehaviour
     {
         Transform actor, torso, head, frontUpperArm, frontForearm, backUpperArm, backForearm;
@@ -13,15 +50,28 @@ namespace ClasslessRPG
         CharacterMotion motion;
         int outfitIndex;
         bool illustrated;
+        public VillagerAppearance Appearance { get; private set; }
 
-        public static RiggedHeroVisual Create(Transform actor)
+        public static RiggedHeroVisual Create(Transform actor, VillagerAppearance? appearance = null)
         {
             var go = new GameObject("Rigged cutout warrior");
             go.transform.SetParent(actor, false);
             var rig = go.AddComponent<RiggedHeroVisual>();
             rig.actor = actor;
+            rig.Appearance = appearance ?? VillagerAppearance.FromSeed(StableSeed(actor.name));
+            rig.outfitIndex = rig.Appearance.ClothIndex;
             rig.Build();
             return rig;
+        }
+
+        static int StableSeed(string value)
+        {
+            unchecked
+            {
+                int hash = 17;
+                foreach (char character in value) hash = hash * 31 + character;
+                return hash;
+            }
         }
 
         public void Play(CharacterMotion next)
@@ -41,7 +91,7 @@ namespace ClasslessRPG
         {
             cam = Camera.main;
             lastActorPosition = actor.position;
-            if (BuildIllustrated()) { illustrated = true; renderers = GetComponentsInChildren<SpriteRenderer>(); SetOutfit(0); return; }
+            if (BuildIllustrated()) { illustrated = true; renderers = GetComponentsInChildren<SpriteRenderer>(); SetOutfit(outfitIndex); return; }
             Part("Cape", transform, new Vector2(-.12f, 1.38f), ShapeSprite.Tunic, new Color(.09f, .2f, .27f), new Vector2(.92f, 1.2f), 3);
             backThigh = Limb("Back thigh", transform, new Vector2(-.16f, .92f), .34f, .42f, new Color(.28f, .22f, .15f), 4, out backShin);
             AddLowerLeg(backThigh, ref backShin, out backBoot, 4);
@@ -74,7 +124,7 @@ namespace ClasslessRPG
             Part("Nose", head, new Vector2(.3f, -.03f), ShapeSprite.Circle, new Color(.76f, .48f, .28f), new Vector2(.13f, .11f), 22);
 
             renderers = GetComponentsInChildren<SpriteRenderer>();
-            SetOutfit(0);
+            SetOutfit(outfitIndex);
         }
 
         public void SetOutfit(int index)
@@ -88,7 +138,10 @@ namespace ClasslessRPG
                 string part = renderer.name;
                 if (illustrated)
                 {
-                    renderer.color = part.Contains("Outfit dye") ? primary : Color.white;
+                    if (part.Contains("Outfit dye")) renderer.color = primary;
+                    else if (part.Contains("Hair dye")) renderer.color = Appearance.HairColor;
+                    else if (part.Contains("Skin dye")) renderer.color = Appearance.SkinColor;
+                    else renderer.color = Color.white;
                     continue;
                 }
                 else if (part.Contains("Primary tunic")) renderer.color = primary;
@@ -137,8 +190,14 @@ namespace ClasslessRPG
             artwork.transform.SetParent(joint, false);
             artwork.transform.localScale = Vector3.one * scale;
             var renderer = artwork.AddComponent<SpriteRenderer>();
-            renderer.sprite = HeroPartArt.Get(part);
+            renderer.sprite = part == HeroPart.Head ? HeroPartArt.GetHeadBase() : HeroPartArt.Get(part);
             renderer.sortingOrder = order;
+            if (part == HeroPart.Head)
+            {
+                ArtLayer(artwork.transform, name + " Skin dye", HeroPartArt.GetHeadSkinDye(), order - 1);
+                ArtLayer(artwork.transform, name + " Hair dye", HeroPartArt.GetHeadHairDye(), order - 1);
+                ArtLayer(artwork.transform, name + " Eye color", HeroPartArt.GetHeadEye(Appearance.EyeIndex), order + 1);
+            }
             Sprite dyeSprite = HeroPartArt.GetDye(part);
             if (dyeSprite)
             {
@@ -149,6 +208,16 @@ namespace ClasslessRPG
                 dyeRenderer.sortingOrder = order + 1;
             }
             return joint;
+        }
+
+        static void ArtLayer(Transform parent, string name, Sprite sprite, int order)
+        {
+            if (!sprite) return;
+            var layer = new GameObject(name);
+            layer.transform.SetParent(parent, false);
+            var renderer = layer.AddComponent<SpriteRenderer>();
+            renderer.sprite = sprite;
+            renderer.sortingOrder = order;
         }
 
         void AddLowerLeg(Transform thigh, ref Transform shin, out Transform boot, int order)
@@ -291,6 +360,8 @@ namespace ClasslessRPG
     {
         static Texture2D headTexture;
         static readonly Sprite[] sprites = new Sprite[12];
+        static readonly Sprite[] eyeSprites = new Sprite[3];
+        static Sprite headBase, headHairDye, headSkinDye;
         public static bool Available { get { headTexture ??= Resources.Load<Texture2D>("Art/HeroParts/Head"); return headTexture; } }
 
         public static Sprite Get(HeroPart part)
@@ -307,6 +378,23 @@ namespace ClasslessRPG
         {
             Texture2D texture = Resources.Load<Texture2D>("Art/HeroParts/" + part + "Dye");
             return texture ? Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), Pivot(part), 300f, 0, SpriteMeshType.FullRect) : null;
+        }
+
+        public static Sprite GetHeadBase() => LoadHead("HeadBase", ref headBase);
+        public static Sprite GetHeadHairDye() => LoadHead("HeadHairDye", ref headHairDye);
+        public static Sprite GetHeadSkinDye() => LoadHead("HeadSkinDye", ref headSkinDye);
+        public static Sprite GetHeadEye(int index)
+        {
+            index = Mathf.Abs(index) % 3;
+            string name = index switch { 1 => "HeadEyeGreen", 2 => "HeadEyeBrown", _ => "HeadEyeBlue" };
+            return LoadHead(name, ref eyeSprites[index]);
+        }
+
+        static Sprite LoadHead(string name, ref Sprite cache)
+        {
+            if (cache) return cache;
+            Texture2D texture = Resources.Load<Texture2D>("Art/HeroParts/" + name);
+            return texture ? cache = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), Pivot(HeroPart.Head), 300f, 0, SpriteMeshType.FullRect) : null;
         }
 
         static Vector2 Pivot(HeroPart part) => part switch
