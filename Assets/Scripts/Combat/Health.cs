@@ -29,7 +29,7 @@ namespace ClasslessRPG
         {
             if (IsDead) return;
             Current = Mathf.Max(0, Current - amount);
-            GetComponentInChildren<SpriteBillboard>()?.Play(CharacterMotion.Hit);
+            CharacterAnimation.Play(transform, CharacterMotion.Hit);
             Changed?.Invoke(Current, Max);
             CombatFX.Hit(hitPoint, effectColor, amount);
             AudioDirector.Play(GameSound.Hit, UnityEngine.Random.Range(.92f, 1.08f));

@@ -10,7 +10,7 @@ namespace ClasslessRPG
         static readonly Color Parchment = new(.91f, .78f, .52f, .98f);
         static readonly Color Brass = new(.68f, .38f, .12f, 1f);
         static readonly Color Cream = new(1f, .94f, .72f, 1f);
-        CharacterStats stats; Health health; AbilitySystem abilities; PlayerController controller;
+        CharacterStats stats; Health health; AbilitySystem abilities; PlayerController controller; RiggedHeroVisual heroVisual;
         Text heroText, buildText, banner, waveLabel, targetText, tutorialText, dashLabel, powerLabel, fireLabel;
         Text shakeLabel;
         Image hpFill, xpFill, portraitFrame, dashPlate, powerPlate, firePlate;
@@ -19,7 +19,7 @@ namespace ClasslessRPG
 
         public void Initialize(GameObject player)
         {
-            stats = player.GetComponent<CharacterStats>(); health = player.GetComponent<Health>(); abilities = player.GetComponent<AbilitySystem>(); controller = player.GetComponent<PlayerController>();
+            stats = player.GetComponent<CharacterStats>(); health = player.GetComponent<Health>(); abilities = player.GetComponent<AbilitySystem>(); controller = player.GetComponent<PlayerController>(); heroVisual = player.GetComponentInChildren<RiggedHeroVisual>();
             var canvas = gameObject.AddComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay; canvas.sortingOrder = 100;
             var scaler = gameObject.AddComponent<CanvasScaler>(); scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize; scaler.referenceResolution = new Vector2(1280, 720); scaler.matchWidthOrHeight = .5f;
             gameObject.AddComponent<GraphicRaycaster>();
@@ -48,7 +48,7 @@ namespace ClasslessRPG
             SetRect(panel, Vector2.zero, Vector2.zero, new Vector2(16, 14), new Vector2(330, 94), Vector2.zero);
             AddBorder(panel.transform, new Color(.92f, .7f, .3f), 3);
             var portrait = new GameObject("Selected hero portrait", typeof(RectTransform), typeof(Image)); portrait.transform.SetParent(panel.transform, false);
-            var portraitImage = portrait.GetComponent<Image>(); portraitImage.sprite = SpriteArt.Character(0); portraitImage.preserveAspect = true; portraitImage.color = Color.white;
+            var portraitImage = portrait.GetComponent<Image>(); portraitImage.sprite = HeroPartArt.Available ? HeroPartArt.Get(HeroPart.Head) : SpriteArt.Character(0); portraitImage.preserveAspect = true; portraitImage.color = Color.white;
             SetRect(portrait.GetComponent<RectTransform>(), new Vector2(0, .5f), new Vector2(0, .5f), new Vector2(48, 0), new Vector2(86, 88), new Vector2(.5f, .5f));
             portraitFrame = portraitImage;
             heroText = TextLabel("Hero identity", panel.transform, "WAYFARER", 18, TextAnchor.UpperLeft, Cream);
@@ -99,7 +99,7 @@ namespace ClasslessRPG
             SetRect(settingsPanel.GetComponent<RectTransform>(), new Vector2(.5f, .5f), new Vector2(.5f, .5f), Vector2.zero, new Vector2(470, 390), new Vector2(.5f, .5f));
             AddBorder(settingsPanel.transform, Brass, 4);
             var title = TextLabel("Title", settingsPanel.transform, "FIELD SETTINGS", 28, TextAnchor.UpperCenter, Cream); SetRect(title.rectTransform, new Vector2(.5f, 1), new Vector2(.5f, 1), new Vector2(0, -28), new Vector2(400, 52), new Vector2(.5f, 1));
-            var help = TextLabel("Help", settingsPanel.transform, "Drag hero to move  •  Click foes to attack\nSPACE Dash   •   Q Power Strike   •   E Fireball", 16, TextAnchor.UpperCenter, Parchment); SetRect(help.rectTransform, new Vector2(.5f, 1), new Vector2(.5f, 1), new Vector2(0, -92), new Vector2(410, 70), new Vector2(.5f, 1));
+            var help = TextLabel("Help", settingsPanel.transform, "Drag hero to move  •  Click foes to attack\nSPACE Dash   •   Q Power Strike   •   E Fireball   •   O Outfit", 16, TextAnchor.UpperCenter, Parchment); SetRect(help.rectTransform, new Vector2(.5f, 1), new Vector2(.5f, 1), new Vector2(0, -92), new Vector2(430, 70), new Vector2(.5f, 1));
             CreateSlider(settingsPanel.transform, "MASTER VOLUME", new Vector2(0, 5), AudioDirector.MasterVolume, AudioDirector.SetMaster);
             CreateSlider(settingsPanel.transform, "AMBIENCE", new Vector2(0, -55), AudioDirector.MusicVolume, AudioDirector.SetMusic);
             var fullscreen = Button("Fullscreen", settingsPanel.transform, "TOGGLE FULLSCREEN", new Color(.22f, .3f, .34f, 1), () => Screen.fullScreen = !Screen.fullScreen); SetRect(fullscreen.GetComponent<RectTransform>(), new Vector2(.5f, 0), new Vector2(.5f, 0), new Vector2(0, 70), new Vector2(250, 42), new Vector2(.5f, 0));
@@ -183,6 +183,7 @@ namespace ClasslessRPG
                 return;
             }
             if (Input.GetKeyDown(KeyCode.Escape)) ToggleSettings();
+            if (Input.GetKeyDown(KeyCode.O) && heroVisual) heroVisual.CycleOutfit();
             if (health.IsDead)
             {
                 defeatPanel.SetActive(true);
