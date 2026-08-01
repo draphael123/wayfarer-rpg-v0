@@ -1,4 +1,5 @@
 using System.IO;
+using System;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
@@ -10,6 +11,7 @@ public static class BuildPrototype
     {
         PlayerSettings.companyName = "Wayfarer Prototype";
         PlayerSettings.productName = "Wayfarer V0";
+        PlayerSettings.bundleVersion = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
         PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);
         Directory.CreateDirectory("Builds/Windows");
         var options = new BuildPlayerOptions
@@ -29,6 +31,7 @@ public static class BuildPrototype
     {
         PlayerSettings.companyName = "Wayfarer Prototype";
         PlayerSettings.productName = "Wayfarer V0";
+        PlayerSettings.bundleVersion = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
         PlayerSettings.WebGL.template = "PROJECT:Wayfarer";
         Directory.CreateDirectory("Builds/WebGL");

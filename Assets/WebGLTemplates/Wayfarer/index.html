@@ -38,7 +38,7 @@
     </div>
   </section>
   <div id="warning"></div>
-  <script src="Build/{{{ LOADER_FILENAME }}}"></script>
+  <script src="Build/{{{ LOADER_FILENAME }}}?v={{{ PRODUCT_VERSION }}}"></script>
   <script>
     const canvas = document.querySelector('#unity-canvas');
     const loading = document.querySelector('#loading');
@@ -50,10 +50,10 @@
     }
     createUnityInstance(canvas, {
       arguments: [],
-      dataUrl: "Build/{{{ DATA_FILENAME }}}",
-      frameworkUrl: "Build/{{{ FRAMEWORK_FILENAME }}}",
+      dataUrl: "Build/{{{ DATA_FILENAME }}}?v={{{ PRODUCT_VERSION }}}",
+      frameworkUrl: "Build/{{{ FRAMEWORK_FILENAME }}}?v={{{ PRODUCT_VERSION }}}",
 #if USE_WASM
-      codeUrl: "Build/{{{ CODE_FILENAME }}}",
+      codeUrl: "Build/{{{ CODE_FILENAME }}}?v={{{ PRODUCT_VERSION }}}",
 #endif
       streamingAssetsUrl: "StreamingAssets",
       companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
