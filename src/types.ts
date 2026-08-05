@@ -11,7 +11,7 @@ export type AttrKey = "str" | "dex" | "int" | "vit" | "spi";
 
 export type Attributes = Record<AttrKey, number>;
 
-export type WeaponKind = "sword" | "bow" | "staff";
+export type WeaponKind = "sword" | "bow" | "staff" | "stave";
 
 export type EffectKind = "stun" | "slow" | "taunt" | "shield" | "haste" | "guard" | "burn";
 
@@ -149,4 +149,6 @@ export interface SaveData {
   heroes: HeroSave[];
   sound: boolean;
   music: boolean;
+  speed: number; // combat speed multiplier
+  bestiary: Partial<Record<EnemyKind, number>>; // kills per enemy kind
 }

@@ -536,3 +536,134 @@ html, body {
     display: flex;
   }
 }
+
+.locked-hero {
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+.locked-hero .hero-meta strong {
+  color: #ffe9a3;
+}
+
+/* world map */
+
+.map-frame {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1.5px solid #3d3352;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+.map-frame svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.map-node.open {
+  cursor: pointer;
+}
+
+.map-node.open:active circle {
+  filter: brightness(1.25);
+}
+
+.node-pulse {
+  animation: nodepulse 1.6s ease-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+@keyframes nodepulse {
+  0% { opacity: 0.9; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+
+.stage-caption {
+  margin-top: 12px;
+  text-align: center;
+  color: #b9aed0;
+  font-size: 14px;
+}
+
+.stage-caption strong {
+  color: #ffe9a3;
+}
+
+.map-footer {
+  gap: 10px;
+}
+
+/* bestiary */
+
+.beast-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.beast-card {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  background: #251e36;
+  border: 1px solid #3d3352;
+  border-left: 4px solid var(--beast, #57506b);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.beast-card.unknown {
+  opacity: 0.6;
+  border-left-color: #57506b;
+  border-style: dashed;
+}
+
+.beast-icon {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  border-radius: 12px;
+  background: rgba(18, 14, 24, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.beast-mystery {
+  font-size: 30px;
+  font-weight: 900;
+  color: #57506b;
+}
+
+.beast-name {
+  font-weight: 900;
+  font-size: 16px;
+}
+
+.beast-kills {
+  font-weight: 700;
+  font-size: 12px;
+  color: #8ee88b;
+  margin-left: 6px;
+}
+
+.beast-lore {
+  color: #b9aed0;
+  font-size: 12.5px;
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+.beast-habit {
+  color: #ffeebe;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.beast-stats {
+  color: #7d7194;
+  font-size: 11.5px;
+  margin-top: 3px;
+}

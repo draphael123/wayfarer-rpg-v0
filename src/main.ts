@@ -1,11 +1,11 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { STAGES } from "./data";
+import { HEROES, STAGES, activeRoster } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { Menus } from "./menus";
 import { drawBackground, drawProjectiles, drawUnits, drawVignette, drawZones } from "./render";
-import { defaultSave, grantXp, loadSave, persist } from "./save";
+import { defaultSave, grantXp, loadSave, nextSpeed, persist } from "./save";
 import { Tutorial } from "./tutorial";
 import type { SaveData, StageDef } from "./types";
 
@@ -126,7 +126,20 @@ function startTutorial(): void {
   menus.hide();
 }
 
+function mergeBestiary(): void {
+  if (!battle || battle.tutorialMode) return;
+  let changed = false;
+  for (const [kind, count] of Object.entries(battle.killCounts)) {
+    if (!count) continue;
+    save.bestiary[kind as keyof typeof save.bestiary] = (save.bestiary[kind as keyof typeof save.bestiary] ?? 0) + count;
+    changed = true;
+  }
+  battle.killCounts = {};
+  if (changed) persist(save);
+}
+
 function endBattleToMap(): void {
+  mergeBestiary();
   battle = null;
   hud = null;
   fx = null;
@@ -140,11 +153,17 @@ function settleVictory(): void {
   xpGranted = true;
   const xp = battle.xpEarned + battle.stage.xpReward;
   const levels = grantXp(save, xp);
+  const rosterBefore = activeRoster(save.unlockedStage);
   if (currentStage === save.unlockedStage && currentStage < STAGES.length - 1) {
     save.unlockedStage++;
     persist(save);
   }
-  if (levels > 0) {
+  const rosterAfter = activeRoster(save.unlockedStage);
+  const recruit = rosterAfter.find((i) => !rosterBefore.includes(i));
+  if (recruit !== undefined) {
+    audio.play("victory");
+    setTimeout(() => menus.showToast(`${HEROES[recruit].name} ${HEROES[recruit].title} joins the band!`), 150);
+  } else if (levels > 0) {
     audio.play("levelup");
     setTimeout(() => menus.showToast(`Level up! Each hero gains ${levels * 2} attribute points — visit the Party screen`), 150);
   }
@@ -160,6 +179,7 @@ function handleHudAction(action: string): void {
       hud.paused = false;
       break;
     case "retry":
+      mergeBestiary();
       startBattle(currentStage);
       break;
     case "map":
@@ -180,6 +200,11 @@ function handleHudAction(action: string): void {
       save.music = !save.music;
       battleSave.music = save.music;
       audio.setMusic(save.music);
+      persist(save);
+      break;
+    case "speed":
+      save.speed = nextSpeed(save.speed);
+      battleSave.speed = save.speed;
       persist(save);
       break;
   }
@@ -269,10 +294,11 @@ function frame(now: number): void {
         battle.hitstop = Math.max(0, battle.hitstop - dt);
         dt *= 0.12;
       }
-      battle.update(dt, battleSave);
-      fx.update(dt);
+      const simDt = dt * save.speed;
+      battle.update(simDt, battleSave);
+      fx.update(simDt);
       if (tutorial) {
-        tutorial.update(dt);
+        tutorial.update(simDt);
         if (tutorial.done) {
           endBattleToMap();
           requestAnimationFrame(frame);

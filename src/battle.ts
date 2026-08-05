@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { ENEMIES, HEROES, abilityById, deriveStats } from "./data";
+import { ENEMIES, HEROES, abilityById, activeRoster, deriveStats } from "./data";
 import type { FxSystem } from "./fx";
 import type {
   AbilityState,
@@ -40,6 +40,7 @@ export class Battle {
   xpEarned = 0;
   resultDelay = 0;
   hitstop = 0;
+  killCounts: Partial<Record<EnemyKind, number>> = {};
 
   constructor(
     public stage: StageDef,
@@ -48,15 +49,16 @@ export class Battle {
     public fx: FxSystem,
     public tutorialMode = false,
   ) {
+    const roster = activeRoster(save.unlockedStage);
     const midY = (field.top + field.bottom) / 2;
     const spread = Math.min(120, (field.bottom - field.top) / 3);
-    const positions: Vec[] = [
-      { x: field.left + 90, y: midY - spread },
-      { x: field.left + 60, y: midY - spread / 3 },
-      { x: field.left + 60, y: midY + spread / 3 },
-      { x: field.left + 90, y: midY + spread },
-    ];
-    for (let i = 0; i < 4; i++) {
+    for (let slot = 0; slot < roster.length; slot++) {
+      const i = roster[slot];
+      const t = roster.length === 1 ? 0.5 : slot / (roster.length - 1);
+      const pos: Vec = {
+        x: field.left + 60 + Math.abs(t - 0.5) * 60,
+        y: midY - spread + t * spread * 2,
+      };
       const heroSave = save.heroes[i];
       const stats = deriveStats(heroSave.attrs);
       const abilities: AbilityState[] = heroSave.equipped
@@ -69,8 +71,8 @@ export class Battle {
         team: "hero",
         heroIndex: i,
         enemyKind: null,
-        x: positions[i].x,
-        y: positions[i].y,
+        x: pos.x,
+        y: pos.y,
         radius: 15,
         stats,
         hp: stats.maxHp,
@@ -257,6 +259,7 @@ export class Battle {
     audio.play("thud");
     if (unit.team === "enemy" && unit.enemyKind) {
       this.xpEarned += Math.round(ENEMIES[unit.enemyKind].xp * this.stage.scale);
+      this.killCounts[unit.enemyKind] = (this.killCounts[unit.enemyKind] ?? 0) + 1;
     }
   }
 
@@ -801,21 +804,23 @@ export class Battle {
       target.y = push.y;
     }
     if (ranged) {
-      const isArcane = attacker.team === "hero" && attacker.stats.weapon === "staff";
+      const weapon = attacker.team === "hero" ? attacker.stats.weapon : attacker.enemyKind === "shaman" ? "staff" : "bow";
+      const isArcane = weapon === "staff";
+      const isHoly = weapon === "stave";
       this.projectiles.push({
         x: attacker.x + attacker.facing * 10,
         y: attacker.y - 18,
         target,
         aim: attacker.lungeDir,
-        speed: isArcane ? 300 : 420,
+        speed: isArcane ? 300 : isHoly ? 260 : 420,
         damage: attacker.stats.damage,
         from: attacker,
-        kind: isArcane ? "bolt" : "arrow",
-        color: isArcane ? "#b48ae8" : "#e8d9b0",
+        kind: isArcane ? "bolt" : isHoly ? "spark" : "arrow",
+        color: isArcane ? (attacker.enemyKind === "shaman" ? "#7de8c9" : "#b48ae8") : isHoly ? "#ffe9a3" : "#e8d9b0",
         heals: false,
         life: 3,
       });
-      audio.play(isArcane ? "bolt" : "shoot");
+      audio.play(isArcane || isHoly ? "bolt" : "shoot");
     } else {
       this.damage(target, attacker.stats.damage, attacker);
       audio.play("slash");

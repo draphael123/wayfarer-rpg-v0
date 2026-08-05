@@ -168,11 +168,23 @@ export function abilityById(id: string): AbilityDef | undefined {
   return ABILITIES.find((a) => a.id === id);
 }
 
+/** Stage that must be cleared before each hero joins the band (by hero index). */
+export const JOIN_REQUIREMENT: Record<number, number> = { 1: 1, 2: 2 }; // Wren after stage 1, Ezri after stage 2
+
+/** Hero indices currently in the band, in display order. You begin with Bram and Sol. */
+export function activeRoster(unlockedStage: number): number[] {
+  return [0, 1, 2, 3].filter((i) => {
+    const need = JOIN_REQUIREMENT[i];
+    return need === undefined || unlockedStage >= need;
+  });
+}
+
 export function unlockedAbilities(attrs: Attributes): AbilityDef[] {
   return ABILITIES.filter((a) => attrs[a.gate.attr] >= a.gate.value);
 }
 
 export function dominantWeapon(attrs: Attributes): WeaponKind {
+  if (attrs.spi > attrs.str && attrs.spi > attrs.dex && attrs.spi > attrs.int) return "stave";
   if (attrs.int > attrs.str && attrs.int >= attrs.dex) return "staff";
   if (attrs.dex > attrs.str) return "bow";
   return "sword";
@@ -196,6 +208,11 @@ export function deriveStats(attrs: Attributes): DerivedStats {
     damage = 6 + attrs.dex * 1.7;
     range = 210;
     attackCooldown = 1.0;
+  } else if (weapon === "stave") {
+    // a healer's holy spark — modest, but keeps them useful at range
+    damage = 5 + attrs.spi * 1.1 + attrs.int * 0.5;
+    range = 175;
+    attackCooldown = 1.4;
   } else {
     damage = 7 + attrs.int * 2.0;
     range = 190;
@@ -217,6 +234,8 @@ export interface EnemyDef {
   xp: number;
   body: string;
   trim: string;
+  lore: string;
+  habit: string; // one-line tactical note shown in the bestiary
 }
 
 export const ENEMIES: Record<EnemyKind, EnemyDef> = {
@@ -232,6 +251,8 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     xp: 6,
     body: "#5e8c3a",
     trim: "#8c5a2e",
+    lore: "Scrappy raiders of the barley fields. One is a nuisance; a dozen is a harvest lost.",
+    habit: "Rushes the nearest hero. Easily cleaved in groups.",
   },
   wolf: {
     name: "Dusk Wolf",
@@ -245,6 +266,8 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     xp: 6,
     body: "#5a5666",
     trim: "#8d8798",
+    lore: "Dusk wolves hunt in silence between the pines, eyes like lantern-light.",
+    habit: "Very fast. Will slip past your line to reach soft targets.",
   },
   archer: {
     name: "Sniper",
@@ -258,6 +281,8 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     xp: 8,
     body: "#7a6a3c",
     trim: "#4b431f",
+    lore: "Goblin snipers with stolen longbows and no sense of honor.",
+    habit: "Keeps its distance and backpedals. Send someone to close the gap.",
   },
   brute: {
     name: "Brute",
@@ -271,6 +296,8 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     xp: 16,
     body: "#7d5a44",
     trim: "#3f2b1e",
+    lore: "A wall of muscle and grievance. The horns are not decorative.",
+    habit: "Slow but crushing. Kite it, or tank it with Warcry and armor.",
   },
   shaman: {
     name: "Shaman",
@@ -284,6 +311,8 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     xp: 12,
     body: "#4f7d7a",
     trim: "#2c4a48",
+    lore: "Masked menders of the war-bands, muttering green fire.",
+    habit: "Heals its allies from the back. Kill it first.",
   },
   warlord: {
     name: "Gorehulk",
@@ -297,6 +326,8 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     xp: 80,
     body: "#8a4a3a",
     trim: "#2f1a12",
+    lore: "Gorehulk, warlord of the hollow. The forest itself seems to flinch.",
+    habit: "His slam wounds everyone near it. Never clump up.",
   },
 };
 
@@ -323,55 +354,55 @@ export const STAGES: StageDef[] = [
   },
   {
     id: 1,
-    name: "Thornwood Edge",
-    subtitle: "Wolves hunt in pairs",
+    name: "Thornwood Deep",
+    subtitle: "The pines have eyes",
     palette: {
-      skyTop: "#7fb6d6",
-      skyBottom: "#cfe3b8",
-      hills: "#6f9a5c",
-      ground: "#87a95f",
-      groundDark: "#6c8c4b",
-      prop: "#4c6b3a",
+      skyTop: "#54799c",
+      skyBottom: "#9fc2a4",
+      hills: "#3d6549",
+      ground: "#547a4e",
+      groundDark: "#40603c",
+      prop: "#2b4832",
     },
     scale: 1.15,
     xpReward: 28,
     waves: [
       [{ kind: "wolf", count: 3 }, { kind: "goblin", count: 2 }],
-      [{ kind: "archer", count: 3 }, { kind: "wolf", count: 2 }],
-      [{ kind: "brute", count: 1 }, { kind: "goblin", count: 4 }],
+      [{ kind: "archer", count: 2 }, { kind: "wolf", count: 3 }],
+      [{ kind: "wolf", count: 4 }, { kind: "brute", count: 1 }],
     ],
   },
   {
     id: 2,
-    name: "Sunken Crossing",
-    subtitle: "Something stirs the reeds",
+    name: "Mirebrook Hollow",
+    subtitle: "Witchlights in the mist",
     palette: {
-      skyTop: "#7aa8c9",
-      skyBottom: "#c5d6b0",
-      hills: "#5f8a6e",
-      ground: "#7c9c74",
-      groundDark: "#61805c",
-      prop: "#3f6050",
+      skyTop: "#6b8b85",
+      skyBottom: "#b3c29c",
+      hills: "#48685a",
+      ground: "#5c7a5c",
+      groundDark: "#465e48",
+      prop: "#34503e",
     },
     scale: 1.3,
     xpReward: 36,
     waves: [
-      [{ kind: "goblin", count: 5 }, { kind: "shaman", count: 1 }],
-      [{ kind: "brute", count: 1 }, { kind: "archer", count: 3 }],
+      [{ kind: "goblin", count: 4 }, { kind: "shaman", count: 1 }],
+      [{ kind: "shaman", count: 2 }, { kind: "archer", count: 2 }],
       [{ kind: "brute", count: 1 }, { kind: "shaman", count: 2 }, { kind: "wolf", count: 3 }],
     ],
   },
   {
     id: 3,
-    name: "Ashvale Ruin",
-    subtitle: "The war camp wakes",
+    name: "The Charwood",
+    subtitle: "Still smoldering",
     palette: {
-      skyTop: "#c9976a",
-      skyBottom: "#e8cf9e",
-      hills: "#a07648",
-      ground: "#bd9a62",
-      groundDark: "#9d7e4e",
-      prop: "#7a5c38",
+      skyTop: "#8a5744",
+      skyBottom: "#d9b48a",
+      hills: "#4a3832",
+      ground: "#6e5a48",
+      groundDark: "#52443a",
+      prop: "#332820",
     },
     scale: 1.45,
     xpReward: 46,

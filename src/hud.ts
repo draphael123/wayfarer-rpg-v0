@@ -59,8 +59,24 @@ export class Hud {
   private stanceChips: PortraitRect[] = [];
   hint = "";
   hintTime = 0;
-  tutorial: { text: string; sub: string; step: number; total: number } | null = null;
+  tutorial: {
+    text: string;
+    sub: string;
+    step: number;
+    total: number;
+    highlight?: { x: number; y: number } | null;
+  } | null = null;
   private skipRect: { x: number; y: number; w: number; h: number } | null = null;
+
+  abilityButtonCenter(abilityId: string): { x: number; y: number } | null {
+    const b = this.abilityButtons.find((b) => b.ability.def.id === abilityId);
+    return b ? { x: b.x + b.w / 2, y: b.y + b.h / 2 } : null;
+  }
+
+  stanceChipCenter(): { x: number; y: number } | null {
+    const c = this.stanceChips[0];
+    return c ? { x: c.x + c.w / 2, y: c.y + c.h / 2 } : null;
+  }
 
   constructor(
     public battle: Battle,
@@ -229,12 +245,15 @@ export class Hud {
       }
       return;
     }
+    // Forgiving aim: any real pull counts, and releases inside the HUD are
+    // clamped up onto the field instead of cancelling.
     const pulled = Math.hypot(x - drag.startX, y - drag.startY);
-    if (pulled < 26 || y >= this.height - HUD_H + 12) {
-      this.showHint("Drag further onto the field to aim");
+    if (pulled < 10) {
+      this.showHint("Hold the button and drag to aim");
       return;
     }
-    this.battle.castAbility(hero, ability, this.save, { x, y }, null);
+    const aim = this.battle.clampToField({ x, y }, 0);
+    this.battle.castAbility(hero, ability, this.save, aim, null);
   }
 
   update(dt: number): void {
@@ -467,6 +486,34 @@ export class Hud {
     ctx.font = "700 12.5px 'Trebuchet MS', Verdana, sans-serif";
     ctx.fillText("Skip tutorial", this.width / 2, sy + 19);
     this.skipRect = { x: sx, y: sy, w: sw, h: 30 };
+
+    // animated pointer at whatever the step wants touched
+    const hl = t.highlight;
+    if (hl) {
+      const bob = Math.sin(this.battle.time * 5) * 5;
+      const pulse = 1 + Math.sin(this.battle.time * 5) * 0.15;
+      ctx.strokeStyle = "#ffe9a3";
+      ctx.lineWidth = 3;
+      ctx.shadowColor = "#ffe9a3";
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.ellipse(hl.x, hl.y, 26 * pulse, 26 * pulse * 0.75, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      // bouncing arrow above
+      const ay = hl.y - 40 + bob;
+      ctx.fillStyle = "#ffe9a3";
+      ctx.beginPath();
+      ctx.moveTo(hl.x, ay + 14);
+      ctx.lineTo(hl.x - 10, ay);
+      ctx.lineTo(hl.x - 4, ay);
+      ctx.lineTo(hl.x - 4, ay - 12);
+      ctx.lineTo(hl.x + 4, ay - 12);
+      ctx.lineTo(hl.x + 4, ay);
+      ctx.lineTo(hl.x + 10, ay);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
   }
 
   private drawHintText(ctx: CanvasRenderingContext2D): void {
@@ -497,43 +544,78 @@ export class Hud {
     this.abilityButtons = [];
     this.portraits = [];
     this.stanceChips = [];
-    const clusterW = this.width / 4;
     const heroes = this.battle.heroes();
+    const count = Math.max(1, heroes.length);
+    const clusterW = Math.min(300, this.width / count);
+    const rowX0 = (this.width - clusterW * count) / 2;
     for (let i = 0; i < heroes.length; i++) {
       const hero = heroes[i];
       const def = HEROES[hero.heroIndex];
-      const x0 = i * clusterW + 8;
+      const x0 = rowX0 + i * clusterW + 8;
       const py = top + 12;
       const ps = 52;
 
-      // portrait
-      const isSel = this.selected === hero;
-      ctx.fillStyle = hero.alive ? (isSel ? "#3d3352" : "#2c2440") : "#221d2c";
-      roundRect(ctx, x0, py, ps, ps, 9);
-      ctx.fill();
-      if (isSel) {
-        ctx.strokeStyle = "#ffe9a3";
-        ctx.lineWidth = 2;
-        roundRect(ctx, x0, py, ps, ps, 9);
+      // cluster divider
+      if (i > 0) {
+        ctx.strokeStyle = "rgba(255,235,180,0.10)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(rowX0 + i * clusterW, top + 10);
+        ctx.lineTo(rowX0 + i * clusterW, this.height - 10);
         ctx.stroke();
       }
-      // mini face
+
+      // portrait
+      const isSel = this.selected === hero;
+      const pgrad = ctx.createLinearGradient(x0, py, x0, py + ps);
+      pgrad.addColorStop(0, hero.alive ? (isSel ? "#463a5e" : "#332a48") : "#241f2e");
+      pgrad.addColorStop(1, hero.alive ? (isSel ? "#332a48" : "#262038") : "#1d1926");
+      ctx.fillStyle = pgrad;
+      roundRect(ctx, x0, py, ps, ps, 9);
+      ctx.fill();
+      ctx.strokeStyle = isSel ? "#ffe9a3" : "rgba(255,255,255,0.14)";
+      ctx.lineWidth = isSel ? 2 : 1.2;
+      roundRect(ctx, x0, py, ps, ps, 9);
+      ctx.stroke();
+      // chibi face
       ctx.save();
       ctx.globalAlpha = hero.alive ? 1 : 0.35;
       ctx.beginPath();
-      roundRect(ctx, x0, py, ps, ps, 9);
+      roundRect(ctx, x0 + 1, py + 1, ps - 2, ps - 2, 8);
       ctx.clip();
-      ctx.fillStyle = def.accent;
+      const mx = x0 + ps / 2;
+      const robedMini = hero.stats.weapon === "stave";
+      // shoulders
       ctx.beginPath();
-      ctx.ellipse(x0 + ps / 2, py + ps * 0.95, ps * 0.42, ps * 0.42, 0, 0, Math.PI * 2);
+      ctx.ellipse(mx, py + ps * 1.02, ps * 0.44, ps * 0.42, 0, 0, Math.PI * 2);
+      ctx.fillStyle = robedMini ? "#efe6d0" : def.accent;
       ctx.fill();
+      ctx.strokeStyle = "rgba(20,14,30,0.8)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // head
+      ctx.beginPath();
+      ctx.arc(mx, py + ps * 0.44, ps * 0.27, 0, Math.PI * 2);
       ctx.fillStyle = def.skin;
-      ctx.beginPath();
-      ctx.arc(x0 + ps / 2, py + ps * 0.42, ps * 0.26, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = def.hair;
+      ctx.stroke();
+      // hair or hood
       ctx.beginPath();
-      ctx.arc(x0 + ps / 2, py + ps * 0.36, ps * 0.26, Math.PI * 0.95, Math.PI * 2.05);
+      if (robedMini) {
+        ctx.arc(mx, py + ps * 0.42, ps * 0.31, Math.PI * 0.75, Math.PI * 2.25);
+        ctx.fillStyle = "#efe6d0";
+      } else {
+        ctx.arc(mx, py + ps * 0.40, ps * 0.27, Math.PI * 0.95, Math.PI * 2.05);
+        ctx.fillStyle = def.hair;
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // eyes
+      ctx.fillStyle = "#241d2e";
+      ctx.beginPath();
+      ctx.arc(mx - ps * 0.09, py + ps * 0.47, 1.7, 0, Math.PI * 2);
+      ctx.arc(mx + ps * 0.09, py + ps * 0.47, 1.7, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
 
@@ -595,7 +677,7 @@ export class Hud {
         const ability = hero.abilities[a];
         const bx = bx0 + a * (bs + 6);
         const by = py + 4;
-        if (bx + bs > (i + 1) * clusterW - 2) break;
+        if (bx + bs > rowX0 + (i + 1) * clusterW - 2) break;
         this.drawAbilityButton(ctx, bx, by, bs, hero, ability);
         this.abilityButtons.push({ x: bx, y: by, w: bs, h: bs, hero, ability });
       }
@@ -618,13 +700,21 @@ export class Hud {
     ability: AbilityState,
   ): void {
     const ready = ability.timer <= 0 && hero.alive;
-    ctx.fillStyle = ready ? "#332a4a" : "#241f33";
+    const grad = ctx.createLinearGradient(x, y, x, y + s);
+    grad.addColorStop(0, ready ? "#3d3356" : "#282138");
+    grad.addColorStop(1, ready ? "#2c2440" : "#1f1a2c");
+    ctx.fillStyle = grad;
     roundRect(ctx, x, y, s, s, 8);
     ctx.fill();
+    if (ready) {
+      ctx.shadowColor = ability.def.color;
+      ctx.shadowBlur = 6;
+    }
     ctx.strokeStyle = ready ? ability.def.color : "rgba(255,255,255,0.12)";
     ctx.lineWidth = ready ? 2 : 1;
     roundRect(ctx, x, y, s, s, 8);
     ctx.stroke();
+    ctx.shadowBlur = 0;
 
     ctx.save();
     ctx.globalAlpha = ready ? 1 : 0.4;
@@ -756,11 +846,15 @@ export class Hud {
     ctx.lineCap = "butt";
   }
 
-  private drawOverlayFrame(ctx: CanvasRenderingContext2D, title: string, accent: string): { x: number; y: number; w: number } {
+  private drawOverlayFrame(
+    ctx: CanvasRenderingContext2D,
+    title: string,
+    accent: string,
+    h = 250,
+  ): { x: number; y: number; w: number } {
     ctx.fillStyle = "rgba(14, 10, 22, 0.72)";
     ctx.fillRect(0, 0, this.width, this.height);
     const w = 340;
-    const h = 250;
     const x = this.width / 2 - w / 2;
     const y = this.height / 2 - h / 2 - 20;
     ctx.fillStyle = "#251e36";
@@ -802,26 +896,20 @@ export class Hud {
   }
 
   private drawPauseOverlay(ctx: CanvasRenderingContext2D): void {
-    const frame = this.drawOverlayFrame(ctx, "Paused", "#ffe9a3");
+    const frame = this.drawOverlayFrame(ctx, "Paused", "#ffe9a3", 296);
     const bw = frame.w - 60;
     const bx = frame.x + 30;
-    this.addOverlayButton(ctx, "resume", "Resume", bx, frame.y + 70, bw);
-    this.addOverlayButton(ctx, "retry", "Restart Battle", bx, frame.y + 118, bw);
-    this.addOverlayButton(ctx, "map", "Retreat to Map", bx, frame.y + 166, bw);
-    this.addOverlayButton(
-      ctx,
-      "sound",
-      `Sound: ${this.save.sound ? "on" : "off"}`,
-      bx,
-      frame.y + 214,
-      bw / 2 - 5,
-    );
+    this.addOverlayButton(ctx, "resume", "Resume", bx, frame.y + 64, bw);
+    this.addOverlayButton(ctx, "retry", "Restart Battle", bx, frame.y + 108, bw);
+    this.addOverlayButton(ctx, "map", "Retreat to Map", bx, frame.y + 152, bw);
+    this.addOverlayButton(ctx, "speed", `Combat speed: ×${this.save.speed}`, bx, frame.y + 196, bw);
+    this.addOverlayButton(ctx, "sound", `Sound: ${this.save.sound ? "on" : "off"}`, bx, frame.y + 240, bw / 2 - 5);
     this.addOverlayButton(
       ctx,
       "music",
       `Music: ${this.save.music ? "on" : "off"}`,
       bx + bw / 2 + 5,
-      frame.y + 214,
+      frame.y + 240,
       bw / 2 - 5,
     );
   }

@@ -203,21 +203,46 @@ export function drawBackground(
     outlined(ctx, "rgba(255,255,255,0.18)", 1.6);
   }
 
-  // ambient motes: leaves / dust / fireflies / embers by stage
-  const moteColor =
-    stage.id <= 2 ? "rgba(190,225,140,0.6)" : stage.id === 3 ? "rgba(230,200,140,0.5)" : stage.id === 4 ? "rgba(255,250,170,0.8)" : "rgba(255,150,80,0.7)";
+  // ambient motes per region: leaves, dusk fireflies, witchlights, embers
+  const MOTES: Record<number, { color: string; glow: boolean }> = {
+    0: { color: "rgba(190,225,140,0.6)", glow: false }, // drifting leaves
+    1: { color: "rgba(190,235,200,0.8)", glow: true }, // pale dusk fireflies
+    2: { color: "rgba(140,235,205,0.85)", glow: true }, // swamp witchlights
+    3: { color: "rgba(255,150,80,0.8)", glow: true }, // rising embers
+    4: { color: "rgba(255,250,170,0.85)", glow: true }, // fireflies
+    5: { color: "rgba(255,130,60,0.8)", glow: true }, // embers
+  };
+  const mote = MOTES[stage.id] ?? MOTES[0];
   for (let i = 0; i < 12; i++) {
     const speed = 12 + hash01(i) * 20;
+    const rise = stage.id === 3 || stage.id === 5 ? time * 9 * (0.6 + hash01(i * 9)) : 0;
     const mx = ((hash01(i * 31) * w + time * speed) % (w + 30)) - 15;
-    const my = horizon * 0.4 + hash01(i * 57) * (h - horizon * 0.4) + Math.sin(time * (1 + hash01(i)) + i * 2) * 14;
-    const pulse = stage.id >= 4 ? 0.3 + Math.abs(Math.sin(time * 2.4 + i * 1.7)) * 0.7 : 0.7;
+    let my = horizon * 0.4 + hash01(i * 57) * (h - horizon * 0.4) + Math.sin(time * (1 + hash01(i)) + i * 2) * 14;
+    if (rise) my = h - ((my + rise) % (h - horizon * 0.3));
+    const pulse = mote.glow ? 0.3 + Math.abs(Math.sin(time * 2.4 + i * 1.7)) * 0.7 : 0.7;
     ctx.globalAlpha = pulse;
-    ctx.fillStyle = moteColor;
+    if (mote.glow) {
+      ctx.shadowColor = mote.color;
+      ctx.shadowBlur = 6;
+    }
+    ctx.fillStyle = mote.color;
     ctx.beginPath();
-    ctx.arc(mx, my, stage.id >= 4 ? 1.8 : 2.2, 0, Math.PI * 2);
+    ctx.arc(mx, my, mote.glow ? 1.9 : 2.2, 0, Math.PI * 2);
     ctx.fill();
+    ctx.shadowBlur = 0;
   }
   ctx.globalAlpha = 1;
+  // low mist banks for the swamp hollow
+  if (stage.id === 2) {
+    ctx.fillStyle = "rgba(215, 230, 210, 0.13)";
+    for (let i = 0; i < 4; i++) {
+      const mx = ((time * (7 + i * 3) + i * 240) % (w + 320)) - 160;
+      const my = horizon + 26 + i * ((h - horizon) / 5);
+      ctx.beginPath();
+      ctx.ellipse(mx, my, 130 + i * 20, 13 + i * 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 export function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number): void {
@@ -386,9 +411,10 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   const bodyW = H * 0.34;
   const legW = H * 0.10;
   const stride = H * 0.14;
+  const robed = unit.stats.weapon === "stave";
 
   // back leg, back arm behind body
-  limb(ctx, cx - f * 2, hipY, cx - f * 2 - f * pose.walk * stride, gy - 1, legW, "#3a2f47");
+  if (!robed) limb(ctx, cx - f * 2, hipY, cx - f * 2 - f * pose.walk * stride, gy - 1, legW, "#3a2f47");
   // shield arm (back) or free arm
   if (hasShield) {
     const sx = cx - f * bodyW * 0.62;
@@ -412,21 +438,49 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     );
   }
 
-  // front leg
-  limb(ctx, cx + f * 2, hipY, cx + f * 2 + f * pose.walk * stride, gy - 1, legW, "#4a3d5c");
+  if (robed) {
+    // full healer's robe: cream cloth to the ground, accent stole, swaying hem
+    const hem = Math.sin(unit.bobPhase * 0.9) * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - bodyW * 0.72 + hem * 0.4, gy);
+    ctx.quadraticCurveTo(cx - bodyW * 0.6, hipY - H * 0.06, cx - bodyW * 0.34 + f * 1.5, shoulderY - 2);
+    ctx.lineTo(cx + bodyW * 0.34 + f * 1.5, shoulderY - 2);
+    ctx.quadraticCurveTo(cx + bodyW * 0.6, hipY - H * 0.06, cx + bodyW * 0.72 - hem * 0.4, gy);
+    ctx.quadraticCurveTo(cx + hem, gy + 2.5, cx - bodyW * 0.72 + hem * 0.4, gy);
+    ctx.closePath();
+    outlined(ctx, "#efe6d0");
+    // accent stole draped from the shoulders
+    ctx.beginPath();
+    ctx.moveTo(cx - bodyW * 0.24, shoulderY - 1);
+    ctx.lineTo(cx - bodyW * 0.14, hipY + H * 0.12);
+    ctx.lineTo(cx + bodyW * 0.02, hipY + H * 0.12);
+    ctx.lineTo(cx + bodyW * 0.1, shoulderY - 1);
+    ctx.closePath();
+    outlined(ctx, def.accent, 1.8);
+    // rope belt
+    ctx.strokeStyle = "#c9a95c";
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(cx - bodyW * 0.5, hipY);
+    ctx.quadraticCurveTo(cx, hipY + 3.5, cx + bodyW * 0.5, hipY);
+    ctx.stroke();
+  } else {
+    // front leg
+    limb(ctx, cx + f * 2, hipY, cx + f * 2 + f * pose.walk * stride, gy - 1, legW, "#4a3d5c");
 
-  // tunic body (trapezoid, slightly leaning into facing)
-  ctx.beginPath();
-  ctx.moveTo(cx - bodyW * 0.52, hipY + 3);
-  ctx.quadraticCurveTo(cx - bodyW * 0.62, shoulderY, cx - bodyW * 0.34 + f * 1.5, shoulderY - 2);
-  ctx.lineTo(cx + bodyW * 0.34 + f * 1.5, shoulderY - 2);
-  ctx.quadraticCurveTo(cx + bodyW * 0.62, shoulderY, cx + bodyW * 0.52, hipY + 3);
-  ctx.quadraticCurveTo(cx, hipY + H * 0.07, cx - bodyW * 0.52, hipY + 3);
-  ctx.closePath();
-  outlined(ctx, def.accent);
-  // belt
-  ctx.fillStyle = "rgba(20,14,30,0.5)";
-  ctx.fillRect(cx - bodyW * 0.5, hipY - 1, bodyW, 3);
+    // tunic body (trapezoid, slightly leaning into facing)
+    ctx.beginPath();
+    ctx.moveTo(cx - bodyW * 0.52, hipY + 3);
+    ctx.quadraticCurveTo(cx - bodyW * 0.62, shoulderY, cx - bodyW * 0.34 + f * 1.5, shoulderY - 2);
+    ctx.lineTo(cx + bodyW * 0.34 + f * 1.5, shoulderY - 2);
+    ctx.quadraticCurveTo(cx + bodyW * 0.62, shoulderY, cx + bodyW * 0.52, hipY + 3);
+    ctx.quadraticCurveTo(cx, hipY + H * 0.07, cx - bodyW * 0.52, hipY + 3);
+    ctx.closePath();
+    outlined(ctx, def.accent);
+    // belt
+    ctx.fillStyle = "rgba(20,14,30,0.5)";
+    ctx.fillRect(cx - bodyW * 0.5, hipY - 1, bodyW, 3);
+  }
 
   // halo for devoted spirits
   if (halo) {
@@ -443,11 +497,25 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   ctx.beginPath();
   ctx.arc(cx + f * 1.5, headY, headR, 0, Math.PI * 2);
   outlined(ctx, def.skin);
-  // hair cap
-  ctx.beginPath();
-  ctx.arc(cx + f * 0.5, headY - headR * 0.12, headR * 0.98, Math.PI * 0.98, Math.PI * 2.02);
-  ctx.closePath();
-  outlined(ctx, def.hair, 2);
+  if (robed) {
+    // deep cream hood framing the face
+    ctx.beginPath();
+    ctx.arc(cx + f * 0.5, headY - 1, headR * 1.12, Math.PI * 0.72, Math.PI * 2.28);
+    ctx.quadraticCurveTo(cx - f * headR * 0.2, headY + headR * 0.9, cx - f * headR * 1.05, headY + headR * 0.5);
+    ctx.closePath();
+    outlined(ctx, "#efe6d0", 2);
+    ctx.strokeStyle = def.accent;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(cx + f * 0.5, headY - 1, headR * 1.0, Math.PI * 0.85, Math.PI * 2.15);
+    ctx.stroke();
+  } else {
+    // hair cap
+    ctx.beginPath();
+    ctx.arc(cx + f * 0.5, headY - headR * 0.12, headR * 0.98, Math.PI * 0.98, Math.PI * 2.02);
+    ctx.closePath();
+    outlined(ctx, def.hair, 2);
+  }
   // eye + brow
   ctx.fillStyle = OUTLINE;
   ctx.beginPath();
@@ -549,6 +617,37 @@ function drawHeroWeapon(
     if (draw > 0.08) {
       limb(ctx, -draw * H * 0.14 - 6, 0, -draw * H * 0.14 + H * 0.2, 0, 2.4, "#d9c9a0");
     }
+    ctx.restore();
+  } else if (unit.stats.weapon === "stave") {
+    // healer's stave: tall crook with a radiant sun-disc that flares when casting
+    const raise = Math.max(swing, castGlow * 2.2);
+    const angle = f * (-0.25 - raise * 0.5);
+    const handX = shX + Math.cos(angle) * H * 0.18;
+    const handY = shY + Math.sin(angle) * H * 0.18 + H * 0.05;
+    limb(ctx, shX, shY, handX, handY, armW * 0.85, skin);
+    ctx.save();
+    ctx.translate(handX, handY);
+    ctx.rotate(angle * 0.35 - f * 0.08);
+    limb(ctx, 0, H * 0.2, 0, -H * 0.56, 3.6, "#d9c9a0");
+    const discY = -H * 0.6;
+    const flare = 0.55 + Math.sin(time * 4) * 0.15 + raise;
+    ctx.globalAlpha = Math.min(1, flare);
+    ctx.shadowColor = "#ffe9a3";
+    ctx.shadowBlur = 10 + raise * 12;
+    ctx.strokeStyle = "#ffe9a3";
+    ctx.lineWidth = 2.2;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + time * 0.8;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 4.5, discY + Math.sin(a) * 4.5);
+      ctx.lineTo(Math.cos(a) * (7.5 + raise * 3), discY + Math.sin(a) * (7.5 + raise * 3));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.arc(0, discY, 4.4, 0, Math.PI * 2);
+    outlined(ctx, "#ffe9a3", 1.8);
+    ctx.shadowBlur = 0;
     ctx.restore();
   } else {
     // staff raised on cast
@@ -852,8 +951,28 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
 
 function drawFallen(ctx: CanvasRenderingContext2D, unit: Unit): void {
   const t = unit.deathTime;
-  const fall = Math.min(1, t * 3.2);
-  const fade = Math.max(0, 1 - Math.max(0, t - 0.55) / 0.9);
+  // fall with a little bounce, linger, then fade away
+  const fallRaw = Math.min(1, t * 2.6);
+  const fall = fallRaw >= 1 ? 1 : fallRaw + Math.sin(fallRaw * Math.PI) * 0.12;
+  const fade = Math.max(0, 1 - Math.max(0, t - 1.1) / 1.2);
+  // soul wisp drifting up from the body
+  if (t > 0.25 && t < 1.6) {
+    const wt = (t - 0.25) / 1.35;
+    ctx.globalAlpha = Math.sin(wt * Math.PI) * 0.8;
+    const wx = unit.x + Math.sin(t * 5 + unit.id) * 5;
+    const wy = unit.y - 14 - wt * 46;
+    ctx.shadowColor = unit.team === "hero" ? "#ffeebe" : "#bfe0d8";
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = unit.team === "hero" ? "#fff6d8" : "#d8efe8";
+    ctx.beginPath();
+    ctx.arc(wx, wy, 4 - wt * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(wx - Math.sin(t * 5 + unit.id) * 3, wy + 6, 2 - wt, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
   if (fade <= 0) return;
   const color = unit.team === "hero" ? HEROES[unit.heroIndex].accent : ENEMY_COLORS[unit.enemyKind!]?.body ?? "#777";
   const skin = unit.team === "hero" ? HEROES[unit.heroIndex].skin : color;

@@ -8,6 +8,8 @@ interface TutStep {
   onEnter?: () => void;
   /** Returns true when the step's goal is met. */
   check: () => boolean;
+  /** Where the animated pointer should aim this frame. */
+  target?: () => { x: number; y: number } | null;
 }
 
 /**
@@ -33,53 +35,56 @@ export class Tutorial {
     });
     this.steps = [
       {
-        text: "This is your band of four.",
-        sub: "Each hero is shaped by the attributes you give them.",
+        text: "Meet Bram and Sol — your band begins here.",
+        sub: "More companions join as your legend grows.",
         check: () => this.stepTime > 2.6,
       },
       {
         text: "Drag a hero onto open ground to move.",
         sub: "Touch a hero, drag anywhere, release.",
+        target: () => {
+          const bram = battle.heroes()[0];
+          return bram.alive ? { x: bram.x, y: bram.y - 18 } : null;
+        },
         check: () =>
           battle
             .heroes()
             .some((h, i) => Math.hypot(h.x - this.startPositions[i].x, h.y - this.startPositions[i].y) > 40),
       },
       {
-        text: "A goblin! Drag a hero onto it to attack.",
-        sub: "They'll chase it down and fight on their own.",
+        text: "A goblin! Drag Bram onto it to attack.",
+        sub: "He'll chase it down and fight on his own.",
         onEnter: () => {
           const m = mid();
           battle.spawnEnemy("goblin", { x: m.x + 40, y: m.y, scale: 0.55 });
+        },
+        target: () => {
+          const enemy = battle.livingEnemies()[0];
+          return enemy ? { x: enemy.x, y: enemy.y - 16 } : null;
         },
         check: () => battle.livingEnemies().length === 0 && this.stepTime > 1,
       },
       {
         text: "Tap Bram's Cleave button below.",
         sub: "Instant abilities fire the moment you tap them.",
+        target: () => this.hud.abilityButtonCenter("cleave"),
         check: () => this.abilityUsed("cleave"),
       },
       {
-        text: "Press Ezri's Fireball, drag onto the goblins, release.",
-        sub: "Aimed abilities are drawn onto the battlefield.",
+        text: "Bram is hurt! Press Sol's Mend, drag onto Bram, release.",
+        sub: "Hold the button, drag the beam onto Bram, let go.",
         onEnter: () => {
-          const m = mid();
-          battle.spawnEnemy("goblin", { x: m.x + 30, y: m.y - 25, scale: 0.55 });
-          battle.spawnEnemy("goblin", { x: m.x + 55, y: m.y + 25, scale: 0.55 });
+          const bram = battle.heroes()[0];
+          bram.hp = Math.round(bram.stats.maxHp * 0.35);
         },
-        check: () => this.abilityUsed("fireball"),
+        target: () => this.hud.abilityButtonCenter("mend"),
+        check: () => this.abilityUsed("mend"),
       },
       {
-        text: "Bram is hurt! Drag Sol onto him to heal.",
-        sub: "Sol keeps mending until you give a new order.",
-        onEnter: () => {
-          const bram = battle.heroes()[0];
-          bram.hp = Math.round(bram.stats.maxHp * 0.4);
-        },
-        check: () => {
-          const bram = battle.heroes()[0];
-          return bram.hp > bram.stats.maxHp * 0.75;
-        },
+        text: "Sol also mends on his own — see the ✚ on his portrait.",
+        sub: "Tap it anytime to switch him between mending and fighting.",
+        target: () => this.hud.stanceChipCenter(),
+        check: () => this.stepTime > 4,
       },
       {
         text: "You're ready. The road awaits!",
@@ -113,6 +118,8 @@ export class Tutorial {
   update(dt: number): void {
     if (this.done) return;
     this.stepTime += dt;
-    if (this.steps[this.index].check()) this.advance();
+    const step = this.steps[this.index];
+    if (this.hud.tutorial) this.hud.tutorial.highlight = step.target?.() ?? null;
+    if (step.check()) this.advance();
   }
 }

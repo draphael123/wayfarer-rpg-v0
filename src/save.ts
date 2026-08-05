@@ -22,7 +22,20 @@ export function defaultSave(): SaveData {
     heroes: [0, 1, 2, 3].map(defaultHero),
     sound: true,
     music: true,
+    speed: 0.5,
+    bestiary: {},
   };
+}
+
+export const SPEED_OPTIONS = [0.35, 0.5, 0.75, 1, 1.5, 2];
+
+export function nextSpeed(current: number): number {
+  const at = SPEED_OPTIONS.findIndex((s) => Math.abs(s - current) < 0.01);
+  return SPEED_OPTIONS[(at + 1) % SPEED_OPTIONS.length];
+}
+
+export function speedLabel(speed: number): string {
+  return `×${speed}`;
 }
 
 export function loadSave(): SaveData {
@@ -39,6 +52,8 @@ export function loadSave(): SaveData {
       }
       hero.equipped = hero.equipped.slice(0, MAX_EQUIPPED);
     }
+    if (typeof parsed.speed !== "number" || parsed.speed < 0.25 || parsed.speed > 2) parsed.speed = 0.5;
+    if (!parsed.bestiary || typeof parsed.bestiary !== "object") parsed.bestiary = {};
     return parsed;
   } catch {
     return defaultSave();
