@@ -1,53 +1,65 @@
-# Wayfarer: Classless RPG V0
+# Wayband
 
-A playable Unity 6 vertical slice for a classless fantasy action RPG.
+A Battleheart-style real-time party tactics game for the browser — with two twists:
+**classless heroes** and **gesture spellcasting**. Built with TypeScript and HTML5
+canvas; no engine, no runtime dependencies. Designed for phones (touch-first,
+landscape) and desktops alike.
 
-## Play online
+This replaces the earlier Unity prototype (*Wayfarer: Classless RPG V0*), which
+lives on in the git history and carried its classless-attribute DNA into this game.
 
-[Launch Wayfarer V0](https://wayfarer-rpg-v0.vercel.app)
+## Play
 
-## Open and play
+Deployed at the project's Vercel URL. Locally:
 
-1. Open this folder in Unity Hub with Unity 6000.5.5f1 (or a compatible Unity 6 editor).
-2. Open `Assets/Scenes/Arena.unity`.
-3. Press Play.
+```sh
+npm install
+npm run dev     # esbuild watch + local server
+```
 
-The scene builds itself at runtime; there are no packages or external assets to download.
+then open the printed URL. `npm run build` bundles `src/` into `dist/game.js`
+(committed, so the site deploys as plain static files). `npm run check` typechecks.
 
-A prebuilt Windows version is available in the local workspace at `Builds/Windows/WayfarerV0.exe`; generated builds are intentionally excluded from Git.
+## How to play
 
-The project also includes an editor build command for WebGL (`BuildPrototype.BuildWebGL`) for browser deployment.
+- **Drag a hero** onto open ground to move, onto an enemy to attack, onto an ally
+  to channel healing (healing rate scales with that hero's Spirit).
+- **Tap a hero** to select, then tap an enemy to send them in.
+- **Ability buttons** sit under each hero's portrait. Instant abilities fire on
+  tap. Gesture abilities (marked with a dot) are aimed by pressing the button and
+  dragging onto the field — draw a ray for Piercing Shot and Frostwake, drop a
+  reticle for Fireball, release on an ally for Mend.
+- **Pause** (top-right or Esc) for restart, retreat, and sound/music settings.
 
-## Controls
+## Classless heroes
 
-- Drag the hero — move and reposition
-- Tap an enemy — target, approach, and auto-attack
-- Space — dash
-- Q — Power Strike (requires Strength 8)
-- E — Fireball (requires Intelligence 10)
-- Escape — pause and open field settings
-- 1–5 — spend earned attribute points on Strength, Dexterity, Intelligence, Vitality, or Spirit
-- R — restart after defeat
+Every hero has five attributes — Strength, Dexterity, Intellect, Vitality,
+Spirit — and you allocate points freely between battles (respec is free). There
+are no classes:
 
-## V0 systems
+- Your **auto-attack weapon morphs** with your dominant stat: Strength → sword,
+  Dexterity → bow, Intellect → arcane staff.
+- **Abilities unlock at stat thresholds** (Cleave at STR 6, Fireball at INT 6,
+  Warcry at STR 12, Bulwark at VIT 10, ...). Any hero can learn any of the nine;
+  equip up to three.
+- Anyone can be molded into a tank-mage, a healing archer, or whatever the band
+  needs.
 
-- Five attributes with meaningful derived stats
-- Abilities separated from player input and gated by attribute requirements
-- Three enemy behaviors: goblin pursuit, archer kiting, and slow heavy ogre
-- Wave encounters, XP, levels, and attribute point allocation
-- Hit flash, impact particles, trails, floating damage, emissive effects, and camera shake
-- Original hand-painted character and arena artwork with runtime billboard presentation
-- Original synthesized combat, interface, level-up, and ambient audio with volume controls
-- CC0 weapon, impact, interface, and footstep sounds from [Kenney's RPG Audio pack](https://kenney.nl/assets/rpg-audio) (license included with the assets)
-- Hero selection card, command rail, visible hotkeys, cooldown states, target markers, and pause/settings overlay
+The band shares XP from wave battles across a six-stage campaign; progress saves
+to localStorage.
 
 ## Architecture
 
-- `CharacterStats` owns progression and derived values.
-- `AbilitySystem` owns stat gates, cooldowns, melee hits, dashes, and projectiles.
-- `PlayerController` translates input into movement and ability requests.
-- `EnemyController` encapsulates behavior independently of presentation.
-- `Health` provides a shared damage/death contract for future party members.
-- `GameBootstrap` assembles only this prototype arena and can later be replaced by authored scenes/prefabs.
+- `src/data.ts` — all tuning: heroes, attributes, derived-stat formulas, the nine
+  abilities and their gates, enemies, and stage/wave definitions.
+- `src/battle.ts` — the simulation: orders, enemy AI (aggro, taunts, kiting
+  snipers, healing shamans, a boss), abilities, projectiles, ground zones, waves.
+- `src/hud.ts` — in-canvas battle UI and the drag/gesture input model.
+- `src/render.ts` / `src/fx.ts` — hand-drawn vector characters, staged
+  backgrounds, particles, floating text, screen shake.
+- `src/menus.ts` — DOM screens: title, stage map, party training.
+- `src/audio.ts` — fully synthesized WebAudio sound and music (no audio assets).
+- `src/save.ts` — localStorage persistence, XP/levels, respec.
+- `src/main.ts` — game loop, canvas scaling, pointer wiring, screen flow.
 
-Party control can be added by introducing a selection/input router that targets one or more actors; stats, health, abilities, and enemy targeting do not depend on a singleton player implementation.
+A `window.__wayband` debug hook exposes the live battle for automated testing.

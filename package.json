@@ -1,0 +1,23 @@
+{
+  "name": "wayband",
+  "version": "1.0.0",
+  "description": "Wayband — classless party tactics for the browser",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "esbuild src/main.ts --bundle --outfile=dist/game.js --minify --target=es2020",
+    "dev": "esbuild src/main.ts --bundle --outfile=dist/game.js --watch --servedir=.",
+    "check": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/draphael123/wayfarer-rpg-v0.git"
+  },
+  "bugs": {
+    "url": "https://github.com/draphael123/wayfarer-rpg-v0/issues"
+  },
+  "homepage": "https://github.com/draphael123/wayfarer-rpg-v0#readme",
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "typescript": "^7.0.2"
+  }
+}
