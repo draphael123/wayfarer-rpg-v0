@@ -56,8 +56,11 @@ export class Hud {
   private abilityButtons: AbilityButtonRect[] = [];
   private portraits: PortraitRect[] = [];
   private overlayButtons: OverlayButton[] = [];
+  private stanceChips: PortraitRect[] = [];
   hint = "";
   hintTime = 0;
+  tutorial: { text: string; sub: string; step: number; total: number } | null = null;
+  private skipRect: { x: number; y: number; w: number; h: number } | null = null;
 
   constructor(
     public battle: Battle,
@@ -96,7 +99,32 @@ export class Hud {
       return "pause";
     }
 
+    if (this.tutorial && this.skipRect) {
+      const s = this.skipRect;
+      if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) {
+        audio.play("click");
+        return "skip-tutorial";
+      }
+    }
+
     if (y >= this.height - HUD_H) {
+      for (const chip of this.stanceChips) {
+        if (x >= chip.x && x <= chip.x + chip.w && y >= chip.y && y <= chip.y + chip.h) {
+          const hero = chip.hero;
+          hero.stance = hero.stance === "heal" ? "attack" : "heal";
+          if (hero.autoOrder) {
+            hero.healTarget = null;
+            hero.autoOrder = false;
+          }
+          this.showHint(
+            hero.stance === "heal"
+              ? `${hero.name}: mending — heals allies on their own`
+              : `${hero.name}: fighting — attacks like the rest`,
+          );
+          audio.play("click");
+          return null;
+        }
+      }
       for (const p of this.portraits) {
         if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) {
           if (p.hero.alive) {
@@ -217,15 +245,56 @@ export class Hud {
   // ------------------------------------------------------------------ drawing
 
   draw(ctx: CanvasRenderingContext2D): void {
+    this.drawTargetMarkers(ctx);
     this.drawDragIndicators(ctx);
     this.drawTopBar(ctx);
     this.drawBar(ctx);
     this.drawBanner(ctx);
+    this.drawTutorialCard(ctx);
     this.drawHintText(ctx);
     this.overlayButtons = [];
     if (this.paused) this.drawPauseOverlay(ctx);
     else if (this.battle.state === "victory" && this.battle.resultDelay <= 0) this.drawResultOverlay(ctx, true);
     else if (this.battle.state === "defeat" && this.battle.resultDelay <= 0) this.drawResultOverlay(ctx, false);
+  }
+
+  /** Pulsing markers over each hero's current attack / heal target. */
+  private drawTargetMarkers(ctx: CanvasRenderingContext2D): void {
+    const pulse = Math.sin(this.battle.time * 7) * 2.5;
+    const seen = new Set<number>();
+    for (const hero of this.battle.units) {
+      if (hero.team !== "hero" || !hero.alive) continue;
+      const target = hero.attackTarget;
+      if (target && target.alive && !seen.has(target.id)) {
+        seen.add(target.id);
+        const y = target.y - target.radius * 3.4 - 16 + pulse;
+        ctx.fillStyle = "#ff8a70";
+        ctx.strokeStyle = "rgba(20,14,30,0.85)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(target.x, y + 9);
+        ctx.lineTo(target.x - 7, y);
+        ctx.lineTo(target.x + 7, y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      const heal = hero.healTarget;
+      if (heal && heal.alive && hero.channelBeam > 0 && !seen.has(heal.id + 10000)) {
+        seen.add(heal.id + 10000);
+        const y = heal.y - heal.radius * 3.4 - 18 - pulse;
+        ctx.strokeStyle = "#8ee88b";
+        ctx.lineWidth = 3.4;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(heal.x, y - 5);
+        ctx.lineTo(heal.x, y + 5);
+        ctx.moveTo(heal.x - 5, y);
+        ctx.lineTo(heal.x + 5, y);
+        ctx.stroke();
+        ctx.lineCap = "butt";
+      }
+    }
   }
 
   private drawDragIndicators(ctx: CanvasRenderingContext2D): void {
@@ -319,11 +388,10 @@ export class Hud {
     ctx.font = "700 13px 'Trebuchet MS', Verdana, sans-serif";
     ctx.textAlign = "left";
     const waveNumber = Math.min(this.battle.waveIndex + 1, this.battle.stage.waves.length);
-    ctx.fillText(
-      `${this.battle.stage.name} — wave ${Math.max(1, waveNumber)}/${this.battle.stage.waves.length}`,
-      20,
-      29,
-    );
+    const label = this.battle.stage.waves.length
+      ? `${this.battle.stage.name} — wave ${Math.max(1, waveNumber)}/${this.battle.stage.waves.length}`
+      : this.battle.stage.name;
+    ctx.fillText(label, 20, 29);
     // pause button
     ctx.fillStyle = "rgba(20, 16, 28, 0.55)";
     roundRect(ctx, this.width - 42, 10, 32, 30, 8);
@@ -334,12 +402,14 @@ export class Hud {
   }
 
   private drawBanner(ctx: CanvasRenderingContext2D): void {
-    if (this.battle.waveBanner <= 0 || this.battle.state !== "fighting") return;
+    if (this.battle.waveBanner <= 0 || this.battle.state !== "fighting" || this.tutorial) return;
     const alpha = Math.min(1, this.battle.waveBanner / 0.5);
+    const age = 2.2 - this.battle.waveBanner;
+    const pop = age < 0.22 ? 0.4 + (age / 0.22) * 0.75 : Math.max(1, 1.15 - (age - 0.22) * 0.7);
     ctx.globalAlpha = alpha;
-    ctx.font = "800 34px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.font = `800 ${Math.round(36 * pop)}px 'Trebuchet MS', Verdana, sans-serif`;
     ctx.textAlign = "center";
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 6;
     ctx.strokeStyle = "rgba(20, 16, 28, 0.8)";
     const text =
       this.battle.waveIndex >= this.battle.stage.waves.length - 1
@@ -349,6 +419,54 @@ export class Hud {
     ctx.fillStyle = "#ffe9a3";
     ctx.fillText(text, this.width / 2, 120);
     ctx.globalAlpha = 1;
+  }
+
+  private drawTutorialCard(ctx: CanvasRenderingContext2D): void {
+    this.skipRect = null;
+    if (!this.tutorial) return;
+    const t = this.tutorial;
+    ctx.font = "700 16px 'Trebuchet MS', Verdana, sans-serif";
+    const w = Math.max(ctx.measureText(t.text).width + 44, 320);
+    const x = this.width / 2 - w / 2;
+    const y = 50;
+    const h = t.sub ? 74 : 54;
+    ctx.fillStyle = "rgba(24, 18, 38, 0.92)";
+    roundRect(ctx, x, y, w, h, 12);
+    ctx.fill();
+    ctx.strokeStyle = "#ffe9a3";
+    ctx.lineWidth = 2;
+    roundRect(ctx, x, y, w, h, 12);
+    ctx.stroke();
+    ctx.fillStyle = "#ffeebe";
+    ctx.textAlign = "center";
+    ctx.fillText(t.text, this.width / 2, y + 26);
+    if (t.sub) {
+      ctx.font = "600 12.5px 'Trebuchet MS', Verdana, sans-serif";
+      ctx.fillStyle = "#b9aed0";
+      ctx.fillText(t.sub, this.width / 2, y + 47);
+    }
+    // step dots
+    for (let i = 0; i < t.total; i++) {
+      ctx.beginPath();
+      ctx.arc(this.width / 2 + (i - (t.total - 1) / 2) * 14, y + h - 10, 3, 0, Math.PI * 2);
+      ctx.fillStyle = i <= t.step ? "#ffe9a3" : "rgba(255,255,255,0.2)";
+      ctx.fill();
+    }
+    // skip button
+    const sw = 120;
+    const sx = this.width / 2 - sw / 2;
+    const sy = y + h + 8;
+    ctx.fillStyle = "rgba(24, 18, 38, 0.8)";
+    roundRect(ctx, sx, sy, sw, 30, 9);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,233,163,0.4)";
+    ctx.lineWidth = 1.4;
+    roundRect(ctx, sx, sy, sw, 30, 9);
+    ctx.stroke();
+    ctx.fillStyle = "#cfc7de";
+    ctx.font = "700 12.5px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.fillText("Skip tutorial", this.width / 2, sy + 19);
+    this.skipRect = { x: sx, y: sy, w: sw, h: 30 };
   }
 
   private drawHintText(ctx: CanvasRenderingContext2D): void {
@@ -378,6 +496,7 @@ export class Hud {
 
     this.abilityButtons = [];
     this.portraits = [];
+    this.stanceChips = [];
     const clusterW = this.width / 4;
     const heroes = this.battle.heroes();
     for (let i = 0; i < heroes.length; i++) {
@@ -433,6 +552,41 @@ export class Hud {
       ctx.textAlign = "center";
       ctx.fillText(def.name, x0 + ps / 2, py + ps + 24);
       this.portraits.push({ x: x0, y: py, w: ps, h: ps + 14, hero });
+
+      // stance chip for capable healers: tap to switch mend/fight mode
+      if (hero.stats.healPower >= 8) {
+        const cs = 22;
+        const chipX = x0 + ps - cs / 2 - 2;
+        const chipY = py - cs / 2 + 4;
+        const healing = hero.stance === "heal";
+        ctx.beginPath();
+        ctx.arc(chipX + cs / 2, chipY + cs / 2, cs / 2, 0, Math.PI * 2);
+        ctx.fillStyle = healing ? "#2f5232" : "#54303a";
+        ctx.fill();
+        ctx.strokeStyle = healing ? "#8ee88b" : "#ff8a70";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.lineCap = "round";
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = healing ? "#b8f5b0" : "#ffb4a0";
+        const mx = chipX + cs / 2;
+        const my = chipY + cs / 2;
+        ctx.beginPath();
+        if (healing) {
+          ctx.moveTo(mx, my - 4.5);
+          ctx.lineTo(mx, my + 4.5);
+          ctx.moveTo(mx - 4.5, my);
+          ctx.lineTo(mx + 4.5, my);
+        } else {
+          ctx.moveTo(mx - 4, my + 4);
+          ctx.lineTo(mx + 4, my - 4);
+          ctx.moveTo(mx + 1.5, my + 3.5);
+          ctx.lineTo(mx - 3.5, my - 1.5);
+        }
+        ctx.stroke();
+        ctx.lineCap = "butt";
+        this.stanceChips.push({ x: chipX - 6, y: chipY - 6, w: cs + 12, h: cs + 12, hero });
+      }
 
       // ability buttons
       const bs = 40;

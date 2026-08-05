@@ -17,6 +17,7 @@ import type { SaveData } from "./types";
 
 export interface MenuCallbacks {
   startStage: (stageIndex: number) => void;
+  startTutorial: () => void;
   resetProgress: () => void;
 }
 
@@ -76,6 +77,7 @@ export class Menus {
         </div>
         <div class="title-buttons">
           <button class="big-btn primary" data-act="start">Set Out</button>
+          <button class="big-btn" data-act="tutorial">How to Play</button>
         </div>
         <div class="settings-card">
           <div class="settings-title">Settings</div>
@@ -99,6 +101,7 @@ export class Menus {
       audio.unlock();
       audio.play("click");
       if (act === "start") this.renderMap();
+      if (act === "tutorial") this.callbacks.startTutorial();
       if (act === "sound") {
         this.save.sound = !this.save.sound;
         audio.setSound(this.save.sound);

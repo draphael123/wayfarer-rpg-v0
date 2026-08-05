@@ -4,9 +4,10 @@ import { STAGES } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { Menus } from "./menus";
-import { drawBackground, drawProjectiles, drawUnits, drawZones } from "./render";
+import { drawBackground, drawProjectiles, drawUnits, drawVignette, drawZones } from "./render";
 import { defaultSave, grantXp, loadSave, persist } from "./save";
-import type { SaveData } from "./types";
+import { Tutorial } from "./tutorial";
+import type { SaveData, StageDef } from "./types";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d")!;
@@ -22,6 +23,8 @@ let viewScale = 1;
 let battle: Battle | null = null;
 let hud: Hud | null = null;
 let fx: FxSystem | null = null;
+let tutorial: Tutorial | null = null;
+let battleSave: SaveData = save; // the save the running battle reads (tutorial uses a throwaway)
 let currentStage = 0;
 let xpGranted = false;
 
@@ -39,12 +42,12 @@ function resize(): void {
   const cssW = window.innerWidth;
   const cssH = window.innerHeight;
   const dpr = Math.min(2.5, window.devicePixelRatio || 1);
-  const targetH = 560;
+  const targetH = 430;
   viewScale = cssH / targetH;
   logicalW = cssW / viewScale;
-  if (logicalW < 780) {
-    viewScale = cssW / 780;
-    logicalW = 780;
+  if (logicalW < 760) {
+    viewScale = cssW / 760;
+    logicalW = 760;
   }
   logicalH = cssH / viewScale;
   canvas.width = Math.round(cssW * dpr);
@@ -77,6 +80,9 @@ const menus = new Menus("ui", save, {
   startStage(stageIndex: number) {
     startBattle(stageIndex);
   },
+  startTutorial() {
+    startTutorial();
+  },
   resetProgress() {
     save = defaultSave();
     persist(save);
@@ -90,9 +96,33 @@ const menus = new Menus("ui", save, {
 function startBattle(stageIndex: number): void {
   currentStage = stageIndex;
   xpGranted = false;
+  tutorial = null;
+  battleSave = save;
   fx = new FxSystem();
   battle = new Battle(STAGES[stageIndex], save, fieldRect(), fx);
   hud = new Hud(battle, save, logicalW, logicalH);
+  menus.hide();
+}
+
+const TUTORIAL_STAGE: StageDef = {
+  ...STAGES[0],
+  name: "Training Grounds",
+  subtitle: "Learn the ropes",
+  waves: [],
+  scale: 0.55,
+  xpReward: 0,
+};
+
+function startTutorial(): void {
+  xpGranted = true; // tutorials pay no xp
+  const temp = defaultSave();
+  temp.sound = save.sound;
+  temp.music = save.music;
+  battleSave = temp;
+  fx = new FxSystem();
+  battle = new Battle(TUTORIAL_STAGE, temp, fieldRect(), fx, true);
+  hud = new Hud(battle, temp, logicalW, logicalH);
+  tutorial = new Tutorial(battle, hud);
   menus.hide();
 }
 
@@ -100,6 +130,8 @@ function endBattleToMap(): void {
   battle = null;
   hud = null;
   fx = null;
+  tutorial = null;
+  battleSave = save;
   menus.renderMap();
 }
 
@@ -131,6 +163,7 @@ function handleHudAction(action: string): void {
       startBattle(currentStage);
       break;
     case "map":
+    case "skip-tutorial":
       endBattleToMap();
       break;
     case "continue":
@@ -139,11 +172,13 @@ function handleHudAction(action: string): void {
       break;
     case "sound":
       save.sound = !save.sound;
+      battleSave.sound = save.sound;
       audio.setSound(save.sound);
       persist(save);
       break;
     case "music":
       save.music = !save.music;
+      battleSave.music = save.music;
       audio.setMusic(save.music);
       persist(save);
       break;
@@ -224,13 +259,26 @@ document.addEventListener("visibilitychange", () => {
 let lastTime = performance.now();
 
 function frame(now: number): void {
-  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  let dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
 
   if (battle && hud && fx) {
     if (!hud.paused) {
-      battle.update(dt, save);
+      // hit-stop: big impacts freeze the world for a few frames
+      if (battle.hitstop > 0) {
+        battle.hitstop = Math.max(0, battle.hitstop - dt);
+        dt *= 0.12;
+      }
+      battle.update(dt, battleSave);
       fx.update(dt);
+      if (tutorial) {
+        tutorial.update(dt);
+        if (tutorial.done) {
+          endBattleToMap();
+          requestAnimationFrame(frame);
+          return;
+        }
+      }
     }
     hud.update(dt);
 
@@ -242,9 +290,10 @@ function frame(now: number): void {
     const horizon = (logicalH - HUD_H) * 0.34;
     drawBackground(ctx, battle.stage, logicalW, logicalH - HUD_H + 20, horizon, battle.time);
     drawZones(ctx, battle);
-    drawUnits(ctx, battle, save, hud.selected);
+    drawUnits(ctx, battle, battleSave, hud.selected);
     drawProjectiles(ctx, battle);
     fx.draw(ctx);
+    drawVignette(ctx, logicalW, logicalH - HUD_H + 20);
     ctx.restore();
     hud.draw(ctx);
   } else {

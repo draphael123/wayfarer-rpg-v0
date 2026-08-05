@@ -68,6 +68,8 @@ export interface Unit {
   moveTarget: Vec | null;
   attackTarget: Unit | null;
   healTarget: Unit | null;
+  stance: "attack" | "heal";
+  autoOrder: boolean;
   abilities: AbilityState[];
   effects: StatusEffect[];
   // presentation

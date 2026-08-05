@@ -39,12 +39,14 @@ export class Battle {
   time = 0;
   xpEarned = 0;
   resultDelay = 0;
+  hitstop = 0;
 
   constructor(
     public stage: StageDef,
     save: SaveData,
     public field: FieldRect,
     public fx: FxSystem,
+    public tutorialMode = false,
   ) {
     const midY = (field.top + field.bottom) / 2;
     const spread = Math.min(120, (field.bottom - field.top) / 3);
@@ -76,6 +78,8 @@ export class Battle {
         moveTarget: null,
         attackTarget: null,
         healTarget: null,
+        stance: heroSave.attrs.spi >= 6 ? "heal" : "attack",
+        autoOrder: false,
         abilities,
         effects: [],
         facing: 1,
@@ -109,11 +113,11 @@ export class Battle {
     return unit.heroIndex >= 0 ? save.heroes[unit.heroIndex].attrs[key] : 0;
   }
 
-  private spawnEnemy(kind: EnemyKind): void {
+  spawnEnemy(kind: EnemyKind, overrides: { x?: number; y?: number; scale?: number } = {}): void {
     const def = ENEMIES[kind];
-    const scale = this.stage.scale;
-    const y = this.field.top + 20 + Math.random() * (this.field.bottom - this.field.top - 40);
-    const x = this.field.right + 30 + Math.random() * 60;
+    const scale = overrides.scale ?? this.stage.scale;
+    const y = overrides.y ?? this.field.top + 20 + Math.random() * (this.field.bottom - this.field.top - 40);
+    const x = overrides.x ?? this.field.right + 30 + Math.random() * 60;
     this.units.push({
       id: nextUnitId++,
       name: def.name,
@@ -139,6 +143,8 @@ export class Battle {
       moveTarget: null,
       attackTarget: null,
       healTarget: null,
+      stance: "attack",
+      autoOrder: false,
       abilities: [],
       effects: [],
       facing: -1,
@@ -205,6 +211,8 @@ export class Battle {
       if (amount <= 0) return;
     }
     target.hp -= amount;
+    if (this.tutorialMode && target.team === "hero" && target.hp < 1) target.hp = 1;
+    if (amount > 24) this.hitstop = Math.max(this.hitstop, 0.055);
     target.hitFlash = 0.18;
     this.fx.floatText(
       target.x + (Math.random() * 16 - 8),
@@ -241,7 +249,11 @@ export class Battle {
     this.fx.burst(unit.x, unit.y - unit.radius * 0.5, unit.team === "enemy" ? "#c9c2b8" : "#e8a0a0", 14, 120, {
       gravity: 240,
     });
+    // dust puff at the ground where they fall
+    this.fx.burst(unit.x, unit.y, "rgba(190,175,150,0.7)", 8, 55, { gravity: -30, size: 4.5, life: 0.45 });
+    this.fx.ring(unit.x, unit.y, unit.radius * 2.4, "rgba(255,255,255,0.7)", { width: 2.5, life: 0.32 });
     this.fx.addShake(unit.radius > 20 ? 8 : 3);
+    this.hitstop = Math.max(this.hitstop, unit.radius > 20 ? 0.1 : 0.06);
     audio.play("thud");
     if (unit.team === "enemy" && unit.enemyKind) {
       this.xpEarned += Math.round(ENEMIES[unit.enemyKind].xp * this.stage.scale);
@@ -255,6 +267,8 @@ export class Battle {
     hero.moveTarget = this.clampToField(to, hero.radius);
     hero.attackTarget = null;
     hero.healTarget = null;
+    hero.autoOrder = false;
+    this.fx.ring(hero.moveTarget.x, hero.moveTarget.y, 20, "rgba(255,250,220,0.9)", { width: 2.5, life: 0.45 });
   }
 
   orderAttack(hero: Unit, target: Unit): void {
@@ -262,6 +276,8 @@ export class Battle {
     hero.attackTarget = target;
     hero.healTarget = null;
     hero.moveTarget = null;
+    hero.autoOrder = false;
+    this.fx.ring(target.x, target.y, target.radius * 2.2, "#ff8a70", { width: 3, life: 0.5 });
   }
 
   orderHeal(hero: Unit, target: Unit): void {
@@ -269,6 +285,8 @@ export class Battle {
     hero.healTarget = target;
     hero.attackTarget = null;
     hero.moveTarget = null;
+    hero.autoOrder = false;
+    this.fx.ring(target.x, target.y, target.radius * 2.2, "#8ee88b", { width: 3, life: 0.5 });
   }
 
   clampToField(v: Vec, radius: number): Vec {
@@ -300,6 +318,8 @@ export class Battle {
         }
         hero.lunge = 1;
         hero.lungeDir = dir;
+        this.fx.slash(hero.x, hero.y - 14, Math.atan2(dir.y, dir.x), 52, "#ffd27d", Math.PI * 1.4);
+        this.fx.ring(hero.x, hero.y, 82, "#ffd27d", { width: 3, life: 0.35 });
         this.fx.burst(hero.x + dir.x * 40, hero.y + dir.y * 40 - 10, "#ffd27d", 12, 140, { glow: true });
         this.fx.addShake(hitAny ? 5 : 2);
         audio.play("slash");
@@ -315,6 +335,7 @@ export class Battle {
         }
         hero.effects.push(makeEffect("guard", 6, 0.4, hero));
         this.fx.burst(hero.x, hero.y - 20, "#e0904b", 18, 160, { glow: true });
+        this.fx.ring(hero.x, hero.y, 170, "#e0904b", { width: 4, life: 0.55 });
         this.fx.addShake(4);
         audio.play("warcry");
         break;
@@ -358,7 +379,11 @@ export class Battle {
         }
         this.fx.burst(at.x, at.y - 8, "#ff9b42", 26, 190, { glow: true, gravity: 60 });
         this.fx.burst(at.x, at.y - 8, "#ffe08a", 14, 120, { glow: true });
-        this.fx.addShake(7);
+        this.fx.burst(at.x, at.y, "rgba(90,70,60,0.8)", 10, 90, { gravity: -40, size: 5, life: 0.6 });
+        this.fx.ring(at.x, at.y, 100, "#ffb46b", { width: 5, life: 0.5 });
+        this.fx.ring(at.x, at.y, 60, "#fff0c0", { width: 3, life: 0.3 });
+        this.fx.addShake(8);
+        this.hitstop = Math.max(this.hitstop, 0.07);
         audio.play("fireball");
         break;
       }
@@ -400,8 +425,10 @@ export class Battle {
           if (d < 190) {
             this.heal(ally, 20 + attrs.spi * 2.6);
             this.fx.burst(ally.x, ally.y - 18, "#fff3c0", 10, 90, { glow: true, gravity: -50 });
+            this.fx.ring(ally.x, ally.y, ally.radius * 2.4, "#fff3c0", { width: 2.5, life: 0.45 });
           }
         }
+        this.fx.ring(hero.x, hero.y, 190, "#f7e8a4", { width: 4, life: 0.6 });
         this.fx.addShake(3);
         audio.play("heal");
         break;
@@ -410,6 +437,7 @@ export class Battle {
         hero.effects = hero.effects.filter((e) => e.kind !== "shield");
         hero.effects.push(makeEffect("shield", 8, 30 + attrs.vit * 5, hero));
         this.fx.burst(hero.x, hero.y - 16, "#c6d3e8", 14, 100, { glow: true });
+        this.fx.ring(hero.x, hero.y - 14, hero.radius * 2.6, "#c6d3e8", { width: 3.5, life: 0.5, squash: 1 });
         audio.play("shield");
         break;
       }
@@ -462,23 +490,27 @@ export class Battle {
       return;
     }
 
-    if (this.state === "wavebreak") {
-      this.breakTimer -= dt;
-      if (this.breakTimer <= 0) this.startNextWave();
-    } else if (this.livingEnemies().length === 0) {
-      if (this.waveIndex >= this.stage.waves.length - 1) {
-        this.startNextWave(); // triggers victory
-      } else {
-        this.state = "wavebreak";
-        this.breakTimer = 1.6;
+    if (this.tutorialMode) {
+      this.state = "fighting";
+    } else {
+      if (this.state === "wavebreak") {
+        this.breakTimer -= dt;
+        if (this.breakTimer <= 0) this.startNextWave();
+      } else if (this.livingEnemies().length === 0) {
+        if (this.waveIndex >= this.stage.waves.length - 1) {
+          this.startNextWave(); // triggers victory
+        } else {
+          this.state = "wavebreak";
+          this.breakTimer = 1.6;
+        }
       }
-    }
 
-    if (this.livingHeroes().length === 0 && this.state !== ("defeat" as BattleState)) {
-      this.state = "defeat";
-      this.resultDelay = 1.0;
-      audio.play("defeat");
-      return;
+      if (this.livingHeroes().length === 0 && this.state !== ("defeat" as BattleState)) {
+        this.state = "defeat";
+        this.resultDelay = 1.0;
+        audio.play("defeat");
+        return;
+      }
     }
 
     for (const unit of this.units) {
@@ -547,11 +579,34 @@ export class Battle {
   private updateHero(hero: Unit, dt: number, save: SaveData): void {
     if (hero.attackTarget && !hero.attackTarget.alive) hero.attackTarget = null;
     if (hero.healTarget && !hero.healTarget.alive) hero.healTarget = null;
+    // auto orders release when finished so the player's own orders always win
+    if (hero.autoOrder && hero.healTarget && hero.healTarget.hp >= hero.healTarget.stats.maxHp * 0.98) {
+      hero.healTarget = null;
+      hero.autoOrder = false;
+    }
     hero.channelBeam = Math.max(0, hero.channelBeam - dt * 4);
 
     if (hero.moveTarget) {
       if (this.moveToward(hero, hero.moveTarget, dt, 4)) hero.moveTarget = null;
       return;
+    }
+
+    // heal stance: idle healers seek the most wounded nearby ally on their own
+    if (!hero.healTarget && !hero.attackTarget && hero.stance === "heal" && hero.stats.healPower >= 8) {
+      let worst: Unit | null = null;
+      let worstFrac = 0.9;
+      for (const ally of this.livingHeroes()) {
+        if (ally === hero) continue;
+        const frac = ally.hp / ally.stats.maxHp;
+        if (frac < worstFrac && unitDist(hero, ally) < 300) {
+          worstFrac = frac;
+          worst = ally;
+        }
+      }
+      if (worst) {
+        hero.healTarget = worst;
+        hero.autoOrder = true;
+      }
     }
 
     if (hero.healTarget) {
@@ -580,6 +635,8 @@ export class Battle {
     let target = hero.attackTarget;
     if (!target) {
       // Idle heroes swing at whatever wanders into reach, but hold position.
+      // Heal-stance heroes keep their hands free for channeling.
+      if (hero.stance === "heal" && hero.stats.healPower >= 8) return;
       target = this.nearestEnemyWithin(hero, hero.stats.range + 12);
       if (!target) return;
     } else {
@@ -726,9 +783,22 @@ export class Battle {
         }
       }
       this.fx.burst(target.x, target.y, "#c98a5a", 18, 170, { gravity: 220 });
+      this.fx.ring(target.x, target.y, 78, "#e8b088", { width: 5, life: 0.5 });
       this.fx.addShake(9);
+      this.hitstop = Math.max(this.hitstop, 0.08);
       audio.play("thud");
       return;
+    }
+    if (!ranged) {
+      // melee slash arc + knockback nudge
+      const angle = Math.atan2(attacker.lungeDir.y, attacker.lungeDir.x);
+      this.fx.slash(attacker.x, attacker.y - 12, angle, attacker.radius + 22, attacker.team === "hero" ? "#ffe9a3" : "#e8b0a0");
+      const push = this.clampToField(
+        { x: target.x + attacker.lungeDir.x * 6, y: target.y + attacker.lungeDir.y * 6 },
+        target.radius,
+      );
+      target.x = push.x;
+      target.y = push.y;
     }
     if (ranged) {
       const isArcane = attacker.team === "hero" && attacker.stats.weapon === "staff";
