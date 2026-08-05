@@ -203,6 +203,9 @@ export function drawBackground(
     outlined(ctx, "rgba(255,255,255,0.18)", 1.6);
   }
 
+  // stage set-dressing: each region gets its own furniture (drawn behind units)
+  drawSetDressing(ctx, stage, w, h, horizon, time);
+
   // ambient motes per region: leaves, dusk fireflies, witchlights, embers
   const MOTES: Record<number, { color: string; glow: boolean }> = {
     0: { color: "rgba(190,225,140,0.6)", glow: false }, // drifting leaves
@@ -242,6 +245,180 @@ export function drawBackground(
       ctx.ellipse(mx, my, 130 + i * 20, 13 + i * 3, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+}
+
+function drawSetDressing(
+  ctx: CanvasRenderingContext2D,
+  stage: StageDef,
+  w: number,
+  h: number,
+  horizon: number,
+  time: number,
+): void {
+  const groundAt = (t: number, band: number) => horizon + 14 + hash01(t) * (h - horizon - 30) * band;
+  if (stage.id === 0) {
+    // farmland: a worn fence line + a haystack
+    const fy = horizon + 26;
+    ctx.strokeStyle = "#6b5a3a";
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 5; i++) {
+      const fx = w * 0.12 + i * 34;
+      ctx.beginPath();
+      ctx.moveTo(fx, fy);
+      ctx.lineTo(fx, fy - 16);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(w * 0.12 - 8, fy - 12);
+    ctx.lineTo(w * 0.12 + 4 * 34 + 8, fy - 13);
+    ctx.moveTo(w * 0.12 - 8, fy - 5);
+    ctx.lineTo(w * 0.12 + 4 * 34 + 8, fy - 6);
+    ctx.stroke();
+    const hx = w * 0.82;
+    const hy = groundAt(3.7, 0.5);
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, 26, 17, 0, Math.PI, Math.PI * 2);
+    outlined(ctx, "#c9a95c", 2);
+    ctx.strokeStyle = "#a8863f";
+    ctx.lineWidth = 1.4;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(hx - 18 + i * 10, hy - 2);
+      ctx.lineTo(hx - 12 + i * 10, hy - 13 + (i % 2) * 3);
+      ctx.stroke();
+    }
+  } else if (stage.id === 1) {
+    // deep pines: two big flanking trunks with canopy shadows
+    for (const [tx, s] of [[w * 0.08, 1.2], [w * 0.93, 1]] as [number, number][]) {
+      ctx.fillStyle = "#243a2c";
+      ctx.fillRect(tx - 7 * s, horizon + 8, 14 * s, h - horizon - 14);
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(tx - 7 * s, horizon + 8, 14 * s, h - horizon - 14);
+      ctx.fillStyle = "rgba(20, 40, 28, 0.5)";
+      ctx.beginPath();
+      ctx.ellipse(tx, horizon + 10, 48 * s, 14, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (stage.id === 2) {
+    // swamp: still pools with reeds
+    for (let i = 0; i < 3; i++) {
+      const px = w * (0.2 + i * 0.3) + hash01(i * 9) * 40;
+      const py = groundAt(i * 3.3, 0.8);
+      ctx.fillStyle = "rgba(90, 140, 150, 0.5)";
+      ctx.beginPath();
+      ctx.ellipse(px, py, 40 + hash01(i) * 24, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(200, 230, 225, 0.35)";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.ellipse(px, py, 30 + hash01(i) * 20, 7, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = "#3a5c46";
+      ctx.lineWidth = 2.2;
+      ctx.lineCap = "round";
+      for (let rd = 0; rd < 4; rd++) {
+        const rx = px - 30 + rd * 18 + hash01(rd * 3 + i) * 8;
+        const sway = Math.sin(time * 1.4 + rd + i) * 2;
+        ctx.beginPath();
+        ctx.moveTo(rx, py + 2);
+        ctx.quadraticCurveTo(rx + sway, py - 12, rx + sway * 1.6, py - 20 - hash01(rd) * 8);
+        ctx.stroke();
+      }
+      ctx.lineCap = "butt";
+    }
+  } else if (stage.id === 3) {
+    // charwood: fallen burnt logs + rising smoke wisps
+    for (let i = 0; i < 2; i++) {
+      const lx = w * (0.25 + i * 0.45);
+      const ly = groundAt(i * 7.1, 0.7);
+      ctx.save();
+      ctx.translate(lx, ly);
+      ctx.rotate(i === 0 ? 0.12 : -0.18);
+      roundRect(ctx, -44, -7, 88, 14, 7);
+      outlined(ctx, "#2e2420", 2.2);
+      ctx.fillStyle = "#4a3226";
+      ctx.beginPath();
+      ctx.arc(-44, 0, 7, 0, Math.PI * 2);
+      ctx.fill();
+      // ember cracks
+      ctx.strokeStyle = "#ff8a50";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(-20, -2);
+      ctx.lineTo(-6, 2);
+      ctx.moveTo(10, -3);
+      ctx.lineTo(24, 1);
+      ctx.stroke();
+      ctx.restore();
+      const puff = (time * 8 + i * 30) % 40;
+      ctx.globalAlpha = Math.max(0, 0.35 - puff * 0.008);
+      ctx.fillStyle = "#b8afa5";
+      ctx.beginPath();
+      ctx.arc(lx + 10, ly - 10 - puff, 5 + puff * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  } else if (stage.id === 4) {
+    // gloaming pass: leaning standing stones with faint runes
+    for (let i = 0; i < 3; i++) {
+      const sx = w * (0.18 + i * 0.32);
+      const sy = groundAt(i * 5.9, 0.75);
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate((hash01(i * 13) - 0.5) * 0.24);
+      ctx.beginPath();
+      ctx.moveTo(-10, 0);
+      ctx.lineTo(-7, -34 - hash01(i) * 14);
+      ctx.lineTo(6, -38 - hash01(i) * 14);
+      ctx.lineTo(11, 0);
+      ctx.closePath();
+      outlined(ctx, "#4a4468", 2.2);
+      ctx.fillStyle = "rgba(200, 190, 255, " + (0.25 + Math.abs(Math.sin(time * 1.5 + i)) * 0.3) + ")";
+      ctx.fillRect(-2, -26, 3, 8);
+      ctx.fillRect(-4, -14, 6, 2.5);
+      ctx.restore();
+    }
+  } else if (stage.id === 5) {
+    // the hollow: bone piles + a crooked war banner
+    for (let i = 0; i < 2; i++) {
+      const bx = w * (0.3 + i * 0.4);
+      const by = groundAt(i * 4.4, 0.7);
+      ctx.fillStyle = "#d8cfc0";
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.ellipse(bx, by, 16, 6, 0, Math.PI, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(bx - 8, by - 6, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = OUTLINE;
+      ctx.beginPath();
+      ctx.arc(bx - 10, by - 7, 1.4, 0, Math.PI * 2);
+      ctx.arc(bx - 6, by - 7, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const px = w * 0.85;
+    const py = groundAt(8.3, 0.5);
+    ctx.strokeStyle = "#5a4630";
+    ctx.lineWidth = 3.4;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px + 4, py - 52);
+    ctx.stroke();
+    const flap = Math.sin(time * 2.6) * 4;
+    ctx.beginPath();
+    ctx.moveTo(px + 4, py - 52);
+    ctx.lineTo(px + 30 + flap, py - 46);
+    ctx.lineTo(px + 22 + flap, py - 40);
+    ctx.lineTo(px + 30 + flap, py - 34);
+    ctx.lineTo(px + 3, py - 30);
+    ctx.closePath();
+    outlined(ctx, "#8a2f2a", 2);
   }
 }
 
@@ -441,6 +618,9 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   const legW = H * 0.10;
   const stride = H * 0.14;
   const robed = unit.stats.weapon === "stave";
+  const gear = save.heroes[unit.heroIndex];
+  const wTier = gear?.weaponTier ?? 0;
+  const aTier = gear?.armorTier ?? 0;
 
   // back leg, back arm behind body
   if (!robed) limb(ctx, cx - f * 2, hipY, cx - f * 2 - f * pose.walk * stride, gy - 1, legW, "#3a2f47");
@@ -491,11 +671,46 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.fillRect(cx - bodyW * 0.5, hipY - 1, bodyW, 3);
   }
 
+  // armor flair grows with tier
+  if (!robed && aTier >= 1) {
+    // leather shoulder pad
+    ctx.beginPath();
+    ctx.ellipse(cx + f * bodyW * 0.34, shoulderY, bodyW * 0.26, bodyW * 0.18, f * 0.3, 0, Math.PI * 2);
+    outlined(ctx, aTier >= 3 ? "#aab4c2" : "#7a5a3a", 2);
+  }
+  if (!robed && aTier >= 2) {
+    // chain band across the chest
+    ctx.strokeStyle = aTier >= 3 ? "#c2ccda" : "#9aa3ad";
+    ctx.lineWidth = 3.4;
+    ctx.beginPath();
+    ctx.moveTo(cx - bodyW * 0.4, shoulderY + 2);
+    ctx.lineTo(cx + bodyW * 0.42, hipY - 2);
+    ctx.stroke();
+  }
+
   // head (big, chibi)
   ctx.beginPath();
   ctx.arc(cx + f * 1.5, headY, headR, 0, Math.PI * 2);
   outlined(ctx, def.skin);
-  if (robed) {
+  if (!robed && aTier >= 3) {
+    // plate helm with a nose guard
+    ctx.beginPath();
+    ctx.arc(cx + f * 0.5, headY - headR * 0.1, headR * 1.04, Math.PI * 0.9, Math.PI * 2.1);
+    ctx.closePath();
+    outlined(ctx, "#aab4c2", 2.2);
+    ctx.fillStyle = "#aab4c2";
+    ctx.fillRect(cx + f * headR * 0.3 - 1.6, headY - headR * 0.35, 3.2, headR * 0.75);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.4;
+    ctx.strokeRect(cx + f * headR * 0.3 - 1.6, headY - headR * 0.35, 3.2, headR * 0.75);
+    // plume
+    ctx.beginPath();
+    ctx.moveTo(cx - f * 1, headY - headR * 1.05);
+    ctx.quadraticCurveTo(cx - f * headR * 0.9, headY - headR * 1.7, cx - f * headR * 1.35, headY - headR * 1.2);
+    ctx.quadraticCurveTo(cx - f * headR * 0.8, headY - headR * 1.05, cx - f * 1, headY - headR * 0.85);
+    ctx.closePath();
+    outlined(ctx, def.accent, 1.8);
+  } else if (robed) {
     // deep cream hood framing the face
     ctx.beginPath();
     ctx.arc(cx + f * 0.5, headY - 1, headR * 1.12, Math.PI * 0.72, Math.PI * 2.28);
@@ -525,7 +740,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   // weapon arm + weapon (front)
   const shX = cx + f * bodyW * 0.36;
   const shY = shoulderY + 2;
-  drawHeroWeapon(ctx, unit, def.accent, def.skin, shX, shY, H, f, pose.swing, unit.castGlow, time, legW);
+  drawHeroWeapon(ctx, unit, def.accent, def.skin, shX, shY, H, f, pose.swing, unit.castGlow, time, legW, wTier);
 
   flashOverlay(ctx, unit, cx, gy - H * 0.45, H * 0.5);
   if (unit.castGlow > 0) {
@@ -554,7 +769,11 @@ function drawHeroWeapon(
   castGlow: number,
   time: number,
   armW: number,
+  wTier = 0,
 ): void {
+  // blade metals sharpen with tier; mythril glows faintly
+  const metal = ["#c9ccd2", "#d8dee8", "#e8eef8", "#cfe8ff"][wTier] ?? "#d8dee8";
+  const glow = wTier >= 3;
   if (unit.stats.weapon === "sword") {
     // arm rotates from rest (-0.5) through a big arc on swing
     const angle = f * (-0.85 + swing * 2.1);
@@ -572,9 +791,23 @@ function drawHeroWeapon(
     ctx.lineTo(1.6, -H * 0.52);
     ctx.lineTo(2.4, -4);
     ctx.closePath();
-    outlined(ctx, "#d8dee8", 2);
+    if (glow) {
+      ctx.shadowColor = "#9fd0ff";
+      ctx.shadowBlur = 8;
+    }
+    outlined(ctx, metal, 2);
+    ctx.shadowBlur = 0;
     ctx.fillStyle = "rgba(255,255,255,0.5)";
     ctx.fillRect(-0.6, -H * 0.52, 1.2, H * 0.46);
+    if (wTier >= 2) {
+      // steel and above get a fuller, wider blade profile
+      ctx.strokeStyle = "rgba(255,255,255,0.55)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-1.8, -6);
+      ctx.lineTo(-1.2, -H * 0.5);
+      ctx.stroke();
+    }
     // crossguard + grip
     roundRect(ctx, -5, -4.5, 10, 3.4, 1.5);
     outlined(ctx, "#a8862f", 1.8);
@@ -1017,12 +1250,15 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
   }
   for (const unit of sorted) {
     if (!unit.alive) continue;
-    // squash on hit, stretch on lunge — anchored at the feet
+    // squash on hit, stretch on lunge, lean into movement — anchored at the feet
     const squash = Math.min(0.22, unit.hitFlash * 1.4);
     const stretch = unit.lunge * 0.1;
-    if (squash > 0.01 || stretch > 0.01) {
+    const moving = unit.moveTarget !== null || (unit.team === "enemy" && unit.lunge <= 0.01 && !unit.attackTarget);
+    const lean = (moving ? unit.facing * 0.055 : 0) - unit.facing * Math.min(0.1, unit.hitFlash * 0.7);
+    if (squash > 0.01 || stretch > 0.01 || Math.abs(lean) > 0.01) {
       ctx.save();
       ctx.translate(unit.x, unit.y);
+      ctx.rotate(lean);
       ctx.scale(1 + squash + stretch, 1 - squash + stretch * 0.4);
       ctx.translate(-unit.x, -unit.y);
       if (unit.team === "hero") drawHero(ctx, unit, save, unit === selected, battle.time);
