@@ -1,6 +1,6 @@
 import { audio } from "./audio";
 import type { Battle } from "./battle";
-import { HEROES } from "./data";
+import { DIFFICULTIES, HEROES } from "./data";
 import type { AbilityState, SaveData, Unit } from "./types";
 
 export const HUD_H = 100;
@@ -62,6 +62,23 @@ export class Hud {
   freshPlayer = false;
   private coachStage = 0;
   private lastLivingHeroes = -1;
+  private readyFlash: Record<number, number> = {}; // per ability-slot key
+  private prevTimers: Record<number, number> = {};
+  private portraitShake: Record<number, number> = {};
+  private prevHp: Record<number, number> = {};
+  private lastChime = -10;
+  overlayAge = 0;
+  pendingLoot: { icon: string; name: string; rare: boolean } | null = null;
+  cam: { x: number; y: number; zoom: number } = { x: 0, y: 0, zoom: 1 };
+
+  /** Convert a screen-space point into battle-world coordinates (camera-aware). */
+  private toWorld(x: number, y: number): { x: number; y: number } {
+    const CY = (this.height - HUD_H) * 0.5;
+    return {
+      x: (x - this.width / 2) / this.cam.zoom + this.width / 2 + this.cam.x,
+      y: (y - CY) / this.cam.zoom + CY + this.cam.y,
+    };
+  }
   tutorial: {
     text: string;
     sub: string;
@@ -183,11 +200,12 @@ export class Hud {
       return null;
     }
 
-    // battlefield
-    const unit = this.battle.unitAt(x, y);
+    // battlefield (convert through the camera)
+    const wp = this.toWorld(x, y);
+    const unit = this.battle.unitAt(wp.x, wp.y);
     if (unit && unit.team === "hero") {
       this.selected = unit;
-      this.drag = { mode: "unit", hero: unit, startX: x, startY: y, x, y };
+      this.drag = { mode: "unit", hero: unit, startX: wp.x, startY: wp.y, x: wp.x, y: wp.y };
       return null;
     }
     if (unit && unit.team === "enemy" && this.selected && this.selected.alive) {
@@ -196,7 +214,7 @@ export class Hud {
       return null;
     }
     if (!unit && this.selected && this.selected.alive) {
-      this.battle.orderMove(this.selected, { x, y });
+      this.battle.orderMove(this.selected, wp);
       return null;
     }
     return null;
@@ -204,14 +222,21 @@ export class Hud {
 
   pointerMove(x: number, y: number): void {
     if (!this.drag) return;
-    this.drag.x = x;
-    this.drag.y = y;
+    const wp = this.toWorld(x, y);
+    this.drag.x = wp.x;
+    this.drag.y = wp.y;
+    if (this.drag.mode === "ability") {
+      this.drag.hero.castGlow = Math.min(0.55, this.drag.hero.castGlow + 0.04);
+    }
   }
 
-  pointerUp(x: number, y: number): void {
+  pointerUp(sx: number, sy: number): void {
     const drag = this.drag;
     this.drag = null;
     if (!drag) return;
+    const wp = this.toWorld(sx, sy);
+    const x = wp.x;
+    const y = wp.y;
 
     if (drag.mode === "unit") {
       const hero = drag.hero;
@@ -229,7 +254,7 @@ export class Hud {
           this.battle.orderMove(hero, { x: target.x + 30, y: target.y });
           this.showHint(`${hero.name} has no Spirit to heal with`);
         }
-      } else if (moved > 12 && y < this.height - HUD_H + 20) {
+      } else if (moved > 12 && sy < this.height - HUD_H + 20) {
         this.battle.orderMove(hero, { x, y });
       }
       return;
@@ -261,6 +286,32 @@ export class Hud {
 
   update(dt: number): void {
     this.hintTime = Math.max(0, this.hintTime - dt);
+    if (this.overlayActive() && (this.battle.state === "victory" || this.battle.state === "defeat")) {
+      this.overlayAge += dt;
+    } else if (this.battle.state === "fighting") {
+      this.overlayAge = 0;
+    }
+    // ability-ready flourish detection
+    for (const hero of this.battle.heroes()) {
+      hero.abilities.forEach((ability, slot) => {
+        const key = hero.id * 10 + slot;
+        const prev = this.prevTimers[key] ?? 0;
+        if (prev > 0 && ability.timer <= 0 && hero.alive) {
+          this.readyFlash[key] = 0.6;
+          if (this.battle.time - this.lastChime > 1.2) {
+            audio.play("ready");
+            this.lastChime = this.battle.time;
+          }
+        }
+        this.prevTimers[key] = ability.timer;
+        this.readyFlash[key] = Math.max(0, (this.readyFlash[key] ?? 0) - dt);
+      });
+      // portrait shake on big hits
+      const prevHp = this.prevHp[hero.id] ?? hero.hp;
+      if (prevHp - hero.hp > 8) this.portraitShake[hero.id] = 0.35;
+      this.prevHp[hero.id] = hero.hp;
+      this.portraitShake[hero.id] = Math.max(0, (this.portraitShake[hero.id] ?? 0) - dt);
+    }
     if (this.selected && !this.selected.alive) this.selected = null;
 
     // gentle coaching for brand-new players (never during tutorials)
@@ -290,9 +341,13 @@ export class Hud {
 
   // ------------------------------------------------------------------ drawing
 
-  draw(ctx: CanvasRenderingContext2D): void {
+  /** World-space overlays: drawn inside the camera transform. */
+  drawWorld(ctx: CanvasRenderingContext2D): void {
     this.drawTargetMarkers(ctx);
     this.drawDragIndicators(ctx);
+  }
+
+  draw(ctx: CanvasRenderingContext2D): void {
     this.drawTopBar(ctx);
     this.drawBossBar(ctx);
     this.drawBar(ctx);
@@ -638,7 +693,9 @@ export class Hud {
     for (let i = 0; i < heroes.length; i++) {
       const hero = heroes[i];
       const def = HEROES[hero.heroIndex];
-      const x0 = rowX0 + i * clusterW + 8;
+      const shakeAmt = this.portraitShake[hero.id] ?? 0;
+      const shakeX = shakeAmt > 0 ? Math.sin(this.battle.time * 60) * shakeAmt * 10 : 0;
+      const x0 = rowX0 + i * clusterW + 8 + shakeX;
       const py = top + 12;
       const ps = 52;
 
@@ -660,8 +717,14 @@ export class Hud {
       ctx.fillStyle = pgrad;
       roundRect(ctx, x0, py, ps, ps, 9);
       ctx.fill();
-      ctx.strokeStyle = isSel ? "#ffe9a3" : "rgba(255,255,255,0.14)";
-      ctx.lineWidth = isSel ? 2 : 1.2;
+      const hpFrac = hero.alive ? hero.hp / hero.stats.maxHp : 1;
+      const critical = hero.alive && hpFrac < 0.25;
+      ctx.strokeStyle = critical
+        ? `rgba(255, 90, 72, ${0.55 + Math.abs(Math.sin(this.battle.time * 5)) * 0.45})`
+        : isSel
+          ? "#ffe9a3"
+          : "rgba(255,255,255,0.14)";
+      ctx.lineWidth = critical ? 2.6 : isSel ? 2 : 1.2;
       roundRect(ctx, x0, py, ps, ps, 9);
       ctx.stroke();
       // chibi face
@@ -765,7 +828,7 @@ export class Hud {
         const bx = bx0 + a * (bs + 6);
         const by = py + 4;
         if (bx + bs > rowX0 + (i + 1) * clusterW - 2) break;
-        this.drawAbilityButton(ctx, bx, by, bs, hero, ability);
+        this.drawAbilityButton(ctx, bx, by, bs, hero, ability, this.readyFlash[hero.id * 10 + a] ?? 0);
         this.abilityButtons.push({ x: bx, y: by, w: bs, h: bs, hero, ability });
       }
       if (hero.abilities.length === 0) {
@@ -785,6 +848,7 @@ export class Hud {
     s: number,
     hero: Unit,
     ability: AbilityState,
+    readyFlash = 0,
   ): void {
     const ready = ability.timer <= 0 && hero.alive;
     const grad = ctx.createLinearGradient(x, y, x, y + s);
@@ -824,6 +888,15 @@ export class Hud {
       ctx.font = "700 12px 'Trebuchet MS', Verdana, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(Math.ceil(ability.timer).toString(), x + s / 2, y + s / 2 + 4);
+    }
+    if (readyFlash > 0) {
+      const t = 1 - readyFlash / 0.6;
+      ctx.globalAlpha = readyFlash / 0.6;
+      ctx.strokeStyle = ability.def.color;
+      ctx.lineWidth = 2.5;
+      roundRect(ctx, x - t * 8, y - t * 8, s + t * 16, s + t * 16, 10);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
     // gesture affordance dot
     if (ability.def.targeting !== "instant") {
@@ -1011,8 +1084,51 @@ export class Hud {
     ctx.font = "600 14px 'Trebuchet MS', Verdana, sans-serif";
     ctx.textAlign = "center";
     if (victory) {
-      const xp = this.battle.xpEarned + this.battle.stage.xpReward;
-      ctx.fillText(`+${xp} experience earned`, this.width / 2, frame.y + 78);
+      const mult = DIFFICULTIES[this.save.difficulty ?? 1]?.rewardMult ?? 1;
+      const xp = Math.round((this.battle.xpEarned + this.battle.stage.xpReward) * mult);
+      const gold = Math.round((this.battle.goldEarned + Math.round(this.battle.stage.xpReward * 0.8)) * mult);
+      const shown = Math.min(gold, Math.floor(this.overlayAge * gold * 1.6));
+      ctx.fillText(`+${xp} xp   ·   🪙 ${shown}`, this.width / 2, frame.y + 66);
+      // loot reveal: card flips in after a beat
+      if (this.pendingLoot) {
+        const flip = Math.min(1, Math.max(0, (this.overlayAge - 0.5) / 0.45));
+        const scaleX = flip < 0.5 ? 1 - flip * 2 : flip * 2 - 1;
+        const showFace = flip >= 0.5;
+        const cw = 216;
+        const ch = 34;
+        const cxm = this.width / 2;
+        const cy = frame.y + 78;
+        ctx.save();
+        ctx.translate(cxm, cy + ch / 2);
+        ctx.scale(Math.max(0.04, scaleX), 1);
+        ctx.translate(-cxm, -(cy + ch / 2));
+        roundRect(ctx, cxm - cw / 2, cy, cw, ch, 9);
+        ctx.fillStyle = showFace ? (this.pendingLoot.rare ? "#3d2d52" : "#33402a") : "#2a3122";
+        ctx.fill();
+        ctx.strokeStyle = this.pendingLoot.rare ? "#c9a0ff" : "#8ee88b";
+        ctx.lineWidth = 1.8;
+        roundRect(ctx, cxm - cw / 2, cy, cw, ch, 9);
+        ctx.stroke();
+        if (showFace) {
+          ctx.fillStyle = this.pendingLoot.rare ? "#e2ccff" : "#d9efc9";
+          ctx.font = "700 13px 'Trebuchet MS', Verdana, sans-serif";
+          ctx.fillText(
+            `${this.pendingLoot.icon} ${this.pendingLoot.name}${this.pendingLoot.rare ? "  ·  RARE" : ""}`,
+            cxm,
+            cy + 22,
+          );
+        }
+        ctx.restore();
+        if (this.pendingLoot.rare && flip >= 1 && this.overlayAge < 1.6) {
+          ctx.globalAlpha = Math.max(0, 1.6 - this.overlayAge) * 0.8;
+          ctx.strokeStyle = "#c9a0ff";
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.ellipse(cxm, cy + ch / 2, (this.overlayAge - 0.95) * 260 + 30, ((this.overlayAge - 0.95) * 260 + 30) * 0.4, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
     } else {
       const TIPS = [
         "Tip: drag your healer onto wounded allies",
@@ -1028,8 +1144,8 @@ export class Hud {
     const bw = frame.w - 60;
     const bx = frame.x + 30;
     if (victory) {
-      this.addOverlayButton(ctx, "continue", "Continue", bx, frame.y + 104, bw, "#8ee88b");
-      this.addOverlayButton(ctx, "retry", "Replay Stage", bx, frame.y + 152, bw);
+      this.addOverlayButton(ctx, "continue", "Continue", bx, frame.y + 124, bw, "#8ee88b");
+      this.addOverlayButton(ctx, "retry", "Replay Stage", bx, frame.y + 170, bw);
     } else {
       this.addOverlayButton(ctx, "retry", "Try Again", bx, frame.y + 104, bw, "#ff8a70");
       this.addOverlayButton(ctx, "map", "Back to Map", bx, frame.y + 152, bw);

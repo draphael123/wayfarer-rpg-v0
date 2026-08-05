@@ -16,6 +16,7 @@ type SfxName =
   | "warcry"
   | "shield"
   | "coin"
+  | "ready"
   | "roar"
   | "levelup"
   | "victory"
@@ -146,6 +147,10 @@ class AudioKit {
         break;
       case "shield":
         this.tone(330, 0.2, "triangle", 0.16, 160);
+        break;
+      case "ready":
+        this.tone(880, 0.1, "sine", 0.08);
+        this.tone(1320, 0.14, "sine", 0.07, 0, 0.07);
         break;
       case "coin":
         this.tone(1180, 0.07, "square", 0.12, 60);

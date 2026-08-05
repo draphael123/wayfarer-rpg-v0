@@ -167,6 +167,7 @@ function el(html: string): HTMLElement {
 export class Menus {
   root: HTMLElement;
   toast: HTMLElement | null = null;
+  travelFrom: number | null = null; // cleared stage to animate the road-march from
 
   constructor(
     rootId: string,
@@ -414,6 +415,21 @@ export class Menus {
         trees += `<rect x="${tx - 1.4}" y="${ty}" width="2.8" height="${s * 0.5}" fill="#1c3023"/>`;
       }
     }
+    // victory road-march: a marker walks from the cleared node to the new one
+    let travel = "";
+    if (this.travelFrom !== null && this.travelFrom + 1 < nodes.length) {
+      const a = nodes[this.travelFrom];
+      const b = nodes[this.travelFrom + 1];
+      const mx = (a.x + b.x) / 2 + ((this.travelFrom + 1) % 2 ? -24 : 24);
+      const my = (a.y + b.y) / 2 + ((this.travelFrom + 1) % 2 ? 20 : -20);
+      travel = `
+        <g>
+          <circle r="7" fill="#ffe9a3" stroke="#1a2b20" stroke-width="2">
+            <animateMotion dur="1.6s" fill="freeze" path="M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}"/>
+          </circle>
+        </g>`;
+      this.travelFrom = null;
+    }
     let markers = "";
     STAGES.forEach((stage, i) => {
       const n = nodes[i];
@@ -507,6 +523,7 @@ export class Menus {
             <rect x="-4" y="4" width="8" height="3" fill="#c9c2b8"/>
           </g>
           ${markers}
+          ${travel}
         </svg>
       </div>
     `);

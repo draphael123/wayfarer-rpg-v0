@@ -95,6 +95,7 @@ const menus = new Menus("ui", save, {
 });
 
 function startBattle(stageIndex: number): void {
+  rolledLoot = null;
   logEvent("battle_start", {
     stage: stageIndex,
     difficulty: save.difficulty,
@@ -189,6 +190,17 @@ function endBattleToMap(): void {
   menus.renderMap();
 }
 
+let rolledLoot: { id: string; icon: string; name: string; rare: boolean } | null = null;
+
+function rollLoot(): void {
+  if (rolledLoot) return;
+  const rare = BOSS_STAGES.includes(currentStage);
+  const pool = TRINKETS.filter((t) => t.rarity === (rare ? "rare" : "common"));
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  rolledLoot = { id: pick.id, icon: pick.icon, name: pick.name, rare };
+  if (hud) hud.pendingLoot = rolledLoot;
+}
+
 function settleVictory(): void {
   if (!battle || xpGranted) return;
   xpGranted = true;
@@ -197,13 +209,14 @@ function settleVictory(): void {
   const gold = Math.round((battle.goldEarned + Math.round(battle.stage.xpReward * 0.8)) * rewardMult);
   const levels = grantXp(save, xp);
   save.gold += gold;
-  // one piece of loot per clear; boss stages yield rares
-  const rare = BOSS_STAGES.includes(currentStage);
-  const pool = TRINKETS.filter((t) => t.rarity === (rare ? "rare" : "common"));
-  const drop = pool[Math.floor(Math.random() * pool.length)];
+  // loot was revealed on the victory card; bank it now
+  rollLoot();
+  const drop = rolledLoot!;
+  const rare = drop.rare;
   save.inventory.push(drop.id);
   if (currentStage === save.unlockedStage && currentStage < STAGES.length - 1) {
     save.unlockedStage++;
+    menus.travelFrom = currentStage;
   }
   persist(save);
   if (levels > 0) {
@@ -337,6 +350,8 @@ document.addEventListener("visibilitychange", () => {
 
 // ------------------------------------------------------------------ loop
 
+const cam = { x: 0, y: 0, zoom: 1, punch: 0 };
+
 let lastTime = performance.now();
 
 function frame(now: number): void {
@@ -363,12 +378,41 @@ function frame(now: number): void {
       }
     }
     hud.update(dt);
+    if (battle.state === "victory") rollLoot();
+
+    // camera: ease toward the action's center, punch-zoom on big impacts
+    const living = battle.units.filter((u) => u.alive);
+    if (living.length) {
+      let cx = 0;
+      let cy = 0;
+      for (const u of living) {
+        cx += u.x;
+        cy += u.y;
+      }
+      cx /= living.length;
+      cy /= living.length;
+      const targetX = Math.max(-14, Math.min(14, (cx - logicalW / 2) * 0.12));
+      const targetY = Math.max(-8, Math.min(8, (cy - (logicalH - HUD_H) * 0.55) * 0.1));
+      cam.x += (targetX - cam.x) * Math.min(1, dt * 2.2);
+      cam.y += (targetY - cam.y) * Math.min(1, dt * 2.2);
+    }
+    cam.punch = Math.max(0, cam.punch - dt * 3.2);
+    if (battle.zoomPunch > 0) {
+      cam.punch = Math.max(cam.punch, battle.zoomPunch);
+      battle.zoomPunch = 0;
+    }
+    cam.zoom = 1 + cam.punch * 0.045;
+    hud.cam = cam;
 
     const shakeX = fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
     const shakeY = fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
 
+    const CY = (logicalH - HUD_H) * 0.5;
     ctx.save();
     ctx.translate(shakeX, shakeY);
+    ctx.translate(logicalW / 2, CY);
+    ctx.scale(cam.zoom, cam.zoom);
+    ctx.translate(-logicalW / 2 - cam.x, -CY - cam.y);
     const horizon = (logicalH - HUD_H) * 0.34;
     drawBackground(ctx, battle.stage, logicalW, logicalH - HUD_H + 20, horizon, battle.time);
     drawZones(ctx, battle);
@@ -376,9 +420,10 @@ function frame(now: number): void {
     drawUnits(ctx, battle, battleSave, hud.selected);
     drawProjectiles(ctx, battle);
     fx.draw(ctx);
+    hud.drawWorld(ctx);
     drawForeground(ctx, battle.stage, logicalW, logicalH - HUD_H + 20, battle.time);
-    drawVignette(ctx, logicalW, logicalH - HUD_H + 20);
     ctx.restore();
+    drawVignette(ctx, logicalW, logicalH - HUD_H + 20);
     hud.draw(ctx);
   } else {
     // simple backdrop behind DOM menus

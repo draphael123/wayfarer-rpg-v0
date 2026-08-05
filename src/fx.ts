@@ -44,12 +44,44 @@ export interface SlashArc {
   color: string;
 }
 
+export interface LightPool {
+  x: number;
+  y: number;
+  r: number;
+  life: number;
+  maxLife: number;
+  color: string; // rgb triplet like "255,150,60"
+}
+
 export class FxSystem {
   particles: Particle[] = [];
   floaters: Floater[] = [];
   rings: Ring[] = [];
   arcs: SlashArc[] = [];
+  pools: LightPool[] = [];
   shake = 0;
+
+  pool(x: number, y: number, r: number, color: string, life = 0.7): void {
+    this.pools.push({ x, y, r, life, maxLife: life, color });
+  }
+
+  /** Directional cone burst — debris flies away from the attacker. */
+  spray(x: number, y: number, dirX: number, dirY: number, color: string, count: number, speed = 120): void {
+    const base = Math.atan2(dirY, dirX);
+    for (let i = 0; i < count; i++) {
+      const angle = base + (Math.random() - 0.5) * 1.1;
+      const mag = speed * (0.5 + Math.random() * 0.7);
+      const life = 0.4 * (0.6 + Math.random() * 0.8);
+      this.particles.push({
+        x, y,
+        vx: Math.cos(angle) * mag,
+        vy: Math.sin(angle) * mag - 40,
+        life, maxLife: life,
+        size: 2.5 + Math.random() * 2,
+        color, gravity: 260, glow: false,
+      });
+    }
+  }
 
   ring(x: number, y: number, maxR: number, color: string, opts: { width?: number; life?: number; squash?: number } = {}): void {
     this.rings.push({
@@ -141,9 +173,23 @@ export class FxSystem {
       this.arcs[i].life -= dt;
       if (this.arcs[i].life <= 0) this.arcs.splice(i, 1);
     }
+    for (let i = this.pools.length - 1; i >= 0; i--) {
+      this.pools[i].life -= dt;
+      if (this.pools[i].life <= 0) this.pools.splice(i, 1);
+    }
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
+    for (const pool of this.pools) {
+      const a = Math.max(0, pool.life / pool.maxLife);
+      const g = ctx.createRadialGradient(pool.x, pool.y, 2, pool.x, pool.y, pool.r);
+      g.addColorStop(0, `rgba(${pool.color},${0.34 * a})`);
+      g.addColorStop(1, `rgba(${pool.color},0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(pool.x, pool.y, pool.r, pool.r * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     for (const ring of this.rings) {
       const alpha = Math.max(0, ring.life / ring.maxLife);
       ctx.globalAlpha = alpha * 0.9;
@@ -209,6 +255,7 @@ export class FxSystem {
     this.floaters.length = 0;
     this.rings.length = 0;
     this.arcs.length = 0;
+    this.pools.length = 0;
     this.shake = 0;
   }
 }

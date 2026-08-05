@@ -53,6 +53,7 @@ export class Battle {
   heroDeaths = 0;
   ordersIssued = 0;
   introBanner = 2.6;
+  zoomPunch = 0;
 
   constructor(
     public stage: StageDef,
@@ -113,6 +114,12 @@ export class Battle {
         aggro: null,
         supportTimer: 0,
         phase: 0,
+        windup: 0,
+        pendingTarget: null,
+        alert: 0,
+        celebrate: false,
+        idleTimer: 3 + Math.random() * 4,
+        idleAnim: 0,
       });
       const ward = talentMods(heroSave.talents).startShield + trinketMods(heroSave.trinket).startShield;
       if (ward > 0) {
@@ -183,6 +190,12 @@ export class Battle {
       aggro: null,
       supportTimer: 1 + Math.random(),
       phase: 0,
+      windup: 0,
+      pendingTarget: null,
+      alert: 0,
+      celebrate: false,
+      idleTimer: 3 + Math.random() * 4,
+      idleAnim: 0,
     });
   }
 
@@ -199,6 +212,11 @@ export class Battle {
       this.fx.burst(cx, cy - 20, "#fff3c0", 16, 160, { glow: true, gravity: 100 });
       for (const hero of this.livingHeroes()) {
         this.fx.burst(hero.x, hero.y - 20, "#ffe9a3", 8, 90, { glow: true, gravity: -60 });
+        hero.celebrate = true;
+        hero.facing = 1;
+        hero.moveTarget = null;
+        hero.attackTarget = null;
+        hero.healTarget = null;
       }
       audio.play("victory");
       return;
@@ -259,9 +277,23 @@ export class Battle {
       opts.color ?? (target.team === "hero" ? "#ff7d6b" : "#ffe9a3"),
       target.team === "hero" ? 15 : 14,
     );
-    this.fx.burst(target.x, target.y - target.radius * 0.6, opts.color ?? "#e8564a", 5, 70);
+    if (source) {
+      const dx = target.x - source.x;
+      const dy = target.y - source.y;
+      const len = Math.hypot(dx, dy) || 1;
+      this.fx.spray(target.x, target.y - target.radius * 0.6, dx / len, dy / len, opts.color ?? "#e8564a", 5);
+    } else {
+      this.fx.burst(target.x, target.y - target.radius * 0.6, opts.color ?? "#e8564a", 5, 70);
+    }
+    if (target.hp - amount <= 0 && target.hp > 0) {
+      // killing blow: bigger, golder, longer
+      this.fx.floatText(target.x, target.y - target.radius - 26, `${amount}`, "#ffd76b", 20);
+      this.hitstop = Math.max(this.hitstop, 0.09);
+    }
     if (target.team === "enemy" && source && source.team === "hero" && !target.aggro) {
       target.aggro = source;
+      target.alert = 0.5;
+      this.fx.floatText(target.x, target.y - target.radius * 3 - 8, "!", "#ff8a70", 17);
     }
     if (target.hp <= 0) this.kill(target);
     else audio.play(opts.spell ? "hit" : "hit");
@@ -293,6 +325,7 @@ export class Battle {
     this.fx.ring(unit.x, unit.y, unit.radius * 2.4, "rgba(255,255,255,0.7)", { width: 2.5, life: 0.32 });
     this.fx.addShake(unit.radius > 20 ? 8 : 3);
     this.hitstop = Math.max(this.hitstop, unit.radius > 20 ? 0.1 : 0.06);
+    if (unit.radius > 20) this.zoomPunch = Math.max(this.zoomPunch, 0.8);
     audio.play("thud");
     if (unit.team === "enemy" && unit.enemyKind) {
       this.xpEarned += Math.round(ENEMIES[unit.enemyKind].xp * this.stage.scale);
@@ -375,6 +408,7 @@ export class Battle {
           if (d < 170) {
             enemy.effects = enemy.effects.filter((e) => e.kind !== "taunt");
             enemy.effects.push(makeEffect("taunt", 5, 1, hero));
+            enemy.alert = 0.5;
           }
         }
         hero.effects.push(makeEffect("guard", 6, 0.4, hero));
@@ -425,9 +459,11 @@ export class Battle {
         this.fx.burst(at.x, at.y - 8, "#ffe08a", 14, 120, { glow: true });
         this.fx.burst(at.x, at.y, "rgba(90,70,60,0.8)", 10, 90, { gravity: -40, size: 5, life: 0.6 });
         this.fx.ring(at.x, at.y, 100, "#ffb46b", { width: 5, life: 0.5 });
+        this.fx.pool(at.x, at.y, 110, "255,150,60", 0.9);
         this.fx.ring(at.x, at.y, 60, "#fff0c0", { width: 3, life: 0.3 });
         this.fx.addShake(8);
         this.hitstop = Math.max(this.hitstop, 0.07);
+        this.zoomPunch = Math.max(this.zoomPunch, 0.7);
         audio.play("fireball");
         break;
       }
@@ -460,6 +496,7 @@ export class Battle {
         }
         this.heal(target, 30 + attrs.spi * 4);
         this.fx.burst(target.x, target.y - 18, "#f2e7a0", 16, 110, { glow: true, gravity: -40 });
+        this.fx.pool(target.x, target.y, 70, "255,235,160", 0.7);
         audio.play("heal");
         break;
       }
@@ -473,6 +510,7 @@ export class Battle {
           }
         }
         this.fx.ring(hero.x, hero.y, 190, "#f7e8a4", { width: 4, life: 0.6 });
+        this.fx.pool(hero.x, hero.y, 160, "255,235,160", 0.8);
         this.fx.addShake(3);
         audio.play("heal");
         break;
@@ -566,7 +604,26 @@ export class Battle {
       this.updateEffects(unit, dt);
       for (const ability of unit.abilities) ability.timer = Math.max(0, ability.timer - dt);
       unit.attackTimer = Math.max(0, unit.attackTimer - dt);
-      if (this.effect(unit, "stun")) continue;
+      if (this.effect(unit, "stun")) {
+        unit.windup = 0;
+        unit.pendingTarget = null;
+        continue;
+      }
+      if (unit.windup > 0) {
+        unit.windup -= dt;
+        if (unit.windup <= 0 && unit.pendingTarget) {
+          const target = unit.pendingTarget;
+          unit.pendingTarget = null;
+          if (target.alive) {
+            this.performAttack(unit, target);
+            // the Alpha's howled-up bites draw blood
+            if (unit.enemyKind === "alpha" && unit.phase >= 2 && target.alive && unit.stats.range < 90) {
+              target.effects.push(makeEffect("burn", 3, 3, unit));
+            }
+          }
+        }
+        continue;
+      }
       if (unit.team === "hero") this.updateHero(unit, dt, save);
       else this.updateEnemy(unit, dt);
     }
@@ -622,6 +679,13 @@ export class Battle {
     unit.y += (dy / dist) * step;
     if (Math.abs(dx) > 2) unit.facing = dx > 0 ? 1 : -1;
     unit.bobPhase += dt * 11;
+    if (Math.random() < dt * (unit.radius > 20 ? 8 : 4)) {
+      this.fx.burst(unit.x - (dx / dist) * unit.radius * 0.6, unit.y, "rgba(170,160,135,0.5)", 1, 26, {
+        gravity: -18,
+        size: unit.radius > 20 ? 4 : 2.6,
+        life: 0.4,
+      });
+    }
     return dist - step <= arriveDist;
   }
 
@@ -696,10 +760,17 @@ export class Battle {
       }
     }
     hero.facing = target.x >= hero.x ? 1 : -1;
-    if (unitDist(hero, target) <= hero.stats.range + target.radius && hero.attackTimer <= 0) {
-      this.performAttack(hero, target);
-      hero.attackTimer = this.attackIntervalOf(hero);
+    if (unitDist(hero, target) <= hero.stats.range + target.radius && hero.attackTimer <= 0 && hero.windup <= 0) {
+      this.startAttack(hero, target);
     }
+  }
+
+  /** Begin the anticipation pose; the strike lands when windup expires. */
+  private startAttack(attacker: Unit, target: Unit): void {
+    attacker.windup = 0.13;
+    attacker.pendingTarget = target;
+    attacker.attackTimer = this.attackIntervalOf(attacker);
+    attacker.facing = target.x >= attacker.x ? 1 : -1;
   }
 
   private nearestEnemyWithin(unit: Unit, range: number): Unit | null {
@@ -740,6 +811,10 @@ export class Battle {
     if (!target && enemy.aggro && enemy.aggro.alive) target = enemy.aggro;
     if (!target) target = this.nearestHero(enemy);
     if (!target) return;
+    if (!enemy.aggro) {
+      enemy.alert = 0.5;
+      this.fx.floatText(enemy.x, enemy.y - enemy.radius * 3 - 8, "!", "#ffd7a0", 15);
+    }
     enemy.aggro = target;
 
     const def = enemy.enemyKind ? ENEMIES[enemy.enemyKind] : null;
@@ -759,9 +834,8 @@ export class Battle {
       return;
     }
     enemy.facing = target.x >= enemy.x ? 1 : -1;
-    if (enemy.attackTimer <= 0) {
-      this.performAttack(enemy, target);
-      enemy.attackTimer = this.attackIntervalOf(enemy);
+    if (enemy.attackTimer <= 0 && enemy.windup <= 0) {
+      this.startAttack(enemy, target);
     }
   }
 
@@ -867,13 +941,8 @@ export class Battle {
       return;
     }
     alpha.facing = target.x >= alpha.x ? 1 : -1;
-    if (alpha.attackTimer <= 0) {
-      this.performAttack(alpha, target);
-      // in the howl phase and beyond, bites bleed
-      if (alpha.phase >= 2 && target.alive) {
-        target.effects.push(makeEffect("burn", 3, 3, alpha));
-      }
-      alpha.attackTimer = this.attackIntervalOf(alpha);
+    if (alpha.attackTimer <= 0 && alpha.windup <= 0) {
+      this.startAttack(alpha, target);
     }
   }
 
@@ -903,6 +972,7 @@ export class Battle {
         this.fx.ring(mark.x, mark.y, mark.radius + 14, "#c9c2e8", { width: 4, life: 0.4 });
         this.fx.addShake(9);
         this.hitstop = Math.max(this.hitstop, 0.07);
+        this.zoomPunch = Math.max(this.zoomPunch, 1);
         audio.play("thud");
         // frenzy leaves the alpha exhausted: your window
         if (alpha.phase === 3) {
@@ -1075,6 +1145,16 @@ export class Battle {
       unit.lunge = Math.max(0, unit.lunge - dt * 5);
       unit.hitFlash = Math.max(0, unit.hitFlash - dt);
       unit.castGlow = Math.max(0, unit.castGlow - dt);
+      unit.alert = Math.max(0, unit.alert - dt);
+      unit.idleAnim = Math.max(0, unit.idleAnim - dt);
+      if (unit.alive && unit.team === "hero" && !unit.moveTarget && !unit.attackTarget && !unit.healTarget && !unit.celebrate) {
+        unit.idleTimer -= dt;
+        if (unit.idleTimer <= 0) {
+          unit.idleTimer = 4 + Math.random() * 4;
+          unit.idleAnim = 0.7;
+          if (unit.stats.weapon === "stave" || unit.stats.weapon === "staff") unit.castGlow = Math.max(unit.castGlow, 0.3);
+        }
+      }
       if (!unit.alive) unit.deathTime += dt;
     }
   }

@@ -86,6 +86,13 @@ export interface Unit {
   aggro: Unit | null;
   supportTimer: number;
   phase: number; // boss phase (0 = not a boss / phase 1)
+  // presentation extras
+  windup: number; // seconds of attack anticipation remaining
+  pendingTarget: Unit | null; // target the windup will strike
+  alert: number; // "!" reaction timer
+  celebrate: boolean; // victory pose
+  idleTimer: number; // countdown to next idle flourish
+  idleAnim: number; // active idle flourish time
 }
 
 export interface Projectile {

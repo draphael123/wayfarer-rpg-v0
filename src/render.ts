@@ -203,6 +203,31 @@ export function drawBackground(
     outlined(ctx, "rgba(255,255,255,0.18)", 1.6);
   }
 
+  // weather layers
+  if (stage.id === 2) {
+    // fine swamp drizzle
+    ctx.strokeStyle = "rgba(200, 225, 235, 0.28)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i < 34; i++) {
+      const rx = ((hash01(i * 7) * w + time * 240 * (0.7 + hash01(i) * 0.5) * 0.25) % (w + 40)) - 20;
+      const ry = (hash01(i * 13) * h + time * 240 * (0.7 + hash01(i) * 0.5)) % h;
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx - 3, ry + 11);
+    }
+    ctx.stroke();
+  } else if (stage.id === 3) {
+    // slow ash fall
+    ctx.fillStyle = "rgba(200, 195, 188, 0.5)";
+    for (let i = 0; i < 18; i++) {
+      const ax = ((hash01(i * 11) * w + Math.sin(time * 0.8 + i) * 30) % (w + 20)) - 10;
+      const ay = (hash01(i * 5) * h + time * 26 * (0.6 + hash01(i * 3))) % h;
+      ctx.beginPath();
+      ctx.arc(ax, ay, 1.5 + hash01(i) * 1.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   // stage set-dressing: each region gets its own furniture (drawn behind units)
   drawSetDressing(ctx, stage, w, h, horizon, time);
 
@@ -554,8 +579,13 @@ function poseOf(unit: Unit, time: number): Pose {
     (unit.team === "enemy" && unit.lunge <= 0) ||
     (unit.attackTarget !== null && unit.lunge <= 0);
   const walk = moving ? Math.sin(unit.bobPhase) : 0;
-  const bounce = moving ? Math.abs(Math.cos(unit.bobPhase)) * 2.2 : 0;
-  const swing = Math.sin(Math.min(1, unit.lunge) * Math.PI);
+  let bounce = moving ? Math.abs(Math.cos(unit.bobPhase)) * 2.2 : 0;
+  // anticipation pulls the weapon back just before the strike lands
+  let swing = Math.sin(Math.min(1, unit.lunge) * Math.PI);
+  if (unit.windup > 0) swing = -0.4 * (unit.windup / 0.13);
+  if (unit.alert > 0) bounce += Math.sin((1 - unit.alert / 0.5) * Math.PI) * 5;
+  if (unit.celebrate) bounce += Math.abs(Math.sin(time * 6 + unit.id)) * 5;
+  if (unit.idleAnim > 0) bounce += Math.sin((1 - unit.idleAnim / 0.7) * Math.PI * 2) * 1.6;
   const lx = unit.lungeDir.x * unit.lunge * 9;
   const ly = unit.lungeDir.y * unit.lunge * 9;
   return {
@@ -565,7 +595,7 @@ function poseOf(unit: Unit, time: number): Pose {
     walk,
     bounce,
     swing,
-    breathe: Math.sin(time * 2.4 + unit.id) * 0.8,
+    breathe: Math.sin(time * 2.4 + unit.id) * 0.8 + (unit.idleAnim > 0 ? Math.sin((1 - unit.idleAnim / 0.7) * Math.PI) * 1.4 : 0),
   };
 }
 
@@ -783,6 +813,26 @@ function drawHeroWeapon(
     const handX = shX + Math.cos(angle) * H * 0.22;
     const handY = shY + Math.sin(angle) * H * 0.22 + H * 0.06;
     limb(ctx, shX, shY, handX, handY, armW * 0.9, skin);
+    // ghost trail of the blade sweeping through its arc
+    if (swing > 0.15) {
+      for (let g = 1; g <= 3; g++) {
+        const gAngle = f * (-0.85 + Math.max(0, swing - g * 0.22) * 2.1);
+        const gx = shX + Math.cos(gAngle) * H * 0.22;
+        const gy = shY + Math.sin(gAngle) * H * 0.22 + H * 0.06;
+        ctx.save();
+        ctx.translate(gx, gy);
+        ctx.rotate(gAngle + f * 0.35 - f * Math.PI / 2);
+        ctx.globalAlpha = 0.16 * (4 - g) * swing;
+        ctx.strokeStyle = "#fff6d8";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(0, -6);
+        ctx.lineTo(0, -H * 0.55);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+    }
     ctx.save();
     ctx.translate(handX, handY);
     ctx.rotate(angle + f * 0.35 - f * Math.PI / 2);
@@ -1257,7 +1307,18 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
     const squash = Math.min(0.22, unit.hitFlash * 1.4);
     const stretch = unit.lunge * 0.1;
     const moving = unit.moveTarget !== null || (unit.team === "enemy" && unit.lunge <= 0.01 && !unit.attackTarget);
-    const lean = (moving ? unit.facing * 0.055 : 0) - unit.facing * Math.min(0.1, unit.hitFlash * 0.7);
+    const lowHp = unit.team === "hero" && unit.hp / unit.stats.maxHp < 0.25;
+    if (lowHp) {
+      // danger ring pulsing under the wounded hero
+      ctx.globalAlpha = 0.35 + Math.abs(Math.sin(battle.time * 5)) * 0.3;
+      ctx.strokeStyle = "#ff5a48";
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.ellipse(unit.x, unit.y + 2, unit.radius * 1.7, unit.radius * 0.68, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    const lean = (moving ? unit.facing * 0.055 : 0) - unit.facing * Math.min(0.1, unit.hitFlash * 0.7) + (lowHp ? unit.facing * 0.03 : 0);
     if (squash > 0.01 || stretch > 0.01 || Math.abs(lean) > 0.01) {
       ctx.save();
       ctx.translate(unit.x, unit.y);
@@ -1302,6 +1363,13 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
 
 export function drawProjectiles(ctx: CanvasRenderingContext2D, battle: Battle): void {
   for (const p of battle.projectiles) {
+    // small ground shadow keeps flight readable
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = "#141020";
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + 20, 5, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
     ctx.save();
     ctx.translate(p.x, p.y);
     const angle = Math.atan2(p.aim.y, p.aim.x);
