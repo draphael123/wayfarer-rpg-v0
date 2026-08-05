@@ -33,6 +33,7 @@ export function defaultSave(): SaveData {
     unlockedSpells: [...STARTING_SPELLS],
     inventory: [],
     difficulty: 1,
+    seenIntro: false,
   };
 }
 
@@ -81,6 +82,7 @@ export function loadSave(): SaveData {
     }
     if (!Array.isArray(parsed.inventory)) parsed.inventory = [];
     if (typeof parsed.difficulty !== "number" || parsed.difficulty < 0 || parsed.difficulty > 3) parsed.difficulty = 1;
+    if (typeof parsed.seenIntro !== "boolean") parsed.seenIntro = parsed.unlockedStage > 0;
     return parsed;
   } catch {
     return defaultSave();

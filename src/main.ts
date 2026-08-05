@@ -108,6 +108,8 @@ function startBattle(stageIndex: number): void {
   fx = new FxSystem();
   battle = new Battle(STAGES[stageIndex], save, fieldRect(), fx);
   hud = new Hud(battle, save, logicalW, logicalH);
+  hud.freshPlayer = save.unlockedStage === 0 && save.level < 3;
+  audio.setMood("battle");
   menus.hide();
 }
 
@@ -145,6 +147,7 @@ function startTutorial(kind = "basics"): void {
   battle = new Battle(TUTORIAL_STAGE, temp, fieldRect(), fx, true);
   hud = new Hud(battle, temp, logicalW, logicalH);
   tutorial = new Tutorial(battle, hud, kind);
+  audio.setMood("battle");
   menus.hide();
 }
 
@@ -182,6 +185,7 @@ function endBattleToMap(): void {
   fx = null;
   tutorial = null;
   battleSave = save;
+  audio.setMood("menu");
   menus.renderMap();
 }
 

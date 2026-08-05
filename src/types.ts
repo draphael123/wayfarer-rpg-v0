@@ -172,4 +172,5 @@ export interface SaveData {
   unlockedSpells: string[]; // ability ids bought in the spell shop (account-wide)
   inventory: string[]; // trinket ids collected as loot
   difficulty: number; // index into DIFFICULTIES
+  seenIntro: boolean; // first-run tutorial prompt shown
 }

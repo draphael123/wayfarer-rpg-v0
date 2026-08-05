@@ -59,6 +59,9 @@ export class Hud {
   private stanceChips: PortraitRect[] = [];
   hint = "";
   hintTime = 0;
+  freshPlayer = false;
+  private coachStage = 0;
+  private lastLivingHeroes = -1;
   tutorial: {
     text: string;
     sub: string;
@@ -259,6 +262,30 @@ export class Hud {
   update(dt: number): void {
     this.hintTime = Math.max(0, this.hintTime - dt);
     if (this.selected && !this.selected.alive) this.selected = null;
+
+    // gentle coaching for brand-new players (never during tutorials)
+    if (this.freshPlayer && !this.tutorial && this.battle.state === "fighting" && !this.paused) {
+      const b = this.battle;
+      if (this.coachStage === 0 && b.time > 4 && b.ordersIssued === 0 && this.hintTime <= 0) {
+        this.showHint("Drag a hero toward the enemies to fight!");
+      }
+      if (b.ordersIssued > 0 && this.coachStage === 0) this.coachStage = 1;
+      if (
+        this.coachStage === 1 &&
+        b.time > 10 &&
+        Object.keys(b.castCounts).length === 0 &&
+        this.hintTime <= 0 &&
+        this.battle.heroes().some((h) => h.alive && h.abilities.some((a) => a.timer <= 0))
+      ) {
+        this.showHint("The glowing buttons below are abilities — tap one!");
+        this.coachStage = 2;
+      }
+      const living = this.battle.livingHeroes().length;
+      if (this.lastLivingHeroes > 0 && living < this.lastLivingHeroes) {
+        this.showHint("A hero has fallen — they'll return after the battle");
+      }
+      this.lastLivingHeroes = living;
+    }
   }
 
   // ------------------------------------------------------------------ drawing
@@ -270,6 +297,7 @@ export class Hud {
     this.drawBossBar(ctx);
     this.drawBar(ctx);
     this.drawBanner(ctx);
+    this.drawIntroBanner(ctx);
     this.drawTutorialCard(ctx);
     this.drawHintText(ctx);
     this.overlayButtons = [];
@@ -456,8 +484,31 @@ export class Hud {
     ctx.fillRect(this.width - 25, 17, 4.5, 16);
   }
 
+  private drawIntroBanner(ctx: CanvasRenderingContext2D): void {
+    if (this.battle.introBanner <= 0 || this.tutorial) return;
+    const t = 2.6 - this.battle.introBanner;
+    const alpha = Math.min(1, this.battle.introBanner / 0.6, t / 0.35);
+    const slide = t < 0.35 ? (1 - t / 0.35) * -26 : 0;
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.textAlign = "center";
+    ctx.font = "800 30px Palatino, 'Palatino Linotype', Georgia, serif";
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = "rgba(20, 16, 28, 0.85)";
+    const y = this.height * 0.36 + slide;
+    ctx.strokeText(this.battle.stage.name, this.width / 2, y);
+    ctx.fillStyle = "#ffe9a3";
+    ctx.fillText(this.battle.stage.name, this.width / 2, y);
+    ctx.font = "600 italic 14px Georgia, serif";
+    ctx.lineWidth = 4;
+    ctx.strokeText(this.battle.stage.subtitle, this.width / 2, y + 24);
+    ctx.fillStyle = "#e6dcc2";
+    ctx.fillText(this.battle.stage.subtitle, this.width / 2, y + 24);
+    ctx.globalAlpha = 1;
+  }
+
   private drawBanner(ctx: CanvasRenderingContext2D): void {
     if (this.battle.waveBanner <= 0 || this.battle.state !== "fighting" || this.tutorial) return;
+    if (this.battle.introBanner > 0.4) return;
     const alpha = Math.min(1, this.battle.waveBanner / 0.5);
     const age = 2.2 - this.battle.waveBanner;
     const pop = age < 0.22 ? 0.4 + (age / 0.22) * 0.75 : Math.max(1, 1.15 - (age - 0.22) * 0.7);
@@ -963,7 +1014,16 @@ export class Hud {
       const xp = this.battle.xpEarned + this.battle.stage.xpReward;
       ctx.fillText(`+${xp} experience earned`, this.width / 2, frame.y + 78);
     } else {
-      ctx.fillText("Regroup, retrain, and try again.", this.width / 2, frame.y + 78);
+      const TIPS = [
+        "Tip: drag your healer onto wounded allies",
+        "Tip: kill shamans first — they heal the pack",
+        "Tip: drag heroes out of red pounce circles",
+        "Tip: spend gold at the Village between tries",
+        "Tip: attribute points make heroes stronger — see Party",
+        "Tip: lower the difficulty on the map, no shame in it",
+      ];
+      const tip = TIPS[Math.floor(this.battle.time) % TIPS.length];
+      ctx.fillText(tip, this.width / 2, frame.y + 78);
     }
     const bw = frame.w - 60;
     const bx = frame.x + 30;

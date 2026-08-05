@@ -51,6 +51,8 @@ export class Battle {
   extraSpawn = 0;
   castCounts: Record<string, number> = {};
   heroDeaths = 0;
+  ordersIssued = 0;
+  introBanner = 2.6;
 
   constructor(
     public stage: StageDef,
@@ -188,7 +190,16 @@ export class Battle {
     this.waveIndex++;
     if (this.waveIndex >= this.stage.waves.length) {
       this.state = "victory";
-      this.resultDelay = 1.0;
+      this.resultDelay = 1.4;
+      // a shower of gold and light while the banner lands
+      const cx = (this.field.left + this.field.right) / 2;
+      const cy = (this.field.top + this.field.bottom) / 2;
+      this.fx.ring(cx, cy, 180, "#ffe9a3", { width: 5, life: 0.8 });
+      this.fx.burst(cx, cy - 20, "#ffd76b", 26, 220, { glow: true, gravity: 140, size: 4 });
+      this.fx.burst(cx, cy - 20, "#fff3c0", 16, 160, { glow: true, gravity: 100 });
+      for (const hero of this.livingHeroes()) {
+        this.fx.burst(hero.x, hero.y - 20, "#ffe9a3", 8, 90, { glow: true, gravity: -60 });
+      }
       audio.play("victory");
       return;
     }
@@ -298,6 +309,7 @@ export class Battle {
     hero.attackTarget = null;
     hero.healTarget = null;
     hero.autoOrder = false;
+    this.ordersIssued++;
     this.fx.ring(hero.moveTarget.x, hero.moveTarget.y, 20, "rgba(255,250,220,0.9)", { width: 2.5, life: 0.45 });
   }
 
@@ -307,6 +319,7 @@ export class Battle {
     hero.healTarget = null;
     hero.moveTarget = null;
     hero.autoOrder = false;
+    this.ordersIssued++;
     this.fx.ring(target.x, target.y, target.radius * 2.2, "#ff8a70", { width: 3, life: 0.5 });
   }
 
@@ -316,6 +329,7 @@ export class Battle {
     hero.attackTarget = null;
     hero.moveTarget = null;
     hero.autoOrder = false;
+    this.ordersIssued++;
     this.fx.ring(target.x, target.y, target.radius * 2.2, "#8ee88b", { width: 3, life: 0.5 });
   }
 
@@ -515,6 +529,7 @@ export class Battle {
     this.saveRef = save;
     this.time += dt;
     this.waveBanner = Math.max(0, this.waveBanner - dt);
+    this.introBanner = Math.max(0, this.introBanner - dt);
 
     if (this.state === "victory" || this.state === "defeat") {
       this.resultDelay = Math.max(0, this.resultDelay - dt);

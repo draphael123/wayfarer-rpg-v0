@@ -238,7 +238,15 @@ export class Menus {
       if (!act) return;
       audio.unlock();
       audio.play("click");
-      if (act === "start") this.renderMap();
+      if (act === "start") {
+        if (!this.save.seenIntro) {
+          this.save.seenIntro = true;
+          persist(this.save);
+          this.renderFirstRun();
+        } else {
+          this.renderMap();
+        }
+      }
       if (act === "tutorial") this.renderTutorials();
       if (act === "sound") {
         this.save.sound = !this.save.sound;
@@ -575,6 +583,34 @@ export class Menus {
   }
 
   // ------------------------------------------------------------------ tutorials
+
+  /** One-time fork for brand-new players: lessons first, or straight to the road. */
+  renderFirstRun(): void {
+    this.root.innerHTML = "";
+    this.show();
+    const page = el(`
+      <div class="page title-page">
+        <div class="title-block">
+          <div class="game-logo" style="font-size:34px">FIRST STEPS</div>
+          <div class="game-sub">Wayband is played entirely by dragging. Two minutes of practice makes all the difference.</div>
+        </div>
+        <div class="title-buttons">
+          <button class="big-btn primary" data-act="learn">🎓 Learn the ropes (recommended)</button>
+          <button class="big-btn" data-act="skip">⚔ Jump straight in</button>
+        </div>
+        <div class="credit">the lessons stay on the title screen if you change your mind</div>
+      </div>
+    `);
+    page.addEventListener("click", (event) => {
+      const act = (event.target as HTMLElement).closest("[data-act]")?.getAttribute("data-act");
+      if (!act) return;
+      audio.unlock();
+      audio.play("click");
+      if (act === "learn") this.callbacks.startTutorial("basics");
+      else this.renderMap();
+    });
+    this.root.appendChild(page);
+  }
 
   renderTutorials(): void {
     this.root.innerHTML = "";

@@ -577,7 +577,9 @@ function drawShadow(ctx: CanvasRenderingContext2D, unit: Unit): void {
 }
 
 function drawSelection(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
-  ctx.strokeStyle = "rgba(255, 240, 180, 0.95)";
+  const accent = unit.heroIndex >= 0 ? HEROES[unit.heroIndex].accent : "#fff0b4";
+  ctx.strokeStyle = accent;
+  ctx.globalAlpha = 0.95;
   ctx.lineWidth = 2.2;
   ctx.setLineDash([6, 5]);
   ctx.lineDashOffset = -time * 24;
@@ -585,6 +587,7 @@ function drawSelection(ctx: CanvasRenderingContext2D, unit: Unit, time: number):
   ctx.ellipse(unit.x, unit.y + 2, unit.radius * 1.55, unit.radius * 0.6, 0, 0, Math.PI * 2);
   ctx.stroke();
   ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
 }
 
 function flashOverlay(ctx: CanvasRenderingContext2D, unit: Unit, cx: number, cy: number, r: number): void {
@@ -1304,6 +1307,15 @@ export function drawProjectiles(ctx: CanvasRenderingContext2D, battle: Battle): 
     const angle = Math.atan2(p.aim.y, p.aim.x);
     ctx.rotate(angle);
     if (p.kind === "arrow") {
+      // motion streak
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = "#fff8e0";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(-26, 0);
+      ctx.lineTo(-10, 0);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
       ctx.strokeStyle = OUTLINE;
       ctx.lineWidth = 3.4;
       ctx.beginPath();
