@@ -54,6 +54,12 @@ export class Battle {
   ordersIssued = 0;
   introBanner = 2.6;
   zoomPunch = 0;
+  decals: { x: number; y: number; kind: "scorch" | "stain" | "print"; age: number; size: number; angle: number }[] = [];
+  kickX = 0;
+  kickY = 0;
+  cinematic = 0; // boss-intro seconds remaining
+  bossRef: Unit | null = null;
+  slowmo = 0; // kill-cam seconds remaining
 
   constructor(
     public stage: StageDef,
@@ -221,12 +227,21 @@ export class Battle {
       audio.play("victory");
       return;
     }
+    const bossWave = this.stage.waves[this.waveIndex].some((e) => e.kind === "alpha" || e.kind === "warlord");
     this.stage.waves[this.waveIndex].forEach((entry, at) => {
       const count = entry.count + (at === 0 && entry.kind !== "warlord" && entry.kind !== "alpha" ? this.extraSpawn : 0);
       for (let i = 0; i < count; i++) this.spawnEnemy(entry.kind);
     });
     this.state = "fighting";
     this.waveBanner = 2.2;
+    if (bossWave && !this.tutorialMode) {
+      this.bossRef = this.units.find((u) => u.alive && (u.enemyKind === "alpha" || u.enemyKind === "warlord")) ?? null;
+      if (this.bossRef) {
+        this.cinematic = 2.6;
+        this.waveBanner = 0;
+        audio.play("roar");
+      }
+    }
     audio.play("wave");
   }
 
@@ -269,12 +284,19 @@ export class Battle {
     target.hp -= amount;
     if (this.tutorialMode && target.team === "hero" && target.hp < 1) target.hp = 1;
     if (amount > 24) this.hitstop = Math.max(this.hitstop, 0.055);
+    if (amount > 18 && source) {
+      const kdx = target.x - source.x;
+      const kdy = target.y - source.y;
+      const klen = Math.hypot(kdx, kdy) || 1;
+      this.kickX += (kdx / klen) * Math.min(4, amount * 0.12);
+      this.kickY += (kdy / klen) * Math.min(3, amount * 0.08);
+    }
     target.hitFlash = 0.18;
     this.fx.floatText(
       target.x + (Math.random() * 16 - 8),
       target.y - target.radius - 14,
       `${amount}`,
-      opts.color ?? (target.team === "hero" ? "#ff7d6b" : "#ffe9a3"),
+      opts.color ?? (target.team === "hero" ? "#ff7d6b" : "#f2ead8"),
       target.team === "hero" ? 15 : 14,
     );
     if (source) {
@@ -322,11 +344,21 @@ export class Battle {
     });
     // dust puff at the ground where they fall
     this.fx.burst(unit.x, unit.y, "rgba(190,175,150,0.7)", 8, 55, { gravity: -30, size: 4.5, life: 0.45 });
+    this.addDecal(unit.x, unit.y + 2, "stain", unit.radius * 1.1);
     this.fx.ring(unit.x, unit.y, unit.radius * 2.4, "rgba(255,255,255,0.7)", { width: 2.5, life: 0.32 });
     this.fx.addShake(unit.radius > 20 ? 8 : 3);
     this.hitstop = Math.max(this.hitstop, unit.radius > 20 ? 0.1 : 0.06);
     if (unit.radius > 20) this.zoomPunch = Math.max(this.zoomPunch, 0.8);
     audio.play("thud");
+    if (
+      unit.team === "enemy" &&
+      this.waveIndex >= this.stage.waves.length - 1 &&
+      this.livingEnemies().length === 0 &&
+      !this.tutorialMode
+    ) {
+      this.slowmo = 1.1;
+      this.zoomPunch = Math.max(this.zoomPunch, 1);
+    }
     if (unit.team === "enemy" && unit.enemyKind) {
       this.xpEarned += Math.round(ENEMIES[unit.enemyKind].xp * this.stage.scale);
       this.goldEarned += Math.round(ENEMIES[unit.enemyKind].xp * 0.7 * this.stage.scale);
@@ -366,6 +398,11 @@ export class Battle {
     this.fx.ring(target.x, target.y, target.radius * 2.2, "#8ee88b", { width: 3, life: 0.5 });
   }
 
+  addDecal(x: number, y: number, kind: "scorch" | "stain" | "print", size: number): void {
+    this.decals.push({ x, y, kind, age: 0, size, angle: Math.random() * Math.PI });
+    if (this.decals.length > 44) this.decals.shift();
+  }
+
   clampToField(v: Vec, radius: number): Vec {
     return {
       x: Math.min(this.field.right - radius, Math.max(this.field.left + radius, v.x)),
@@ -396,7 +433,7 @@ export class Battle {
         hero.lunge = 1;
         hero.lungeDir = dir;
         this.fx.slash(hero.x, hero.y - 14, Math.atan2(dir.y, dir.x), 52, "#ffd27d", Math.PI * 1.4);
-        this.fx.ring(hero.x, hero.y, 82, "#ffd27d", { width: 3, life: 0.35 });
+        this.fx.ring(hero.x, hero.y, 82, HEROES[hero.heroIndex]?.accent ?? "#ffd27d", { width: 3, life: 0.35 });
         this.fx.burst(hero.x + dir.x * 40, hero.y + dir.y * 40 - 10, "#ffd27d", 12, 140, { glow: true });
         this.fx.addShake(hitAny ? 5 : 2);
         audio.play("slash");
@@ -460,6 +497,7 @@ export class Battle {
         this.fx.burst(at.x, at.y, "rgba(90,70,60,0.8)", 10, 90, { gravity: -40, size: 5, life: 0.6 });
         this.fx.ring(at.x, at.y, 100, "#ffb46b", { width: 5, life: 0.5 });
         this.fx.pool(at.x, at.y, 110, "255,150,60", 0.9);
+        this.addDecal(at.x, at.y, "scorch", 46);
         this.fx.ring(at.x, at.y, 60, "#fff0c0", { width: 3, life: 0.3 });
         this.fx.addShake(8);
         this.hitstop = Math.max(this.hitstop, 0.07);
@@ -576,6 +614,12 @@ export class Battle {
       return;
     }
 
+    if (this.cinematic > 0) {
+      // the world holds its breath while the boss is introduced
+      this.cinematic -= dt;
+      this.updatePresentation(dt);
+      return;
+    }
     if (this.tutorialMode) {
       this.state = "fighting";
     } else {
@@ -685,6 +729,7 @@ export class Battle {
         size: unit.radius > 20 ? 4 : 2.6,
         life: 0.4,
       });
+      if (unit.radius > 20) this.addDecal(unit.x, unit.y + 2, "print", 7);
     }
     return dist - step <= arriveDist;
   }

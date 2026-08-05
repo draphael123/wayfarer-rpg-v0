@@ -1166,3 +1166,59 @@ html, body {
 .talent-node, .ability-chip { background: #2a3122; }
 .rotate-card { color: #e6e2d2; }
 #rotate-hint { background: rgba(16, 20, 12, 0.94); }
+
+/* animated campfire title scene */
+
+.campfire-scene {
+  width: min(360px, 82vw);
+  margin: -8px auto 0;
+  opacity: 0.95;
+}
+
+.campfire-scene svg { display: block; width: 100%; }
+
+.cf-flame {
+  transform-origin: 181px 100px;
+  animation: flicker 0.45s ease-in-out infinite alternate;
+}
+
+@keyframes flicker {
+  from { transform: scaleY(1) scaleX(1); }
+  to { transform: scaleY(1.14) scaleX(0.94); }
+}
+
+.cf-orb { animation: orbglow 2.6s ease-in-out infinite; }
+
+@keyframes orbglow {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.cf-ember { animation: emberrise 2.4s linear infinite; }
+.cf-ember.e2 { animation-duration: 3.1s; animation-delay: 0.7s; }
+.cf-ember.e3 { animation-duration: 2s; animation-delay: 1.3s; }
+
+@keyframes emberrise {
+  from { transform: translateY(0); opacity: 0.9; }
+  to { transform: translateY(-34px); opacity: 0; }
+}
+
+/* overworld weather */
+
+.map-rainband { animation: maprain 1.1s linear infinite; }
+
+@keyframes maprain {
+  from { transform: translateY(-6px); opacity: 0.9; }
+  to { transform: translateY(10px); opacity: 0.3; }
+}
+
+.map-emberband { animation: mapember 2.8s linear infinite; }
+
+@keyframes mapember {
+  from { transform: translateY(6px); opacity: 0.9; }
+  to { transform: translateY(-14px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cf-flame, .cf-orb, .cf-ember, .map-rainband, .map-emberband { animation: none !important; }
+}

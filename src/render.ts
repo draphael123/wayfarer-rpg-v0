@@ -55,6 +55,13 @@ function hash01(n: number): number {
   return s - Math.floor(s);
 }
 
+export interface BgOpts {
+  camX?: number;
+  camY?: number;
+  dusk?: number; // 0..1 wave progression toward sundown
+  units?: Unit[]; // for reactive vegetation
+}
+
 export function drawBackground(
   ctx: CanvasRenderingContext2D,
   stage: StageDef,
@@ -62,18 +69,34 @@ export function drawBackground(
   h: number,
   horizon: number,
   time: number,
+  opts: BgOpts = {},
 ): void {
   const p = stage.palette;
   const night = stage.id >= 4;
+  const camX = opts.camX ?? 0;
+  const camY = opts.camY ?? 0;
+  const dusk = opts.dusk ?? 0;
+  // far layer barely moves with the camera (parallax)
+  ctx.save();
+  ctx.translate(camX * 0.72, camY * 0.72);
   const sky = ctx.createLinearGradient(0, 0, 0, horizon);
   sky.addColorStop(0, p.skyTop);
   sky.addColorStop(1, p.skyBottom);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, w, horizon);
+  if (dusk > 0) {
+    // the sun sinks as the waves wear on
+    const g = ctx.createLinearGradient(0, 0, 0, horizon);
+    g.addColorStop(0, `rgba(60, 40, 90, ${dusk * 0.22})`);
+    g.addColorStop(0.7, `rgba(255, 120, 60, ${dusk * 0.16})`);
+    g.addColorStop(1, `rgba(255, 160, 80, ${dusk * 0.1})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, horizon);
+  }
 
   // sun / moon with soft halo
   const orbX = w * 0.78;
-  const orbY = horizon * 0.38;
+  const orbY = horizon * (0.38 + dusk * 0.42);
   const halo = ctx.createRadialGradient(orbX, orbY, 4, orbX, orbY, 90);
   halo.addColorStop(0, night ? "rgba(235,235,255,0.55)" : "rgba(255,245,200,0.75)");
   halo.addColorStop(1, "rgba(255,245,200,0)");
@@ -163,12 +186,22 @@ export function drawBackground(
     }
   }
 
+  ctx.restore();
+  // mid layer: soft parallax
+  ctx.save();
+  ctx.translate(camX * 0.35, camY * 0.35);
+  ctx.restore();
+
   // ground
   const ground = ctx.createLinearGradient(0, horizon, 0, h);
   ground.addColorStop(0, p.ground);
   ground.addColorStop(1, p.groundDark);
   ctx.fillStyle = ground;
   ctx.fillRect(0, horizon, w, h - horizon);
+  if (dusk > 0) {
+    ctx.fillStyle = `rgba(30, 18, 50, ${dusk * 0.14})`;
+    ctx.fillRect(0, horizon, w, h - horizon);
+  }
   // ground edge highlight
   ctx.fillStyle = "rgba(255,255,255,0.14)";
   ctx.fillRect(0, horizon, w, 2.5);
@@ -185,7 +218,14 @@ export function drawBackground(
   for (let i = 0; i < 22; i++) {
     const gx = hash01(i * 127 + stage.id * 3) * w;
     const gy = horizon + 10 + hash01(i * 311 + stage.id) * (h - horizon - 26);
-    const sway = Math.sin(time * 1.6 + i) * 1.4;
+    let sway = Math.sin(time * 1.6 + i) * 1.4;
+    if (opts.units) {
+      for (const u of opts.units) {
+        if (!u.alive) continue;
+        const d = Math.hypot(u.x - gx, u.y - gy);
+        if (d < 34) sway += ((gx - u.x) / (d + 4)) * (34 - d) * 0.32;
+      }
+    }
     ctx.strokeStyle = p.prop;
     ctx.lineWidth = 1.6;
     ctx.beginPath();
@@ -201,6 +241,31 @@ export function drawBackground(
     ctx.beginPath();
     ctx.ellipse(gx, gy, 6 + hash01(i * 2) * 5, 4 + hash01(i * 5) * 3, 0, 0, Math.PI);
     outlined(ctx, "rgba(255,255,255,0.18)", 1.6);
+  }
+
+  // lightning over Gloaming Pass: periodic flashes with a jagged bolt
+  if (stage.id === 4) {
+    const cycle = time % 6.5;
+    if (cycle > 5.9 && cycle < 6.25) {
+      const k = 1 - Math.abs((cycle - 6.05) / 0.18);
+      ctx.fillStyle = `rgba(230, 230, 255, ${Math.max(0, k) * 0.32})`;
+      ctx.fillRect(0, 0, w, h);
+      if (cycle > 6.0 && cycle < 6.12) {
+        const bx = w * (0.25 + hash01(Math.floor(time / 6.5)) * 0.5);
+        ctx.strokeStyle = "rgba(240, 240, 255, 0.9)";
+        ctx.lineWidth = 2.6;
+        ctx.beginPath();
+        ctx.moveTo(bx, 0);
+        let ly = 0;
+        let lx = bx;
+        while (ly < horizon) {
+          lx += (hash01(lx + ly) - 0.5) * 34;
+          ly += 14 + hash01(ly) * 12;
+          ctx.lineTo(lx, ly);
+        }
+        ctx.stroke();
+      }
+    }
   }
 
   // weather layers
@@ -1444,14 +1509,25 @@ export function drawForeground(
   w: number,
   h: number,
   time: number,
+  opts: BgOpts = {},
 ): void {
+  ctx.save();
+  // the near layer overshoots the camera slightly for depth
+  ctx.translate(-(opts.camX ?? 0) * 0.35, -(opts.camY ?? 0) * 0.35);
   ctx.fillStyle = stage.palette.prop;
   ctx.globalAlpha = 0.85;
   for (let i = 0; i < 9; i++) {
     const gx = hash01(i * 41 + stage.id * 5) * w;
     const base = h - 2 + hash01(i * 7) * 6;
     const s = 14 + hash01(i * 13) * 16;
-    const sway = Math.sin(time * 1.3 + i * 2.2) * 3;
+    let sway = Math.sin(time * 1.3 + i * 2.2) * 3;
+    if (opts.units) {
+      for (const u of opts.units) {
+        if (!u.alive) continue;
+        const d = Math.hypot(u.x - gx, u.y - base);
+        if (d < 44) sway += ((gx - u.x) / (d + 5)) * (44 - d) * 0.4;
+      }
+    }
     ctx.beginPath();
     ctx.moveTo(gx - s * 0.5, base);
     ctx.quadraticCurveTo(gx - s * 0.45 + sway, base - s * 1.4, gx - s * 0.15 + sway * 1.3, base - s * 1.8);
@@ -1463,4 +1539,143 @@ export function drawForeground(
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+
+/** Battle decals: scorch marks, dark stains, and footprints the fight leaves behind. */
+export function drawDecals(ctx: CanvasRenderingContext2D, battle: Battle): void {
+  for (const d of battle.decals) {
+    if (d.kind === "scorch") {
+      const g = ctx.createRadialGradient(d.x, d.y, 2, d.x, d.y, d.size);
+      g.addColorStop(0, "rgba(30, 18, 12, 0.4)");
+      g.addColorStop(0.7, "rgba(30, 18, 12, 0.22)");
+      g.addColorStop(1, "rgba(30, 18, 12, 0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(d.x, d.y, d.size, d.size * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (d.kind === "stain") {
+      ctx.fillStyle = "rgba(40, 24, 20, 0.25)";
+      ctx.beginPath();
+      ctx.ellipse(d.x, d.y, d.size, d.size * 0.4, d.angle * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = "rgba(30, 24, 18, 0.22)";
+      ctx.beginPath();
+      ctx.ellipse(d.x, d.y, d.size * 0.7, d.size * 0.4, d.angle, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+/** Per-stage ambient color grade over the whole scene (soft-light keeps detail). */
+const STAGE_GRADE: Record<number, string> = {
+  0: "rgba(255, 235, 170, 0.14)",
+  1: "rgba(90, 140, 170, 0.18)",
+  2: "rgba(110, 190, 150, 0.16)",
+  3: "rgba(255, 130, 60, 0.2)",
+  4: "rgba(120, 100, 220, 0.22)",
+  5: "rgba(255, 90, 60, 0.18)",
+};
+
+export function drawColorGrade(ctx: CanvasRenderingContext2D, stage: StageDef, w: number, h: number): void {
+  const tint = STAGE_GRADE[stage.id];
+  if (!tint) return;
+  ctx.save();
+  ctx.globalCompositeOperation = "soft-light";
+  ctx.fillStyle = tint;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}
+
+/** How dark each stage's night layer is (0 = fully lit). */
+export const STAGE_DARKNESS: Record<number, number> = { 2: 0.16, 4: 0.5, 5: 0.32 };
+
+let lightCanvas: HTMLCanvasElement | null = null;
+
+/** Dynamic lighting: a darkness sheet with holes cut by every light source. */
+export function drawLighting(
+  ctx: CanvasRenderingContext2D,
+  battle: Battle,
+  w: number,
+  h: number,
+): void {
+  const darkness = STAGE_DARKNESS[battle.stage.id] ?? 0;
+  if (darkness <= 0) return;
+  if (!lightCanvas) lightCanvas = document.createElement("canvas");
+  const iw = Math.ceil(w);
+  const ih = Math.ceil(h);
+  if (lightCanvas.width !== iw || lightCanvas.height !== ih) {
+    lightCanvas.width = iw;
+    lightCanvas.height = ih;
+  }
+  const lc = lightCanvas.getContext("2d")!;
+  lc.setTransform(1, 0, 0, 1, 0, 0);
+  lc.globalCompositeOperation = "source-over";
+  lc.clearRect(0, 0, iw, ih);
+  lc.fillStyle = `rgba(10, 8, 32, ${darkness})`;
+  lc.fillRect(0, 0, iw, ih);
+  lc.globalCompositeOperation = "destination-out";
+  const carve = (x: number, y: number, r: number, strength: number) => {
+    const g = lc.createRadialGradient(x, y, 2, x, y, r);
+    g.addColorStop(0, `rgba(0,0,0,${strength})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    lc.fillStyle = g;
+    lc.beginPath();
+    lc.arc(x, y, r, 0, Math.PI * 2);
+    lc.fill();
+  };
+  for (const u of battle.units) {
+    if (!u.alive) continue;
+    if (u.team === "hero") carve(u.x, u.y - 14, 92, 0.9);
+    if (u.enemyKind === "shaman") carve(u.x, u.y - 20, 60, 0.8);
+    if (u.enemyKind === "alpha" || u.enemyKind === "warlord") carve(u.x, u.y - 16, 70, 0.6);
+    if (u.castGlow > 0) carve(u.x, u.y - 16, 130, Math.min(1, u.castGlow * 2));
+  }
+  for (const p of battle.projectiles) {
+    if (p.kind !== "arrow") carve(p.x, p.y, 46, 0.85);
+  }
+  for (const pool of battle.fx.pools) {
+    carve(pool.x, pool.y, pool.r * 1.2, (pool.life / pool.maxLife) * 0.9);
+  }
+  for (const ring of battle.fx.rings) {
+    carve(ring.x, ring.y, ring.r, (ring.life / ring.maxLife) * 0.5);
+  }
+  ctx.drawImage(lightCanvas, 0, 0);
+}
+
+/** Faded, flipped ghosts of units standing near the Mirebrook pools. */
+export function drawReflections(
+  ctx: CanvasRenderingContext2D,
+  battle: Battle,
+  save: SaveData,
+  w: number,
+  h: number,
+  horizon: number,
+  time: number,
+): void {
+  if (battle.stage.id !== 2) return;
+  const groundAt = (t: number, band: number) => horizon + 14 + hash01(t) * (h - horizon - 30) * band;
+  const pools = [0, 1, 2].map((i) => ({
+    x: w * (0.2 + i * 0.3) + hash01(i * 9) * 40,
+    y: groundAt(i * 3.3, 0.8),
+    rx: 40 + hash01(i) * 24,
+  }));
+  for (const unit of battle.units) {
+    if (!unit.alive) continue;
+    const pool = pools.find((p) => Math.hypot(unit.x - p.x, unit.y - p.y) < p.rx + 14);
+    if (!pool) continue;
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(pool.x, pool.y + 4, pool.rx, 11, 0, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalAlpha = 0.22;
+    ctx.translate(unit.x + Math.sin(time * 2 + unit.id) * 1.2, unit.y * 2 + 6);
+    ctx.scale(1, -0.8);
+    ctx.translate(-unit.x, -unit.y);
+    if (unit.team === "hero") drawHero(ctx, unit, save, false, time);
+    else drawEnemy(ctx, unit, time);
+    ctx.restore();
+  }
 }

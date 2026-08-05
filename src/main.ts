@@ -4,7 +4,19 @@ import { BOSS_STAGES, DIFFICULTIES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { Menus } from "./menus";
-import { drawBackground, drawForeground, drawProjectiles, drawTelegraphs, drawUnits, drawVignette, drawZones } from "./render";
+import {
+  drawBackground,
+  drawColorGrade,
+  drawDecals,
+  drawForeground,
+  drawLighting,
+  drawProjectiles,
+  drawReflections,
+  drawTelegraphs,
+  drawUnits,
+  drawVignette,
+  drawZones,
+} from "./render";
 import { defaultSave, grantXp, loadSave, nextSpeed, persist } from "./save";
 import { logEvent } from "./telemetry";
 import { Tutorial } from "./tutorial";
@@ -365,7 +377,11 @@ function frame(now: number): void {
         battle.hitstop = Math.max(0, battle.hitstop - dt);
         dt *= 0.12;
       }
-      const simDt = dt * save.speed;
+      let simDt = dt * save.speed;
+      if (battle.slowmo > 0) {
+        battle.slowmo = Math.max(0, battle.slowmo - dt);
+        simDt *= 0.3;
+      }
       battle.update(simDt, battleSave);
       fx.update(simDt);
       if (tutorial) {
@@ -380,9 +396,14 @@ function frame(now: number): void {
     hud.update(dt);
     if (battle.state === "victory") rollLoot();
 
-    // camera: ease toward the action's center, punch-zoom on big impacts
+    // camera: ease toward the action (or the boss during their intro)
     const living = battle.units.filter((u) => u.alive);
-    if (living.length) {
+    let targetX = cam.x;
+    let targetY = cam.y;
+    if (battle.cinematic > 0 && battle.bossRef?.alive) {
+      targetX = Math.max(-40, Math.min(40, (battle.bossRef.x - logicalW / 2) * 0.35));
+      targetY = Math.max(-24, Math.min(24, (battle.bossRef.y - (logicalH - HUD_H) * 0.55) * 0.3));
+    } else if (living.length) {
       let cx = 0;
       let cy = 0;
       for (const u of living) {
@@ -391,39 +412,54 @@ function frame(now: number): void {
       }
       cx /= living.length;
       cy /= living.length;
-      const targetX = Math.max(-14, Math.min(14, (cx - logicalW / 2) * 0.12));
-      const targetY = Math.max(-8, Math.min(8, (cy - (logicalH - HUD_H) * 0.55) * 0.1));
-      cam.x += (targetX - cam.x) * Math.min(1, dt * 2.2);
-      cam.y += (targetY - cam.y) * Math.min(1, dt * 2.2);
+      targetX = Math.max(-14, Math.min(14, (cx - logicalW / 2) * 0.12));
+      targetY = Math.max(-8, Math.min(8, (cy - (logicalH - HUD_H) * 0.55) * 0.1));
     }
+    cam.x += (targetX - cam.x) * Math.min(1, dt * (battle.cinematic > 0 ? 4 : 2.2));
+    cam.y += (targetY - cam.y) * Math.min(1, dt * (battle.cinematic > 0 ? 4 : 2.2));
     cam.punch = Math.max(0, cam.punch - dt * 3.2);
     if (battle.zoomPunch > 0) {
       cam.punch = Math.max(cam.punch, battle.zoomPunch);
       battle.zoomPunch = 0;
     }
-    cam.zoom = 1 + cam.punch * 0.045;
+    // directional hit-kick decays fast
+    battle.kickX *= Math.max(0, 1 - dt * 10);
+    battle.kickY *= Math.max(0, 1 - dt * 10);
+    const cineZoom = battle.cinematic > 0 ? 0.1 : 0;
+    cam.zoom = 1 + cam.punch * 0.045 + cineZoom;
     hud.cam = cam;
 
     const shakeX = fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
     const shakeY = fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
 
     const CY = (logicalH - HUD_H) * 0.5;
+    const worldH = logicalH - HUD_H + 20;
+    const dusk = battle.stage.waves.length > 1 ? Math.max(0, battle.waveIndex) / (battle.stage.waves.length - 1) : 0;
     ctx.save();
-    ctx.translate(shakeX, shakeY);
+    ctx.translate(shakeX + battle.kickX, shakeY + battle.kickY);
     ctx.translate(logicalW / 2, CY);
     ctx.scale(cam.zoom, cam.zoom);
     ctx.translate(-logicalW / 2 - cam.x, -CY - cam.y);
     const horizon = (logicalH - HUD_H) * 0.34;
-    drawBackground(ctx, battle.stage, logicalW, logicalH - HUD_H + 20, horizon, battle.time);
+    drawBackground(ctx, battle.stage, logicalW, worldH, horizon, battle.time, {
+      camX: cam.x,
+      camY: cam.y,
+      dusk: battle.tutorialMode ? 0 : dusk * 0.8,
+      units: battle.units,
+    });
+    drawDecals(ctx, battle);
+    drawReflections(ctx, battle, battleSave, logicalW, worldH, horizon, battle.time);
     drawZones(ctx, battle);
     drawTelegraphs(ctx, battle);
     drawUnits(ctx, battle, battleSave, hud.selected);
     drawProjectiles(ctx, battle);
     fx.draw(ctx);
     hud.drawWorld(ctx);
-    drawForeground(ctx, battle.stage, logicalW, logicalH - HUD_H + 20, battle.time);
+    drawForeground(ctx, battle.stage, logicalW, worldH, battle.time, { camX: cam.x, camY: cam.y, units: battle.units });
     ctx.restore();
-    drawVignette(ctx, logicalW, logicalH - HUD_H + 20);
+    drawLighting(ctx, battle, logicalW, worldH);
+    drawColorGrade(ctx, battle.stage, logicalW, worldH);
+    drawVignette(ctx, logicalW, worldH);
     hud.draw(ctx);
   } else {
     // simple backdrop behind DOM menus

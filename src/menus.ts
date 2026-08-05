@@ -207,6 +207,32 @@ export class Menus {
           <div class="game-logo">WAYBAND</div>
           <div class="game-sub">a classless company of four</div>
         </div>
+        <div class="campfire-scene" aria-hidden="true">
+          <svg viewBox="0 0 360 120">
+            <ellipse cx="180" cy="112" rx="150" ry="10" fill="rgba(240,180,90,0.12)"/>
+            <ellipse cx="180" cy="110" rx="90" ry="7" fill="rgba(240,180,90,0.16)"/>
+            <!-- the band, silhouetted -->
+            <g fill="#141a10">
+              <circle cx="96" cy="84" r="9"/><rect x="88" y="90" width="16" height="22" rx="6"/>
+              <circle cx="140" cy="78" r="10"/><rect x="130" y="85" width="20" height="27" rx="7"/>
+              <circle cx="224" cy="80" r="10"/><rect x="214" y="87" width="20" height="25" rx="7"/>
+              <circle cx="266" cy="86" r="9"/><rect x="258" y="92" width="16" height="20" rx="6"/>
+              <rect x="272" y="58" width="3" height="36" rx="1.5"/>
+            </g>
+            <circle cx="273.5" cy="55" r="5" fill="#f2d16b" opacity="0.9" class="cf-orb"/>
+            <!-- logs -->
+            <rect x="164" y="102" width="34" height="6" rx="3" fill="#241a10" transform="rotate(14 181 105)"/>
+            <rect x="164" y="102" width="34" height="6" rx="3" fill="#2c2013" transform="rotate(-14 181 105)"/>
+            <!-- flames -->
+            <g class="cf-flame">
+              <path d="M 181 104 C 172 92 176 82 181 72 C 186 82 190 92 181 104 Z" fill="#e8863c"/>
+              <path d="M 181 102 C 176 94 178 86 181 80 C 184 86 186 94 181 102 Z" fill="#f2c16b"/>
+            </g>
+            <circle class="cf-ember e1" cx="178" cy="70" r="2" fill="#f2b16b"/>
+            <circle class="cf-ember e2" cx="185" cy="74" r="1.6" fill="#e8863c"/>
+            <circle class="cf-ember e3" cx="181" cy="66" r="1.4" fill="#f2d16b"/>
+          </svg>
+        </div>
         <div class="title-buttons">
           <button class="big-btn primary" data-act="start">Set Out</button>
           <button class="big-btn" data-act="tutorial">How to Play</button>
@@ -515,6 +541,13 @@ export class Menus {
           <path d="${road}" fill="none" stroke="#e0c896" stroke-width="2.5" stroke-dasharray="1 10" stroke-linecap="round"/>
           <!-- bridge where road meets river -->
           <rect x="358" y="266" width="30" height="10" rx="3" fill="#6b4a2a" stroke="#1c3023" stroke-width="2" transform="rotate(-18 373 271)"/>
+          <!-- regional weather on the overworld -->
+          <g class="map-rainband">
+            ${Array.from({ length: 7 }, (_, i) => `<line x1="${292 + i * 10}" y1="${212 + (i % 3) * 6}" x2="${289 + i * 10}" y2="${224 + (i % 3) * 6}" stroke="rgba(180,215,225,0.55)" stroke-width="1.2"/>`).join("")}
+          </g>
+          <g class="map-emberband">
+            ${Array.from({ length: 5 }, (_, i) => `<circle cx="${398 + i * 12}" cy="${150 + (i % 3) * 9}" r="1.6" fill="rgba(255,150,80,0.8)"/>`).join("")}
+          </g>
           <!-- boss skull rock -->
           <g transform="translate(600,72)" opacity="0.9">
             <circle r="9" fill="#c9c2b8"/>

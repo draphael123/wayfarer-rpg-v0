@@ -344,10 +344,56 @@ export class Hud {
   /** World-space overlays: drawn inside the camera transform. */
   drawWorld(ctx: CanvasRenderingContext2D): void {
     this.drawTargetMarkers(ctx);
+    this.drawCastingSigil(ctx);
     this.drawDragIndicators(ctx);
   }
 
+  /** A rotating spell circle under a hero while their gesture is being aimed. */
+  private drawCastingSigil(ctx: CanvasRenderingContext2D): void {
+    const drag = this.drag;
+    if (!drag || drag.mode !== "ability") return;
+    const hero = drag.hero;
+    const color = drag.ability.def.color;
+    const t = this.battle.time;
+    ctx.save();
+    ctx.translate(hero.x, hero.y + 2);
+    ctx.scale(1, 0.45);
+    ctx.rotate(t * 1.4);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.8;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 30, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([5, 7]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // rotating tri-rune
+    ctx.beginPath();
+    for (let i = 0; i < 3; i++) {
+      const a = -t * 2.2 + (i / 3) * Math.PI * 2;
+      const px = Math.cos(a) * 30;
+      const py = Math.sin(a) * 30;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    for (let i = 0; i < 3; i++) {
+      const a = t * 1.8 + (i / 3) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * 30, Math.sin(a) * 30, 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
   draw(ctx: CanvasRenderingContext2D): void {
+    this.drawCinematic(ctx);
     this.drawTopBar(ctx);
     this.drawBossBar(ctx);
     this.drawBar(ctx);
@@ -515,6 +561,31 @@ export class Hud {
     for (const mark of [0.6, 0.3]) {
       ctx.fillStyle = frac > mark ? "#ffe9a3" : "rgba(255,255,255,0.25)";
       ctx.fillRect(x + w * mark - 1, y + 9, 2, 13);
+    }
+  }
+
+  private drawCinematic(ctx: CanvasRenderingContext2D): void {
+    const c = this.battle.cinematic;
+    if (c <= 0 || !this.battle.bossRef) return;
+    const inT = Math.min(1, (2.6 - c) / 0.35);
+    const outT = Math.min(1, c / 0.35);
+    const bar = 44 * Math.min(inT, outT);
+    ctx.fillStyle = "#0c0914";
+    ctx.fillRect(0, 0, this.width, bar);
+    ctx.fillRect(0, this.height - bar, this.width, bar);
+    if (c < 2.1 && c > 0.4) {
+      const boss = this.battle.bossRef;
+      ctx.textAlign = "center";
+      ctx.font = "800 30px Palatino, 'Palatino Linotype', Georgia, serif";
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = "rgba(12, 9, 20, 0.9)";
+      const y = this.height * 0.26;
+      ctx.strokeText(boss.name.toUpperCase(), this.width / 2, y);
+      ctx.fillStyle = "#ff8a70";
+      ctx.fillText(boss.name.toUpperCase(), this.width / 2, y);
+      ctx.font = "600 italic 13px Georgia, serif";
+      ctx.fillStyle = "#e6dcc2";
+      ctx.fillText("Dodge the pounce. Punish the exhaustion.", this.width / 2, y + 22);
     }
   }
 
@@ -761,12 +832,43 @@ export class Hud {
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      // eyes
+      // face: eyes + a mouth that tracks their condition
+      ctx.strokeStyle = "#241d2e";
       ctx.fillStyle = "#241d2e";
-      ctx.beginPath();
-      ctx.arc(mx - ps * 0.09, py + ps * 0.47, 1.7, 0, Math.PI * 2);
-      ctx.arc(mx + ps * 0.09, py + ps * 0.47, 1.7, 0, Math.PI * 2);
-      ctx.fill();
+      if (!hero.alive) {
+        ctx.lineWidth = 1.6;
+        for (const ex of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(mx + ex * ps * 0.09 - 2.4, py + ps * 0.47 - 2.4);
+          ctx.lineTo(mx + ex * ps * 0.09 + 2.4, py + ps * 0.47 + 2.4);
+          ctx.moveTo(mx + ex * ps * 0.09 + 2.4, py + ps * 0.47 - 2.4);
+          ctx.lineTo(mx + ex * ps * 0.09 - 2.4, py + ps * 0.47 + 2.4);
+          ctx.stroke();
+        }
+      } else {
+        ctx.beginPath();
+        ctx.arc(mx - ps * 0.09, py + ps * 0.47, 1.7, 0, Math.PI * 2);
+        ctx.arc(mx + ps * 0.09, py + ps * 0.47, 1.7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        if (hpFrac < 0.25) {
+          // gritted grimace
+          ctx.moveTo(mx - 4.5, py + ps * 0.6);
+          ctx.lineTo(mx + 4.5, py + ps * 0.6);
+          ctx.moveTo(mx - 2.5, py + ps * 0.57);
+          ctx.lineTo(mx - 2.5, py + ps * 0.63);
+          ctx.moveTo(mx + 2.5, py + ps * 0.57);
+          ctx.lineTo(mx + 2.5, py + ps * 0.63);
+        } else if (hpFrac < 0.55) {
+          ctx.moveTo(mx - 3.5, py + ps * 0.61);
+          ctx.quadraticCurveTo(mx, py + ps * 0.58, mx + 3.5, py + ps * 0.61);
+        } else {
+          ctx.moveTo(mx - 3.5, py + ps * 0.58);
+          ctx.quadraticCurveTo(mx, py + ps * 0.63, mx + 3.5, py + ps * 0.58);
+        }
+        ctx.stroke();
+      }
       ctx.restore();
 
       // hp sliver under portrait
