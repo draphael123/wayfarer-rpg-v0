@@ -1,0 +1,14 @@
+{
+  "name": "Wayband — classless party tactics",
+  "short_name": "Wayband",
+  "description": "Drag your heroes, draw your spells, shape your band.",
+  "start_url": ".",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#131810",
+  "theme_color": "#1a2017",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

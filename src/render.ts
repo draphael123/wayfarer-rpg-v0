@@ -683,8 +683,9 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
   const gy = pose.groundY - pose.bounce * 0.7;
   const isAlpha = unit.enemyKind === "alpha";
   const colors = isAlpha ? { body: "#3f3a4d", trim: "#292534" } : ENEMY_COLORS.wolf;
+  const stretchB = isAlpha ? 1.18 : 1; // longer, rangier frame for the boss
   drawShadow(ctx, unit);
-  const bodyY = gy - r * 0.9;
+  const bodyY = gy - r * (isAlpha ? 1.05 : 0.9);
   // legs scissor
   const legPairs = [
     { x: cx - f * r * 0.85, phase: pose.walk },
@@ -696,8 +697,21 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
   }
   // body
   ctx.beginPath();
-  ctx.ellipse(cx, bodyY, r * 1.3, r * 0.66, -f * 0.08, 0, Math.PI * 2);
+  ctx.ellipse(cx, bodyY, r * 1.3 * stretchB, r * 0.62, -f * 0.08, 0, Math.PI * 2);
   outlined(ctx, colors.body);
+  if (isAlpha) {
+    // bristling mane along the neck and shoulders
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const mx = cx + f * r * (0.2 + i * 0.22);
+      const my = bodyY - r * (0.52 + Math.sin(i * 1.3) * 0.06);
+      ctx.moveTo(mx, my);
+      ctx.lineTo(mx + f * r * 0.1, my - r * (0.42 - i * 0.05));
+      ctx.lineTo(mx + f * r * 0.26, my);
+    }
+    ctx.closePath();
+    outlined(ctx, "#524b63", 2);
+  }
   // tail
   ctx.lineCap = "round";
   ctx.strokeStyle = OUTLINE;
@@ -1003,8 +1017,22 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
   }
   for (const unit of sorted) {
     if (!unit.alive) continue;
-    if (unit.team === "hero") drawHero(ctx, unit, save, unit === selected, battle.time);
-    else drawEnemy(ctx, unit, battle.time);
+    // squash on hit, stretch on lunge — anchored at the feet
+    const squash = Math.min(0.22, unit.hitFlash * 1.4);
+    const stretch = unit.lunge * 0.1;
+    if (squash > 0.01 || stretch > 0.01) {
+      ctx.save();
+      ctx.translate(unit.x, unit.y);
+      ctx.scale(1 + squash + stretch, 1 - squash + stretch * 0.4);
+      ctx.translate(-unit.x, -unit.y);
+      if (unit.team === "hero") drawHero(ctx, unit, save, unit === selected, battle.time);
+      else drawEnemy(ctx, unit, battle.time);
+      ctx.restore();
+    } else if (unit.team === "hero") {
+      drawHero(ctx, unit, save, unit === selected, battle.time);
+    } else {
+      drawEnemy(ctx, unit, battle.time);
+    }
   }
   for (const unit of battle.units) {
     if (unit.alive && unit.channelBeam > 0 && unit.healTarget && unit.healTarget.alive) {
@@ -1090,4 +1118,33 @@ export function drawProjectiles(ctx: CanvasRenderingContext2D, battle: Battle): 
     }
     ctx.restore();
   }
+}
+
+
+/** Foreground silhouette layer drawn OVER units for depth: large swaying tufts along the bottom. */
+export function drawForeground(
+  ctx: CanvasRenderingContext2D,
+  stage: StageDef,
+  w: number,
+  h: number,
+  time: number,
+): void {
+  ctx.fillStyle = stage.palette.prop;
+  ctx.globalAlpha = 0.85;
+  for (let i = 0; i < 9; i++) {
+    const gx = hash01(i * 41 + stage.id * 5) * w;
+    const base = h - 2 + hash01(i * 7) * 6;
+    const s = 14 + hash01(i * 13) * 16;
+    const sway = Math.sin(time * 1.3 + i * 2.2) * 3;
+    ctx.beginPath();
+    ctx.moveTo(gx - s * 0.5, base);
+    ctx.quadraticCurveTo(gx - s * 0.45 + sway, base - s * 1.4, gx - s * 0.15 + sway * 1.3, base - s * 1.8);
+    ctx.quadraticCurveTo(gx - s * 0.05, base - s * 0.8, gx, base);
+    ctx.moveTo(gx + s * 0.1, base);
+    ctx.quadraticCurveTo(gx + s * 0.2 + sway, base - s * 1.1, gx + s * 0.5 + sway * 1.2, base - s * 1.5);
+    ctx.quadraticCurveTo(gx + s * 0.45, base - s * 0.6, gx + s * 0.55, base);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }

@@ -46,6 +46,11 @@ export class Battle {
   killCounts: Partial<Record<EnemyKind, number>> = {};
   saveRef: SaveData | null = null;
   difficultyMult = 1;
+  telegraphTime = 1.5;
+  enemyHaste = 1;
+  extraSpawn = 0;
+  castCounts: Record<string, number> = {};
+  heroDeaths = 0;
 
   constructor(
     public stage: StageDef,
@@ -54,7 +59,11 @@ export class Battle {
     public fx: FxSystem,
     public tutorialMode = false,
   ) {
-    this.difficultyMult = this.tutorialMode ? 1 : DIFFICULTIES[save.difficulty ?? 1].enemyMult;
+    const diff = DIFFICULTIES[save.difficulty ?? 1];
+    this.difficultyMult = this.tutorialMode ? 1 : diff.enemyMult;
+    this.telegraphTime = this.tutorialMode ? 1.5 : diff.telegraph;
+    this.enemyHaste = this.tutorialMode ? 1 : diff.haste;
+    this.extraSpawn = this.tutorialMode ? 0 : diff.extraSpawn;
     const roster = partyRoster(save);
     const midY = (field.top + field.bottom) / 2;
     const spread = Math.min(120, (field.bottom - field.top) / 3);
@@ -183,9 +192,10 @@ export class Battle {
       audio.play("victory");
       return;
     }
-    for (const entry of this.stage.waves[this.waveIndex]) {
-      for (let i = 0; i < entry.count; i++) this.spawnEnemy(entry.kind);
-    }
+    this.stage.waves[this.waveIndex].forEach((entry, at) => {
+      const count = entry.count + (at === 0 && entry.kind !== "warlord" && entry.kind !== "alpha" ? this.extraSpawn : 0);
+      for (let i = 0; i < count; i++) this.spawnEnemy(entry.kind);
+    });
     this.state = "fighting";
     this.waveBanner = 2.2;
     audio.play("wave");
@@ -206,6 +216,7 @@ export class Battle {
     let interval = unit.stats.attackCooldown;
     const haste = this.effect(unit, "haste");
     if (haste) interval /= haste.power;
+    if (unit.team === "enemy") interval /= this.enemyHaste;
     return interval;
   }
 
@@ -255,6 +266,7 @@ export class Battle {
   }
 
   private kill(unit: Unit): void {
+    if (unit.team === "hero") this.heroDeaths++;
     unit.alive = false;
     unit.hp = 0;
     unit.deathTime = 0;
@@ -463,6 +475,7 @@ export class Battle {
         cast = false;
     }
     if (cast) {
+      this.castCounts[id] = (this.castCounts[id] ?? 0) + 1;
       const cdr = hero.heroIndex >= 0 ? talentMods(save.heroes[hero.heroIndex].talents).cdr : 0;
       state.timer = state.def.cooldown * (1 - cdr);
       hero.castGlow = 0.4;
@@ -817,7 +830,7 @@ export class Battle {
           y: target.y,
           radius: 62,
           time: 0,
-          duration: 1.5,
+          duration: this.telegraphTime,
           owner: alpha,
           kind: "pounce",
         });

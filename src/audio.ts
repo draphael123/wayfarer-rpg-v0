@@ -188,6 +188,13 @@ class AudioKit {
       if (this.musicStep % 8 === 0) {
         this.tone(chord[0] / 2, 3.2, "triangle", 0.35, 0, 0, this.musicGain!);
       }
+      // soft heartbeat pulse + the occasional distant bell
+      if (this.musicStep % 4 === 0) {
+        this.tone(58, 0.14, "sine", 0.5, -12, 0, this.musicGain!);
+      }
+      if (this.musicStep % 16 === 10) {
+        this.tone(chord[2] * 4, 1.6, "sine", 0.14, 0, 0.2, this.musicGain!);
+      }
       this.musicStep++;
     };
     this.musicTimer = window.setInterval(tick, stepDur * 1000);

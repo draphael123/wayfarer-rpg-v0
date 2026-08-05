@@ -4,8 +4,9 @@ import { BOSS_STAGES, DIFFICULTIES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { Menus } from "./menus";
-import { drawBackground, drawProjectiles, drawTelegraphs, drawUnits, drawVignette, drawZones } from "./render";
+import { drawBackground, drawForeground, drawProjectiles, drawTelegraphs, drawUnits, drawVignette, drawZones } from "./render";
 import { defaultSave, grantXp, loadSave, nextSpeed, persist } from "./save";
+import { logEvent } from "./telemetry";
 import { Tutorial } from "./tutorial";
 import type { SaveData, StageDef } from "./types";
 
@@ -94,6 +95,12 @@ const menus = new Menus("ui", save, {
 });
 
 function startBattle(stageIndex: number): void {
+  logEvent("battle_start", {
+    stage: stageIndex,
+    difficulty: save.difficulty,
+    level: save.level,
+    party: save.heroes.filter((h) => h.recruited && h.active).length,
+  });
   currentStage = stageIndex;
   xpGranted = false;
   tutorial = null;
@@ -154,6 +161,17 @@ function mergeBestiary(): void {
 }
 
 function endBattleToMap(): void {
+  if (battle && !battle.tutorialMode) {
+    logEvent("battle_end", {
+      stage: currentStage,
+      difficulty: save.difficulty,
+      result: battle.state === "victory" ? "victory" : battle.state === "defeat" ? "defeat" : "retreat",
+      durationSec: Math.round(battle.time),
+      wave: battle.waveIndex,
+      heroDeaths: battle.heroDeaths,
+      casts: battle.castCounts,
+    });
+  }
   if (battle && !battle.tutorialMode && !xpGranted && battle.goldEarned > 0) {
     save.gold += Math.round(battle.goldEarned / 2);
     persist(save);
@@ -202,6 +220,17 @@ function handleHudAction(action: string): void {
       hud.paused = false;
       break;
     case "retry":
+      if (battle && !battle.tutorialMode) {
+        logEvent("battle_end", {
+          stage: currentStage,
+          difficulty: save.difficulty,
+          result: "retry",
+          durationSec: Math.round(battle.time),
+          wave: battle.waveIndex,
+          heroDeaths: battle.heroDeaths,
+          casts: battle.castCounts,
+        });
+      }
       mergeBestiary();
       startBattle(currentStage);
       break;
@@ -343,6 +372,7 @@ function frame(now: number): void {
     drawUnits(ctx, battle, battleSave, hud.selected);
     drawProjectiles(ctx, battle);
     fx.draw(ctx);
+    drawForeground(ctx, battle.stage, logicalW, logicalH - HUD_H + 20, battle.time);
     drawVignette(ctx, logicalW, logicalH - HUD_H + 20);
     ctx.restore();
     hud.draw(ctx);

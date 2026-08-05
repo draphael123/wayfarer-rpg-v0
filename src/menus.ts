@@ -36,6 +36,7 @@ function bestAttr(index: number): AttrKey {
   return ATTR_KEYS.reduce((best, k) => (attrs[k] > attrs[best] ? k : best), ATTR_KEYS[0]);
 }
 import { nextSpeed, persist, respecHero } from "./save";
+import { exportTelemetry, telemetrySummary } from "./telemetry";
 import type { SaveData } from "./types";
 
 export interface MenuCallbacks {
@@ -216,6 +217,11 @@ export class Menus {
             <button class="toggle-btn" data-act="music"></button>
           </div>
           <button class="toggle-btn" data-act="speed"></button>
+          <div class="settings-row">
+            <button class="toggle-btn" data-act="export-save">📤 Export save</button>
+            <button class="toggle-btn" data-act="import-save">📥 Import save</button>
+          </div>
+          <button class="toggle-btn" data-act="export-data">📊 Export playtest data</button>
           <button class="toggle-btn danger" data-act="reset">Reset all progress</button>
         </div>
         <div class="credit">drag your heroes · draw your spells · shape your band</div>
@@ -250,6 +256,37 @@ export class Menus {
         this.save.speed = nextSpeed(this.save.speed);
         persist(this.save);
         syncToggles();
+      }
+      if (act === "export-save") {
+        const code = btoa(unescape(encodeURIComponent(JSON.stringify(this.save))));
+        const finish = () => this.showToast("Save code copied — paste it anywhere safe");
+        if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(code).then(finish, () => prompt("Copy your save code:", code));
+        } else {
+          prompt("Copy your save code:", code);
+        }
+      }
+      if (act === "import-save") {
+        const code = prompt("Paste a save code:");
+        if (code) {
+          try {
+            const data = JSON.parse(decodeURIComponent(escape(atob(code.trim()))));
+            if (!data || data.version !== 1 || !Array.isArray(data.heroes)) throw new Error("bad");
+            localStorage.setItem("wayband-save-v1", JSON.stringify(data));
+            location.reload();
+          } catch {
+            this.showToast("That code didn't look like a Wayband save");
+          }
+        }
+      }
+      if (act === "export-data") {
+        const json = exportTelemetry();
+        const finish = () => this.showToast(`Playtest data copied (${telemetrySummary()})`);
+        if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(json).then(finish, () => prompt("Copy playtest data:", json));
+        } else {
+          prompt("Copy playtest data:", json);
+        }
       }
       if (act === "reset") {
         if (confirm("Erase all progress and start over?")) {

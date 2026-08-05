@@ -634,10 +634,13 @@ export function talentPointsSpent(ranks: TalentRanks | undefined): number {
 // ------------------------------------------------------------------ difficulty
 
 export const DIFFICULTIES = [
-  { name: "Easy", enemyMult: 0.75, rewardMult: 0.6, color: "#8ee88b" },
-  { name: "Normal", enemyMult: 1, rewardMult: 1, color: "#ffe9a3" },
-  { name: "Hard", enemyMult: 1.3, rewardMult: 1.4, color: "#e0904b" },
-  { name: "Brutal", enemyMult: 1.6, rewardMult: 1.85, color: "#ff8a70" },
+  // Difficulty changes how enemies BEHAVE, not just their numbers:
+  // telegraph = boss warning time, haste = enemy attack-rate multiplier,
+  // extraSpawn = bonus enemies added to each wave's first group.
+  { name: "Easy", enemyMult: 0.8, rewardMult: 0.6, color: "#8ee88b", telegraph: 2.1, haste: 0.85, extraSpawn: 0 },
+  { name: "Normal", enemyMult: 1, rewardMult: 1, color: "#ffe9a3", telegraph: 1.5, haste: 1, extraSpawn: 0 },
+  { name: "Hard", enemyMult: 1.25, rewardMult: 1.4, color: "#e0904b", telegraph: 1.2, haste: 1.15, extraSpawn: 0 },
+  { name: "Brutal", enemyMult: 1.5, rewardMult: 1.85, color: "#ff8a70", telegraph: 0.95, haste: 1.25, extraSpawn: 1 },
 ];
 
 // ------------------------------------------------------------------ trinkets
