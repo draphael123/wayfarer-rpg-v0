@@ -1,6 +1,6 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { STAGES } from "./data";
+import { BOSS_STAGES, DIFFICULTIES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { Menus } from "./menus";
@@ -170,19 +170,25 @@ function endBattleToMap(): void {
 function settleVictory(): void {
   if (!battle || xpGranted) return;
   xpGranted = true;
-  const xp = battle.xpEarned + battle.stage.xpReward;
-  const gold = battle.goldEarned + Math.round(battle.stage.xpReward * 0.8);
+  const rewardMult = DIFFICULTIES[save.difficulty ?? 1].rewardMult;
+  const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * rewardMult);
+  const gold = Math.round((battle.goldEarned + Math.round(battle.stage.xpReward * 0.8)) * rewardMult);
   const levels = grantXp(save, xp);
   save.gold += gold;
+  // one piece of loot per clear; boss stages yield rares
+  const rare = BOSS_STAGES.includes(currentStage);
+  const pool = TRINKETS.filter((t) => t.rarity === (rare ? "rare" : "common"));
+  const drop = pool[Math.floor(Math.random() * pool.length)];
+  save.inventory.push(drop.id);
   if (currentStage === save.unlockedStage && currentStage < STAGES.length - 1) {
     save.unlockedStage++;
   }
   persist(save);
   if (levels > 0) {
     audio.play("levelup");
-    setTimeout(() => menus.showToast(`Level up! +${gold} gold — each hero gains ${levels * 2} attribute points`), 150);
+    setTimeout(() => menus.showToast(`Level up! +${gold} gold · loot: ${drop.icon} ${drop.name}${rare ? " (RARE)" : ""}`), 150);
   } else {
-    setTimeout(() => menus.showToast(`+${gold} gold earned`), 150);
+    setTimeout(() => menus.showToast(`+${gold} gold · loot: ${drop.icon} ${drop.name}${rare ? " (RARE)" : ""}`), 150);
   }
 }
 

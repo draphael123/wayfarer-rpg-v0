@@ -1,6 +1,8 @@
 import { audio } from "./audio";
 import {
   ABILITIES,
+  DIFFICULTIES,
+  trinketById,
   MAX_LEVEL,
   TALENTS,
   TALENT_TREES,
@@ -283,9 +285,10 @@ export class Menus {
         <div class="world-map"></div>
         <div class="stage-caption"></div>
         <div class="map-footer">
+          <button class="toggle-btn" data-act="difficulty" style="border-color:${DIFFICULTIES[save.difficulty].color};color:${DIFFICULTIES[save.difficulty].color}">☠ ${DIFFICULTIES[save.difficulty].name}</button>
           <button class="toggle-btn" data-act="shop">🏪 Village</button>
           <button class="toggle-btn" data-act="bestiary">📖 Bestiary</button>
-          <button class="toggle-btn" data-act="home">Title screen</button>
+          <button class="toggle-btn" data-act="home">Title</button>
         </div>
       </div>
     `);
@@ -306,6 +309,14 @@ export class Menus {
       if (act === "shop") {
         audio.play("click");
         this.renderShop("tavern");
+      }
+      if (act === "difficulty") {
+        this.save.difficulty = (this.save.difficulty + 1) % DIFFICULTIES.length;
+        persist(this.save);
+        audio.play("click");
+        const d = DIFFICULTIES[this.save.difficulty];
+        this.showToast(`☠ ${d.name}: enemies ×${d.enemyMult}, rewards ×${d.rewardMult}`);
+        this.renderMap();
       }
       if (act === "home") {
         audio.play("click");
@@ -749,7 +760,7 @@ export class Menus {
     }
     this.save.gold -= cost;
     persist(this.save);
-    audio.play("levelup");
+    audio.play("coin");
     return true;
   }
 
@@ -958,6 +969,9 @@ export class Menus {
           <div><span>Healing</span><strong>${stats.healPower.toFixed(1)}/s</strong></div>
           <div><span>Spell power</span><strong>×${stats.spellPower.toFixed(2)}</strong></div>
         </div>
+        <button class="trinket-row" data-act="trinket">
+          ${(() => { const t = trinketById(hero.trinket); return t ? `${t.icon} <strong>${t.name}</strong> — ${t.blurb}${t.rarity === "rare" ? ' <span class="rare-tag">RARE</span>' : ""}` : "◇ No trinket — tap to equip loot"; })()}
+        </button>
         <div class="attr-rows"></div>
         <div class="ability-row-title">Abilities <span>(tap to assign · max ${MAX_EQUIPPED} · buy new ones at the Village)</span></div>
         <div class="ability-chips"></div>
@@ -1075,6 +1089,26 @@ export class Menus {
     card.querySelector('[data-act="talents"]')!.addEventListener("click", () => {
       audio.play("click");
       this.renderTalents(index);
+    });
+
+    card.querySelector('[data-act="trinket"]')!.addEventListener("click", () => {
+      // cycle through unequipped inventory trinkets (plus "none")
+      const takenElsewhere = save.heroes.filter((_, hi) => hi !== index).map((h) => h.trinket);
+      const pool = [...new Set(save.inventory)].filter((id) => {
+        const copies = save.inventory.filter((x) => x === id).length;
+        const used = takenElsewhere.filter((x) => x === id).length + (hero.trinket === id ? 1 : 0);
+        return copies > used || hero.trinket === id;
+      });
+      if (!pool.length && !hero.trinket) {
+        this.showToast("No loot yet — clear stages to find trinkets");
+        return;
+      }
+      const options: (string | null)[] = [null, ...pool];
+      const at = options.indexOf(hero.trinket);
+      hero.trinket = options[(at + 1) % options.length];
+      persist(save);
+      audio.play("click");
+      this.refreshCard(card, index);
     });
 
     return card;

@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { ENEMIES, HEROES, abilityById, deriveStats, partyRoster, talentMods } from "./data";
+import { DIFFICULTIES, ENEMIES, HEROES, abilityById, deriveStats, partyRoster, talentMods, trinketMods } from "./data";
 import type { FxSystem } from "./fx";
 import type {
   AbilityState,
@@ -45,6 +45,7 @@ export class Battle {
   hitstop = 0;
   killCounts: Partial<Record<EnemyKind, number>> = {};
   saveRef: SaveData | null = null;
+  difficultyMult = 1;
 
   constructor(
     public stage: StageDef,
@@ -53,6 +54,7 @@ export class Battle {
     public fx: FxSystem,
     public tutorialMode = false,
   ) {
+    this.difficultyMult = this.tutorialMode ? 1 : DIFFICULTIES[save.difficulty ?? 1].enemyMult;
     const roster = partyRoster(save);
     const midY = (field.top + field.bottom) / 2;
     const spread = Math.min(120, (field.bottom - field.top) / 3);
@@ -64,7 +66,7 @@ export class Battle {
         y: midY - spread + t * spread * 2,
       };
       const heroSave = save.heroes[i];
-      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier, heroSave.talents);
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier, heroSave.talents, heroSave.trinket);
       const abilities: AbilityState[] = heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d)
@@ -101,7 +103,7 @@ export class Battle {
         supportTimer: 0,
         phase: 0,
       });
-      const ward = talentMods(heroSave.talents).startShield;
+      const ward = talentMods(heroSave.talents).startShield + trinketMods(heroSave.trinket).startShield;
       if (ward > 0) {
         this.units[this.units.length - 1].effects.push(makeEffect("shield", 9999, ward, null));
       }
@@ -126,7 +128,7 @@ export class Battle {
 
   spawnEnemy(kind: EnemyKind, overrides: { x?: number; y?: number; scale?: number } = {}): void {
     const def = ENEMIES[kind];
-    const scale = overrides.scale ?? this.stage.scale;
+    const scale = (overrides.scale ?? this.stage.scale) * this.difficultyMult;
     const y = overrides.y ?? this.field.top + 20 + Math.random() * (this.field.bottom - this.field.top - 40);
     const x = overrides.x ?? this.field.right + 30 + Math.random() * 60;
     this.units.push({
@@ -790,7 +792,7 @@ export class Battle {
       alpha.phase = 2;
       this.fx.ring(alpha.x, alpha.y, 220, "#c9c2e8", { width: 5, life: 0.8 });
       this.fx.addShake(8);
-      audio.play("warcry");
+      audio.play("roar");
       this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "AWOOOO!", "#c9c2e8", 20);
       for (let i = 0; i < 3; i++) this.spawnEnemy("wolf");
       alpha.supportTimer = 2.5;

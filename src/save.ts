@@ -14,7 +14,7 @@ function defaultHero(index: number): HeroSave {
     .filter((a) => STARTING_SPELLS.includes(a.id))
     .slice(0, MAX_EQUIPPED)
     .map((a) => a.id);
-  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armorTier: 0, talents: {} };
+  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armorTier: 0, talents: {}, trinket: null };
 }
 
 export function defaultSave(): SaveData {
@@ -31,6 +31,8 @@ export function defaultSave(): SaveData {
     bestiary: {},
     gold: 0,
     unlockedSpells: [...STARTING_SPELLS],
+    inventory: [],
+    difficulty: 1,
   };
 }
 
@@ -66,6 +68,7 @@ export function loadSave(): SaveData {
       if (typeof hero.weaponTier !== "number") hero.weaponTier = 0;
       if (typeof hero.armorTier !== "number") hero.armorTier = 0;
       if (!hero.talents || typeof hero.talents !== "object") hero.talents = {};
+      if (hero.trinket === undefined) hero.trinket = null;
     });
     if (typeof parsed.speed !== "number" || parsed.speed < 0.25 || parsed.speed > 2) parsed.speed = 0.5;
     if (!parsed.bestiary || typeof parsed.bestiary !== "object") parsed.bestiary = {};
@@ -76,6 +79,8 @@ export function loadSave(): SaveData {
       for (const hero of parsed.heroes) for (const id of hero.equipped) owned.add(id);
       parsed.unlockedSpells = [...owned];
     }
+    if (!Array.isArray(parsed.inventory)) parsed.inventory = [];
+    if (typeof parsed.difficulty !== "number" || parsed.difficulty < 0 || parsed.difficulty > 3) parsed.difficulty = 1;
     return parsed;
   } catch {
     return defaultSave();

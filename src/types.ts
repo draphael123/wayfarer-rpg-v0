@@ -154,6 +154,7 @@ export interface HeroSave {
   weaponTier: number; // 0-3
   armorTier: number; // 0-3
   talents: Record<string, number>; // talent id -> rank
+  trinket: string | null;
 }
 
 export interface SaveData {
@@ -169,4 +170,6 @@ export interface SaveData {
   bestiary: Partial<Record<EnemyKind, number>>; // kills per enemy kind
   gold: number;
   unlockedSpells: string[]; // ability ids bought in the spell shop (account-wide)
+  inventory: string[]; // trinket ids collected as loot
+  difficulty: number; // index into DIFFICULTIES
 }

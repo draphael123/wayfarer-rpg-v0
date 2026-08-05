@@ -234,8 +234,23 @@ export function deriveStats(
   weaponTier = 0,
   armorTier = 0,
   talents?: Record<string, number>,
+  trinket?: string | null,
 ): DerivedStats {
-  const mods = talentMods(talents);
+  const t = talentMods(talents);
+  const k = trinketMods(trinket);
+  const mods = {
+    meleeDmg: t.meleeDmg + k.meleeDmg,
+    rangedDmg: t.rangedDmg + k.rangedDmg,
+    hpPct: t.hpPct + k.hpPct,
+    armorFlat: t.armorFlat + k.armorFlat,
+    cdr: Math.min(0.5, t.cdr + k.cdr),
+    atkSpeed: t.atkSpeed + k.atkSpeed,
+    moveSpeed: t.moveSpeed + k.moveSpeed,
+    crit: t.crit + k.crit,
+    spellPower: t.spellPower + k.spellPower,
+    healPower: t.healPower + k.healPower,
+    startShield: t.startShield + k.startShield,
+  };
   const weapon = dominantWeapon(attrs);
   const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + ARMOR_HP_BONUS[armorTier]);
   const armor = Math.min(0.65, attrs.vit * 0.02 + attrs.str * 0.01 + ARMOR_BONUS[armorTier]);
@@ -267,7 +282,7 @@ export function deriveStats(
   damage += WEAPON_DAMAGE_BONUS[weaponTier];
   damage *= 1 + (weapon === "sword" ? mods.meleeDmg : mods.rangedDmg);
   return {
-    maxHp: Math.round(maxHp * (1 + mods.hpPct)),
+    maxHp: Math.round(maxHp * (1 + mods.hpPct)) + trinketFlatHp(trinket),
     damage,
     range,
     attackCooldown: attackCooldown / (1 + mods.atkSpeed),
@@ -614,3 +629,67 @@ export function talentPointsSpent(ranks: TalentRanks | undefined): number {
   if (!ranks) return 0;
   return Object.values(ranks).reduce((a, b) => a + b, 0);
 }
+
+
+// ------------------------------------------------------------------ difficulty
+
+export const DIFFICULTIES = [
+  { name: "Easy", enemyMult: 0.75, rewardMult: 0.6, color: "#8ee88b" },
+  { name: "Normal", enemyMult: 1, rewardMult: 1, color: "#ffe9a3" },
+  { name: "Hard", enemyMult: 1.3, rewardMult: 1.4, color: "#e0904b" },
+  { name: "Brutal", enemyMult: 1.6, rewardMult: 1.85, color: "#ff8a70" },
+];
+
+// ------------------------------------------------------------------ trinkets
+
+export interface TrinketDef {
+  id: string;
+  name: string;
+  blurb: string;
+  rarity: "common" | "rare";
+  icon: string;
+}
+
+export const TRINKETS: TrinketDef[] = [
+  { id: "wolfTooth", name: "Wolf Tooth", blurb: "+5% attack speed", rarity: "common", icon: "🦷" },
+  { id: "oakCharm", name: "Oak Charm", blurb: "+22 max health", rarity: "common", icon: "🌰" },
+  { id: "riverStone", name: "River Stone", blurb: "+3% armor", rarity: "common", icon: "🪨" },
+  { id: "hawkFeather", name: "Hawk Feather", blurb: "+6% ranged damage", rarity: "common", icon: "🪶" },
+  { id: "emberBead", name: "Ember Bead", blurb: "+7% spell power", rarity: "common", icon: "🔥" },
+  { id: "vervain", name: "Sprig of Vervain", blurb: "+7% healing power", rarity: "common", icon: "🌿" },
+  { id: "alphaFang", name: "Alpha's Fang", blurb: "+8% attack speed, +6% melee damage", rarity: "rare", icon: "🐺" },
+  { id: "gorehornShard", name: "Gorehulk Horn Shard", blurb: "+10% melee damage, +30 health", rarity: "rare", icon: "🐮" },
+  { id: "witchLocket", name: "Witchlight Locket", blurb: "+10% spell power, -5% cooldowns", rarity: "rare", icon: "🔮" },
+  { id: "saintRelic", name: "Saint's Relic", blurb: "+10% healing, battles start with a 20 hp ward", rarity: "rare", icon: "✨" },
+];
+
+export function trinketById(id: string | null | undefined): TrinketDef | undefined {
+  return TRINKETS.find((t) => t.id === id);
+}
+
+export function trinketMods(id: string | null | undefined): TalentMods {
+  const none: TalentMods = { meleeDmg: 0, rangedDmg: 0, hpPct: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, startShield: 0 };
+  switch (id) {
+    case "wolfTooth": return { ...none, atkSpeed: 0.05 };
+    case "oakCharm": return { ...none, hpPct: 0, startShield: 0, armorFlat: 0, meleeDmg: 0, rangedDmg: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0 };
+    case "riverStone": return { ...none, armorFlat: 0.03 };
+    case "hawkFeather": return { ...none, rangedDmg: 0.06 };
+    case "emberBead": return { ...none, spellPower: 0.07 };
+    case "vervain": return { ...none, healPower: 0.07 };
+    case "alphaFang": return { ...none, atkSpeed: 0.08, meleeDmg: 0.06 };
+    case "gorehornShard": return { ...none, meleeDmg: 0.1 };
+    case "witchLocket": return { ...none, spellPower: 0.1, cdr: 0.05 };
+    case "saintRelic": return { ...none, healPower: 0.1, startShield: 20 };
+    default: return none;
+  }
+}
+
+/** Flat bonuses trinkets grant outside the multiplier system. */
+export function trinketFlatHp(id: string | null | undefined): number {
+  if (id === "oakCharm") return 22;
+  if (id === "gorehornShard") return 30;
+  return 0;
+}
+
+/** Stages whose final wave is a boss — these drop rare trinkets. */
+export const BOSS_STAGES = [1, 5];
