@@ -1,6 +1,6 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { HEROES, STAGES, activeRoster } from "./data";
+import { STAGES } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { Menus } from "./menus";
@@ -139,6 +139,10 @@ function mergeBestiary(): void {
 }
 
 function endBattleToMap(): void {
+  if (battle && !battle.tutorialMode && !xpGranted && battle.goldEarned > 0) {
+    save.gold += Math.round(battle.goldEarned / 2);
+    persist(save);
+  }
   mergeBestiary();
   battle = null;
   hud = null;
@@ -152,20 +156,18 @@ function settleVictory(): void {
   if (!battle || xpGranted) return;
   xpGranted = true;
   const xp = battle.xpEarned + battle.stage.xpReward;
+  const gold = battle.goldEarned + Math.round(battle.stage.xpReward * 0.8);
   const levels = grantXp(save, xp);
-  const rosterBefore = activeRoster(save.unlockedStage);
+  save.gold += gold;
   if (currentStage === save.unlockedStage && currentStage < STAGES.length - 1) {
     save.unlockedStage++;
-    persist(save);
   }
-  const rosterAfter = activeRoster(save.unlockedStage);
-  const recruit = rosterAfter.find((i) => !rosterBefore.includes(i));
-  if (recruit !== undefined) {
-    audio.play("victory");
-    setTimeout(() => menus.showToast(`${HEROES[recruit].name} ${HEROES[recruit].title} joins the band!`), 150);
-  } else if (levels > 0) {
+  persist(save);
+  if (levels > 0) {
     audio.play("levelup");
-    setTimeout(() => menus.showToast(`Level up! Each hero gains ${levels * 2} attribute points — visit the Party screen`), 150);
+    setTimeout(() => menus.showToast(`Level up! +${gold} gold — each hero gains ${levels * 2} attribute points`), 150);
+  } else {
+    setTimeout(() => menus.showToast(`+${gold} gold earned`), 150);
   }
 }
 

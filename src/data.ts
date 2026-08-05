@@ -42,7 +42,7 @@ export const HEROES: HeroDef[] = [
     title: "the Oathbound",
     skin: "#e8b58c",
     hair: "#6b3f22",
-    accent: "#b0413e",
+    accent: "#8a6a58",
     baseAttrs: { str: 6, dex: 2, int: 1, vit: 5, spi: 1 },
   },
   {
@@ -50,7 +50,7 @@ export const HEROES: HeroDef[] = [
     title: "the Fletcher",
     skin: "#d9a06b",
     hair: "#2e2a35",
-    accent: "#3e7c4f",
+    accent: "#6d7a64",
     baseAttrs: { str: 2, dex: 7, int: 2, vit: 3, spi: 1 },
   },
   {
@@ -58,7 +58,7 @@ export const HEROES: HeroDef[] = [
     title: "the Emberwise",
     skin: "#f0c9a0",
     hair: "#a8552f",
-    accent: "#7b4fa6",
+    accent: "#6c6880",
     baseAttrs: { str: 1, dex: 2, int: 7, vit: 3, spi: 2 },
   },
   {
@@ -66,7 +66,7 @@ export const HEROES: HeroDef[] = [
     title: "the Lantern",
     skin: "#c98d5e",
     hair: "#e8e2d0",
-    accent: "#d9a441",
+    accent: "#8f8672",
     baseAttrs: { str: 2, dex: 1, int: 2, vit: 4, spi: 6 },
   },
 ];
@@ -168,16 +168,55 @@ export function abilityById(id: string): AbilityDef | undefined {
   return ABILITIES.find((a) => a.id === id);
 }
 
-/** Stage that must be cleared before each hero joins the band (by hero index). */
-export const JOIN_REQUIREMENT: Record<number, number> = { 1: 1, 2: 2 }; // Wren after stage 1, Ezri after stage 2
+/** Gold cost to recruit each hero at the tavern (by hero index). Bram and Sol are free founders. */
+export const RECRUIT_COST: Record<number, number> = { 1: 120, 2: 300 };
 
-/** Hero indices currently in the band, in display order. You begin with Bram and Sol. */
-export function activeRoster(unlockedStage: number): number[] {
-  return [0, 1, 2, 3].filter((i) => {
-    const need = JOIN_REQUIREMENT[i];
-    return need === undefined || unlockedStage >= need;
-  });
+export const PARTY_CAP = 4;
+
+/** Hero indices fighting in battles: recruited AND marked active, capped at PARTY_CAP. */
+export function partyRoster(save: { heroes: { recruited: boolean; active: boolean }[] }): number[] {
+  return save.heroes
+    .map((h, i) => ({ h, i }))
+    .filter(({ h }) => h.recruited && h.active)
+    .map(({ i }) => i)
+    .slice(0, PARTY_CAP);
 }
+
+// --- gear sold at the armory ---
+export interface GearTier {
+  name: string;
+  cost: number; // 0 = starting gear
+}
+
+export const WEAPON_TIERS: GearTier[] = [
+  { name: "Worn", cost: 0 },
+  { name: "Iron", cost: 100 },
+  { name: "Steel", cost: 300 },
+  { name: "Mythril", cost: 800 },
+];
+export const WEAPON_DAMAGE_BONUS = [0, 4, 9, 16];
+
+export const ARMOR_TIERS: GearTier[] = [
+  { name: "Cloth", cost: 0 },
+  { name: "Leather", cost: 100 },
+  { name: "Chain", cost: 300 },
+  { name: "Plate", cost: 800 },
+];
+export const ARMOR_BONUS = [0, 0.04, 0.08, 0.14];
+export const ARMOR_HP_BONUS = [0, 15, 35, 65];
+
+/** Gold cost of each ability in the spell shop. */
+export const SPELL_COSTS: Record<string, number> = {
+  cleave: 80,
+  pierce: 80,
+  fireball: 80,
+  mend: 80,
+  bulwark: 150,
+  warcry: 220,
+  flurry: 220,
+  frostwake: 220,
+  radiance: 220,
+};
 
 export function unlockedAbilities(attrs: Attributes): AbilityDef[] {
   return ABILITIES.filter((a) => attrs[a.gate.attr] >= a.gate.value);
@@ -190,10 +229,10 @@ export function dominantWeapon(attrs: Attributes): WeaponKind {
   return "sword";
 }
 
-export function deriveStats(attrs: Attributes): DerivedStats {
+export function deriveStats(attrs: Attributes, weaponTier = 0, armorTier = 0): DerivedStats {
   const weapon = dominantWeapon(attrs);
-  const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4);
-  const armor = Math.min(0.6, attrs.vit * 0.02 + attrs.str * 0.01);
+  const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + ARMOR_HP_BONUS[armorTier]);
+  const armor = Math.min(0.65, attrs.vit * 0.02 + attrs.str * 0.01 + ARMOR_BONUS[armorTier]);
   const speed = 95 + Math.min(45, attrs.dex * 3);
   const healPower = 2 + attrs.spi * 1.6;
   const spellPower = 1 + attrs.int * 0.055;
@@ -219,6 +258,7 @@ export function deriveStats(attrs: Attributes): DerivedStats {
     attackCooldown = 1.35;
   }
   attackCooldown *= 1 - Math.min(0.45, attrs.dex * 0.018);
+  damage += WEAPON_DAMAGE_BONUS[weaponTier];
   return { maxHp, damage, range, attackCooldown, speed, armor, healPower, spellPower, weapon };
 }
 
@@ -248,7 +288,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     speed: 105,
     armor: 0,
     radius: 13,
-    xp: 6,
+    xp: 9,
     body: "#5e8c3a",
     trim: "#8c5a2e",
     lore: "Scrappy raiders of the barley fields. One is a nuisance; a dozen is a harvest lost.",
@@ -263,7 +303,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     speed: 150,
     armor: 0,
     radius: 13,
-    xp: 6,
+    xp: 9,
     body: "#5a5666",
     trim: "#8d8798",
     lore: "Dusk wolves hunt in silence between the pines, eyes like lantern-light.",
@@ -278,7 +318,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     speed: 92,
     armor: 0,
     radius: 12,
-    xp: 8,
+    xp: 12,
     body: "#7a6a3c",
     trim: "#4b431f",
     lore: "Goblin snipers with stolen longbows and no sense of honor.",
@@ -293,7 +333,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     speed: 62,
     armor: 0.2,
     radius: 22,
-    xp: 16,
+    xp: 24,
     body: "#7d5a44",
     trim: "#3f2b1e",
     lore: "A wall of muscle and grievance. The horns are not decorative.",
@@ -308,7 +348,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     speed: 85,
     armor: 0,
     radius: 13,
-    xp: 12,
+    xp: 17,
     body: "#4f7d7a",
     trim: "#2c4a48",
     lore: "Masked menders of the war-bands, muttering green fire.",
@@ -323,7 +363,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     speed: 55,
     armor: 0.25,
     radius: 30,
-    xp: 80,
+    xp: 110,
     body: "#8a4a3a",
     trim: "#2f1a12",
     lore: "Gorehulk, warlord of the hollow. The forest itself seems to flinch.",
@@ -344,12 +384,12 @@ export const STAGES: StageDef[] = [
       groundDark: "#8aa863",
       prop: "#6d8a4e",
     },
-    scale: 1,
+    scale: 1.65,
     xpReward: 20,
     waves: [
-      [{ kind: "goblin", count: 3 }],
-      [{ kind: "goblin", count: 4 }, { kind: "wolf", count: 1 }],
-      [{ kind: "goblin", count: 4 }, { kind: "archer", count: 2 }],
+      [{ kind: "goblin", count: 2 }],
+      [{ kind: "goblin", count: 2 }, { kind: "wolf", count: 1 }],
+      [{ kind: "goblin", count: 3 }, { kind: "archer", count: 1 }],
     ],
   },
   {
@@ -364,12 +404,12 @@ export const STAGES: StageDef[] = [
       groundDark: "#40603c",
       prop: "#2b4832",
     },
-    scale: 1.15,
+    scale: 1.5,
     xpReward: 28,
     waves: [
-      [{ kind: "wolf", count: 3 }, { kind: "goblin", count: 2 }],
-      [{ kind: "archer", count: 2 }, { kind: "wolf", count: 3 }],
-      [{ kind: "wolf", count: 4 }, { kind: "brute", count: 1 }],
+      [{ kind: "wolf", count: 2 }, { kind: "goblin", count: 1 }],
+      [{ kind: "archer", count: 1 }, { kind: "wolf", count: 2 }],
+      [{ kind: "wolf", count: 3 }, { kind: "brute", count: 1 }],
     ],
   },
   {
@@ -387,9 +427,9 @@ export const STAGES: StageDef[] = [
     scale: 1.3,
     xpReward: 36,
     waves: [
-      [{ kind: "goblin", count: 4 }, { kind: "shaman", count: 1 }],
-      [{ kind: "shaman", count: 2 }, { kind: "archer", count: 2 }],
-      [{ kind: "brute", count: 1 }, { kind: "shaman", count: 2 }, { kind: "wolf", count: 3 }],
+      [{ kind: "goblin", count: 3 }, { kind: "shaman", count: 1 }],
+      [{ kind: "shaman", count: 1 }, { kind: "archer", count: 2 }],
+      [{ kind: "brute", count: 1 }, { kind: "shaman", count: 1 }, { kind: "wolf", count: 2 }],
     ],
   },
   {
@@ -404,13 +444,12 @@ export const STAGES: StageDef[] = [
       groundDark: "#52443a",
       prop: "#332820",
     },
-    scale: 1.45,
+    scale: 1.8,
     xpReward: 46,
     waves: [
-      [{ kind: "archer", count: 4 }, { kind: "wolf", count: 3 }],
+      [{ kind: "archer", count: 2 }, { kind: "wolf", count: 2 }],
       [{ kind: "brute", count: 2 }, { kind: "shaman", count: 1 }],
-      [{ kind: "goblin", count: 6 }, { kind: "archer", count: 3 }],
-      [{ kind: "brute", count: 2 }, { kind: "shaman", count: 2 }],
+      [{ kind: "goblin", count: 4 }, { kind: "archer", count: 2 }],
     ],
   },
   {
@@ -425,13 +464,13 @@ export const STAGES: StageDef[] = [
       groundDark: "#584e70",
       prop: "#3d3554",
     },
-    scale: 1.6,
+    scale: 1.95,
     xpReward: 58,
     waves: [
-      [{ kind: "wolf", count: 6 }],
-      [{ kind: "shaman", count: 2 }, { kind: "brute", count: 2 }],
-      [{ kind: "archer", count: 4 }, { kind: "wolf", count: 4 }],
-      [{ kind: "brute", count: 3 }, { kind: "shaman", count: 2 }],
+      [{ kind: "wolf", count: 4 }],
+      [{ kind: "shaman", count: 1 }, { kind: "brute", count: 2 }],
+      [{ kind: "archer", count: 2 }, { kind: "wolf", count: 3 }],
+      [{ kind: "brute", count: 2 }, { kind: "shaman", count: 2 }],
     ],
   },
   {
@@ -446,11 +485,11 @@ export const STAGES: StageDef[] = [
       groundDark: "#6e5440",
       prop: "#4a3226",
     },
-    scale: 1.7,
+    scale: 2.1,
     xpReward: 90,
     waves: [
-      [{ kind: "goblin", count: 5 }, { kind: "shaman", count: 1 }],
-      [{ kind: "brute", count: 2 }, { kind: "archer", count: 3 }],
+      [{ kind: "goblin", count: 3 }, { kind: "shaman", count: 1 }],
+      [{ kind: "brute", count: 2 }, { kind: "archer", count: 2 }],
       [{ kind: "warlord", count: 1 }, { kind: "shaman", count: 2 }],
     ],
   },

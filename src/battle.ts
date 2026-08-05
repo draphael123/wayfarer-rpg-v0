@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { ENEMIES, HEROES, abilityById, activeRoster, deriveStats } from "./data";
+import { ENEMIES, HEROES, abilityById, deriveStats, partyRoster } from "./data";
 import type { FxSystem } from "./fx";
 import type {
   AbilityState,
@@ -38,6 +38,7 @@ export class Battle {
   breakTimer = 1.2;
   time = 0;
   xpEarned = 0;
+  goldEarned = 0;
   resultDelay = 0;
   hitstop = 0;
   killCounts: Partial<Record<EnemyKind, number>> = {};
@@ -49,7 +50,7 @@ export class Battle {
     public fx: FxSystem,
     public tutorialMode = false,
   ) {
-    const roster = activeRoster(save.unlockedStage);
+    const roster = partyRoster(save);
     const midY = (field.top + field.bottom) / 2;
     const spread = Math.min(120, (field.bottom - field.top) / 3);
     for (let slot = 0; slot < roster.length; slot++) {
@@ -60,7 +61,7 @@ export class Battle {
         y: midY - spread + t * spread * 2,
       };
       const heroSave = save.heroes[i];
-      const stats = deriveStats(heroSave.attrs);
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier);
       const abilities: AbilityState[] = heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d)
@@ -259,6 +260,7 @@ export class Battle {
     audio.play("thud");
     if (unit.team === "enemy" && unit.enemyKind) {
       this.xpEarned += Math.round(ENEMIES[unit.enemyKind].xp * this.stage.scale);
+      this.goldEarned += Math.round(ENEMIES[unit.enemyKind].xp * 0.7 * this.stage.scale);
       this.killCounts[unit.enemyKind] = (this.killCounts[unit.enemyKind] ?? 0) + 1;
     }
   }

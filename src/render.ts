@@ -397,9 +397,6 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   const H = unit.radius * 3.4;
   const { cx, f } = pose;
   const gy = pose.groundY - pose.bounce;
-  const attrs = save.heroes[unit.heroIndex].attrs;
-  const hasShield = attrs.vit >= 8 && unit.stats.weapon === "sword";
-  const halo = attrs.spi >= 10;
 
   drawShadow(ctx, unit);
   if (selected) drawSelection(ctx, unit, time);
@@ -415,28 +412,16 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
 
   // back leg, back arm behind body
   if (!robed) limb(ctx, cx - f * 2, hipY, cx - f * 2 - f * pose.walk * stride, gy - 1, legW, "#3a2f47");
-  // shield arm (back) or free arm
-  if (hasShield) {
-    const sx = cx - f * bodyW * 0.62;
-    limb(ctx, cx - f * bodyW * 0.3, shoulderY + 3, sx, shoulderY + H * 0.12, legW * 0.9, def.accent);
-    ctx.beginPath();
-    ctx.ellipse(sx, shoulderY + H * 0.12, H * 0.13, H * 0.17, 0, 0, Math.PI * 2);
-    outlined(ctx, "#8f9bad");
-    ctx.beginPath();
-    ctx.arc(sx, shoulderY + H * 0.12, H * 0.05, 0, Math.PI * 2);
-    ctx.fillStyle = "#c9d2de";
-    ctx.fill();
-  } else {
-    limb(
-      ctx,
-      cx - f * bodyW * 0.3,
-      shoulderY + 3,
-      cx - f * bodyW * 0.55,
-      shoulderY + H * 0.16 + pose.walk * 2,
-      legW * 0.85,
-      def.skin,
-    );
-  }
+  // free back arm
+  limb(
+    ctx,
+    cx - f * bodyW * 0.3,
+    shoulderY + 3,
+    cx - f * bodyW * 0.55,
+    shoulderY + H * 0.16 + pose.walk * 2,
+    legW * 0.85,
+    def.skin,
+  );
 
   if (robed) {
     // full healer's robe: cream cloth to the ground, accent stole, swaying hem
@@ -449,14 +434,6 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.quadraticCurveTo(cx + hem, gy + 2.5, cx - bodyW * 0.72 + hem * 0.4, gy);
     ctx.closePath();
     outlined(ctx, "#efe6d0");
-    // accent stole draped from the shoulders
-    ctx.beginPath();
-    ctx.moveTo(cx - bodyW * 0.24, shoulderY - 1);
-    ctx.lineTo(cx - bodyW * 0.14, hipY + H * 0.12);
-    ctx.lineTo(cx + bodyW * 0.02, hipY + H * 0.12);
-    ctx.lineTo(cx + bodyW * 0.1, shoulderY - 1);
-    ctx.closePath();
-    outlined(ctx, def.accent, 1.8);
     // rope belt
     ctx.strokeStyle = "#c9a95c";
     ctx.lineWidth = 2.2;
@@ -482,17 +459,6 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.fillRect(cx - bodyW * 0.5, hipY - 1, bodyW, 3);
   }
 
-  // halo for devoted spirits
-  if (halo) {
-    ctx.globalAlpha = 0.5 + Math.sin(time * 3) * 0.15;
-    ctx.strokeStyle = "#ffeeb0";
-    ctx.lineWidth = 2.4;
-    ctx.beginPath();
-    ctx.ellipse(cx + f * 1.5, headY - headR * 1.28, headR * 0.72, headR * 0.2, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
   // head (big, chibi)
   ctx.beginPath();
   ctx.arc(cx + f * 1.5, headY, headR, 0, Math.PI * 2);
@@ -504,11 +470,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.quadraticCurveTo(cx - f * headR * 0.2, headY + headR * 0.9, cx - f * headR * 1.05, headY + headR * 0.5);
     ctx.closePath();
     outlined(ctx, "#efe6d0", 2);
-    ctx.strokeStyle = def.accent;
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.arc(cx + f * 0.5, headY - 1, headR * 1.0, Math.PI * 0.85, Math.PI * 2.15);
-    ctx.stroke();
+
   } else {
     // hair cap
     ctx.beginPath();

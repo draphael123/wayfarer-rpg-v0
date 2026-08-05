@@ -1,21 +1,33 @@
 import { audio } from "./audio";
 import {
   ABILITIES,
+  ARMOR_BONUS,
+  ARMOR_HP_BONUS,
+  ARMOR_TIERS,
   ATTR_BLURBS,
   ATTR_KEYS,
   ATTR_NAMES,
   ENEMIES,
   HEROES,
-  JOIN_REQUIREMENT,
   MAX_EQUIPPED,
+  PARTY_CAP,
+  RECRUIT_COST,
+  SPELL_COSTS,
   STAGES,
-  activeRoster,
+  WEAPON_DAMAGE_BONUS,
+  WEAPON_TIERS,
   deriveStats,
   dominantWeapon,
+  partyRoster,
   unlockedAbilities,
   xpForLevel,
 } from "./data";
-import type { EnemyKind } from "./types";
+import type { AttrKey, EnemyKind } from "./types";
+
+function bestAttr(index: number): AttrKey {
+  const attrs = HEROES[index].baseAttrs;
+  return ATTR_KEYS.reduce((best, k) => (attrs[k] > attrs[best] ? k : best), ATTR_KEYS[0]);
+}
 import { nextSpeed, persist, respecHero } from "./save";
 import type { SaveData } from "./types";
 
@@ -249,14 +261,14 @@ export class Menus {
     const save = this.save;
     const need = xpForLevel(save.level);
     const xpPct = Math.min(100, Math.round((save.xp / need) * 100));
-    const roster = activeRoster(save.unlockedStage);
-    const unspentTotal = roster.reduce((sum, i) => sum + save.unspent[i], 0);
+    const roster = partyRoster(save);
+    const unspentTotal = roster.reduce((sum: number, i: number) => sum + save.unspent[i], 0);
     const page = el(`
       <div class="page">
         <div class="map-header">
           <div>
             <div class="map-title">The Long Road</div>
-            <div class="map-level">Band level ${save.level} · ${save.xp}/${need} xp</div>
+            <div class="map-level">Band level ${save.level} · ${save.xp}/${need} xp · <span class="gold-chip">🪙 ${save.gold}</span></div>
             <div class="xp-bar"><div class="xp-fill" style="width:${xpPct}%"></div></div>
           </div>
           <button class="big-btn party-btn" data-act="party">
@@ -266,6 +278,7 @@ export class Menus {
         <div class="world-map"></div>
         <div class="stage-caption"></div>
         <div class="map-footer">
+          <button class="toggle-btn" data-act="shop">🏪 Village</button>
           <button class="toggle-btn" data-act="bestiary">📖 Bestiary</button>
           <button class="toggle-btn" data-act="home">Title screen</button>
         </div>
@@ -285,6 +298,10 @@ export class Menus {
         audio.play("click");
         this.renderBestiary();
       }
+      if (act === "shop") {
+        audio.play("click");
+        this.renderShop("tavern");
+      }
       if (act === "home") {
         audio.play("click");
         this.renderTitle();
@@ -293,40 +310,48 @@ export class Menus {
     this.root.appendChild(page);
   }
 
-  /** Painted SVG overworld: a winding road through the forest with tappable stage nodes. */
+  /** Painted SVG overworld: dawn sky, layered ridges, a river, themed regions, and tappable stage nodes. */
   private buildWorldMap(): HTMLElement {
     const save = this.save;
     const nodes = [
-      { x: 76, y: 244 },
-      { x: 190, y: 172 },
-      { x: 312, y: 228 },
-      { x: 412, y: 142 },
-      { x: 508, y: 206 },
-      { x: 576, y: 92 },
+      { x: 80, y: 252 },
+      { x: 198, y: 186 },
+      { x: 318, y: 242 },
+      { x: 420, y: 158 },
+      { x: 514, y: 220 },
+      { x: 578, y: 106 },
     ];
     const road = nodes
       .map((n, i) => {
         if (i === 0) return `M ${n.x} ${n.y}`;
         const prev = nodes[i - 1];
-        const mx = (prev.x + n.x) / 2 + (i % 2 ? -22 : 22);
-        const my = (prev.y + n.y) / 2 + (i % 2 ? 18 : -18);
+        const mx = (prev.x + n.x) / 2 + (i % 2 ? -24 : 24);
+        const my = (prev.y + n.y) / 2 + (i % 2 ? 20 : -20);
         return `Q ${mx} ${my} ${n.x} ${n.y}`;
       })
       .join(" ");
-    // scatter of pines, deterministic
-    let trees = "";
     const rand = (n: number) => {
       const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
       return s - Math.floor(s);
     };
-    for (let i = 0; i < 34; i++) {
-      const tx = 20 + rand(i * 3) * 600;
-      const ty = 30 + rand(i * 7 + 1) * 240;
-      if (nodes.some((n) => Math.hypot(n.x - tx, n.y - ty) < 44)) continue;
-      const s = 7 + rand(i * 11) * 9;
-      const shade = rand(i * 5) > 0.5 ? "#2e5038" : "#26452f";
-      trees += `<path d="M ${tx} ${ty - s * 2} L ${tx - s} ${ty} L ${tx + s} ${ty} Z" fill="${shade}"/>`;
-      trees += `<rect x="${tx - 1.4}" y="${ty}" width="2.8" height="${s * 0.5}" fill="#1c3023"/>`;
+    // pine clusters, denser near the deep-forest and thinner near the burn
+    let trees = "";
+    for (let i = 0; i < 46; i++) {
+      const tx = 18 + rand(i * 3) * 604;
+      const ty = 96 + rand(i * 7 + 1) * 200;
+      if (nodes.some((n) => Math.hypot(n.x - tx, n.y - ty) < 42)) continue;
+      const nearBurn = Math.hypot(420 - tx, 158 - ty) < 70;
+      const s = 6 + rand(i * 11) * 10;
+      const far = ty < 150;
+      const shade = nearBurn ? "#3a2c26" : far ? "#33584040" : rand(i * 5) > 0.5 ? "#2e5038" : "#26452f";
+      if (nearBurn && rand(i * 13) > 0.4) {
+        // charred snag
+        trees += `<path d="M ${tx} ${ty} L ${tx} ${ty - s * 1.7} M ${tx} ${ty - s} L ${tx + s * 0.5} ${ty - s * 1.3} M ${tx} ${ty - s * 0.7} L ${tx - s * 0.45} ${ty - s}" stroke="#3a2c26" stroke-width="2.4" fill="none" stroke-linecap="round"/>`;
+      } else {
+        trees += `<path d="M ${tx} ${ty - s * 2} L ${tx - s} ${ty} L ${tx + s} ${ty} Z" fill="${shade}"/>`;
+        trees += `<path d="M ${tx} ${ty - s * 2.6} L ${tx - s * 0.7} ${ty - s * 0.9} L ${tx + s * 0.7} ${ty - s * 0.9} Z" fill="${shade}"/>`;
+        trees += `<rect x="${tx - 1.4}" y="${ty}" width="2.8" height="${s * 0.5}" fill="#1c3023"/>`;
+      }
     }
     let markers = "";
     STAGES.forEach((stage, i) => {
@@ -334,34 +359,92 @@ export class Menus {
       const done = i < save.unlockedStage;
       const isCurrent = i === save.unlockedStage;
       const unlocked = i <= save.unlockedStage;
-      const fill = done ? "#3f7a4c" : isCurrent ? "#d9a441" : "#3a3348";
-      const stroke = done ? "#8ee88b" : isCurrent ? "#ffe9a3" : "#57506b";
-      const label = done ? "✓" : unlocked ? String(i + 1) : "🔒";
+      const fill = done ? "url(#nodeDone)" : isCurrent ? "url(#nodeNow)" : "#332d42";
+      const stroke = done ? "#8ee88b" : isCurrent ? "#ffe9a3" : "#514a66";
+      const label = done ? "✓" : unlocked ? String(i + 1) : "";
+      const nameW = stage.name.length * 6.4 + 16;
       markers += `
         <g class="map-node ${isCurrent ? "current" : ""} ${unlocked ? "open" : "locked"}" data-stage="${i}">
           <circle cx="${n.x}" cy="${n.y}" r="30" fill="transparent"/>
-          ${isCurrent ? `<circle class="node-pulse" cx="${n.x}" cy="${n.y}" r="20" fill="none" stroke="#ffe9a3" stroke-width="2"/>` : ""}
-          <circle cx="${n.x}" cy="${n.y}" r="17" fill="${fill}" stroke="${stroke}" stroke-width="2.5"/>
-          <text x="${n.x}" y="${n.y + 5}" text-anchor="middle" font-size="${unlocked ? 15 : 12}" font-weight="900" fill="#f7f2e0">${label}</text>
-          <text x="${n.x}" y="${n.y + 34}" text-anchor="middle" font-size="10.5" font-weight="700" fill="${unlocked ? "#f2ecd8" : "#8d84a3"}" stroke="#1a2b20" stroke-width="3" paint-order="stroke">${unlocked ? stage.name : "???"}</text>
+          <ellipse cx="${n.x}" cy="${n.y + 16}" rx="14" ry="4" fill="rgba(10,18,12,0.35)"/>
+          ${isCurrent ? `<circle class="node-pulse" cx="${n.x}" cy="${n.y}" r="20" fill="none" stroke="#ffe9a3" stroke-width="2.5"/>` : ""}
+          <circle cx="${n.x}" cy="${n.y}" r="17" fill="${fill}" stroke="#1a2b20" stroke-width="4"/>
+          <circle cx="${n.x}" cy="${n.y}" r="17" fill="none" stroke="${stroke}" stroke-width="2.5"/>
+          ${
+            unlocked
+              ? `<text x="${n.x}" y="${n.y + 5.5}" text-anchor="middle" font-size="16" font-weight="900" fill="#fdf8e7">${label}</text>`
+              : `<g transform="translate(${n.x},${n.y})"><rect x="-5" y="-3" width="10" height="9" rx="2" fill="#8d84a3"/><path d="M -3 -3 v -2.5 a 3 3 0 0 1 6 0 V -3" fill="none" stroke="#8d84a3" stroke-width="2"/></g>`
+          }
+          ${done ? `<g transform="translate(${n.x + 12},${n.y - 26})"><line x1="0" y1="0" x2="0" y2="14" stroke="#6b4a2a" stroke-width="2"/><path d="M 0 0 L 11 3.5 L 0 7 Z" fill="#8ee88b"/></g>` : ""}
+          ${
+            unlocked
+              ? `<g><rect x="${n.x - nameW / 2}" y="${n.y + 24}" width="${nameW}" height="15" rx="7" fill="rgba(16,26,18,0.75)" stroke="${isCurrent ? "#ffe9a3" : "rgba(255,255,255,0.15)"}" stroke-width="1"/><text x="${n.x}" y="${n.y + 35}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#f2ecd8">${stage.name}</text></g>`
+              : `<text x="${n.x}" y="${n.y + 35}" text-anchor="middle" font-size="10" font-weight="700" fill="#7d7590">???</text>`
+          }
         </g>`;
     });
     const svg = el(`
       <div class="map-frame">
-        <svg viewBox="0 0 640 300" role="img" aria-label="World map">
+        <svg viewBox="0 0 640 320" role="img" aria-label="World map">
           <defs>
             <linearGradient id="mapsky" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#43695c"/>
+              <stop offset="0" stop-color="#f2c98a"/>
+              <stop offset="0.55" stop-color="#c9d6a8"/>
+              <stop offset="1" stop-color="#9dbf94"/>
+            </linearGradient>
+            <linearGradient id="mapland" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#4a7355"/>
               <stop offset="1" stop-color="#2f5240"/>
             </linearGradient>
+            <radialGradient id="nodeNow" cx="0.5" cy="0.35" r="0.9">
+              <stop offset="0" stop-color="#ffdf8e"/>
+              <stop offset="1" stop-color="#c98a2e"/>
+            </radialGradient>
+            <radialGradient id="nodeDone" cx="0.5" cy="0.35" r="0.9">
+              <stop offset="0" stop-color="#5d9c62"/>
+              <stop offset="1" stop-color="#33633f"/>
+            </radialGradient>
+            <radialGradient id="burnGlow" cx="0.5" cy="0.5" r="0.5">
+              <stop offset="0" stop-color="rgba(230,120,60,0.4)"/>
+              <stop offset="1" stop-color="rgba(230,120,60,0)"/>
+            </radialGradient>
+            <radialGradient id="bossGlow" cx="0.5" cy="0.5" r="0.5">
+              <stop offset="0" stop-color="rgba(200,60,50,0.42)"/>
+              <stop offset="1" stop-color="rgba(200,60,50,0)"/>
+            </radialGradient>
           </defs>
-          <rect width="640" height="300" rx="16" fill="url(#mapsky)"/>
-          <ellipse cx="120" cy="290" rx="240" ry="60" fill="#3a6148" opacity="0.7"/>
-          <ellipse cx="520" cy="300" rx="280" ry="70" fill="#35594a" opacity="0.7"/>
-          <path d="M 0 70 Q 160 30 320 62 T 640 55 L 640 0 L 0 0 Z" fill="#243d30" opacity="0.55"/>
+          <rect width="640" height="320" rx="18" fill="url(#mapsky)"/>
+          <circle cx="560" cy="42" r="20" fill="#fff3c8" opacity="0.95"/>
+          <circle cx="560" cy="42" r="30" fill="#fff3c8" opacity="0.25"/>
+          <path class="map-bird" d="M 150 46 q 5 -5 10 0 q 5 -5 10 0" stroke="#5c5a4a" stroke-width="1.6" fill="none"/>
+          <path class="map-bird b2" d="M 190 60 q 4 -4 8 0 q 4 -4 8 0" stroke="#5c5a4a" stroke-width="1.4" fill="none"/>
+          <path d="M 0 92 Q 110 60 220 84 T 430 78 T 640 72 L 640 40 Q 500 66 350 52 Q 180 40 0 62 Z" fill="#6f9276" opacity="0.55"/>
+          <path d="M 0 104 Q 160 72 320 94 T 640 86 L 640 320 L 0 320 Z" fill="url(#mapland)"/>
+          <!-- themed regions -->
+          <ellipse cx="86" cy="252" rx="86" ry="46" fill="#8aa860" opacity="0.5"/>
+          <ellipse cx="204" cy="188" rx="80" ry="50" fill="#1f4030" opacity="0.55"/>
+          <ellipse cx="322" cy="248" rx="82" ry="44" fill="#3f6b60" opacity="0.6"/>
+          <ellipse cx="322" cy="252" rx="60" ry="26" fill="#5e8a7a" opacity="0.4"/>
+          <ellipse cx="422" cy="158" rx="74" ry="46" fill="#4a3a30" opacity="0.6"/>
+          <ellipse cx="422" cy="158" rx="90" ry="56" fill="url(#burnGlow)"/>
+          <ellipse cx="516" cy="222" rx="70" ry="42" fill="#4a4468" opacity="0.5"/>
+          <ellipse cx="580" cy="104" rx="66" ry="46" fill="url(#bossGlow)"/>
+          <!-- river with bridge -->
+          <path d="M 640 150 Q 520 176 430 240 Q 360 290 240 300 Q 140 308 60 320" fill="none" stroke="#3d6a80" stroke-width="14" stroke-linecap="round" opacity="0.75"/>
+          <path d="M 640 150 Q 520 176 430 240 Q 360 290 240 300 Q 140 308 60 320" fill="none" stroke="#6fa3bd" stroke-width="7" stroke-linecap="round" opacity="0.8"/>
           ${trees}
-          <path d="${road}" fill="none" stroke="#1c3023" stroke-width="11" stroke-linecap="round"/>
-          <path d="${road}" fill="none" stroke="#c9a973" stroke-width="6" stroke-dasharray="1 11" stroke-linecap="round"/>
+          <path d="${road}" fill="none" stroke="#1c3023" stroke-width="12" stroke-linecap="round"/>
+          <path d="${road}" fill="none" stroke="#b89a6a" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+          <path d="${road}" fill="none" stroke="#e0c896" stroke-width="2.5" stroke-dasharray="1 10" stroke-linecap="round"/>
+          <!-- bridge where road meets river -->
+          <rect x="358" y="266" width="30" height="10" rx="3" fill="#6b4a2a" stroke="#1c3023" stroke-width="2" transform="rotate(-18 373 271)"/>
+          <!-- boss skull rock -->
+          <g transform="translate(600,72)" opacity="0.9">
+            <circle r="9" fill="#c9c2b8"/>
+            <circle cx="-3" cy="-1" r="2.4" fill="#40201a"/>
+            <circle cx="3" cy="-1" r="2.4" fill="#40201a"/>
+            <rect x="-4" y="4" width="8" height="3" fill="#c9c2b8"/>
+          </g>
           ${markers}
         </svg>
       </div>
@@ -438,6 +521,181 @@ export class Menus {
     this.root.appendChild(page);
   }
 
+  // ------------------------------------------------------------------ village shops
+
+  renderShop(tab: "tavern" | "armory" | "spells"): void {
+    this.root.innerHTML = "";
+    this.show();
+    const save = this.save;
+    const page = el(`
+      <div class="page">
+        <div class="map-header">
+          <div>
+            <div class="map-title">The Village</div>
+            <div class="map-level"><span class="gold-chip">🪙 ${save.gold} gold</span></div>
+          </div>
+          <button class="big-btn party-btn" data-act="back">Map</button>
+        </div>
+        <div class="shop-tabs">
+          <button class="shop-tab ${tab === "tavern" ? "on" : ""}" data-tab="tavern">🍺 Tavern</button>
+          <button class="shop-tab ${tab === "armory" ? "on" : ""}" data-tab="armory">🛡 Armory</button>
+          <button class="shop-tab ${tab === "spells" ? "on" : ""}" data-tab="spells">✨ Spells</button>
+        </div>
+        <div class="shop-body"></div>
+      </div>
+    `);
+    const body = page.querySelector(".shop-body")!;
+    if (tab === "tavern") this.buildTavern(body);
+    else if (tab === "armory") this.buildArmory(body);
+    else this.buildSpellShop(body);
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const tabBtn = target.closest("[data-tab]");
+      if (tabBtn) {
+        audio.play("click");
+        this.renderShop(tabBtn.getAttribute("data-tab") as "tavern" | "armory" | "spells");
+        return;
+      }
+      if (target.closest('[data-act="back"]')) {
+        audio.play("click");
+        this.renderMap();
+      }
+    });
+    this.root.appendChild(page);
+  }
+
+  private spend(cost: number): boolean {
+    if (this.save.gold < cost) {
+      audio.play("click");
+      this.showToast(`Not enough gold — need 🪙 ${cost}`);
+      return false;
+    }
+    this.save.gold -= cost;
+    persist(this.save);
+    audio.play("levelup");
+    return true;
+  }
+
+  private buildTavern(body: Element): void {
+    const save = this.save;
+    for (let i = 0; i < HEROES.length; i++) {
+      const def = HEROES[i];
+      const hero = save.heroes[i];
+      const cost = RECRUIT_COST[i];
+      const card = el(`
+        <div class="hero-card ${hero.recruited ? "" : "locked-hero"}" style="--accent:${def.accent}">
+          <div class="hero-head">
+            <div class="hero-avatar" style="background:${def.accent}${hero.recruited ? "" : ";opacity:.5"}">
+              <span style="background:${def.skin}"></span>
+            </div>
+            <div>
+              <div class="hero-name">${def.name} <em>${def.title}</em></div>
+              <div class="hero-meta">${hero.recruited ? "Already rides with the band." : `A wanderer for hire — ${ATTR_NAMES[bestAttr(i)]} comes naturally.`}</div>
+            </div>
+            ${
+              hero.recruited
+                ? '<div class="hero-points">✓ hired</div>'
+                : `<button class="big-btn buy-btn" data-recruit="${i}">🪙 ${cost}</button>`
+            }
+          </div>
+        </div>
+      `);
+      body.appendChild(card);
+    }
+    body.addEventListener("click", (event) => {
+      const btn = (event.target as HTMLElement).closest("[data-recruit]");
+      if (!btn) return;
+      const i = Number(btn.getAttribute("data-recruit"));
+      const cost = RECRUIT_COST[i] ?? 0;
+      if (!this.spend(cost)) return;
+      this.save.heroes[i].recruited = true;
+      this.save.heroes[i].active = partyRoster(this.save).length < PARTY_CAP;
+      persist(this.save);
+      this.showToast(`${HEROES[i].name} ${HEROES[i].title} joins the band!`);
+      this.renderShop("tavern");
+    });
+  }
+
+  private buildArmory(body: Element): void {
+    const save = this.save;
+    for (let i = 0; i < HEROES.length; i++) {
+      const hero = save.heroes[i];
+      if (!hero.recruited) continue;
+      const def = HEROES[i];
+      const nextW = hero.weaponTier + 1 < WEAPON_TIERS.length ? WEAPON_TIERS[hero.weaponTier + 1] : null;
+      const nextA = hero.armorTier + 1 < ARMOR_TIERS.length ? ARMOR_TIERS[hero.armorTier + 1] : null;
+      const card = el(`
+        <div class="hero-card" style="--accent:${def.accent}">
+          <div class="hero-head">
+            <div class="hero-avatar" style="background:${def.accent}"><span style="background:${def.skin}"></span></div>
+            <div>
+              <div class="hero-name">${def.name}</div>
+              <div class="hero-meta">${WEAPON_TIERS[hero.weaponTier].name} weapon · ${ARMOR_TIERS[hero.armorTier].name} armor</div>
+            </div>
+          </div>
+          <div class="gear-row">
+            ${
+              nextW
+                ? `<button class="big-btn buy-btn" data-gear="w:${i}">⚔ ${nextW.name} (+${WEAPON_DAMAGE_BONUS[hero.weaponTier + 1] - WEAPON_DAMAGE_BONUS[hero.weaponTier]} dmg) — 🪙 ${nextW.cost}</button>`
+                : `<div class="gear-max">⚔ Best weapon owned</div>`
+            }
+            ${
+              nextA
+                ? `<button class="big-btn buy-btn" data-gear="a:${i}">🛡 ${nextA.name} (+${Math.round((ARMOR_BONUS[hero.armorTier + 1] - ARMOR_BONUS[hero.armorTier]) * 100)}% armor, +${ARMOR_HP_BONUS[hero.armorTier + 1] - ARMOR_HP_BONUS[hero.armorTier]} hp) — 🪙 ${nextA.cost}</button>`
+                : `<div class="gear-max">🛡 Best armor owned</div>`
+            }
+          </div>
+        </div>
+      `);
+      body.appendChild(card);
+    }
+    body.addEventListener("click", (event) => {
+      const btn = (event.target as HTMLElement).closest("[data-gear]");
+      if (!btn) return;
+      const [slot, idx] = btn.getAttribute("data-gear")!.split(":");
+      const i = Number(idx);
+      const hero = save.heroes[i];
+      const tier = slot === "w" ? hero.weaponTier + 1 : hero.armorTier + 1;
+      const cost = (slot === "w" ? WEAPON_TIERS : ARMOR_TIERS)[tier].cost;
+      if (!this.spend(cost)) return;
+      if (slot === "w") hero.weaponTier = tier;
+      else hero.armorTier = tier;
+      persist(save);
+      this.showToast(`${HEROES[i].name} equips ${(slot === "w" ? WEAPON_TIERS : ARMOR_TIERS)[tier].name} ${slot === "w" ? "weapon" : "armor"}!`);
+      this.renderShop("armory");
+    });
+  }
+
+  private buildSpellShop(body: Element): void {
+    const save = this.save;
+    body.appendChild(
+      el(`<div class="shop-note">Unlock a spell once, then assign it to any hero who meets its attribute — up to ${MAX_EQUIPPED} spells per hero, on the Party screen.</div>`),
+    );
+    for (const ability of ABILITIES) {
+      const owned = save.unlockedSpells.includes(ability.id);
+      const cost = SPELL_COSTS[ability.id] ?? 100;
+      const card = el(`
+        <div class="ability-chip shop-spell ${owned ? "equipped" : ""}" style="--chip:${ability.color}">
+          <div class="chip-name">${ability.name}</div>
+          <div class="chip-gate">${ability.blurb}</div>
+          <div class="chip-req">Requires ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}</div>
+          ${owned ? '<div class="chip-owned">✓ unlocked</div>' : `<button class="big-btn buy-btn" data-spell="${ability.id}">🪙 ${cost}</button>`}
+        </div>
+      `);
+      body.appendChild(card);
+    }
+    body.addEventListener("click", (event) => {
+      const btn = (event.target as HTMLElement).closest("[data-spell]");
+      if (!btn) return;
+      const id = btn.getAttribute("data-spell")!;
+      if (!this.spend(SPELL_COSTS[id] ?? 100)) return;
+      save.unlockedSpells.push(id);
+      persist(save);
+      this.showToast(`${ABILITIES.find((a) => a.id === id)?.name} unlocked — assign it on the Party screen`);
+      this.renderShop("spells");
+    });
+  }
+
   // ------------------------------------------------------------------ party
 
   renderParty(): void {
@@ -456,12 +714,11 @@ export class Menus {
       </div>
     `);
     const list = page.querySelector(".hero-list")!;
-    const roster = activeRoster(this.save.unlockedStage);
-    for (const i of roster) list.appendChild(this.heroCard(i));
     for (let i = 0; i < HEROES.length; i++) {
-      if (roster.includes(i)) continue;
-      const need = JOIN_REQUIREMENT[i];
-      const stageName = STAGES[need - 1]?.name ?? "the road ahead";
+      if (this.save.heroes[i].recruited) list.appendChild(this.heroCard(i));
+    }
+    for (let i = 0; i < HEROES.length; i++) {
+      if (this.save.heroes[i].recruited) continue;
       list.appendChild(
         el(`
           <div class="hero-card locked-hero" style="--accent:${HEROES[i].accent}">
@@ -471,7 +728,7 @@ export class Menus {
               </div>
               <div>
                 <div class="hero-name">${HEROES[i].name} <em>${HEROES[i].title}</em></div>
-                <div class="hero-meta">Joins the band after you clear <strong>${stageName}</strong></div>
+                <div class="hero-meta">For hire at the <strong>Village Tavern</strong> — 🪙 ${RECRUIT_COST[i] ?? "?"}</div>
               </div>
               <div class="hero-points">🔒</div>
             </div>
@@ -493,28 +750,58 @@ export class Menus {
     const save = this.save;
     const def = HEROES[index];
     const hero = save.heroes[index];
-    const stats = deriveStats(hero.attrs);
+    const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier);
     const weapon = dominantWeapon(hero.attrs);
     const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
+    const inParty = hero.active;
+    const partySize = partyRoster(save).length;
 
     const card = el(`
-      <div class="hero-card" style="--accent:${def.accent}">
+      <div class="hero-card ${inParty ? "" : "benched"}" style="--accent:${def.accent}">
         <div class="hero-head">
           <div class="hero-avatar" style="background:${def.accent}">
             <span style="background:${def.skin}"></span>
           </div>
           <div>
             <div class="hero-name">${def.name} <em>${def.title}</em></div>
-            <div class="hero-meta">${WEAPON_LABEL[weapon]} · ${stats.maxHp} hp · ${Math.round(stats.damage)} dmg</div>
+            <div class="hero-meta">${WEAPON_LABEL[weapon]} · ${WEAPON_TIERS[hero.weaponTier].name} / ${ARMOR_TIERS[hero.armorTier].name}</div>
           </div>
+          <button class="toggle-btn party-toggle ${inParty ? "in" : ""}" data-act="toggle-party">
+            ${inParty ? "⚔ In party" : "💤 Benched"}
+          </button>
           <div class="hero-points ${save.unspent[index] > 0 ? "has" : ""}">${save.unspent[index]} pts</div>
         </div>
+        <div class="stat-grid">
+          <div><span>Health</span><strong>${stats.maxHp}</strong></div>
+          <div><span>Damage</span><strong>${Math.round(stats.damage)}</strong></div>
+          <div><span>Atk speed</span><strong>${(1 / stats.attackCooldown).toFixed(2)}/s</strong></div>
+          <div><span>Armor</span><strong>${Math.round(stats.armor * 100)}%</strong></div>
+          <div><span>Range</span><strong>${stats.range > 90 ? "Ranged" : "Melee"}</strong></div>
+          <div><span>Move</span><strong>${Math.round(stats.speed)}</strong></div>
+          <div><span>Healing</span><strong>${stats.healPower.toFixed(1)}/s</strong></div>
+          <div><span>Spell power</span><strong>×${stats.spellPower.toFixed(2)}</strong></div>
+        </div>
         <div class="attr-rows"></div>
-        <div class="ability-row-title">Abilities <span>(tap to equip · max ${MAX_EQUIPPED})</span></div>
+        <div class="ability-row-title">Abilities <span>(tap to assign · max ${MAX_EQUIPPED} · buy new ones at the Village)</span></div>
         <div class="ability-chips"></div>
         <button class="toggle-btn respec" data-act="respec">Respec (free)</button>
       </div>
     `);
+
+    card.querySelector('[data-act="toggle-party"]')!.addEventListener("click", () => {
+      if (inParty && partySize <= 1) {
+        this.showToast("At least one hero must stay in the party");
+        return;
+      }
+      if (!inParty && partySize >= PARTY_CAP) {
+        this.showToast(`Party is full (${PARTY_CAP}) — bench someone first`);
+        return;
+      }
+      hero.active = !hero.active;
+      persist(save);
+      audio.play("click");
+      this.renderParty();
+    });
 
     const attrRows = card.querySelector(".attr-rows")!;
     for (const key of ATTR_KEYS) {
@@ -538,11 +825,16 @@ export class Menus {
       const after = unlockedAbilities(hero.attrs);
       if (after.length > before) {
         const fresh = after[after.length - 1];
-        if (hero.equipped.length < MAX_EQUIPPED && !hero.equipped.includes(fresh.id)) {
+        const owned = save.unlockedSpells.includes(fresh.id);
+        if (owned && hero.equipped.length < MAX_EQUIPPED && !hero.equipped.includes(fresh.id)) {
           hero.equipped.push(fresh.id);
         }
         audio.play("levelup");
-        this.showToast(`${def.name} learned ${fresh.name}!`);
+        this.showToast(
+          owned
+            ? `${def.name} can now use ${fresh.name}!`
+            : `${def.name} meets the bar for ${fresh.name} — unlock it at the Village`,
+        );
       } else {
         audio.play("click");
       }
@@ -552,17 +844,20 @@ export class Menus {
 
     const chips = card.querySelector(".ability-chips")!;
     for (const ability of ABILITIES) {
-      const isUnlocked = unlocked.includes(ability.id);
+      const gateOk = unlocked.includes(ability.id);
+      const owned = save.unlockedSpells.includes(ability.id);
+      const usable = gateOk && owned;
       const isEquipped = hero.equipped.includes(ability.id);
+      const gateText = !owned
+        ? `🪙 Unlock at the Village spell shop`
+        : gateOk
+          ? ability.blurb
+          : `Needs ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}`;
       const chip = el(`
-        <button class="ability-chip ${isUnlocked ? "" : "locked"} ${isEquipped ? "equipped" : ""}"
+        <button class="ability-chip ${usable ? "" : "locked"} ${isEquipped ? "equipped" : ""}"
           style="--chip:${ability.color}" data-ability="${ability.id}">
           <div class="chip-name">${ability.name}</div>
-          <div class="chip-gate">${
-            isUnlocked
-              ? ability.blurb
-              : `Needs ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}`
-          }</div>
+          <div class="chip-gate">${gateText}</div>
         </button>
       `);
       chips.appendChild(chip);
@@ -571,6 +866,10 @@ export class Menus {
       const chip = (event.target as HTMLElement).closest("[data-ability]") as HTMLElement | null;
       if (!chip) return;
       const id = chip.getAttribute("data-ability")!;
+      if (!save.unlockedSpells.includes(id)) {
+        this.showToast("Buy this spell at the Village first");
+        return;
+      }
       if (!unlockedAbilities(hero.attrs).some((a) => a.id === id)) {
         audio.play("click");
         return;
@@ -579,7 +878,7 @@ export class Menus {
       if (at >= 0) hero.equipped.splice(at, 1);
       else if (hero.equipped.length < MAX_EQUIPPED) hero.equipped.push(id);
       else {
-        this.showToast(`Max ${MAX_EQUIPPED} equipped — unequip one first`);
+        this.showToast(`Max ${MAX_EQUIPPED} assigned — remove one first`);
         return;
       }
       audio.play("click");

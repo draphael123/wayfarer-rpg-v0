@@ -138,6 +138,10 @@ export interface StageDef {
 export interface HeroSave {
   attrs: Attributes;
   equipped: string[]; // ability ids, max 3
+  recruited: boolean;
+  active: boolean; // in the fighting party (max 4)
+  weaponTier: number; // 0-3
+  armorTier: number; // 0-3
 }
 
 export interface SaveData {
@@ -151,4 +155,6 @@ export interface SaveData {
   music: boolean;
   speed: number; // combat speed multiplier
   bestiary: Partial<Record<EnemyKind, number>>; // kills per enemy kind
+  gold: number;
+  unlockedSpells: string[]; // ability ids bought in the spell shop (account-wide)
 }
