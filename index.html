@@ -8,6 +8,8 @@
   <meta name="theme-color" content="#151020">
   <title>Wayband — classless party tactics</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>">
 </head>
 <body>
@@ -20,5 +22,11 @@
     </div>
   </div>
   <script src="dist/game.js"></script>
+  <script>
+    // Offline install support — quietly skipped where service workers can't run.
+    if ("serviceWorker" in navigator && location.protocol === "https:") {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  </script>
 </body>
 </html>

@@ -45,8 +45,13 @@ are no classes:
 - Anyone can be molded into a tank-mage, a healing archer, or whatever the band
   needs.
 
-The band shares XP from wave battles across a six-stage campaign; progress saves
-to localStorage.
+You set out with just Bram (sword) and Sol (healer) — Wren joins after clearing
+Thornwood Deep's gate stage, and Ezri after the one beyond. The band shares XP
+across a six-stage campaign chosen from an illustrated world map; a bestiary
+catalogues every foe you've slain with lore and tactical notes. Combat speed is
+adjustable (×0.35–×2, default ×0.5) from the title settings or pause menu, and a
+guided tutorial teaches every mechanic with animated pointers. Progress saves to
+localStorage.
 
 ## Architecture
 

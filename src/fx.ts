@@ -21,10 +21,85 @@ export interface Floater {
   size: number;
 }
 
+export interface Ring {
+  x: number;
+  y: number;
+  r: number;
+  maxR: number;
+  life: number;
+  maxLife: number;
+  color: string;
+  width: number;
+  squash: number; // vertical squash for ground rings
+}
+
+export interface SlashArc {
+  x: number;
+  y: number;
+  angle: number;
+  spread: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  color: string;
+}
+
+export interface LightPool {
+  x: number;
+  y: number;
+  r: number;
+  life: number;
+  maxLife: number;
+  color: string; // rgb triplet like "255,150,60"
+}
+
 export class FxSystem {
   particles: Particle[] = [];
   floaters: Floater[] = [];
+  rings: Ring[] = [];
+  arcs: SlashArc[] = [];
+  pools: LightPool[] = [];
   shake = 0;
+
+  pool(x: number, y: number, r: number, color: string, life = 0.7): void {
+    this.pools.push({ x, y, r, life, maxLife: life, color });
+  }
+
+  /** Directional cone burst — debris flies away from the attacker. */
+  spray(x: number, y: number, dirX: number, dirY: number, color: string, count: number, speed = 120): void {
+    const base = Math.atan2(dirY, dirX);
+    for (let i = 0; i < count; i++) {
+      const angle = base + (Math.random() - 0.5) * 1.1;
+      const mag = speed * (0.5 + Math.random() * 0.7);
+      const life = 0.4 * (0.6 + Math.random() * 0.8);
+      this.particles.push({
+        x, y,
+        vx: Math.cos(angle) * mag,
+        vy: Math.sin(angle) * mag - 40,
+        life, maxLife: life,
+        size: 2.5 + Math.random() * 2,
+        color, gravity: 260, glow: false,
+      });
+    }
+  }
+
+  ring(x: number, y: number, maxR: number, color: string, opts: { width?: number; life?: number; squash?: number } = {}): void {
+    this.rings.push({
+      x,
+      y,
+      r: maxR * 0.15,
+      maxR,
+      life: opts.life ?? 0.4,
+      maxLife: opts.life ?? 0.4,
+      color,
+      width: opts.width ?? 3,
+      squash: opts.squash ?? 0.55,
+    });
+  }
+
+  slash(x: number, y: number, angle: number, radius: number, color: string, spread = Math.PI * 0.9): void {
+    this.arcs.push({ x, y, angle, spread, radius, life: 0.22, maxLife: 0.22, color });
+  }
 
   burst(
     x: number,
@@ -84,9 +159,66 @@ export class FxSystem {
       }
       f.y -= 34 * dt;
     }
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const ring = this.rings[i];
+      ring.life -= dt;
+      if (ring.life <= 0) {
+        this.rings.splice(i, 1);
+        continue;
+      }
+      const t = 1 - ring.life / ring.maxLife;
+      ring.r = ring.maxR * (0.15 + 0.85 * (1 - Math.pow(1 - t, 2.4)));
+    }
+    for (let i = this.arcs.length - 1; i >= 0; i--) {
+      this.arcs[i].life -= dt;
+      if (this.arcs[i].life <= 0) this.arcs.splice(i, 1);
+    }
+    for (let i = this.pools.length - 1; i >= 0; i--) {
+      this.pools[i].life -= dt;
+      if (this.pools[i].life <= 0) this.pools.splice(i, 1);
+    }
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
+    for (const pool of this.pools) {
+      const a = Math.max(0, pool.life / pool.maxLife);
+      const g = ctx.createRadialGradient(pool.x, pool.y, 2, pool.x, pool.y, pool.r);
+      g.addColorStop(0, `rgba(${pool.color},${0.34 * a})`);
+      g.addColorStop(1, `rgba(${pool.color},0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(pool.x, pool.y, pool.r, pool.r * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (const ring of this.rings) {
+      const alpha = Math.max(0, ring.life / ring.maxLife);
+      ctx.globalAlpha = alpha * 0.9;
+      ctx.strokeStyle = ring.color;
+      ctx.lineWidth = ring.width * (0.4 + alpha * 0.6);
+      ctx.beginPath();
+      ctx.ellipse(ring.x, ring.y, ring.r, ring.r * ring.squash, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    for (const arc of this.arcs) {
+      const t = 1 - arc.life / arc.maxLife;
+      const alpha = Math.max(0, arc.life / arc.maxLife);
+      ctx.globalAlpha = alpha;
+      ctx.lineCap = "round";
+      const sweepStart = arc.angle - arc.spread / 2 + arc.spread * t * 0.5;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 7 * alpha + 1.5;
+      ctx.beginPath();
+      ctx.arc(arc.x, arc.y, arc.radius, sweepStart, sweepStart + arc.spread * 0.7);
+      ctx.stroke();
+      ctx.strokeStyle = arc.color;
+      ctx.lineWidth = 3.4 * alpha + 1;
+      ctx.beginPath();
+      ctx.arc(arc.x, arc.y, arc.radius + 3, sweepStart, sweepStart + arc.spread * 0.7);
+      ctx.stroke();
+      ctx.lineCap = "butt";
+    }
+    ctx.globalAlpha = 1;
     for (const p of this.particles) {
       const alpha = Math.max(0, p.life / p.maxLife);
       ctx.globalAlpha = alpha;
@@ -102,12 +234,15 @@ export class FxSystem {
     }
     ctx.globalAlpha = 1;
     for (const f of this.floaters) {
+      const age = 1 - f.life / f.maxLife;
       const alpha = Math.min(1, f.life / f.maxLife + 0.2);
+      // pop: overshoot then settle
+      const pop = age < 0.18 ? 0.5 + (age / 0.18) * 0.85 : 1.35 - Math.min(0.35, (age - 0.18) * 1.2);
       ctx.globalAlpha = alpha;
-      ctx.font = `800 ${f.size}px "Trebuchet MS", Verdana, sans-serif`;
+      ctx.font = `800 ${Math.round(f.size * pop)}px "Trebuchet MS", Verdana, sans-serif`;
       ctx.textAlign = "center";
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "rgba(20, 16, 28, 0.75)";
+      ctx.lineWidth = 3.4;
+      ctx.strokeStyle = "rgba(20, 16, 28, 0.8)";
       ctx.strokeText(f.text, f.x, f.y);
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
@@ -118,6 +253,9 @@ export class FxSystem {
   clear(): void {
     this.particles.length = 0;
     this.floaters.length = 0;
+    this.rings.length = 0;
+    this.arcs.length = 0;
+    this.pools.length = 0;
     this.shake = 0;
   }
 }

@@ -1,12 +1,26 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { STAGES } from "./data";
+import { BOSS_STAGES, DIFFICULTIES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { Menus } from "./menus";
-import { drawBackground, drawProjectiles, drawUnits, drawZones } from "./render";
-import { defaultSave, grantXp, loadSave, persist } from "./save";
-import type { SaveData } from "./types";
+import {
+  drawBackground,
+  drawColorGrade,
+  drawDecals,
+  drawForeground,
+  drawLighting,
+  drawProjectiles,
+  drawReflections,
+  drawTelegraphs,
+  drawUnits,
+  drawVignette,
+  drawZones,
+} from "./render";
+import { defaultSave, grantXp, loadSave, nextSpeed, persist } from "./save";
+import { logEvent } from "./telemetry";
+import { Tutorial } from "./tutorial";
+import type { SaveData, StageDef } from "./types";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d")!;
@@ -22,6 +36,8 @@ let viewScale = 1;
 let battle: Battle | null = null;
 let hud: Hud | null = null;
 let fx: FxSystem | null = null;
+let tutorial: Tutorial | null = null;
+let battleSave: SaveData = save; // the save the running battle reads (tutorial uses a throwaway)
 let currentStage = 0;
 let xpGranted = false;
 
@@ -39,12 +55,12 @@ function resize(): void {
   const cssW = window.innerWidth;
   const cssH = window.innerHeight;
   const dpr = Math.min(2.5, window.devicePixelRatio || 1);
-  const targetH = 560;
+  const targetH = 430;
   viewScale = cssH / targetH;
   logicalW = cssW / viewScale;
-  if (logicalW < 780) {
-    viewScale = cssW / 780;
-    logicalW = 780;
+  if (logicalW < 760) {
+    viewScale = cssW / 760;
+    logicalW = 760;
   }
   logicalH = cssH / viewScale;
   canvas.width = Math.round(cssW * dpr);
@@ -77,6 +93,9 @@ const menus = new Menus("ui", save, {
   startStage(stageIndex: number) {
     startBattle(stageIndex);
   },
+  startTutorial(kind: string) {
+    startTutorial(kind);
+  },
   resetProgress() {
     save = defaultSave();
     persist(save);
@@ -88,33 +107,135 @@ const menus = new Menus("ui", save, {
 });
 
 function startBattle(stageIndex: number): void {
+  rolledLoot = null;
+  logEvent("battle_start", {
+    stage: stageIndex,
+    difficulty: save.difficulty,
+    level: save.level,
+    party: save.heroes.filter((h) => h.recruited && h.active).length,
+  });
   currentStage = stageIndex;
   xpGranted = false;
+  tutorial = null;
+  battleSave = save;
   fx = new FxSystem();
   battle = new Battle(STAGES[stageIndex], save, fieldRect(), fx);
   hud = new Hud(battle, save, logicalW, logicalH);
+  hud.freshPlayer = save.unlockedStage === 0 && save.level < 3;
+  audio.setMood("battle");
   menus.hide();
 }
 
+const TUTORIAL_STAGE: StageDef = {
+  ...STAGES[0],
+  name: "Training Grounds",
+  subtitle: "Learn the ropes",
+  waves: [],
+  scale: 0.55,
+  xpReward: 0,
+};
+
+function startTutorial(kind = "basics"): void {
+  xpGranted = true; // tutorials pay no xp
+  const temp = defaultSave();
+  temp.sound = save.sound;
+  temp.music = save.music;
+  if (kind === "gestures") {
+    // Wren + Ezri practice squad with every aimed spell ready
+    temp.heroes[0].active = false;
+    temp.heroes[3].active = false;
+    temp.heroes[1].recruited = true;
+    temp.heroes[1].active = true;
+    temp.heroes[2].recruited = true;
+    temp.heroes[2].active = true;
+    temp.heroes[2].attrs.int = 12;
+    temp.unlockedSpells = ["pierce", "fireball", "frostwake"];
+    temp.heroes[1].equipped = ["pierce"];
+    temp.heroes[2].equipped = ["fireball", "frostwake"];
+  } else if (kind === "healing") {
+    temp.heroes[3].attrs.spi = 8;
+  }
+  battleSave = temp;
+  fx = new FxSystem();
+  battle = new Battle(TUTORIAL_STAGE, temp, fieldRect(), fx, true);
+  hud = new Hud(battle, temp, logicalW, logicalH);
+  tutorial = new Tutorial(battle, hud, kind);
+  audio.setMood("battle");
+  menus.hide();
+}
+
+function mergeBestiary(): void {
+  if (!battle || battle.tutorialMode) return;
+  let changed = false;
+  for (const [kind, count] of Object.entries(battle.killCounts)) {
+    if (!count) continue;
+    save.bestiary[kind as keyof typeof save.bestiary] = (save.bestiary[kind as keyof typeof save.bestiary] ?? 0) + count;
+    changed = true;
+  }
+  battle.killCounts = {};
+  if (changed) persist(save);
+}
+
 function endBattleToMap(): void {
+  if (battle && !battle.tutorialMode) {
+    logEvent("battle_end", {
+      stage: currentStage,
+      difficulty: save.difficulty,
+      result: battle.state === "victory" ? "victory" : battle.state === "defeat" ? "defeat" : "retreat",
+      durationSec: Math.round(battle.time),
+      wave: battle.waveIndex,
+      heroDeaths: battle.heroDeaths,
+      casts: battle.castCounts,
+    });
+  }
+  if (battle && !battle.tutorialMode && !xpGranted && battle.goldEarned > 0) {
+    save.gold += Math.round(battle.goldEarned / 2);
+    persist(save);
+  }
+  mergeBestiary();
   battle = null;
   hud = null;
   fx = null;
+  tutorial = null;
+  battleSave = save;
+  audio.setMood("menu");
   menus.renderMap();
+}
+
+let rolledLoot: { id: string; icon: string; name: string; rare: boolean } | null = null;
+
+function rollLoot(): void {
+  if (rolledLoot) return;
+  const rare = BOSS_STAGES.includes(currentStage);
+  const pool = TRINKETS.filter((t) => t.rarity === (rare ? "rare" : "common"));
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  rolledLoot = { id: pick.id, icon: pick.icon, name: pick.name, rare };
+  if (hud) hud.pendingLoot = rolledLoot;
 }
 
 function settleVictory(): void {
   if (!battle || xpGranted) return;
   xpGranted = true;
-  const xp = battle.xpEarned + battle.stage.xpReward;
+  const rewardMult = DIFFICULTIES[save.difficulty ?? 1].rewardMult;
+  const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * rewardMult);
+  const gold = Math.round((battle.goldEarned + Math.round(battle.stage.xpReward * 0.8)) * rewardMult);
   const levels = grantXp(save, xp);
+  save.gold += gold;
+  // loot was revealed on the victory card; bank it now
+  rollLoot();
+  const drop = rolledLoot!;
+  const rare = drop.rare;
+  save.inventory.push(drop.id);
   if (currentStage === save.unlockedStage && currentStage < STAGES.length - 1) {
     save.unlockedStage++;
-    persist(save);
+    menus.travelFrom = currentStage;
   }
+  persist(save);
   if (levels > 0) {
     audio.play("levelup");
-    setTimeout(() => menus.showToast(`Level up! Each hero gains ${levels * 2} attribute points — visit the Party screen`), 150);
+    setTimeout(() => menus.showToast(`Level up! +${gold} gold · loot: ${drop.icon} ${drop.name}${rare ? " (RARE)" : ""}`), 150);
+  } else {
+    setTimeout(() => menus.showToast(`+${gold} gold · loot: ${drop.icon} ${drop.name}${rare ? " (RARE)" : ""}`), 150);
   }
 }
 
@@ -128,9 +249,22 @@ function handleHudAction(action: string): void {
       hud.paused = false;
       break;
     case "retry":
+      if (battle && !battle.tutorialMode) {
+        logEvent("battle_end", {
+          stage: currentStage,
+          difficulty: save.difficulty,
+          result: "retry",
+          durationSec: Math.round(battle.time),
+          wave: battle.waveIndex,
+          heroDeaths: battle.heroDeaths,
+          casts: battle.castCounts,
+        });
+      }
+      mergeBestiary();
       startBattle(currentStage);
       break;
     case "map":
+    case "skip-tutorial":
       endBattleToMap();
       break;
     case "continue":
@@ -139,12 +273,19 @@ function handleHudAction(action: string): void {
       break;
     case "sound":
       save.sound = !save.sound;
+      battleSave.sound = save.sound;
       audio.setSound(save.sound);
       persist(save);
       break;
     case "music":
       save.music = !save.music;
+      battleSave.music = save.music;
       audio.setMusic(save.music);
+      persist(save);
+      break;
+    case "speed":
+      save.speed = nextSpeed(save.speed);
+      battleSave.speed = save.speed;
       persist(save);
       break;
   }
@@ -221,31 +362,104 @@ document.addEventListener("visibilitychange", () => {
 
 // ------------------------------------------------------------------ loop
 
+const cam = { x: 0, y: 0, zoom: 1, punch: 0 };
+
 let lastTime = performance.now();
 
 function frame(now: number): void {
-  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  let dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
 
   if (battle && hud && fx) {
     if (!hud.paused) {
-      battle.update(dt, save);
-      fx.update(dt);
+      // hit-stop: big impacts freeze the world for a few frames
+      if (battle.hitstop > 0) {
+        battle.hitstop = Math.max(0, battle.hitstop - dt);
+        dt *= 0.12;
+      }
+      let simDt = dt * save.speed;
+      if (battle.slowmo > 0) {
+        battle.slowmo = Math.max(0, battle.slowmo - dt);
+        simDt *= 0.3;
+      }
+      battle.update(simDt, battleSave);
+      fx.update(simDt);
+      if (tutorial) {
+        tutorial.update(simDt);
+        if (tutorial.done) {
+          endBattleToMap();
+          requestAnimationFrame(frame);
+          return;
+        }
+      }
     }
     hud.update(dt);
+    if (battle.state === "victory") rollLoot();
+
+    // camera: ease toward the action (or the boss during their intro)
+    const living = battle.units.filter((u) => u.alive);
+    let targetX = cam.x;
+    let targetY = cam.y;
+    if (battle.cinematic > 0 && battle.bossRef?.alive) {
+      targetX = Math.max(-40, Math.min(40, (battle.bossRef.x - logicalW / 2) * 0.35));
+      targetY = Math.max(-24, Math.min(24, (battle.bossRef.y - (logicalH - HUD_H) * 0.55) * 0.3));
+    } else if (living.length) {
+      let cx = 0;
+      let cy = 0;
+      for (const u of living) {
+        cx += u.x;
+        cy += u.y;
+      }
+      cx /= living.length;
+      cy /= living.length;
+      targetX = Math.max(-14, Math.min(14, (cx - logicalW / 2) * 0.12));
+      targetY = Math.max(-8, Math.min(8, (cy - (logicalH - HUD_H) * 0.55) * 0.1));
+    }
+    cam.x += (targetX - cam.x) * Math.min(1, dt * (battle.cinematic > 0 ? 4 : 2.2));
+    cam.y += (targetY - cam.y) * Math.min(1, dt * (battle.cinematic > 0 ? 4 : 2.2));
+    cam.punch = Math.max(0, cam.punch - dt * 3.2);
+    if (battle.zoomPunch > 0) {
+      cam.punch = Math.max(cam.punch, battle.zoomPunch);
+      battle.zoomPunch = 0;
+    }
+    // directional hit-kick decays fast
+    battle.kickX *= Math.max(0, 1 - dt * 10);
+    battle.kickY *= Math.max(0, 1 - dt * 10);
+    const cineZoom = battle.cinematic > 0 ? 0.1 : 0;
+    cam.zoom = 1 + cam.punch * 0.045 + cineZoom;
+    hud.cam = cam;
 
     const shakeX = fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
     const shakeY = fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
 
+    const CY = (logicalH - HUD_H) * 0.5;
+    const worldH = logicalH - HUD_H + 20;
+    const dusk = battle.stage.waves.length > 1 ? Math.max(0, battle.waveIndex) / (battle.stage.waves.length - 1) : 0;
     ctx.save();
-    ctx.translate(shakeX, shakeY);
+    ctx.translate(shakeX + battle.kickX, shakeY + battle.kickY);
+    ctx.translate(logicalW / 2, CY);
+    ctx.scale(cam.zoom, cam.zoom);
+    ctx.translate(-logicalW / 2 - cam.x, -CY - cam.y);
     const horizon = (logicalH - HUD_H) * 0.34;
-    drawBackground(ctx, battle.stage, logicalW, logicalH - HUD_H + 20, horizon, battle.time);
+    drawBackground(ctx, battle.stage, logicalW, worldH, horizon, battle.time, {
+      camX: cam.x,
+      camY: cam.y,
+      dusk: battle.tutorialMode ? 0 : dusk * 0.8,
+      units: battle.units,
+    });
+    drawDecals(ctx, battle);
+    drawReflections(ctx, battle, battleSave, logicalW, worldH, horizon, battle.time);
     drawZones(ctx, battle);
-    drawUnits(ctx, battle, save, hud.selected);
+    drawTelegraphs(ctx, battle);
+    drawUnits(ctx, battle, battleSave, hud.selected);
     drawProjectiles(ctx, battle);
     fx.draw(ctx);
+    hud.drawWorld(ctx);
+    drawForeground(ctx, battle.stage, logicalW, worldH, battle.time, { camX: cam.x, camY: cam.y, units: battle.units });
     ctx.restore();
+    drawLighting(ctx, battle, logicalW, worldH);
+    drawColorGrade(ctx, battle.stage, logicalW, worldH);
+    drawVignette(ctx, logicalW, worldH);
     hud.draw(ctx);
   } else {
     // simple backdrop behind DOM menus

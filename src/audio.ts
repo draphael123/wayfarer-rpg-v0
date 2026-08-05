@@ -15,6 +15,9 @@ type SfxName =
   | "frost"
   | "warcry"
   | "shield"
+  | "coin"
+  | "ready"
+  | "roar"
   | "levelup"
   | "victory"
   | "defeat"
@@ -26,8 +29,13 @@ class AudioKit {
   private musicGain: GainNode | null = null;
   private musicTimer: number | null = null;
   private musicStep = 0;
+  private mood: "menu" | "battle" = "menu";
   soundOn = true;
   musicOn = true;
+
+  setMood(mood: "menu" | "battle"): void {
+    this.mood = mood;
+  }
 
   private ensure(): AudioContext | null {
     if (typeof AudioContext === "undefined") return null;
@@ -140,6 +148,19 @@ class AudioKit {
       case "shield":
         this.tone(330, 0.2, "triangle", 0.16, 160);
         break;
+      case "ready":
+        this.tone(880, 0.1, "sine", 0.08);
+        this.tone(1320, 0.14, "sine", 0.07, 0, 0.07);
+        break;
+      case "coin":
+        this.tone(1180, 0.07, "square", 0.12, 60);
+        this.tone(1560, 0.09, "square", 0.1, 40, 0.07);
+        break;
+      case "roar":
+        this.tone(90, 0.5, "sawtooth", 0.3, 60);
+        this.noise(0.45, 0.25, 700);
+        this.tone(140, 0.4, "sawtooth", 0.18, -50, 0.1);
+        break;
       case "levelup":
         [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.18, "triangle", 0.14, 0, i * 0.09));
         break;
@@ -160,22 +181,36 @@ class AudioKit {
     if (this.musicTimer !== null) return;
     const ctx = this.ensure();
     if (!ctx || !this.musicGain) return;
-    // A slow modal arpeggio over two alternating chords — quiet campfire fantasy.
+    // Two moods over the same harmonic bed: a slow campfire arpeggio on menus,
+    // a driving pulse with a pentatonic lead in battle.
     const chords = [
       [220, 261.6, 329.6, 392],
       [196, 246.9, 293.7, 392],
       [174.6, 220, 261.6, 349.2],
       [196, 246.9, 293.7, 370],
     ];
-    const stepDur = 0.42;
+    const lead = [440, 523.2, 587.3, 659.2, 784, 659.2, 587.3, 523.2];
+    const stepDur = 0.4;
     const tick = () => {
       if (!this.musicOn || !this.soundOnContextAlive()) return;
       const chord = chords[Math.floor(this.musicStep / 8) % chords.length];
-      const note = chord[this.musicStep % chord.length];
-      const octave = this.musicStep % 8 >= 4 ? 2 : 1;
-      this.tone(note * octave, 0.9, "sine", 0.5, 0, 0, this.musicGain!);
-      if (this.musicStep % 8 === 0) {
-        this.tone(chord[0] / 2, 3.2, "triangle", 0.35, 0, 0, this.musicGain!);
+      const g = this.musicGain!;
+      if (this.mood === "menu") {
+        const note = chord[this.musicStep % chord.length];
+        const octave = this.musicStep % 8 >= 4 ? 2 : 1;
+        this.tone(note * octave, 0.9, "sine", 0.5, 0, 0, g);
+        if (this.musicStep % 8 === 0) this.tone(chord[0] / 2, 3.2, "triangle", 0.35, 0, 0, g);
+        if (this.musicStep % 4 === 0) this.tone(58, 0.14, "sine", 0.4, -12, 0, g);
+        if (this.musicStep % 16 === 10) this.tone(chord[2] * 4, 1.6, "sine", 0.13, 0, 0.2, g);
+      } else {
+        // battle: bass on every beat, chugging chord pulse, wandering lead
+        if (this.musicStep % 2 === 0) this.tone(chord[0] / 2, 0.32, "triangle", 0.5, 0, 0, g);
+        this.tone(58, 0.1, "sine", this.musicStep % 4 === 0 ? 0.6 : 0.3, -14, 0, g);
+        this.tone(chord[(this.musicStep % 3) + 1] ?? chord[1], 0.22, "square", 0.08, 0, 0, g);
+        if (this.musicStep % 2 === 1) {
+          const n = lead[Math.floor(this.musicStep / 2) % lead.length];
+          this.tone(n, 0.5, "sine", 0.22, 0, 0, g);
+        }
       }
       this.musicStep++;
     };

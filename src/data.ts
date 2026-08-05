@@ -42,7 +42,7 @@ export const HEROES: HeroDef[] = [
     title: "the Oathbound",
     skin: "#e8b58c",
     hair: "#6b3f22",
-    accent: "#b0413e",
+    accent: "#8a6a58",
     baseAttrs: { str: 6, dex: 2, int: 1, vit: 5, spi: 1 },
   },
   {
@@ -50,7 +50,7 @@ export const HEROES: HeroDef[] = [
     title: "the Fletcher",
     skin: "#d9a06b",
     hair: "#2e2a35",
-    accent: "#3e7c4f",
+    accent: "#6d7a64",
     baseAttrs: { str: 2, dex: 7, int: 2, vit: 3, spi: 1 },
   },
   {
@@ -58,7 +58,7 @@ export const HEROES: HeroDef[] = [
     title: "the Emberwise",
     skin: "#f0c9a0",
     hair: "#a8552f",
-    accent: "#7b4fa6",
+    accent: "#6c6880",
     baseAttrs: { str: 1, dex: 2, int: 7, vit: 3, spi: 2 },
   },
   {
@@ -66,7 +66,7 @@ export const HEROES: HeroDef[] = [
     title: "the Lantern",
     skin: "#c98d5e",
     hair: "#e8e2d0",
-    accent: "#d9a441",
+    accent: "#8f8672",
     baseAttrs: { str: 2, dex: 1, int: 2, vit: 4, spi: 6 },
   },
 ];
@@ -168,20 +168,92 @@ export function abilityById(id: string): AbilityDef | undefined {
   return ABILITIES.find((a) => a.id === id);
 }
 
+/** Gold cost to recruit each hero at the tavern (by hero index). Bram and Sol are free founders. */
+export const RECRUIT_COST: Record<number, number> = { 1: 120, 2: 300 };
+
+export const PARTY_CAP = 4;
+
+/** Hero indices fighting in battles: recruited AND marked active, capped at PARTY_CAP. */
+export function partyRoster(save: { heroes: { recruited: boolean; active: boolean }[] }): number[] {
+  return save.heroes
+    .map((h, i) => ({ h, i }))
+    .filter(({ h }) => h.recruited && h.active)
+    .map(({ i }) => i)
+    .slice(0, PARTY_CAP);
+}
+
+// --- gear sold at the armory ---
+export interface GearTier {
+  name: string;
+  cost: number; // 0 = starting gear
+}
+
+export const WEAPON_TIERS: GearTier[] = [
+  { name: "Worn", cost: 0 },
+  { name: "Iron", cost: 100 },
+  { name: "Steel", cost: 300 },
+  { name: "Mythril", cost: 800 },
+];
+export const WEAPON_DAMAGE_BONUS = [0, 4, 9, 16];
+
+export const ARMOR_TIERS: GearTier[] = [
+  { name: "Cloth", cost: 0 },
+  { name: "Leather", cost: 100 },
+  { name: "Chain", cost: 300 },
+  { name: "Plate", cost: 800 },
+];
+export const ARMOR_BONUS = [0, 0.04, 0.08, 0.14];
+export const ARMOR_HP_BONUS = [0, 15, 35, 65];
+
+/** Gold cost of each ability in the spell shop. */
+export const SPELL_COSTS: Record<string, number> = {
+  cleave: 80,
+  pierce: 80,
+  fireball: 80,
+  mend: 80,
+  bulwark: 150,
+  warcry: 220,
+  flurry: 220,
+  frostwake: 220,
+  radiance: 220,
+};
+
 export function unlockedAbilities(attrs: Attributes): AbilityDef[] {
   return ABILITIES.filter((a) => attrs[a.gate.attr] >= a.gate.value);
 }
 
 export function dominantWeapon(attrs: Attributes): WeaponKind {
+  if (attrs.spi > attrs.str && attrs.spi > attrs.dex && attrs.spi > attrs.int) return "stave";
   if (attrs.int > attrs.str && attrs.int >= attrs.dex) return "staff";
   if (attrs.dex > attrs.str) return "bow";
   return "sword";
 }
 
-export function deriveStats(attrs: Attributes): DerivedStats {
+export function deriveStats(
+  attrs: Attributes,
+  weaponTier = 0,
+  armorTier = 0,
+  talents?: Record<string, number>,
+  trinket?: string | null,
+): DerivedStats {
+  const t = talentMods(talents);
+  const k = trinketMods(trinket);
+  const mods = {
+    meleeDmg: t.meleeDmg + k.meleeDmg,
+    rangedDmg: t.rangedDmg + k.rangedDmg,
+    hpPct: t.hpPct + k.hpPct,
+    armorFlat: t.armorFlat + k.armorFlat,
+    cdr: Math.min(0.5, t.cdr + k.cdr),
+    atkSpeed: t.atkSpeed + k.atkSpeed,
+    moveSpeed: t.moveSpeed + k.moveSpeed,
+    crit: t.crit + k.crit,
+    spellPower: t.spellPower + k.spellPower,
+    healPower: t.healPower + k.healPower,
+    startShield: t.startShield + k.startShield,
+  };
   const weapon = dominantWeapon(attrs);
-  const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4);
-  const armor = Math.min(0.6, attrs.vit * 0.02 + attrs.str * 0.01);
+  const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + ARMOR_HP_BONUS[armorTier]);
+  const armor = Math.min(0.65, attrs.vit * 0.02 + attrs.str * 0.01 + ARMOR_BONUS[armorTier]);
   const speed = 95 + Math.min(45, attrs.dex * 3);
   const healPower = 2 + attrs.spi * 1.6;
   const spellPower = 1 + attrs.int * 0.055;
@@ -196,13 +268,30 @@ export function deriveStats(attrs: Attributes): DerivedStats {
     damage = 6 + attrs.dex * 1.7;
     range = 210;
     attackCooldown = 1.0;
+  } else if (weapon === "stave") {
+    // a healer's holy spark — modest, but keeps them useful at range
+    damage = 5 + attrs.spi * 1.1 + attrs.int * 0.5;
+    range = 175;
+    attackCooldown = 1.4;
   } else {
     damage = 7 + attrs.int * 2.0;
     range = 190;
     attackCooldown = 1.35;
   }
   attackCooldown *= 1 - Math.min(0.45, attrs.dex * 0.018);
-  return { maxHp, damage, range, attackCooldown, speed, armor, healPower, spellPower, weapon };
+  damage += WEAPON_DAMAGE_BONUS[weaponTier];
+  damage *= 1 + (weapon === "sword" ? mods.meleeDmg : mods.rangedDmg);
+  return {
+    maxHp: Math.round(maxHp * (1 + mods.hpPct)) + trinketFlatHp(trinket),
+    damage,
+    range,
+    attackCooldown: attackCooldown / (1 + mods.atkSpeed),
+    speed: speed * (1 + mods.moveSpeed),
+    armor: Math.min(0.7, armor + mods.armorFlat),
+    healPower: healPower * (1 + mods.healPower),
+    spellPower: spellPower * (1 + mods.spellPower),
+    weapon,
+  };
 }
 
 export interface EnemyDef {
@@ -217,6 +306,8 @@ export interface EnemyDef {
   xp: number;
   body: string;
   trim: string;
+  lore: string;
+  habit: string; // one-line tactical note shown in the bestiary
 }
 
 export const ENEMIES: Record<EnemyKind, EnemyDef> = {
@@ -229,9 +320,11 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     speed: 105,
     armor: 0,
     radius: 13,
-    xp: 6,
+    xp: 9,
     body: "#5e8c3a",
     trim: "#8c5a2e",
+    lore: "Scrappy raiders of the barley fields. One is a nuisance; a dozen is a harvest lost.",
+    habit: "Rushes the nearest hero. Easily cleaved in groups.",
   },
   wolf: {
     name: "Dusk Wolf",
@@ -242,9 +335,11 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     speed: 150,
     armor: 0,
     radius: 13,
-    xp: 6,
+    xp: 9,
     body: "#5a5666",
     trim: "#8d8798",
+    lore: "Dusk wolves hunt in silence between the pines, eyes like lantern-light.",
+    habit: "Very fast. Will slip past your line to reach soft targets.",
   },
   archer: {
     name: "Sniper",
@@ -255,9 +350,11 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     speed: 92,
     armor: 0,
     radius: 12,
-    xp: 8,
+    xp: 12,
     body: "#7a6a3c",
     trim: "#4b431f",
+    lore: "Goblin snipers with stolen longbows and no sense of honor.",
+    habit: "Keeps its distance and backpedals. Send someone to close the gap.",
   },
   brute: {
     name: "Brute",
@@ -268,9 +365,11 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     speed: 62,
     armor: 0.2,
     radius: 22,
-    xp: 16,
+    xp: 24,
     body: "#7d5a44",
     trim: "#3f2b1e",
+    lore: "A wall of muscle and grievance. The horns are not decorative.",
+    habit: "Slow but crushing. Kite it, or tank it with Warcry and armor.",
   },
   shaman: {
     name: "Shaman",
@@ -281,9 +380,26 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     speed: 85,
     armor: 0,
     radius: 13,
-    xp: 12,
+    xp: 17,
     body: "#4f7d7a",
     trim: "#2c4a48",
+    lore: "Masked menders of the war-bands, muttering green fire.",
+    habit: "Heals its allies from the back. Kill it first.",
+  },
+  alpha: {
+    name: "Alpha of Thornwood",
+    maxHp: 380,
+    damage: 15,
+    range: 34,
+    attackCooldown: 1.1,
+    speed: 135,
+    armor: 0.1,
+    radius: 24,
+    xp: 60,
+    body: "#3f3a4d",
+    trim: "#6e6680",
+    lore: "The pack answers one voice. It has never known a hunt to fail.",
+    habit: "Dodge the pounce circle! When exhausted after leaping, strike hard.",
   },
   warlord: {
     name: "Gorehulk",
@@ -294,9 +410,11 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     speed: 55,
     armor: 0.25,
     radius: 30,
-    xp: 80,
+    xp: 110,
     body: "#8a4a3a",
     trim: "#2f1a12",
+    lore: "Gorehulk, warlord of the hollow. The forest itself seems to flinch.",
+    habit: "His slam wounds everyone near it. Never clump up.",
   },
 };
 
@@ -313,73 +431,73 @@ export const STAGES: StageDef[] = [
       groundDark: "#8aa863",
       prop: "#6d8a4e",
     },
-    scale: 1,
+    scale: 1.65,
     xpReward: 20,
     waves: [
-      [{ kind: "goblin", count: 3 }],
-      [{ kind: "goblin", count: 4 }, { kind: "wolf", count: 1 }],
-      [{ kind: "goblin", count: 4 }, { kind: "archer", count: 2 }],
+      [{ kind: "goblin", count: 2 }],
+      [{ kind: "goblin", count: 2 }, { kind: "wolf", count: 1 }],
+      [{ kind: "goblin", count: 3 }, { kind: "archer", count: 1 }],
     ],
   },
   {
     id: 1,
-    name: "Thornwood Edge",
-    subtitle: "Wolves hunt in pairs",
+    name: "Thornwood Deep",
+    subtitle: "The pines have eyes",
     palette: {
-      skyTop: "#7fb6d6",
-      skyBottom: "#cfe3b8",
-      hills: "#6f9a5c",
-      ground: "#87a95f",
-      groundDark: "#6c8c4b",
-      prop: "#4c6b3a",
+      skyTop: "#54799c",
+      skyBottom: "#9fc2a4",
+      hills: "#3d6549",
+      ground: "#547a4e",
+      groundDark: "#40603c",
+      prop: "#2b4832",
     },
-    scale: 1.15,
+    scale: 1.5,
     xpReward: 28,
     waves: [
-      [{ kind: "wolf", count: 3 }, { kind: "goblin", count: 2 }],
-      [{ kind: "archer", count: 3 }, { kind: "wolf", count: 2 }],
-      [{ kind: "brute", count: 1 }, { kind: "goblin", count: 4 }],
+      [{ kind: "wolf", count: 2 }, { kind: "goblin", count: 1 }],
+      [{ kind: "archer", count: 1 }, { kind: "wolf", count: 2 }],
+      [{ kind: "wolf", count: 3 }, { kind: "brute", count: 1 }],
+      [{ kind: "alpha", count: 1 }],
     ],
   },
   {
     id: 2,
-    name: "Sunken Crossing",
-    subtitle: "Something stirs the reeds",
+    name: "Mirebrook Hollow",
+    subtitle: "Witchlights in the mist",
     palette: {
-      skyTop: "#7aa8c9",
-      skyBottom: "#c5d6b0",
-      hills: "#5f8a6e",
-      ground: "#7c9c74",
-      groundDark: "#61805c",
-      prop: "#3f6050",
+      skyTop: "#6b8b85",
+      skyBottom: "#b3c29c",
+      hills: "#48685a",
+      ground: "#5c7a5c",
+      groundDark: "#465e48",
+      prop: "#34503e",
     },
     scale: 1.3,
     xpReward: 36,
     waves: [
-      [{ kind: "goblin", count: 5 }, { kind: "shaman", count: 1 }],
-      [{ kind: "brute", count: 1 }, { kind: "archer", count: 3 }],
-      [{ kind: "brute", count: 1 }, { kind: "shaman", count: 2 }, { kind: "wolf", count: 3 }],
+      [{ kind: "goblin", count: 3 }, { kind: "shaman", count: 1 }],
+      [{ kind: "shaman", count: 1 }, { kind: "archer", count: 2 }],
+      [{ kind: "brute", count: 1 }, { kind: "shaman", count: 1 }, { kind: "wolf", count: 2 }],
     ],
   },
   {
     id: 3,
-    name: "Ashvale Ruin",
-    subtitle: "The war camp wakes",
+    name: "The Charwood",
+    subtitle: "Still smoldering",
     palette: {
-      skyTop: "#c9976a",
-      skyBottom: "#e8cf9e",
-      hills: "#a07648",
-      ground: "#bd9a62",
-      groundDark: "#9d7e4e",
-      prop: "#7a5c38",
+      skyTop: "#8a5744",
+      skyBottom: "#d9b48a",
+      hills: "#4a3832",
+      ground: "#6e5a48",
+      groundDark: "#52443a",
+      prop: "#332820",
     },
-    scale: 1.45,
+    scale: 1.8,
     xpReward: 46,
     waves: [
-      [{ kind: "archer", count: 4 }, { kind: "wolf", count: 3 }],
+      [{ kind: "archer", count: 2 }, { kind: "wolf", count: 2 }],
       [{ kind: "brute", count: 2 }, { kind: "shaman", count: 1 }],
-      [{ kind: "goblin", count: 6 }, { kind: "archer", count: 3 }],
-      [{ kind: "brute", count: 2 }, { kind: "shaman", count: 2 }],
+      [{ kind: "goblin", count: 4 }, { kind: "archer", count: 2 }],
     ],
   },
   {
@@ -394,13 +512,13 @@ export const STAGES: StageDef[] = [
       groundDark: "#584e70",
       prop: "#3d3554",
     },
-    scale: 1.6,
+    scale: 1.95,
     xpReward: 58,
     waves: [
-      [{ kind: "wolf", count: 6 }],
-      [{ kind: "shaman", count: 2 }, { kind: "brute", count: 2 }],
-      [{ kind: "archer", count: 4 }, { kind: "wolf", count: 4 }],
-      [{ kind: "brute", count: 3 }, { kind: "shaman", count: 2 }],
+      [{ kind: "wolf", count: 4 }],
+      [{ kind: "shaman", count: 1 }, { kind: "brute", count: 2 }],
+      [{ kind: "archer", count: 2 }, { kind: "wolf", count: 3 }],
+      [{ kind: "brute", count: 2 }, { kind: "shaman", count: 2 }],
     ],
   },
   {
@@ -415,11 +533,11 @@ export const STAGES: StageDef[] = [
       groundDark: "#6e5440",
       prop: "#4a3226",
     },
-    scale: 1.7,
+    scale: 2.1,
     xpReward: 90,
     waves: [
-      [{ kind: "goblin", count: 5 }, { kind: "shaman", count: 1 }],
-      [{ kind: "brute", count: 2 }, { kind: "archer", count: 3 }],
+      [{ kind: "goblin", count: 3 }, { kind: "shaman", count: 1 }],
+      [{ kind: "brute", count: 2 }, { kind: "archer", count: 2 }],
       [{ kind: "warlord", count: 1 }, { kind: "shaman", count: 2 }],
     ],
   },
@@ -431,3 +549,150 @@ export function xpForLevel(level: number): number {
 
 export const POINTS_PER_LEVEL = 2;
 export const MAX_EQUIPPED = 3;
+
+// ------------------------------------------------------------------ talents
+
+export const MAX_LEVEL = 100;
+
+export type TalentTree = "str" | "dex" | "mag";
+
+export interface TalentDef {
+  id: string;
+  tree: TalentTree;
+  name: string;
+  blurb: string; // per-rank effect, human readable
+  maxRank: number;
+}
+
+export const TALENT_TREES: Record<TalentTree, { name: string; color: string; icon: string }> = {
+  str: { name: "Strength", color: "#e05c4b", icon: "🛡" },
+  dex: { name: "Dexterity", color: "#58b368", icon: "🏹" },
+  mag: { name: "Magic", color: "#8a6fd1", icon: "✨" },
+};
+
+export const TALENTS: TalentDef[] = [
+  { id: "ironGrip", tree: "str", name: "Iron Grip", blurb: "+3% melee damage", maxRank: 5 },
+  { id: "oxBlood", tree: "str", name: "Ox Blood", blurb: "+3% max health", maxRank: 5 },
+  { id: "stoneSkin", tree: "str", name: "Stone Skin", blurb: "+1.5% armor", maxRank: 5 },
+  { id: "warEcho", tree: "str", name: "War Echo", blurb: "-3% ability cooldowns", maxRank: 5 },
+  { id: "keenEye", tree: "dex", name: "Keen Eye", blurb: "+3% ranged damage", maxRank: 5 },
+  { id: "quickHands", tree: "dex", name: "Quick Hands", blurb: "+3% attack speed", maxRank: 5 },
+  { id: "fleetFoot", tree: "dex", name: "Fleet Foot", blurb: "+3% move speed", maxRank: 5 },
+  { id: "deadEye", tree: "dex", name: "Dead Eye", blurb: "+3% chance to crit for 60% extra", maxRank: 5 },
+  { id: "focus", tree: "mag", name: "Focus", blurb: "+4% spell power", maxRank: 5 },
+  { id: "springs", tree: "mag", name: "Vital Springs", blurb: "+4% healing power", maxRank: 5 },
+  { id: "attune", tree: "mag", name: "Attunement", blurb: "-3% ability cooldowns", maxRank: 5 },
+  { id: "aegis", tree: "mag", name: "Lesser Aegis", blurb: "Start battles with an 8 hp ward", maxRank: 5 },
+];
+
+export interface TalentRanks {
+  [id: string]: number;
+}
+
+export interface TalentMods {
+  meleeDmg: number;
+  rangedDmg: number;
+  hpPct: number;
+  armorFlat: number;
+  cdr: number;
+  atkSpeed: number;
+  moveSpeed: number;
+  crit: number;
+  spellPower: number;
+  healPower: number;
+  startShield: number;
+}
+
+export function talentMods(ranks: TalentRanks | undefined): TalentMods {
+  const r = (id: string) => ranks?.[id] ?? 0;
+  return {
+    meleeDmg: r("ironGrip") * 0.03,
+    rangedDmg: r("keenEye") * 0.03,
+    hpPct: r("oxBlood") * 0.03,
+    armorFlat: r("stoneSkin") * 0.015,
+    cdr: Math.min(0.45, r("warEcho") * 0.03 + r("attune") * 0.03),
+    atkSpeed: r("quickHands") * 0.03,
+    moveSpeed: r("fleetFoot") * 0.03,
+    crit: r("deadEye") * 0.03,
+    spellPower: r("focus") * 0.04,
+    healPower: r("springs") * 0.04,
+    startShield: r("aegis") * 8,
+  };
+}
+
+/** Talent points each hero can spend at a given band level (1 every 2 levels). */
+export function talentPointBudget(level: number): number {
+  return Math.floor(Math.min(level, MAX_LEVEL) / 2);
+}
+
+export function talentPointsSpent(ranks: TalentRanks | undefined): number {
+  if (!ranks) return 0;
+  return Object.values(ranks).reduce((a, b) => a + b, 0);
+}
+
+
+// ------------------------------------------------------------------ difficulty
+
+export const DIFFICULTIES = [
+  // Difficulty changes how enemies BEHAVE, not just their numbers:
+  // telegraph = boss warning time, haste = enemy attack-rate multiplier,
+  // extraSpawn = bonus enemies added to each wave's first group.
+  { name: "Easy", enemyMult: 0.8, rewardMult: 0.6, color: "#8ee88b", telegraph: 2.1, haste: 0.85, extraSpawn: 0 },
+  { name: "Normal", enemyMult: 1, rewardMult: 1, color: "#ffe9a3", telegraph: 1.5, haste: 1, extraSpawn: 0 },
+  { name: "Hard", enemyMult: 1.25, rewardMult: 1.4, color: "#e0904b", telegraph: 1.2, haste: 1.15, extraSpawn: 0 },
+  { name: "Brutal", enemyMult: 1.5, rewardMult: 1.85, color: "#ff8a70", telegraph: 0.95, haste: 1.25, extraSpawn: 1 },
+];
+
+// ------------------------------------------------------------------ trinkets
+
+export interface TrinketDef {
+  id: string;
+  name: string;
+  blurb: string;
+  rarity: "common" | "rare";
+  icon: string;
+}
+
+export const TRINKETS: TrinketDef[] = [
+  { id: "wolfTooth", name: "Wolf Tooth", blurb: "+5% attack speed", rarity: "common", icon: "🦷" },
+  { id: "oakCharm", name: "Oak Charm", blurb: "+22 max health", rarity: "common", icon: "🌰" },
+  { id: "riverStone", name: "River Stone", blurb: "+3% armor", rarity: "common", icon: "🪨" },
+  { id: "hawkFeather", name: "Hawk Feather", blurb: "+6% ranged damage", rarity: "common", icon: "🪶" },
+  { id: "emberBead", name: "Ember Bead", blurb: "+7% spell power", rarity: "common", icon: "🔥" },
+  { id: "vervain", name: "Sprig of Vervain", blurb: "+7% healing power", rarity: "common", icon: "🌿" },
+  { id: "alphaFang", name: "Alpha's Fang", blurb: "+8% attack speed, +6% melee damage", rarity: "rare", icon: "🐺" },
+  { id: "gorehornShard", name: "Gorehulk Horn Shard", blurb: "+10% melee damage, +30 health", rarity: "rare", icon: "🐮" },
+  { id: "witchLocket", name: "Witchlight Locket", blurb: "+10% spell power, -5% cooldowns", rarity: "rare", icon: "🔮" },
+  { id: "saintRelic", name: "Saint's Relic", blurb: "+10% healing, battles start with a 20 hp ward", rarity: "rare", icon: "✨" },
+];
+
+export function trinketById(id: string | null | undefined): TrinketDef | undefined {
+  return TRINKETS.find((t) => t.id === id);
+}
+
+export function trinketMods(id: string | null | undefined): TalentMods {
+  const none: TalentMods = { meleeDmg: 0, rangedDmg: 0, hpPct: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, startShield: 0 };
+  switch (id) {
+    case "wolfTooth": return { ...none, atkSpeed: 0.05 };
+    case "oakCharm": return { ...none, hpPct: 0, startShield: 0, armorFlat: 0, meleeDmg: 0, rangedDmg: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0 };
+    case "riverStone": return { ...none, armorFlat: 0.03 };
+    case "hawkFeather": return { ...none, rangedDmg: 0.06 };
+    case "emberBead": return { ...none, spellPower: 0.07 };
+    case "vervain": return { ...none, healPower: 0.07 };
+    case "alphaFang": return { ...none, atkSpeed: 0.08, meleeDmg: 0.06 };
+    case "gorehornShard": return { ...none, meleeDmg: 0.1 };
+    case "witchLocket": return { ...none, spellPower: 0.1, cdr: 0.05 };
+    case "saintRelic": return { ...none, healPower: 0.1, startShield: 20 };
+    default: return none;
+  }
+}
+
+/** Flat bonuses trinkets grant outside the multiplier system. */
+export function trinketFlatHp(id: string | null | undefined): number {
+  if (id === "oakCharm") return 22;
+  if (id === "gorehornShard") return 30;
+  return 0;
+}
+
+/** Stages whose final wave is a boss — these drop rare trinkets. */
+export const BOSS_STAGES = [1, 5];

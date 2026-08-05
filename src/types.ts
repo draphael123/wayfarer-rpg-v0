@@ -1,6 +1,6 @@
 export type Team = "hero" | "enemy";
 
-export type EnemyKind = "goblin" | "archer" | "brute" | "shaman" | "wolf" | "warlord";
+export type EnemyKind = "goblin" | "archer" | "brute" | "shaman" | "wolf" | "alpha" | "warlord";
 
 export interface Vec {
   x: number;
@@ -11,9 +11,9 @@ export type AttrKey = "str" | "dex" | "int" | "vit" | "spi";
 
 export type Attributes = Record<AttrKey, number>;
 
-export type WeaponKind = "sword" | "bow" | "staff";
+export type WeaponKind = "sword" | "bow" | "staff" | "stave";
 
-export type EffectKind = "stun" | "slow" | "taunt" | "shield" | "haste" | "guard" | "burn";
+export type EffectKind = "stun" | "slow" | "taunt" | "shield" | "haste" | "guard" | "burn" | "vulnerable";
 
 export interface StatusEffect {
   kind: EffectKind;
@@ -68,6 +68,8 @@ export interface Unit {
   moveTarget: Vec | null;
   attackTarget: Unit | null;
   healTarget: Unit | null;
+  stance: "attack" | "heal";
+  autoOrder: boolean;
   abilities: AbilityState[];
   effects: StatusEffect[];
   // presentation
@@ -83,6 +85,14 @@ export interface Unit {
   // enemy brain
   aggro: Unit | null;
   supportTimer: number;
+  phase: number; // boss phase (0 = not a boss / phase 1)
+  // presentation extras
+  windup: number; // seconds of attack anticipation remaining
+  pendingTarget: Unit | null; // target the windup will strike
+  alert: number; // "!" reaction timer
+  celebrate: boolean; // victory pose
+  idleTimer: number; // countdown to next idle flourish
+  idleAnim: number; // active idle flourish time
 }
 
 export interface Projectile {
@@ -97,6 +107,16 @@ export interface Projectile {
   color: string;
   heals: boolean;
   life: number;
+}
+
+export interface Telegraph {
+  x: number;
+  y: number;
+  radius: number;
+  time: number;
+  duration: number;
+  owner: Unit;
+  kind: "pounce";
 }
 
 export interface GroundZone {
@@ -136,6 +156,12 @@ export interface StageDef {
 export interface HeroSave {
   attrs: Attributes;
   equipped: string[]; // ability ids, max 3
+  recruited: boolean;
+  active: boolean; // in the fighting party (max 4)
+  weaponTier: number; // 0-3
+  armorTier: number; // 0-3
+  talents: Record<string, number>; // talent id -> rank
+  trinket: string | null;
 }
 
 export interface SaveData {
@@ -147,4 +173,11 @@ export interface SaveData {
   heroes: HeroSave[];
   sound: boolean;
   music: boolean;
+  speed: number; // combat speed multiplier
+  bestiary: Partial<Record<EnemyKind, number>>; // kills per enemy kind
+  gold: number;
+  unlockedSpells: string[]; // ability ids bought in the spell shop (account-wide)
+  inventory: string[]; // trinket ids collected as loot
+  difficulty: number; // index into DIFFICULTIES
+  seenIntro: boolean; // first-run tutorial prompt shown
 }
