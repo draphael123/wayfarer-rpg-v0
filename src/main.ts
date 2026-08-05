@@ -80,8 +80,8 @@ const menus = new Menus("ui", save, {
   startStage(stageIndex: number) {
     startBattle(stageIndex);
   },
-  startTutorial() {
-    startTutorial();
+  startTutorial(kind: string) {
+    startTutorial(kind);
   },
   resetProgress() {
     save = defaultSave();
@@ -113,16 +113,31 @@ const TUTORIAL_STAGE: StageDef = {
   xpReward: 0,
 };
 
-function startTutorial(): void {
+function startTutorial(kind = "basics"): void {
   xpGranted = true; // tutorials pay no xp
   const temp = defaultSave();
   temp.sound = save.sound;
   temp.music = save.music;
+  if (kind === "gestures") {
+    // Wren + Ezri practice squad with every aimed spell ready
+    temp.heroes[0].active = false;
+    temp.heroes[3].active = false;
+    temp.heroes[1].recruited = true;
+    temp.heroes[1].active = true;
+    temp.heroes[2].recruited = true;
+    temp.heroes[2].active = true;
+    temp.heroes[2].attrs.int = 12;
+    temp.unlockedSpells = ["pierce", "fireball", "frostwake"];
+    temp.heroes[1].equipped = ["pierce"];
+    temp.heroes[2].equipped = ["fireball", "frostwake"];
+  } else if (kind === "healing") {
+    temp.heroes[3].attrs.spi = 8;
+  }
   battleSave = temp;
   fx = new FxSystem();
   battle = new Battle(TUTORIAL_STAGE, temp, fieldRect(), fx, true);
   hud = new Hud(battle, temp, logicalW, logicalH);
-  tutorial = new Tutorial(battle, hud);
+  tutorial = new Tutorial(battle, hud, kind);
   menus.hide();
 }
 

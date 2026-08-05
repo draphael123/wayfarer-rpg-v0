@@ -957,3 +957,124 @@ html, body {
 .stage-caption {
   font-style: italic;
 }
+
+/* tutorials picker + village guide */
+
+.lesson-list, .guide-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lesson-card .stage-num {
+  font-size: 17px;
+}
+
+/* talents */
+
+.talent-trees {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 560px) {
+  .talent-trees {
+    grid-template-columns: 1fr;
+  }
+}
+
+.talent-col {
+  background: linear-gradient(180deg, #2a2240 0%, #241d36 100%);
+  border: 1px solid #3d3352;
+  border-top: 3px solid var(--tree);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.talent-col-head {
+  font-weight: 900;
+  font-size: 15px;
+  color: var(--tree);
+  text-align: center;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.talent-node {
+  font: inherit;
+  text-align: left;
+  background: #2c2440;
+  border: 1.5px solid #4a3f66;
+  border-radius: 10px;
+  padding: 9px 11px;
+  color: #e6dff2;
+  cursor: pointer;
+  transition: transform 0.08s, border-color 0.12s;
+}
+
+.talent-node.can {
+  border-color: var(--tree);
+}
+
+.talent-node.can:active {
+  transform: scale(0.97);
+}
+
+.talent-node.maxed {
+  background: color-mix(in srgb, var(--tree) 16%, #2c2440);
+}
+
+.talent-name {
+  font-weight: 800;
+  font-size: 13.5px;
+}
+
+.talent-blurb {
+  font-size: 11.5px;
+  color: #9c90b5;
+  margin-top: 2px;
+}
+
+.talent-blurb em {
+  color: #7d7194;
+}
+
+.talent-pips {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.talent-pips i {
+  width: 14px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.talent-pips i.on {
+  background: var(--tree);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--tree) 60%, transparent);
+}
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.talents-btn {
+  border-color: #8a6fd1;
+  color: #cfc0f0;
+}
+
+.buy-btn.cant,
+.buy-btn[data-cant] {
+  opacity: 0.45;
+  border-color: #4a3f66;
+  color: #9c90b5;
+}

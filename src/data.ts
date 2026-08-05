@@ -229,7 +229,13 @@ export function dominantWeapon(attrs: Attributes): WeaponKind {
   return "sword";
 }
 
-export function deriveStats(attrs: Attributes, weaponTier = 0, armorTier = 0): DerivedStats {
+export function deriveStats(
+  attrs: Attributes,
+  weaponTier = 0,
+  armorTier = 0,
+  talents?: Record<string, number>,
+): DerivedStats {
+  const mods = talentMods(talents);
   const weapon = dominantWeapon(attrs);
   const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + ARMOR_HP_BONUS[armorTier]);
   const armor = Math.min(0.65, attrs.vit * 0.02 + attrs.str * 0.01 + ARMOR_BONUS[armorTier]);
@@ -259,7 +265,18 @@ export function deriveStats(attrs: Attributes, weaponTier = 0, armorTier = 0): D
   }
   attackCooldown *= 1 - Math.min(0.45, attrs.dex * 0.018);
   damage += WEAPON_DAMAGE_BONUS[weaponTier];
-  return { maxHp, damage, range, attackCooldown, speed, armor, healPower, spellPower, weapon };
+  damage *= 1 + (weapon === "sword" ? mods.meleeDmg : mods.rangedDmg);
+  return {
+    maxHp: Math.round(maxHp * (1 + mods.hpPct)),
+    damage,
+    range,
+    attackCooldown: attackCooldown / (1 + mods.atkSpeed),
+    speed: speed * (1 + mods.moveSpeed),
+    armor: Math.min(0.7, armor + mods.armorFlat),
+    healPower: healPower * (1 + mods.healPower),
+    spellPower: spellPower * (1 + mods.spellPower),
+    weapon,
+  };
 }
 
 export interface EnemyDef {
@@ -501,3 +518,83 @@ export function xpForLevel(level: number): number {
 
 export const POINTS_PER_LEVEL = 2;
 export const MAX_EQUIPPED = 3;
+
+// ------------------------------------------------------------------ talents
+
+export const MAX_LEVEL = 100;
+
+export type TalentTree = "str" | "dex" | "mag";
+
+export interface TalentDef {
+  id: string;
+  tree: TalentTree;
+  name: string;
+  blurb: string; // per-rank effect, human readable
+  maxRank: number;
+}
+
+export const TALENT_TREES: Record<TalentTree, { name: string; color: string; icon: string }> = {
+  str: { name: "Strength", color: "#e05c4b", icon: "🛡" },
+  dex: { name: "Dexterity", color: "#58b368", icon: "🏹" },
+  mag: { name: "Magic", color: "#8a6fd1", icon: "✨" },
+};
+
+export const TALENTS: TalentDef[] = [
+  { id: "ironGrip", tree: "str", name: "Iron Grip", blurb: "+3% melee damage", maxRank: 5 },
+  { id: "oxBlood", tree: "str", name: "Ox Blood", blurb: "+3% max health", maxRank: 5 },
+  { id: "stoneSkin", tree: "str", name: "Stone Skin", blurb: "+1.5% armor", maxRank: 5 },
+  { id: "warEcho", tree: "str", name: "War Echo", blurb: "-3% ability cooldowns", maxRank: 5 },
+  { id: "keenEye", tree: "dex", name: "Keen Eye", blurb: "+3% ranged damage", maxRank: 5 },
+  { id: "quickHands", tree: "dex", name: "Quick Hands", blurb: "+3% attack speed", maxRank: 5 },
+  { id: "fleetFoot", tree: "dex", name: "Fleet Foot", blurb: "+3% move speed", maxRank: 5 },
+  { id: "deadEye", tree: "dex", name: "Dead Eye", blurb: "+3% chance to crit for 60% extra", maxRank: 5 },
+  { id: "focus", tree: "mag", name: "Focus", blurb: "+4% spell power", maxRank: 5 },
+  { id: "springs", tree: "mag", name: "Vital Springs", blurb: "+4% healing power", maxRank: 5 },
+  { id: "attune", tree: "mag", name: "Attunement", blurb: "-3% ability cooldowns", maxRank: 5 },
+  { id: "aegis", tree: "mag", name: "Lesser Aegis", blurb: "Start battles with an 8 hp ward", maxRank: 5 },
+];
+
+export interface TalentRanks {
+  [id: string]: number;
+}
+
+export interface TalentMods {
+  meleeDmg: number;
+  rangedDmg: number;
+  hpPct: number;
+  armorFlat: number;
+  cdr: number;
+  atkSpeed: number;
+  moveSpeed: number;
+  crit: number;
+  spellPower: number;
+  healPower: number;
+  startShield: number;
+}
+
+export function talentMods(ranks: TalentRanks | undefined): TalentMods {
+  const r = (id: string) => ranks?.[id] ?? 0;
+  return {
+    meleeDmg: r("ironGrip") * 0.03,
+    rangedDmg: r("keenEye") * 0.03,
+    hpPct: r("oxBlood") * 0.03,
+    armorFlat: r("stoneSkin") * 0.015,
+    cdr: Math.min(0.45, r("warEcho") * 0.03 + r("attune") * 0.03),
+    atkSpeed: r("quickHands") * 0.03,
+    moveSpeed: r("fleetFoot") * 0.03,
+    crit: r("deadEye") * 0.03,
+    spellPower: r("focus") * 0.04,
+    healPower: r("springs") * 0.04,
+    startShield: r("aegis") * 8,
+  };
+}
+
+/** Talent points each hero can spend at a given band level (1 every 2 levels). */
+export function talentPointBudget(level: number): number {
+  return Math.floor(Math.min(level, MAX_LEVEL) / 2);
+}
+
+export function talentPointsSpent(ranks: TalentRanks | undefined): number {
+  if (!ranks) return 0;
+  return Object.values(ranks).reduce((a, b) => a + b, 0);
+}

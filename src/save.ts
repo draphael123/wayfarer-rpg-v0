@@ -1,4 +1,4 @@
-import { ATTR_KEYS, HEROES, MAX_EQUIPPED, POINTS_PER_LEVEL, unlockedAbilities, xpForLevel } from "./data";
+import { ATTR_KEYS, HEROES, MAX_EQUIPPED, MAX_LEVEL, POINTS_PER_LEVEL, unlockedAbilities, xpForLevel } from "./data";
 import type { Attributes, HeroSave, SaveData } from "./types";
 
 const KEY = "wayband-save-v1";
@@ -14,7 +14,7 @@ function defaultHero(index: number): HeroSave {
     .filter((a) => STARTING_SPELLS.includes(a.id))
     .slice(0, MAX_EQUIPPED)
     .map((a) => a.id);
-  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armorTier: 0 };
+  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armorTier: 0, talents: {} };
 }
 
 export function defaultSave(): SaveData {
@@ -65,6 +65,7 @@ export function loadSave(): SaveData {
       if (typeof hero.active !== "boolean") hero.active = hero.recruited;
       if (typeof hero.weaponTier !== "number") hero.weaponTier = 0;
       if (typeof hero.armorTier !== "number") hero.armorTier = 0;
+      if (!hero.talents || typeof hero.talents !== "object") hero.talents = {};
     });
     if (typeof parsed.speed !== "number" || parsed.speed < 0.25 || parsed.speed > 2) parsed.speed = 0.5;
     if (!parsed.bestiary || typeof parsed.bestiary !== "object") parsed.bestiary = {};
@@ -92,8 +93,13 @@ export function persist(save: SaveData): void {
 /** Grants XP, applying any level-ups. Returns number of levels gained. */
 export function grantXp(save: SaveData, amount: number): number {
   save.xp += amount;
+  if (save.level >= MAX_LEVEL) {
+    save.xp = 0;
+    persist(save);
+    return 0;
+  }
   let gained = 0;
-  while (save.xp >= xpForLevel(save.level)) {
+  while (save.level < MAX_LEVEL && save.xp >= xpForLevel(save.level)) {
     save.xp -= xpForLevel(save.level);
     save.level += 1;
     gained += 1;

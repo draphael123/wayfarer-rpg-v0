@@ -142,6 +142,7 @@ export interface HeroSave {
   active: boolean; // in the fighting party (max 4)
   weaponTier: number; // 0-3
   armorTier: number; // 0-3
+  talents: Record<string, number>; // talent id -> rank
 }
 
 export interface SaveData {

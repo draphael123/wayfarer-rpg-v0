@@ -1,6 +1,11 @@
 import { audio } from "./audio";
 import {
   ABILITIES,
+  MAX_LEVEL,
+  TALENTS,
+  TALENT_TREES,
+  talentPointBudget,
+  talentPointsSpent,
   ARMOR_BONUS,
   ARMOR_HP_BONUS,
   ARMOR_TIERS,
@@ -33,7 +38,7 @@ import type { SaveData } from "./types";
 
 export interface MenuCallbacks {
   startStage: (stageIndex: number) => void;
-  startTutorial: () => void;
+  startTutorial: (kind: string) => void;
   resetProgress: () => void;
 }
 
@@ -226,7 +231,7 @@ export class Menus {
       audio.unlock();
       audio.play("click");
       if (act === "start") this.renderMap();
-      if (act === "tutorial") this.callbacks.startTutorial();
+      if (act === "tutorial") this.renderTutorials();
       if (act === "sound") {
         this.save.sound = !this.save.sound;
         audio.setSound(this.save.sound);
@@ -268,7 +273,7 @@ export class Menus {
         <div class="map-header">
           <div>
             <div class="map-title">The Long Road</div>
-            <div class="map-level">Band level ${save.level} · ${save.xp}/${need} xp · <span class="gold-chip">🪙 ${save.gold}</span></div>
+            <div class="map-level">Band level ${save.level}/${MAX_LEVEL} · ${save.xp}/${need} xp · <span class="gold-chip">🪙 ${save.gold}</span></div>
             <div class="xp-bar"><div class="xp-fill" style="width:${xpPct}%"></div></div>
           </div>
           <button class="big-btn party-btn" data-act="party">
@@ -521,6 +526,178 @@ export class Menus {
     this.root.appendChild(page);
   }
 
+  // ------------------------------------------------------------------ tutorials
+
+  renderTutorials(): void {
+    this.root.innerHTML = "";
+    this.show();
+    const lessons = [
+      { kind: "basics", icon: "🗡", name: "The Basics", blurb: "Moving, attacking, your first spells, and healing. Start here." },
+      { kind: "gestures", icon: "🎯", name: "Gesture Spells", blurb: "Practice aiming rays, blast circles, and frost trails." },
+      { kind: "healing", icon: "✚", name: "Healing & Stances", blurb: "Channel heals, Mend, and switching your healer's stance." },
+      { kind: "village", icon: "🏪", name: "The Village", blurb: "Gold, recruiting, gear, and the spell shop — a quick guide." },
+    ];
+    const page = el(`
+      <div class="page">
+        <div class="map-header">
+          <div>
+            <div class="map-title">How to Play</div>
+            <div class="map-level">Short lessons — pick any, skip anytime</div>
+          </div>
+          <button class="big-btn party-btn" data-act="back">Back</button>
+        </div>
+        <div class="lesson-list"></div>
+      </div>
+    `);
+    const list = page.querySelector(".lesson-list")!;
+    for (const lesson of lessons) {
+      const card = el(`
+        <button class="stage-card lesson-card" data-lesson="${lesson.kind}">
+          <div class="stage-num">${lesson.icon}</div>
+          <div class="stage-info">
+            <div class="stage-name">${lesson.name}</div>
+            <div class="stage-sub">${lesson.blurb}</div>
+          </div>
+          <div class="stage-waves">▶</div>
+        </button>
+      `);
+      list.appendChild(card);
+    }
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const lesson = target.closest("[data-lesson]");
+      if (lesson) {
+        audio.unlock();
+        audio.play("click");
+        const kind = lesson.getAttribute("data-lesson")!;
+        if (kind === "village") this.renderVillageGuide();
+        else this.callbacks.startTutorial(kind);
+        return;
+      }
+      if (target.closest('[data-act="back"]')) {
+        audio.play("click");
+        this.renderTitle();
+      }
+    });
+    this.root.appendChild(page);
+  }
+
+  renderVillageGuide(): void {
+    this.root.innerHTML = "";
+    this.show();
+    const page = el(`
+      <div class="page">
+        <div class="map-header">
+          <div>
+            <div class="map-title">The Village</div>
+            <div class="map-level">Everything gold can buy</div>
+          </div>
+          <button class="big-btn party-btn" data-act="back">Back</button>
+        </div>
+        <div class="guide-list">
+          <div class="shop-note"><strong>🪙 Gold</strong> — every foe you slay and stage you clear pays gold. Even defeats salvage half the spoils.</div>
+          <div class="shop-note"><strong>🍺 The Tavern</strong> — recruit new heroes to the band. Anyone hired can be rotated in or out of your fighting party of ${PARTY_CAP} on the Party screen.</div>
+          <div class="shop-note"><strong>🛡 The Armory</strong> — buy each hero better weapons (more damage) and armor (more health and protection). Three tiers of each.</div>
+          <div class="shop-note"><strong>✨ The Spell Shop</strong> — unlock a spell once for the whole band, then assign it to any hero whose attributes meet its bar. Each hero carries up to ${MAX_EQUIPPED} spells.</div>
+          <div class="shop-note"><strong>⭐ Talents</strong> — every 2 band levels, each hero earns a talent point for the Strength, Dexterity, and Magic trees. Find them on the Party screen.</div>
+        </div>
+      </div>
+    `);
+    page.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest('[data-act="back"]')) {
+        audio.play("click");
+        this.renderTutorials();
+      }
+    });
+    this.root.appendChild(page);
+  }
+
+  // ------------------------------------------------------------------ talents
+
+  renderTalents(index: number): void {
+    this.root.innerHTML = "";
+    this.show();
+    const save = this.save;
+    const def = HEROES[index];
+    const hero = save.heroes[index];
+    const budget = talentPointBudget(save.level);
+    const spent = talentPointsSpent(hero.talents);
+    const free = budget - spent;
+    const page = el(`
+      <div class="page">
+        <div class="map-header">
+          <div>
+            <div class="map-title">${def.name}'s Talents</div>
+            <div class="map-level">${free} point${free === 1 ? "" : "s"} to spend · earn 1 per 2 band levels (cap ${MAX_LEVEL})</div>
+          </div>
+          <button class="big-btn party-btn" data-act="back">Party</button>
+        </div>
+        <div class="talent-trees"></div>
+        <div class="map-footer">
+          <button class="toggle-btn" data-act="reset-talents">Reset talents (free)</button>
+        </div>
+      </div>
+    `);
+    const trees = page.querySelector(".talent-trees")!;
+    for (const treeKey of ["str", "dex", "mag"] as const) {
+      const tree = TALENT_TREES[treeKey];
+      const column = el(`
+        <div class="talent-col" style="--tree:${tree.color}">
+          <div class="talent-col-head">${tree.icon} ${tree.name}</div>
+        </div>
+      `);
+      for (const talent of TALENTS.filter((t) => t.tree === treeKey)) {
+        const rank = hero.talents[talent.id] ?? 0;
+        const maxed = rank >= talent.maxRank;
+        const pips = Array.from({ length: talent.maxRank }, (_, r) => `<i class="${r < rank ? "on" : ""}"></i>`).join("");
+        column.appendChild(
+          el(`
+            <button class="talent-node ${maxed ? "maxed" : ""} ${free > 0 && !maxed ? "can" : ""}" data-talent="${talent.id}">
+              <div class="talent-name">${talent.name}</div>
+              <div class="talent-blurb">${talent.blurb} <em>/rank</em></div>
+              <div class="talent-pips">${pips}</div>
+            </button>
+          `),
+        );
+      }
+      trees.appendChild(column);
+    }
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const node = target.closest("[data-talent]");
+      if (node) {
+        const id = node.getAttribute("data-talent")!;
+        const talent = TALENTS.find((t) => t.id === id)!;
+        const rank = hero.talents[id] ?? 0;
+        if (rank >= talent.maxRank) {
+          this.showToast(`${talent.name} is already at max rank`);
+          return;
+        }
+        if (talentPointBudget(save.level) - talentPointsSpent(hero.talents) <= 0) {
+          this.showToast("No talent points left — level up the band");
+          return;
+        }
+        hero.talents[id] = rank + 1;
+        persist(save);
+        audio.play("levelup");
+        this.renderTalents(index);
+        return;
+      }
+      if (target.closest('[data-act="reset-talents"]')) {
+        hero.talents = {};
+        persist(save);
+        audio.play("click");
+        this.renderTalents(index);
+        return;
+      }
+      if (target.closest('[data-act="back"]')) {
+        audio.play("click");
+        this.renderParty();
+      }
+    });
+    this.root.appendChild(page);
+  }
+
   // ------------------------------------------------------------------ village shops
 
   renderShop(tab: "tavern" | "armory" | "spells"): void {
@@ -595,7 +772,7 @@ export class Menus {
             ${
               hero.recruited
                 ? '<div class="hero-points">✓ hired</div>'
-                : `<button class="big-btn buy-btn" data-recruit="${i}">🪙 ${cost}</button>`
+                : `<button class="big-btn buy-btn ${save.gold < cost ? "cant" : ""}" data-recruit="${i}">🪙 ${cost}</button>`
             }
           </div>
         </div>
@@ -636,12 +813,12 @@ export class Menus {
           <div class="gear-row">
             ${
               nextW
-                ? `<button class="big-btn buy-btn" data-gear="w:${i}">⚔ ${nextW.name} (+${WEAPON_DAMAGE_BONUS[hero.weaponTier + 1] - WEAPON_DAMAGE_BONUS[hero.weaponTier]} dmg) — 🪙 ${nextW.cost}</button>`
+                ? `<button class="big-btn buy-btn" data-gear="w:${i}" ${save.gold < nextW.cost ? 'data-cant="1"' : ""}>⚔ ${nextW.name} (+${WEAPON_DAMAGE_BONUS[hero.weaponTier + 1] - WEAPON_DAMAGE_BONUS[hero.weaponTier]} dmg) — 🪙 ${nextW.cost}</button>`
                 : `<div class="gear-max">⚔ Best weapon owned</div>`
             }
             ${
               nextA
-                ? `<button class="big-btn buy-btn" data-gear="a:${i}">🛡 ${nextA.name} (+${Math.round((ARMOR_BONUS[hero.armorTier + 1] - ARMOR_BONUS[hero.armorTier]) * 100)}% armor, +${ARMOR_HP_BONUS[hero.armorTier + 1] - ARMOR_HP_BONUS[hero.armorTier]} hp) — 🪙 ${nextA.cost}</button>`
+                ? `<button class="big-btn buy-btn" data-gear="a:${i}" ${save.gold < nextA.cost ? 'data-cant="1"' : ""}>🛡 ${nextA.name} (+${Math.round((ARMOR_BONUS[hero.armorTier + 1] - ARMOR_BONUS[hero.armorTier]) * 100)}% armor, +${ARMOR_HP_BONUS[hero.armorTier + 1] - ARMOR_HP_BONUS[hero.armorTier]} hp) — 🪙 ${nextA.cost}</button>`
                 : `<div class="gear-max">🛡 Best armor owned</div>`
             }
           </div>
@@ -679,7 +856,7 @@ export class Menus {
           <div class="chip-name">${ability.name}</div>
           <div class="chip-gate">${ability.blurb}</div>
           <div class="chip-req">Requires ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}</div>
-          ${owned ? '<div class="chip-owned">✓ unlocked</div>' : `<button class="big-btn buy-btn" data-spell="${ability.id}">🪙 ${cost}</button>`}
+          ${owned ? '<div class="chip-owned">✓ unlocked</div>' : `<button class="big-btn buy-btn ${save.gold < cost ? "cant" : ""}" data-spell="${ability.id}">🪙 ${cost}</button>`}
         </div>
       `);
       body.appendChild(card);
@@ -784,7 +961,10 @@ export class Menus {
         <div class="attr-rows"></div>
         <div class="ability-row-title">Abilities <span>(tap to assign · max ${MAX_EQUIPPED} · buy new ones at the Village)</span></div>
         <div class="ability-chips"></div>
-        <button class="toggle-btn respec" data-act="respec">Respec (free)</button>
+        <div class="card-actions">
+          <button class="toggle-btn talents-btn" data-act="talents">⭐ Talents</button>
+          <button class="toggle-btn respec" data-act="respec">Respec (free)</button>
+        </div>
       </div>
     `);
 
@@ -890,6 +1070,11 @@ export class Menus {
       respecHero(save, index);
       audio.play("click");
       this.refreshCard(card, index);
+    });
+
+    card.querySelector('[data-act="talents"]')!.addEventListener("click", () => {
+      audio.play("click");
+      this.renderTalents(index);
     });
 
     return card;

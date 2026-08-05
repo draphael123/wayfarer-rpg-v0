@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { ENEMIES, HEROES, abilityById, deriveStats, partyRoster } from "./data";
+import { ENEMIES, HEROES, abilityById, deriveStats, partyRoster, talentMods } from "./data";
 import type { FxSystem } from "./fx";
 import type {
   AbilityState,
@@ -42,6 +42,7 @@ export class Battle {
   resultDelay = 0;
   hitstop = 0;
   killCounts: Partial<Record<EnemyKind, number>> = {};
+  saveRef: SaveData | null = null;
 
   constructor(
     public stage: StageDef,
@@ -61,7 +62,7 @@ export class Battle {
         y: midY - spread + t * spread * 2,
       };
       const heroSave = save.heroes[i];
-      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier);
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier, heroSave.talents);
       const abilities: AbilityState[] = heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d)
@@ -97,6 +98,10 @@ export class Battle {
         aggro: null,
         supportTimer: 0,
       });
+      const ward = talentMods(heroSave.talents).startShield;
+      if (ward > 0) {
+        this.units[this.units.length - 1].effects.push(makeEffect("shield", 9999, ward, null));
+      }
     }
   }
 
@@ -450,7 +455,8 @@ export class Battle {
         cast = false;
     }
     if (cast) {
-      state.timer = state.def.cooldown;
+      const cdr = hero.heroIndex >= 0 ? talentMods(save.heroes[hero.heroIndex].talents).cdr : 0;
+      state.timer = state.def.cooldown * (1 - cdr);
       hero.castGlow = 0.4;
     }
     return cast;
@@ -485,6 +491,7 @@ export class Battle {
   // ----- per-frame update -----
 
   update(dt: number, save: SaveData): void {
+    this.saveRef = save;
     this.time += dt;
     this.waveBanner = Math.max(0, this.waveBanner - dt);
 
@@ -794,6 +801,15 @@ export class Battle {
       audio.play("thud");
       return;
     }
+    let dmg = attacker.stats.damage;
+    let crit = false;
+    if (attacker.team === "hero" && this.saveRef) {
+      const chance = talentMods(this.saveRef.heroes[attacker.heroIndex].talents).crit;
+      if (Math.random() < chance) {
+        crit = true;
+        dmg *= 1.6;
+      }
+    }
     if (!ranged) {
       // melee slash arc + knockback nudge
       const angle = Math.atan2(attacker.lungeDir.y, attacker.lungeDir.x);
@@ -815,7 +831,7 @@ export class Battle {
         target,
         aim: attacker.lungeDir,
         speed: isArcane ? 300 : isHoly ? 260 : 420,
-        damage: attacker.stats.damage,
+        damage: dmg,
         from: attacker,
         kind: isArcane ? "bolt" : isHoly ? "spark" : "arrow",
         color: isArcane ? (attacker.enemyKind === "shaman" ? "#7de8c9" : "#b48ae8") : isHoly ? "#ffe9a3" : "#e8d9b0",
@@ -824,7 +840,8 @@ export class Battle {
       });
       audio.play(isArcane || isHoly ? "bolt" : "shoot");
     } else {
-      this.damage(target, attacker.stats.damage, attacker);
+      this.damage(target, dmg, attacker, crit ? { color: "#ffd76b" } : {});
+      if (crit) this.fx.floatText(target.x, target.y - target.radius - 30, "crit!", "#ffd76b", 12);
       audio.play("slash");
     }
   }
