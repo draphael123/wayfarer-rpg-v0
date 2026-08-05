@@ -1,6 +1,6 @@
 export type Team = "hero" | "enemy";
 
-export type EnemyKind = "goblin" | "archer" | "brute" | "shaman" | "wolf" | "warlord";
+export type EnemyKind = "goblin" | "archer" | "brute" | "shaman" | "wolf" | "alpha" | "warlord";
 
 export interface Vec {
   x: number;
@@ -13,7 +13,7 @@ export type Attributes = Record<AttrKey, number>;
 
 export type WeaponKind = "sword" | "bow" | "staff" | "stave";
 
-export type EffectKind = "stun" | "slow" | "taunt" | "shield" | "haste" | "guard" | "burn";
+export type EffectKind = "stun" | "slow" | "taunt" | "shield" | "haste" | "guard" | "burn" | "vulnerable";
 
 export interface StatusEffect {
   kind: EffectKind;
@@ -85,6 +85,7 @@ export interface Unit {
   // enemy brain
   aggro: Unit | null;
   supportTimer: number;
+  phase: number; // boss phase (0 = not a boss / phase 1)
 }
 
 export interface Projectile {
@@ -99,6 +100,16 @@ export interface Projectile {
   color: string;
   heals: boolean;
   life: number;
+}
+
+export interface Telegraph {
+  x: number;
+  y: number;
+  radius: number;
+  time: number;
+  duration: number;
+  owner: Unit;
+  kind: "pounce";
 }
 
 export interface GroundZone {

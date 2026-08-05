@@ -60,7 +60,7 @@ function drawBeastIcon(canvas: HTMLCanvasElement, kind: EnemyKind): void {
     ctx.stroke();
   };
   ctx.clearRect(0, 0, 64, 64);
-  if (kind === "wolf") {
+  if (kind === "wolf" || kind === "alpha") {
     ctx.fillStyle = def.body;
     ctx.beginPath();
     ctx.ellipse(c, 38, 17, 13, 0, 0, Math.PI * 2);
@@ -470,7 +470,7 @@ export class Menus {
   renderBestiary(): void {
     this.root.innerHTML = "";
     this.show();
-    const kinds: EnemyKind[] = ["goblin", "wolf", "archer", "shaman", "brute", "warlord"];
+    const kinds: EnemyKind[] = ["goblin", "wolf", "archer", "shaman", "brute", "alpha", "warlord"];
     const discovered = kinds.filter((k) => (this.save.bestiary[k] ?? 0) > 0).length;
     const page = el(`
       <div class="page">

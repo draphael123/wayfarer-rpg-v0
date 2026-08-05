@@ -5,6 +5,7 @@ import type {
   AbilityState,
   EnemyKind,
   GroundZone,
+  Telegraph,
   Projectile,
   SaveData,
   StageDef,
@@ -32,6 +33,7 @@ export class Battle {
   units: Unit[] = [];
   projectiles: Projectile[] = [];
   zones: GroundZone[] = [];
+  telegraphs: Telegraph[] = [];
   state: BattleState = "wavebreak";
   waveIndex = -1;
   waveBanner = 0;
@@ -97,6 +99,7 @@ export class Battle {
         alive: true,
         aggro: null,
         supportTimer: 0,
+        phase: 0,
       });
       const ward = talentMods(heroSave.talents).startShield;
       if (ward > 0) {
@@ -166,6 +169,7 @@ export class Battle {
       alive: true,
       aggro: null,
       supportTimer: 1 + Math.random(),
+      phase: 0,
     });
   }
 
@@ -206,6 +210,8 @@ export class Battle {
   damage(target: Unit, rawAmount: number, source: Unit | null, opts: { spell?: boolean; color?: string } = {}): void {
     if (!target.alive) return;
     let amount = rawAmount * (1 - target.stats.armor);
+    const vulnerable = this.effect(target, "vulnerable");
+    if (vulnerable) amount *= 1 + vulnerable.power;
     const guard = this.effect(target, "guard");
     if (guard) amount *= 1 - guard.power;
     amount = Math.max(1, Math.round(amount * (0.9 + Math.random() * 0.2)));
@@ -536,6 +542,7 @@ export class Battle {
     }
 
     this.separateUnits(dt);
+    this.updateTelegraphs(dt);
     this.updateZones(dt);
     this.updateProjectiles(dt);
     this.updatePresentation(dt);
@@ -693,6 +700,10 @@ export class Battle {
       this.updateShaman(enemy, dt);
       return;
     }
+    if (enemy.enemyKind === "alpha") {
+      this.updateAlpha(enemy, dt);
+      return;
+    }
 
     const taunt = this.effect(enemy, "taunt");
     let target: Unit | null = taunt && taunt.source && taunt.source.alive ? taunt.source : null;
@@ -767,6 +778,109 @@ export class Battle {
       shaman.facing = nearest.x >= shaman.x ? 1 : -1;
       this.performAttack(shaman, nearest);
       shaman.attackTimer = this.attackIntervalOf(shaman);
+    }
+  }
+
+  /** The Alpha of Thornwood: pounce telegraphs, a howl phase, and exhaustion windows. */
+  private updateAlpha(alpha: Unit, dt: number): void {
+    const frac = alpha.hp / alpha.stats.maxHp;
+    const phase = frac > 0.6 ? 1 : frac > 0.3 ? 2 : 3;
+    if (phase >= 2 && alpha.phase < 2) {
+      // the howl: summon the pack, learn to bleed
+      alpha.phase = 2;
+      this.fx.ring(alpha.x, alpha.y, 220, "#c9c2e8", { width: 5, life: 0.8 });
+      this.fx.addShake(8);
+      audio.play("warcry");
+      this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "AWOOOO!", "#c9c2e8", 20);
+      for (let i = 0; i < 3; i++) this.spawnEnemy("wolf");
+      alpha.supportTimer = 2.5;
+    }
+    if (phase === 3 && alpha.phase < 3) {
+      alpha.phase = 3;
+      this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "FRENZY!", "#ff8a70", 18);
+      alpha.supportTimer = Math.min(alpha.supportTimer, 1.2);
+    }
+    if (alpha.phase === 0) alpha.phase = 1;
+
+    // pounce cadence: supportTimer doubles as the pounce clock
+    alpha.supportTimer -= dt;
+    const pending = this.telegraphs.find((t) => t.owner === alpha);
+    if (!pending && alpha.supportTimer <= 0 && !this.effect(alpha, "stun")) {
+      // mark the squishiest hero's position
+      const heroes = this.livingHeroes();
+      if (heroes.length) {
+        const target = heroes.reduce((a, b) => (a.stats.maxHp <= b.stats.maxHp ? a : b));
+        this.telegraphs.push({
+          x: target.x,
+          y: target.y,
+          radius: 62,
+          time: 0,
+          duration: 1.5,
+          owner: alpha,
+          kind: "pounce",
+        });
+        audio.play("warcry");
+        alpha.supportTimer = alpha.phase === 3 ? 3.6 : 7.5;
+      }
+    }
+
+    // between pounces: normal wolf brawling
+    const taunt = this.effect(alpha, "taunt");
+    let target: Unit | null = taunt && taunt.source && taunt.source.alive ? taunt.source : null;
+    if (!target && alpha.aggro && alpha.aggro.alive) target = alpha.aggro;
+    if (!target) target = this.nearestHero(alpha);
+    if (!target) return;
+    alpha.aggro = target;
+    const dist = unitDist(alpha, target);
+    if (dist > alpha.stats.range + target.radius - 4) {
+      this.moveToward(alpha, target, dt, alpha.stats.range + target.radius - 8);
+      return;
+    }
+    alpha.facing = target.x >= alpha.x ? 1 : -1;
+    if (alpha.attackTimer <= 0) {
+      this.performAttack(alpha, target);
+      // in the howl phase and beyond, bites bleed
+      if (alpha.phase >= 2 && target.alive) {
+        target.effects.push(makeEffect("burn", 3, 3, alpha));
+      }
+      alpha.attackTimer = this.attackIntervalOf(alpha);
+    }
+  }
+
+  private updateTelegraphs(dt: number): void {
+    for (let i = this.telegraphs.length - 1; i >= 0; i--) {
+      const mark = this.telegraphs[i];
+      mark.time += dt;
+      if (!mark.owner.alive) {
+        this.telegraphs.splice(i, 1);
+        continue;
+      }
+      if (mark.time >= mark.duration) {
+        this.telegraphs.splice(i, 1);
+        const alpha = mark.owner;
+        // leap to the marked spot
+        alpha.lungeDir = { x: Math.sign(mark.x - alpha.x) || 1, y: 0 };
+        alpha.lunge = 1;
+        alpha.x = mark.x;
+        alpha.y = mark.y;
+        alpha.facing = (alpha.lungeDir.x >= 0 ? 1 : -1) as 1 | -1;
+        for (const hero of this.livingHeroes()) {
+          if (Math.hypot(hero.x - mark.x, hero.y - mark.y) < mark.radius + hero.radius * 0.5) {
+            this.damage(hero, alpha.stats.damage * 1.7, alpha);
+          }
+        }
+        this.fx.burst(mark.x, mark.y, "rgba(190,175,150,0.8)", 14, 120, { gravity: -20, size: 4.5 });
+        this.fx.ring(mark.x, mark.y, mark.radius + 14, "#c9c2e8", { width: 4, life: 0.4 });
+        this.fx.addShake(9);
+        this.hitstop = Math.max(this.hitstop, 0.07);
+        audio.play("thud");
+        // frenzy leaves the alpha exhausted: your window
+        if (alpha.phase === 3) {
+          alpha.effects.push(makeEffect("stun", 2.4, 1, null));
+          alpha.effects.push(makeEffect("vulnerable", 2.4, 0.75, null));
+          this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "exhausted!", "#ffe9a3", 15);
+        }
+      }
     }
   }
 

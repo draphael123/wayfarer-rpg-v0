@@ -4,7 +4,7 @@ import { STAGES } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { Menus } from "./menus";
-import { drawBackground, drawProjectiles, drawUnits, drawVignette, drawZones } from "./render";
+import { drawBackground, drawProjectiles, drawTelegraphs, drawUnits, drawVignette, drawZones } from "./render";
 import { defaultSave, grantXp, loadSave, nextSpeed, persist } from "./save";
 import { Tutorial } from "./tutorial";
 import type { SaveData, StageDef } from "./types";
@@ -333,6 +333,7 @@ function frame(now: number): void {
     const horizon = (logicalH - HUD_H) * 0.34;
     drawBackground(ctx, battle.stage, logicalW, logicalH - HUD_H + 20, horizon, battle.time);
     drawZones(ctx, battle);
+    drawTelegraphs(ctx, battle);
     drawUnits(ctx, battle, battleSave, hud.selected);
     drawProjectiles(ctx, battle);
     fx.draw(ctx);

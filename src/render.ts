@@ -255,6 +255,38 @@ export function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number
 
 // ------------------------------------------------------------------ zones
 
+export function drawTelegraphs(ctx: CanvasRenderingContext2D, battle: Battle): void {
+  for (const mark of battle.telegraphs) {
+    const t = mark.time / mark.duration;
+    const urgency = 0.35 + t * 0.55;
+    ctx.globalAlpha = urgency;
+    ctx.strokeStyle = "#ff8a70";
+    ctx.lineWidth = 3 + t * 2;
+    ctx.setLineDash([8, 6]);
+    ctx.lineDashOffset = -battle.time * 30;
+    ctx.beginPath();
+    ctx.ellipse(mark.x, mark.y, mark.radius, mark.radius * 0.55, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // shrinking inner ring counts down the impact
+    ctx.globalAlpha = urgency * 0.6;
+    ctx.fillStyle = "rgba(255, 100, 70, 0.18)";
+    ctx.beginPath();
+    ctx.ellipse(mark.x, mark.y, mark.radius * (1 - t * 0.5), mark.radius * 0.55 * (1 - t * 0.5), 0, 0, Math.PI * 2);
+    ctx.fill();
+    // paw mark
+    ctx.globalAlpha = urgency;
+    ctx.fillStyle = "#ff8a70";
+    ctx.beginPath();
+    ctx.ellipse(mark.x, mark.y + 2, 7, 5, 0, 0, Math.PI * 2);
+    for (let i = -1; i <= 1; i++) {
+      ctx.ellipse(mark.x + i * 7, mark.y - 7, 2.8, 3.6, 0, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
 export function drawZones(ctx: CanvasRenderingContext2D, battle: Battle): void {
   for (const zone of battle.zones) {
     const fade = Math.min(1, (zone.duration - zone.time) / 0.8, zone.time / 0.25 + 0.4);
@@ -649,7 +681,8 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
   const r = unit.radius;
   const { cx, f } = pose;
   const gy = pose.groundY - pose.bounce * 0.7;
-  const colors = ENEMY_COLORS.wolf;
+  const isAlpha = unit.enemyKind === "alpha";
+  const colors = isAlpha ? { body: "#3f3a4d", trim: "#292534" } : ENEMY_COLORS.wolf;
   drawShadow(ctx, unit);
   const bodyY = gy - r * 0.9;
   // legs scissor
@@ -717,7 +750,7 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
 
 function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
   const kind = unit.enemyKind!;
-  if (kind === "wolf") {
+  if (kind === "wolf" || kind === "alpha") {
     drawWolf(ctx, unit, time);
     return;
   }

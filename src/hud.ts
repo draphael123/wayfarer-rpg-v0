@@ -267,6 +267,7 @@ export class Hud {
     this.drawTargetMarkers(ctx);
     this.drawDragIndicators(ctx);
     this.drawTopBar(ctx);
+    this.drawBossBar(ctx);
     this.drawBar(ctx);
     this.drawBanner(ctx);
     this.drawTutorialCard(ctx);
@@ -396,6 +397,41 @@ export class Hud {
         ctx.ellipse(target.x, target.y + 2, target.radius * 1.6, target.radius * 0.65, 0, 0, Math.PI * 2);
         ctx.stroke();
       }
+    }
+  }
+
+  private drawBossBar(ctx: CanvasRenderingContext2D): void {
+    const boss = this.battle.units.find((u) => u.alive && (u.enemyKind === "alpha" || u.enemyKind === "warlord"));
+    if (!boss) return;
+    const w = Math.min(360, this.width * 0.5);
+    const x = this.width / 2 - w / 2;
+    const y = 14;
+    ctx.fillStyle = "rgba(20, 14, 30, 0.7)";
+    roundRect(ctx, x - 8, y - 4, w + 16, 30, 10);
+    ctx.fill();
+    ctx.font = "800 11px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffb4a0";
+    ctx.fillText(boss.name.toUpperCase(), this.width / 2, y + 7);
+    const frac = Math.max(0, boss.hp / boss.stats.maxHp);
+    roundRect(ctx, x, y + 11, w, 9, 4.5);
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fill();
+    if (frac > 0) {
+      roundRect(ctx, x, y + 11, w * frac, 9, 4.5);
+      const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+      grad.addColorStop(0, "#d1543f");
+      grad.addColorStop(1, "#8a2f3d");
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.3)";
+      roundRect(ctx, x, y + 11, w * frac, 3, 1.5);
+      ctx.fill();
+    }
+    // phase markers at 60% / 30%
+    for (const mark of [0.6, 0.3]) {
+      ctx.fillStyle = frac > mark ? "#ffe9a3" : "rgba(255,255,255,0.25)";
+      ctx.fillRect(x + w * mark - 1, y + 9, 2, 13);
     }
   }
 
