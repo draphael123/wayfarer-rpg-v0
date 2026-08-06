@@ -608,7 +608,7 @@ function frame(now: number): void {
       drawProjectiles(ctx, battle);
       fx.draw(ctx);
       hud.drawWorld(ctx);
-      drawForeground(ctx, battle.stage, logicalW, worldH, battle.time, { camX: cam.x, camY: cam.y, units: battle.units });
+      drawForeground(ctx, battle.stage, logicalW, worldH, battle.time, { camX: cam.x, camY: cam.y, travel: battle.travel, units: battle.units });
     } finally {
       // a bad frame must not leak the camera transform into every frame after it
       ctx.restore();

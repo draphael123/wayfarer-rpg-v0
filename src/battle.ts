@@ -41,6 +41,12 @@ export class Battle {
   waveIndex = -1;
   /** Enemies still crashing through the treeline — waves arrive gradually. */
   pendingSpawns: { kind: EnemyKind; at: number }[] = [];
+  /** How far the band has marched through the level, in world pixels — the scenery scrolls by this. */
+  travel = 0;
+  /** True while the band is walking to the next encounter (the old wavebreak). */
+  get marching(): boolean {
+    return this.state === "wavebreak" && this.waveIndex >= 0;
+  }
   /** Recent damage each hero (by id) has dealt to bosses; decays in seconds.
    *  Pour damage in and the boss turns on YOU — that's how you peel it off the healer. */
   threat: Record<number, number> = {};
@@ -1559,13 +1565,29 @@ export class Battle {
     } else {
       if (this.state === "wavebreak") {
         this.breakTimer -= dt;
+        if (this.waveIndex >= 0) {
+          // the band marches on: the world slides past while they walk
+          this.travel += dt * 150;
+          // what the fight left behind stays behind
+          for (const u of this.units) if (!u.alive) u.x -= dt * 150;
+          for (const d of this.decals) d.x -= dt * 150;
+          for (const z of this.zones) z.x -= dt * 150;
+          for (const hero of this.livingHeroes()) {
+            const rank = this.heroes().indexOf(hero);
+            const fx = this.field.left + 70 + (rank % 2) * 46;
+            const fy = this.field.top + 40 + rank * ((this.field.bottom - this.field.top - 80) / 4);
+            hero.moveTarget = { x: fx + 26, y: fy };
+            hero.facing = 1;
+            this.moveToward(hero, { x: fx, y: fy }, dt, 8);
+          }
+        }
         if (this.breakTimer <= 0) this.startNextWave();
       } else if (this.livingEnemies().length === 0 && this.pendingSpawns.length === 0) {
         if (this.waveIndex >= this.stage.waves.length - 1) {
           this.startNextWave(); // triggers victory
         } else {
           this.state = "wavebreak";
-          this.breakTimer = 1.6;
+          this.breakTimer = 4.2;
         }
       }
 

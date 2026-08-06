@@ -803,47 +803,34 @@ export class Hud {
     ctx.fillStyle = "#f2ecd8";
     ctx.font = "700 13px 'Trebuchet MS', Verdana, sans-serif";
     ctx.textAlign = "left";
-    const waveNumber = Math.min(this.battle.waveIndex + 1, this.battle.stage.waves.length);
-    const label = this.battle.stage.waves.length
-      ? `${this.battle.stage.name} — wave ${Math.max(1, waveNumber)}/${this.battle.stage.waves.length}`
-      : this.battle.stage.name;
-    ctx.fillText(label, 20, 29);
-    // wave pips under the chip: done · current (lit) · to come (boss waves ringed red)
+    ctx.fillText(this.battle.stage.name, 20, 29);
+    // the road so far: a thin progress bar, no wave arithmetic shown
     const total = this.battle.stage.waves.length;
-    if (total > 1) {
-      const BOSSY = ["alpha", "warlord", "ogre"];
-      for (let i = 0; i < total; i++) {
-        const px = 22 + i * 15;
-        const py = 48;
-        const done = i < this.battle.waveIndex || this.battle.state === "victory";
-        const now = i === this.battle.waveIndex && this.battle.state !== "victory";
-        const boss = this.battle.stage.waves[i].some((e) => BOSSY.includes(e.kind));
-        ctx.beginPath();
-        ctx.arc(px, py, now ? 4.6 : 3.6, 0, Math.PI * 2);
-        ctx.fillStyle = done ? "#8ee88b" : now ? "#ffe9a3" : "rgba(255,255,255,0.22)";
+    if (total > 0 && !this.tutorial) {
+      const marchFrac = this.battle.marching ? 1 - Math.max(0, this.battle.breakTimer) / 4.2 : 0;
+      const p =
+        this.battle.state === "victory"
+          ? 1
+          : Math.max(0, Math.min(1, (Math.max(0, this.battle.waveIndex) + marchFrac) / total));
+      roundRect(ctx, 20, 44, 230, 5, 2.5);
+      ctx.fillStyle = "rgba(18, 14, 24, 0.7)";
+      ctx.fill();
+      if (p > 0) {
+        roundRect(ctx, 21, 45, 228 * p, 3, 1.5);
+        ctx.fillStyle = "#e0c896";
         ctx.fill();
-        if (now) {
-          ctx.strokeStyle = `rgba(255,233,163,${0.4 + Math.abs(Math.sin(this.battle.time * 4)) * 0.5})`;
-          ctx.lineWidth = 1.6;
-          ctx.beginPath();
-          ctx.arc(px, py, 7, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        if (boss && !done) {
-          ctx.strokeStyle = "#ff8a70";
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          ctx.arc(px, py, now ? 4.6 : 3.6, 0, Math.PI * 2);
-          ctx.stroke();
-        }
       }
-      // the breather between waves gets a heads-up
-      if (this.battle.state === "wavebreak" && this.battle.waveIndex >= 0) {
-        ctx.globalAlpha = 0.55 + Math.abs(Math.sin(this.battle.time * 5)) * 0.45;
-        ctx.fillStyle = "#ffb4a0";
-        ctx.font = "700 11px 'Trebuchet MS', Verdana, sans-serif";
+      // the band itself, a little marker walking the road
+      ctx.fillStyle = "#ffe9a3";
+      ctx.beginPath();
+      ctx.arc(21 + 228 * p, 46.5, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+      if (this.battle.marching) {
+        ctx.globalAlpha = 0.5 + Math.abs(Math.sin(this.battle.time * 3)) * 0.5;
+        ctx.fillStyle = "#e0c896";
+        ctx.font = "700 10.5px 'Trebuchet MS', Verdana, sans-serif";
         ctx.textAlign = "left";
-        ctx.fillText("the next wave approaches…", 22 + total * 15 + 6, 52);
+        ctx.fillText("the band marches on…", 258, 49);
         ctx.globalAlpha = 1;
       }
     }
@@ -1773,7 +1760,7 @@ export class Hud {
       ];
       const tip = TIPS[Math.floor(this.battle.time) % TIPS.length];
       ctx.fillText(
-        `Fell on wave ${this.battle.waveIndex + 1} of ${this.battle.stage.waves.length} · ${mins}:${secs}`,
+        `The road claimed them · ${mins}:${secs}`,
         this.width / 2,
         frame.y + 78,
       );

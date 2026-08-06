@@ -107,6 +107,8 @@ function hash01(n: number): number {
 }
 
 export interface BgOpts {
+  travel?: number; // how far the band has marched — the world slides by this
+
   camX?: number;
   camY?: number;
   dusk?: number; // 0..1 wave progression toward sundown
@@ -224,6 +226,7 @@ export function drawBackground(
   const camX = opts.camX ?? 0;
   const camY = opts.camY ?? 0;
   const dusk = opts.dusk ?? 0;
+  const travel = opts.travel ?? 0;
   // far layer barely moves with the camera (parallax)
   ctx.save();
   ctx.translate(camX * 0.72, camY * 0.72);
@@ -309,7 +312,7 @@ export function drawBackground(
   ctx.beginPath();
   ctx.moveTo(-M, horizon + 2);
   for (let x = -M; x <= w + M; x += 10) {
-    ctx.lineTo(x, horizon - 48 - Math.sin(x * 0.005 + 4.2) * 26 - Math.sin(x * 0.013 + 1) * 12);
+    ctx.lineTo(x, horizon - 48 - Math.sin((x + travel * 0.18) * 0.005 + 4.2) * 26 - Math.sin((x + travel * 0.18) * 0.013 + 1) * 12);
   }
   ctx.lineTo(w + M, horizon + 2);
   ctx.closePath();
@@ -319,7 +322,7 @@ export function drawBackground(
   ctx.beginPath();
   ctx.moveTo(-M, horizon + 2);
   for (let x = -M; x <= w + M; x += 8) {
-    ctx.lineTo(x, horizon - 22 - Math.sin(x * 0.008 + 1.7) * 18 - Math.sin(x * 0.021) * 9);
+    ctx.lineTo(x, horizon - 22 - Math.sin((x + travel * 0.32) * 0.008 + 1.7) * 18 - Math.sin((x + travel * 0.32) * 0.021) * 9);
   }
   ctx.lineTo(w + M, horizon + 2);
   ctx.closePath();
@@ -362,7 +365,10 @@ export function drawBackground(
 
   // ground: cached static layer (gradient, mottling, worn path, fringe)
   const gl = groundLayer(stage, w, h, horizon);
-  ctx.drawImage(gl, -M, horizon - 12, w + M * 2, h - (horizon - 12) + M);
+  const gspan = w + M * 2;
+  const goff = ((travel * 0.9) % gspan + gspan) % gspan;
+  ctx.drawImage(gl, -M - goff, horizon - 12, gspan, h - (horizon - 12) + M);
+  ctx.drawImage(gl, -M - goff + gspan, horizon - 12, gspan, h - (horizon - 12) + M);
   if (dusk > 0) {
     ctx.fillStyle = `rgba(30, 18, 50, ${dusk * 0.14})`;
     ctx.fillRect(-M, horizon, w + M * 2, h - horizon + M);
@@ -370,7 +376,7 @@ export function drawBackground(
 
   // texture: swaying tufts + stones
   for (let i = 0; i < 22; i++) {
-    const gx = hash01(i * 127 + stage.id * 3) * w;
+    const gx = ((hash01(i * 127 + stage.id * 3) * w - travel * 0.9) % w + w) % w;
     const gy = horizon + 10 + hash01(i * 311 + stage.id) * (h - horizon - 26);
     let sway = Math.sin(time * 1.6 + i) * 1.4;
     if (opts.units) {
@@ -462,8 +468,18 @@ export function drawBackground(
     }
   }
 
-  // stage set-dressing: each region gets its own furniture (drawn behind units)
-  drawSetDressing(ctx, stage, w, h, horizon, time);
+  // stage set-dressing: each region gets its own furniture (drawn behind units),
+  // drawn twice so the furniture streams past seamlessly as the band marches
+  {
+    const span = w + OVERSCAN * 2;
+    const soff = ((travel * 0.9) % span + span) % span;
+    ctx.save();
+    ctx.translate(-soff, 0);
+    drawSetDressing(ctx, stage, w, h, horizon, time);
+    ctx.translate(span, 0);
+    drawSetDressing(ctx, stage, w, h, horizon, time);
+    ctx.restore();
+  }
 
   // ambient motes per region: leaves, dusk fireflies, witchlights, embers
   const MOTES: Record<number, { color: string; glow: boolean }> = {
@@ -2979,7 +2995,8 @@ export function drawForeground(
   ctx.fillStyle = stage.palette.prop;
   ctx.globalAlpha = 0.85;
   for (let i = 0; i < 11; i++) {
-    const gx = hash01(i * 41 + stage.id * 5) * (w + OVERSCAN * 2) - OVERSCAN;
+    const fspan = w + OVERSCAN * 2;
+    const gx = ((hash01(i * 41 + stage.id * 5) * fspan - (opts.travel ?? 0) * 1.15) % fspan + fspan) % fspan - OVERSCAN;
     const base = h - 2 + hash01(i * 7) * 6;
     const s = 14 + hash01(i * 13) * 16;
     let sway = Math.sin(time * 1.3 + i * 2.2) * 3;

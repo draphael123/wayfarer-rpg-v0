@@ -802,7 +802,7 @@ export class Menus {
           <button class="big-btn primary embark-btn" data-act="embark">${ico("play")} Set out</button>
         </div>
         <div class="scout-row">
-          <span class="scout-chip">${ico("sword")} ${stage.waves.length} wave${stage.waves.length === 1 ? "" : "s"}</span>
+          <span class="scout-chip">${ico("sword")} ${stage.waves.length <= 1 ? "a single great trial" : stage.waves.length <= 3 ? "a short road" : "a long road"}</span>
           <span class="scout-chip">${ico("star")} ≈${Math.round(stage.xpReward * mult)} xp</span>
           <span class="scout-chip">${ico("gem")} ${rare ? "RARE trinket" : "trinket drop"}</span>
           ${
