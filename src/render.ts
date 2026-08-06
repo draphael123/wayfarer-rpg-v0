@@ -1429,6 +1429,7 @@ export function drawTitleDiorama(ctx: CanvasRenderingContext2D, save: SaveData, 
       celebrate: false,
       idleTimer: 0,
       idleAnim: 0,
+      leap: null,
     } as unknown as Unit;
     mock.hp = mock.stats.maxHp;
     drawHero(ctx, mock, save, false, time + i * 1.7);
@@ -1504,6 +1505,7 @@ export function drawHeroFigure(
     celebrate: false,
     idleTimer: 0,
     idleAnim: 0,
+    leap: null,
   } as unknown as Unit;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.save();
@@ -2103,11 +2105,27 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
   const pose = poseOf(unit, time);
   const r = unit.radius;
   const { cx, f } = pose;
-  const gy = pose.groundY - pose.bounce * 0.7;
   const isAlpha = unit.enemyKind === "alpha";
+  // airborne pounce: the body rises along a sine arc while the shadow stays grounded
+  const leapK = unit.leap ? Math.min(1, unit.leap.t / unit.leap.dur) : 0;
+  const leapLift = unit.leap ? Math.sin(leapK * Math.PI) * r * 2.4 : 0;
+  const gy = pose.groundY - pose.bounce * 0.7 - leapLift;
   const colors = isAlpha ? { body: "#3f3a4d", trim: "#292534" } : ENEMY_COLORS.wolf;
-  const stretchB = isAlpha ? 1.18 : 1; // longer, rangier frame for the boss
-  drawShadow(ctx, unit, pose.bounce * 0.7);
+  const stretchB = (isAlpha ? 1.18 : 1) * (unit.leap ? 1.22 : 1); // stretched out mid-flight
+  drawShadow(ctx, unit, pose.bounce * 0.7 + leapLift);
+  if (unit.leap) {
+    // wind streaks trailing the leap
+    ctx.strokeStyle = "rgba(220, 215, 240, 0.35)";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    for (let s = 0; s < 3; s++) {
+      ctx.beginPath();
+      ctx.moveTo(cx - f * r * (1.6 + s * 0.5), gy + r * (0.1 - s * 0.25));
+      ctx.lineTo(cx - f * r * (0.7 + s * 0.3), gy + r * (0.1 - s * 0.25));
+      ctx.stroke();
+    }
+    ctx.lineCap = "butt";
+  }
   const bodyY = gy - r * (isAlpha ? 1.05 : 0.9);
   // legs scissor
   const legPairs = [
@@ -2136,17 +2154,47 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
     outlined(ctx, colors.trim, 1.8);
   }
   if (isAlpha) {
-    // bristling mane along the neck and shoulders
+    const frenzied = unit.phase >= 3;
+    // old wounds: pale claw scars raked across the flank
+    ctx.strokeStyle = "#8a8298";
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = "round";
+    for (let s = 0; s < 3; s++) {
+      ctx.beginPath();
+      ctx.moveTo(cx - f * r * (0.15 + s * 0.22), bodyY - r * 0.3);
+      ctx.lineTo(cx - f * r * (0.32 + s * 0.22), bodyY + r * 0.28);
+      ctx.stroke();
+    }
+    ctx.lineCap = "butt";
+    // heavy chest ruff — the shoulders of something that has never lost
     ctx.beginPath();
-    for (let i = 0; i < 5; i++) {
-      const mx = cx + f * r * (0.2 + i * 0.22);
+    ctx.moveTo(cx + f * r * 0.75, bodyY - r * 0.45);
+    ctx.quadraticCurveTo(cx + f * r * 1.15, bodyY + r * 0.1, cx + f * r * 0.8, bodyY + r * 0.55);
+    ctx.quadraticCurveTo(cx + f * r * 0.5, bodyY + r * 0.3, cx + f * r * 0.55, bodyY - r * 0.2);
+    ctx.closePath();
+    outlined(ctx, "#4c4560", 2.2);
+    // towering hackles, frost-pale at the tips (blood-tinged in frenzy)
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const mx = cx + f * r * (0.05 + i * 0.24);
       const my = bodyY - r * (0.52 + Math.sin(i * 1.3) * 0.06);
       ctx.moveTo(mx, my);
-      ctx.lineTo(mx + f * r * 0.1, my - r * (0.42 - i * 0.05));
-      ctx.lineTo(mx + f * r * 0.26, my);
+      ctx.lineTo(mx + f * r * 0.1, my - r * (0.62 - i * 0.06));
+      ctx.lineTo(mx + f * r * 0.28, my);
     }
     ctx.closePath();
     outlined(ctx, "#524b63", 2);
+    ctx.fillStyle = frenzied ? "#a85560" : "#8d84a8";
+    for (let i = 0; i < 6; i++) {
+      const mx = cx + f * r * (0.05 + i * 0.24);
+      const my = bodyY - r * (0.52 + Math.sin(i * 1.3) * 0.06);
+      ctx.beginPath();
+      ctx.moveTo(mx + f * r * 0.04, my - r * (0.4 - i * 0.045));
+      ctx.lineTo(mx + f * r * 0.1, my - r * (0.62 - i * 0.06));
+      ctx.lineTo(mx + f * r * 0.17, my - r * (0.4 - i * 0.045));
+      ctx.closePath();
+      ctx.fill();
+    }
   }
   // tail — wags when the wolf has nothing to chase
   const wag = pose.walk === 0 && pose.swing <= 0 ? Math.sin(time * 6 + unit.id) * r * 0.22 : 0;
@@ -2182,18 +2230,81 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
     ctx.closePath();
     outlined(ctx, colors.trim, 1.6);
   }
-  // ear
-  ctx.beginPath();
-  ctx.moveTo(hx - f * r * 0.1, hy - r * 0.4);
-  ctx.lineTo(hx + f * r * 0.12, hy - r * 0.95);
-  ctx.lineTo(hx + f * r * 0.38, hy - r * 0.35);
-  ctx.closePath();
-  outlined(ctx, colors.body, 2);
-  // eye
-  ctx.fillStyle = "#ffd76b";
-  ctx.beginPath();
-  ctx.arc(hx + f * r * 0.15, hy - r * 0.08, 1.9, 0, Math.PI * 2);
-  ctx.fill();
+  // ear — the Alpha's is torn from old challenges
+  if (isAlpha) {
+    ctx.beginPath();
+    ctx.moveTo(hx - f * r * 0.1, hy - r * 0.4);
+    ctx.lineTo(hx + f * r * 0.0, hy - r * 0.95);
+    ctx.lineTo(hx + f * r * 0.1, hy - r * 0.62);
+    ctx.lineTo(hx + f * r * 0.2, hy - r * 0.88);
+    ctx.lineTo(hx + f * r * 0.38, hy - r * 0.35);
+    ctx.closePath();
+    outlined(ctx, colors.body, 2);
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(hx - f * r * 0.1, hy - r * 0.4);
+    ctx.lineTo(hx + f * r * 0.12, hy - r * 0.95);
+    ctx.lineTo(hx + f * r * 0.38, hy - r * 0.35);
+    ctx.closePath();
+    outlined(ctx, colors.body, 2);
+  }
+  if (isAlpha) {
+    const frenzied = unit.phase >= 3;
+    // bone-pale blaze down the snout
+    ctx.strokeStyle = "#9a92ad";
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(hx - f * r * 0.05, hy - r * 0.35);
+    ctx.lineTo(hx + f * r * 0.75, hy + r * 0.05);
+    ctx.stroke();
+    ctx.lineCap = "butt";
+    // a scar through the brow
+    ctx.strokeStyle = "#8a8298";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(hx + f * r * 0.02, hy - r * 0.42);
+    ctx.lineTo(hx + f * r * 0.3, hy + r * 0.12);
+    ctx.stroke();
+    // fangs bared even at rest
+    ctx.fillStyle = "#efe8d4";
+    for (const fx2 of [0.45, 0.62]) {
+      ctx.beginPath();
+      ctx.moveTo(hx + f * r * fx2, hy + r * 0.3);
+      ctx.lineTo(hx + f * r * (fx2 + 0.06), hy + r * 0.5);
+      ctx.lineTo(hx + f * r * (fx2 + 0.12), hy + r * 0.3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // the eye burns — moon-violet, blood-red in frenzy
+    const eyeColor = frenzied ? "#ff5a48" : "#c9b8ff";
+    ctx.shadowColor = eyeColor;
+    ctx.shadowBlur = 9;
+    ctx.fillStyle = eyeColor;
+    ctx.beginPath();
+    ctx.arc(hx + f * r * 0.15, hy - r * 0.08, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(hx + f * r * 0.15, hy - r * 0.08 - 1, 1.2, 1.2);
+    // cold breath in the night air
+    const puff = ((time * 0.45 + unit.id * 0.37) % 1);
+    if (puff < 0.4 && pose.swing <= 0.2) {
+      const pk = puff / 0.4;
+      ctx.globalAlpha = (1 - pk) * 0.4;
+      ctx.fillStyle = "#d8d4ec";
+      ctx.beginPath();
+      ctx.ellipse(hx + f * r * (1.0 + pk * 0.5), hy + r * 0.18 - pk * 5, 3 + pk * 5, 2 + pk * 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  } else {
+    // eye
+    ctx.fillStyle = "#ffd76b";
+    ctx.beginPath();
+    ctx.arc(hx + f * r * 0.15, hy - r * 0.08, 1.9, 0, Math.PI * 2);
+    ctx.fill();
+  }
   flashOverlay(ctx, unit, cx, bodyY, r * 1.4);
   drawEffectPips(ctx, unit, cx, bodyY - r * 1.8);
   drawHealthBar(ctx, unit, bodyY - r * 1.7);

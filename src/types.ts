@@ -98,6 +98,7 @@ export interface Unit {
   celebrate: boolean; // victory pose
   idleTimer: number; // countdown to next idle flourish
   idleAnim: number; // active idle flourish time
+  leap: { t: number; dur: number; fromX: number; fromY: number; toX: number; toY: number; radius: number } | null; // airborne pounce in flight
 }
 
 export interface Projectile {

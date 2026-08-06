@@ -684,7 +684,18 @@ export class Menus {
         <div class="stage-caption"></div>
         <div class="map-footer">
           <button class="toggle-btn" data-act="difficulty" style="border-color:${DIFFICULTIES[save.difficulty].color};color:${DIFFICULTIES[save.difficulty].color}">${ico("skull")} ${DIFFICULTIES[save.difficulty].name}</button>
-          <button class="toggle-btn" data-act="shop">${ico("home")} Village</button>
+          <button class="toggle-btn" data-act="shop">${ico("home")} Village${
+            save.heroes.some(
+              (h) =>
+                h.recruited &&
+                ((h.weaponTier + 1 < WEAPON_TIERS.length && WEAPON_TIERS[h.weaponTier + 1].cost <= save.gold) ||
+                  (h.armorTier + 1 < ARMOR_TIERS.length && ARMOR_TIERS[h.armorTier + 1].cost <= save.gold)),
+            ) ||
+            ABILITIES.some((a) => !save.unlockedSpells.includes(a.id) && (SPELL_COSTS[a.id] ?? 100) <= save.gold) ||
+            save.heroes.some((h, i) => !h.recruited && heroArrived(save, i) && (RECRUIT_COST[i] ?? Infinity) <= save.gold)
+              ? ' <span class="shop-dot"></span>'
+              : ""
+          }</button>
           <button class="toggle-btn" data-act="bestiary">${ico("book")} Bestiary</button>
           <button class="toggle-btn" data-act="chronicle">${ico("chart")} Chronicle</button>
           <button class="toggle-btn" data-act="home">Title</button>
@@ -1911,7 +1922,7 @@ export class Menus {
       <div class="shop-tabs hero-tabs">
         <button class="hero-step" data-hstep="-1" title="previous hero">‹</button>
         <button class="shop-tab ${active === "overview" ? "on" : ""}" data-htab="overview">${ico("banner")} Overview</button>
-        <button class="shop-tab ${active === "loadout" ? "on" : ""}" data-htab="loadout">${ico("bag")} Loadout</button>
+        <button class="shop-tab ${active === "loadout" ? "on" : ""}" data-htab="loadout">${ico("shield")} Equip</button>
         <button class="shop-tab ${active === "talents" ? "on" : ""}" data-htab="talents">${ico("star")} Talents</button>
         <button class="shop-tab ${active === "calling" ? "on" : ""}" data-htab="calling" ${canCall ? "" : "disabled"}>${ico("sword")} Calling</button>
         <button class="hero-step" data-hstep="1" title="next hero">›</button>
@@ -2141,11 +2152,12 @@ export class Menus {
         <div class="stat-hint">tap any stat to see what it does</div>
         <button class="trinket-row equip-row loadout-row" data-act="equip">
           <span class="loadout-slots"></span>
-          <span class="loadout-text"><strong>Loadout</strong><em>${WEAPON_TIERS[hero.weaponTier].name} · ${ARMOR_TIERS[hero.armorTier].name}${trinket ? ` · ${trinket.name}` : ""}</em></span>
+          <span class="loadout-text"><strong>Gear &amp; Spells</strong><em>${WEAPON_TIERS[hero.weaponTier].name} · ${ARMOR_TIERS[hero.armorTier].name}${trinket ? ` · ${trinket.name}` : ""} — tap to change</em></span>
           <span class="loadout-go">${ico("arrow")}</span>
         </button>
         <div class="attr-rows"></div>
         <div class="card-actions">
+          <button class="toggle-btn equip-btn" data-act="equip">${ico("shield")} Equip</button>
           ${save.unspent[index] > 0 ? `<button class="toggle-btn suggest-btn" data-act="suggest">${ico("spark")} Suggest</button>` : ""}
           <button class="toggle-btn talents-btn" data-act="talents">${ico("star")} Talents</button>
           <button class="toggle-btn calling-btn ${!sworn && save.level >= CALLING_UNLOCK_LEVEL ? "beckons" : ""}"
@@ -2503,9 +2515,22 @@ export class Menus {
                 hero.armorTier >= 3 && armorVariantById(hero.armorVariant) ? armorVariantById(hero.armorVariant)!.name : ARMOR_TIERS[hero.armorTier].name
               }</strong> <span>+${Math.round(ARMOR_BONUS[hero.armorTier] * 100)}% armor · +${ARMOR_HP_BONUS[hero.armorTier]} hp</span></div>
               ${
-                nextA
-                  ? `<button class="big-btn buy-btn ${save.gold < nextA.cost ? "cant" : ""}" data-gear="a">Upgrade to ${nextA.name} — ${nextA.cost}g</button>`
-                  : `<div class="gear-max">Finest armor in the realm</div>`
+                nextA && hero.armorTier + 1 === 3
+                  ? `<div class="plate-choice"><div class="plate-choice-head">Plate awaits — choose its making (${nextA.cost}g)</div>` +
+                    ARMOR_VARIANTS.map(
+                      (vd) =>
+                        `<button class="big-btn buy-btn plate-btn" data-plate2="${vd.id}" ${save.gold < nextA.cost ? 'data-cant="1"' : ""}>${ico(vd.icon)} <span class="plate-text"><strong>${vd.name}</strong><em>${vd.blurb}</em></span></button>`,
+                    ).join("") +
+                    `</div>`
+                  : nextA
+                    ? `<button class="big-btn buy-btn ${save.gold < nextA.cost ? "cant" : ""}" data-gear="a">Upgrade to ${nextA.name} — ${nextA.cost}g</button>`
+                    : `<div class="plate-choice">` +
+                      ARMOR_VARIANTS.filter((vd) => vd.id !== hero.armorVariant)
+                        .map(
+                          (vd) =>
+                            `<button class="big-btn plate-btn" data-platevar2="${vd.id}" ${save.gold < ARMOR_VARIANT_SWITCH_COST ? 'data-cant="1"' : ""}>${ico(vd.icon)} <span class="plate-text"><strong>Rework → ${vd.name} — ${ARMOR_VARIANT_SWITCH_COST}g</strong><em>${vd.blurb}</em></span></button>`,
+                        ).join("") +
+                      `</div>`
               }
             </div>
             <div class="equip-slot">
@@ -2660,6 +2685,25 @@ export class Menus {
         else hero.armorTier = tier;
         persist(save);
         this.showToast(`${def.name} equips ${item.name} ${slot === "w" ? "weapon" : "armor"}!`);
+        this.renderEquipment(index);
+        return;
+      }
+      const plateBtn = target.closest("[data-plate2]");
+      if (plateBtn) {
+        if (!this.spend(ARMOR_TIERS[3].cost)) return;
+        hero.armorTier = 3;
+        hero.armorVariant = plateBtn.getAttribute("data-plate2")!;
+        persist(save);
+        this.showToast(`${def.name} dons the ${armorVariantById(hero.armorVariant)!.name}!`);
+        this.renderEquipment(index);
+        return;
+      }
+      const varBtn = target.closest("[data-platevar2]");
+      if (varBtn) {
+        if (!this.spend(ARMOR_VARIANT_SWITCH_COST)) return;
+        hero.armorVariant = varBtn.getAttribute("data-platevar2")!;
+        persist(save);
+        this.showToast(`The smith reworks it into the ${armorVariantById(hero.armorVariant)!.name}`);
         this.renderEquipment(index);
         return;
       }

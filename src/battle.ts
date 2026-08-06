@@ -146,6 +146,7 @@ export class Battle {
         celebrate: false,
         idleTimer: 3 + Math.random() * 4,
         idleAnim: 0,
+        leap: null,
       });
       const ward = talentMods(heroSave.talents).startShield + trinketMods(heroSave.trinket).startShield;
       if (ward > 0) {
@@ -226,6 +227,7 @@ export class Battle {
       celebrate: false,
       idleTimer: 3 + Math.random() * 4,
       idleAnim: 0,
+      leap: null,
     });
   }
 
@@ -386,7 +388,7 @@ export class Battle {
     if (source && source.team === "hero" && source.heroIndex >= 0 && target.team === "enemy") {
       this.tally(source.heroIndex).dealt += amount;
       if (BOSS_KINDS.includes(target.enemyKind ?? "")) {
-        this.threat[source.id] = (this.threat[source.id] ?? 0) + amount;
+        this.threat[source.id] = (this.threat[source.id] ?? 0) + amount * this.threatMult(source);
       }
     }
     if (target.team === "hero" && target.heroIndex >= 0) {
@@ -1406,6 +1408,15 @@ export class Battle {
     }
     // boss threat cools quickly — the fight keeps asking who is loudest NOW
     for (const k in this.threat) this.threat[k] *= Math.exp(-dt * 0.28);
+    // standing in the boss's face is its own kind of loudness — tanks hold attention
+    const bosses = this.units.filter((u) => u.alive && u.team === "enemy" && BOSS_KINDS.includes(u.enemyKind ?? ""));
+    if (bosses.length) {
+      for (const hero of this.livingHeroes()) {
+        if (!bosses.some((bz) => unitDist(hero, bz) < 110)) continue;
+        const rate = hero.calling === "vanguard" ? 30 : hero.stats.weapon === "sword" ? 14 : 0;
+        if (rate) this.threat[hero.id] = (this.threat[hero.id] ?? 0) + rate * dt;
+      }
+    }
 
     if (this.tutorialMode) {
       this.state = "fighting";
@@ -1433,6 +1444,20 @@ export class Battle {
 
     for (const unit of this.units) {
       if (!unit.alive) continue;
+      // an airborne pounce carries the body along its arc, then slams down
+      if (unit.leap) {
+        const L = unit.leap;
+        L.t += dt;
+        const k = Math.min(1, L.t / L.dur);
+        const e = k * k * (3 - 2 * k);
+        unit.x = L.fromX + (L.toX - L.fromX) * e;
+        unit.y = L.fromY + (L.toY - L.fromY) * e;
+        unit.facing = (L.toX >= L.fromX ? 1 : -1) as 1 | -1;
+        if (k >= 1) {
+          unit.leap = null;
+          this.landPounce(unit, L.toX, L.toY, L.radius);
+        }
+      }
       this.updateEffects(unit, dt);
       for (const ability of unit.abilities) ability.timer = Math.max(0, ability.timer - dt);
       unit.attackTimer = Math.max(0, unit.attackTimer - dt);
@@ -1666,8 +1691,17 @@ export class Battle {
     attacker.facing = target.x >= attacker.x ? 1 : -1;
   }
 
-  /** The hero a boss should be angry at: loudest recent damage, if anyone is loud. */
-  private topThreat(): Unit | null {
+  /** How loudly a hero registers to bosses: shield-bearers ring loudest, menders barely. */
+  private threatMult(hero: Unit): number {
+    if (hero.calling === "vanguard") return 2.6;
+    if (hero.stats.weapon === "sword") return 1.5; // any front-liner holds attention
+    if (hero.stats.healPower >= 8) return 0.5;
+    return 1;
+  }
+
+  /** The hero a boss should be angry at. A challenger must OUT-shout the current
+   *  target by a clear margin — bosses don't ping-pong, and tanks hold by default. */
+  private topThreat(current: Unit | null): Unit | null {
     let best: Unit | null = null;
     let bestV = 10; // below this, threat is just noise
     for (const hero of this.livingHeroes()) {
@@ -1676,6 +1710,11 @@ export class Battle {
         bestV = v;
         best = hero;
       }
+    }
+    if (!best) return null;
+    if (current && current.alive && best !== current) {
+      const held = this.threat[current.id] ?? 0;
+      if (bestV < held * 1.3) return current; // not loud enough to peel it off
     }
     return best;
   }
@@ -1709,6 +1748,8 @@ export class Battle {
       enemy.lunge = 0.5;
       enemy.lungeDir = { x: -1, y: 0 };
     }
+    // mid-leap the body belongs to the arc, not the brain
+    if (enemy.leap) return;
     // then close most of the gap at a quickened pace so fights start fast
     const nearestForPace = this.nearestHero(enemy);
     const paceBoost = nearestForPace && unitDist(enemy, nearestForPace) > 320 ? 1.5 : 1;
@@ -1727,7 +1768,7 @@ export class Battle {
     const taunt = this.effect(enemy, "taunt");
     let target: Unit | null = taunt && taunt.source && taunt.source.alive ? taunt.source : null;
     // bosses answer the loudest threat — pour damage in and they turn on you
-    if (!target && BOSS_KINDS.includes(enemy.enemyKind ?? "")) target = this.topThreat();
+    if (!target && BOSS_KINDS.includes(enemy.enemyKind ?? "")) target = this.topThreat(enemy.aggro && enemy.aggro.alive ? enemy.aggro : null);
     if (!target && enemy.aggro && enemy.aggro.alive) target = enemy.aggro;
     if (!target) target = this.nearestHero(enemy);
     if (!target) return;
@@ -1855,7 +1896,7 @@ export class Battle {
     // between pounces: normal wolf brawling, steered by threat
     const taunt = this.effect(alpha, "taunt");
     let target: Unit | null = taunt && taunt.source && taunt.source.alive ? taunt.source : null;
-    if (!target) target = this.topThreat();
+    if (!target) target = this.topThreat(alpha.aggro && alpha.aggro.alive ? alpha.aggro : null);
     if (!target && alpha.aggro && alpha.aggro.alive) target = alpha.aggro;
     if (!target) target = this.nearestHero(alpha);
     if (!target) return;
@@ -1974,30 +2015,44 @@ export class Battle {
           continue;
         }
         const alpha = mark.owner;
-        // leap to the marked spot
-        alpha.lungeDir = { x: Math.sign(mark.x - alpha.x) || 1, y: 0 };
-        alpha.lunge = 1;
-        alpha.x = mark.x;
-        alpha.y = mark.y;
-        alpha.facing = (alpha.lungeDir.x >= 0 ? 1 : -1) as 1 | -1;
-        for (const hero of this.livingHeroes()) {
-          if (Math.hypot(hero.x - mark.x, hero.y - mark.y) < mark.radius + hero.radius * 0.5) {
-            this.damage(hero, alpha.stats.damage * 1.7, alpha);
-          }
-        }
-        this.fx.burst(mark.x, mark.y, "rgba(190,175,150,0.8)", 14, 120, { gravity: -20, size: 4.5 });
-        this.fx.ring(mark.x, mark.y, mark.radius + 14, "#c9c2e8", { width: 4, life: 0.4 });
-        this.fx.addShake(9);
-        this.hitstop = Math.max(this.hitstop, 0.07);
-        this.zoomPunch = Math.max(this.zoomPunch, 1);
-        audio.play("thud");
-        // frenzy leaves the alpha exhausted: your window
-        if (alpha.phase === 3) {
-          alpha.effects.push(makeEffect("stun", 2.4, 1, null));
-          alpha.effects.push(makeEffect("vulnerable", 2.4, 0.75, null));
-          this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "exhausted!", "#ffe9a3", 15);
-        }
+        // the telegraph resolves into a real LEAP — airborne, arcing, landing hard
+        alpha.facing = (mark.x >= alpha.x ? 1 : -1) as 1 | -1;
+        alpha.leap = {
+          t: 0,
+          dur: Math.max(0.3, Math.min(0.5, Math.hypot(mark.x - alpha.x, mark.y - alpha.y) / 640)),
+          fromX: alpha.x,
+          fromY: alpha.y,
+          toX: mark.x,
+          toY: mark.y,
+          radius: mark.radius,
+        };
+        // dust kicked up at takeoff
+        this.fx.burst(alpha.x, alpha.y + 2, "rgba(185,170,145,0.7)", 8, 90, { gravity: -40, size: 3.4 });
+        audio.play("shoot");
       }
+    }
+  }
+
+  /** The pounce lands: the slam happens where the paws come down. */
+  private landPounce(alpha: Unit, x: number, y: number, radius: number): void {
+    alpha.lungeDir = { x: alpha.facing, y: 0 };
+    alpha.lunge = 1;
+    for (const hero of this.livingHeroes()) {
+      if (Math.hypot(hero.x - x, hero.y - y) < radius + hero.radius * 0.5) {
+        this.damage(hero, alpha.stats.damage * 1.7, alpha);
+      }
+    }
+    this.fx.burst(x, y, "rgba(190,175,150,0.8)", 14, 120, { gravity: -20, size: 4.5 });
+    this.fx.ring(x, y, radius + 14, "#c9c2e8", { width: 4, life: 0.4 });
+    this.fx.addShake(9);
+    this.hitstop = Math.max(this.hitstop, 0.07);
+    this.zoomPunch = Math.max(this.zoomPunch, 1);
+    audio.play("thud");
+    // frenzy leaves the alpha exhausted: your window
+    if (alpha.phase === 3) {
+      alpha.effects.push(makeEffect("stun", 2.4, 1, null));
+      alpha.effects.push(makeEffect("vulnerable", 2.4, 0.75, null));
+      this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "exhausted!", "#ffe9a3", 15);
     }
   }
 
