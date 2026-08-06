@@ -2558,3 +2558,11 @@ body.big-text .page { zoom: 1.1; }
 .armor-rack .buy-btn { flex-shrink: 0; padding: 8px 14px; }
 
 .armor-options .trinket-opt svg { width: 12px; height: 12px; }
+
+/* ---------------------------------------------------------- act two */
+
+.act-tabs { display: flex; gap: 8px; width: 100%; margin-bottom: 8px; }
+
+.act-tabs .shop-tab { flex: 1; }
+
+.finale-page .chron-grid { grid-template-columns: repeat(2, 1fr); }

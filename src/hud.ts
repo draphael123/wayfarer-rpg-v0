@@ -731,7 +731,7 @@ export class Hud {
   }
 
   private drawBossBar(ctx: CanvasRenderingContext2D): void {
-    const boss = this.battle.units.find((u) => u.alive && (u.enemyKind === "alpha" || u.enemyKind === "warlord"));
+    const boss = this.battle.units.find((u) => u.alive && ["alpha", "warlord", "rimeheart"].includes(u.enemyKind ?? ""));
     if (!boss) return;
     const w = Math.min(360, this.width * 0.5);
     const x = this.width / 2 - w / 2;
@@ -777,8 +777,8 @@ export class Hud {
       }
     }
     // phase markers (Alpha 60/30, Gorehulk 66/33)
-    if (this.battle.bossRef?.enemyKind === "alpha" || this.battle.bossRef?.enemyKind === "warlord") {
-      for (const mark of this.battle.bossRef.enemyKind === "alpha" ? [0.6, 0.3] : [0.66, 0.33]) {
+    if (["alpha", "warlord", "rimeheart"].includes(this.battle.bossRef?.enemyKind ?? "")) {
+      for (const mark of this.battle.bossRef?.enemyKind === "alpha" ? [0.6, 0.3] : [0.66, 0.33]) {
         ctx.fillStyle = frac > mark ? "#ffe9a3" : "rgba(255,255,255,0.25)";
         ctx.fillRect(x + w * mark - 1, y + 9, 2, 13);
       }
@@ -821,7 +821,9 @@ export class Hud {
           ? "Dodge the pounce. Punish the exhaustion."
           : boss.enemyKind === "ogre"
             ? "Never stand still for the slam."
-            : "His slam wounds everyone near it. Spread out.";
+            : boss.enemyKind === "rimeheart"
+              ? "Step out of the hail. When the heart shatters, strike."
+              : "His slam wounds everyone near it. Spread out.";
       ctx.fillText(tip, this.width / 2, y + 22);
     }
   }

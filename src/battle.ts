@@ -30,7 +30,7 @@ function makeEffect(kind: StatusEffect["kind"], time: number, power: number, sou
 }
 
 /** The great foes — they hunt by threat, not by proximity or frailty. */
-const BOSS_KINDS = ["alpha", "warlord", "ogre"];
+const BOSS_KINDS = ["alpha", "warlord", "ogre", "rimeheart"];
 
 export class Battle {
   units: Unit[] = [];
@@ -289,7 +289,7 @@ export class Battle {
       this.bossRef = this.units.find((u) => u.alive && BOSS_KINDS.includes(u.enemyKind ?? "")) ?? null;
       if (this.bossRef) {
         this.bossStagger = 0;
-        this.bossStaggerMax = this.bossRef.enemyKind === "warlord" ? 340 : this.bossRef.enemyKind === "alpha" ? 280 : 240;
+        this.bossStaggerMax = this.bossRef.enemyKind === "rimeheart" ? 400 : this.bossRef.enemyKind === "warlord" ? 340 : this.bossRef.enemyKind === "alpha" ? 280 : 240;
         this.cinematic = 2.6;
         this.waveBanner = 0;
         audio.play(this.bossRef.enemyKind === "warlord" ? "warhorn" : this.bossRef.enemyKind === "alpha" ? "howl" : "roar");
@@ -533,6 +533,9 @@ export class Battle {
       !this.effect(target, "burn")
     ) {
       target.effects.push(makeEffect("burn", 3, 2.7, source));
+    }
+    if (source && source.team === "enemy" && (source.enemyKind === "frostwolf" || source.enemyKind === "icewisp") && target.alive && target.team === "hero") {
+      target.effects.push(makeEffect("slow", 1.6, 0.3, source));
     }
     if (amount > 22) audio.play("hitHeavy");
     if (target.hp <= 0) this.kill(target, source);
@@ -1854,16 +1857,21 @@ export class Battle {
         }
         continue;
       }
-      if (unit.team === "enemy") {
+      if (unit.team !== zone.from.team) {
         inFrost = true;
-        unit.hp -= zone.dps * dt;
-        if (unit.hp <= 0) {
-          this.kill(unit);
-          return;
+        if (unit.team === "enemy") {
+          unit.hp -= zone.dps * dt;
+          if (unit.hp <= 0) {
+            this.kill(unit);
+            return;
+          }
         }
-        const slow = this.effect(unit, "slow");
-        if (slow) slow.time = Math.max(slow.time, 0.3);
-        else unit.effects.push(makeEffect("slow", 0.3, zone.power, zone.from));
+        // ember-lined heroes shrug the ground-chill too
+        if (!(unit.team === "hero" && this.armorHookOf(unit) === "slowProof")) {
+          const slow = this.effect(unit, "slow");
+          if (slow) slow.time = Math.max(slow.time, 0.3);
+          else unit.effects.push(makeEffect("slow", 0.3, zone.power, zone.from));
+        }
       }
     }
     if (inFrost) unit.hitFlash = Math.max(unit.hitFlash, 0.05);
@@ -2058,10 +2066,20 @@ export class Battle {
     const nearestForPace = this.nearestHero(enemy);
     const paceBoost = nearestForPace && unitDist(enemy, nearestForPace) > 320 ? 1.5 : 1;
 
-    if (enemy.enemyKind === "shaman") {
+    if (enemy.enemyKind === "shaman" || enemy.enemyKind === "snowhag") {
       this.updateShaman(enemy, dt);
       return;
     }
+    // Rimeclad ice casing: it cracks off at three-quarters strength
+    if (enemy.enemyKind === "rimetroll" && enemy.phase === 0 && enemy.hp < enemy.stats.maxHp * 0.75) {
+      enemy.phase = 1;
+      enemy.stats.armor = 0.05;
+      this.fx.floatText(enemy.x, enemy.y - enemy.radius * 3, "SHATTERED!", "#b8e0f0", 16);
+      this.fx.burst(enemy.x, enemy.y - 14, "#d8f0f8", 14, 150, { glow: true, gravity: 180 });
+      this.fx.addShake(5);
+      audio.play("staggerBreak");
+    }
+    if (enemy.enemyKind === "rimeheart") this.updateRimeheart(enemy, dt);
     if (enemy.enemyKind === "alpha") {
       this.updateAlpha(enemy, dt);
       return;
@@ -2144,6 +2162,13 @@ export class Battle {
         life: 3,
       });
       audio.play("bolt");
+    } else if (shaman.enemyKind === "snowhag" && nearest && Math.random() < 0.5) {
+      // the hag sings the ground to ice beneath your feet
+      shaman.supportTimer = 3.2;
+      shaman.castGlow = 0.4;
+      this.zones.push({ x: nearest.x, y: nearest.y, radius: 58, time: 0, duration: 4.5, kind: "frost", power: 0.35, dps: 0, from: shaman });
+      this.fx.ring(nearest.x, nearest.y, 58, "#b8e0f0", { width: 3, life: 0.5 });
+      audio.play("frost");
     } else if (nearest) {
       // nothing to mend: the shaman fights like everyone else
       const dist = unitDist(shaman, nearest);
@@ -2155,6 +2180,79 @@ export class Battle {
         shaman.attackTimer = this.attackIntervalOf(shaman);
       }
       shaman.supportTimer = 0.4; // keep glancing for wounded packmates
+    }
+  }
+
+  private rimeHail = 5;
+  private rimeBreath = 9;
+
+  /** Rimeheart: hail from above, a freezing breath, and a heart that sheds its own armor. */
+  private updateRimeheart(king: Unit, dt: number): void {
+    const frac = king.hp / king.stats.maxHp;
+    if (king.phase === 0) {
+      king.phase = 1;
+      this.rimeHail = 5;
+      this.rimeBreath = 9;
+    }
+    if (frac < 0.66 && king.phase < 2) {
+      king.phase = 2;
+      this.fx.floatText(king.x, king.y - king.radius * 3, "THE LONG BREATH!", "#b8e0f0", 18);
+      audio.play("howl");
+    }
+    if (frac < 0.33 && king.phase < 3) {
+      king.phase = 3;
+      // the king sheds his own armor to fight unbound — faster, harder, softer
+      king.stats.armor = 0.05;
+      king.stats.damage *= 1.3;
+      king.effects.push(makeEffect("haste", 999, 1.25, null));
+      this.bossStaggerMax = Math.round(this.bossStaggerMax * 0.7);
+      this.fx.floatText(king.x, king.y - king.radius * 3, "THE HEART SHATTERS!", "#ff8a70", 20);
+      this.fx.burst(king.x, king.y - 20, "#d8f0f8", 26, 220, { glow: true, gravity: 160 });
+      this.fx.addShake(10);
+      this.hitstop = Math.max(this.hitstop, 0.1);
+      audio.play("staggerBreak");
+    }
+    // HAIL: ice falls where heroes stand
+    this.rimeHail -= dt;
+    if (this.rimeHail <= 0 && !this.effect(king, "stun")) {
+      this.rimeHail = king.phase >= 3 ? 6.5 : 8.5;
+      const heroes = this.livingHeroes();
+      for (let i = 0; i < Math.min(2, heroes.length); i++) {
+        const target = heroes[(i * 2 + Math.floor(this.time)) % heroes.length];
+        this.telegraphs.push({ x: target.x, y: target.y, radius: 50, time: 0, duration: this.telegraphTime, owner: king, kind: "sweep" });
+      }
+      this.fx.floatText(king.x, king.y - king.radius * 3, "calls the hail!", "#b8e0f0", 13);
+      audio.play("warcry");
+    }
+    // THE LONG BREATH (phase 2+): frost creeps across the field, and winter answers
+    if (king.phase >= 2) {
+      this.rimeBreath -= dt;
+      if (this.rimeBreath <= 0 && !this.effect(king, "stun")) {
+        this.rimeBreath = 14;
+        const near = this.nearestHero(king);
+        if (near) {
+          const dx = near.x - king.x;
+          const dy = near.y - king.y;
+          const len = Math.hypot(dx, dy) || 1;
+          for (let i = 1; i <= 3; i++) {
+            this.zones.push({
+              x: this.clampToField({ x: king.x + (dx / len) * i * 95, y: king.y + (dy / len) * i * 95 }, 0).x,
+              y: this.clampToField({ x: king.x + (dx / len) * i * 95, y: king.y + (dy / len) * i * 95 }, 0).y,
+              radius: 62,
+              time: 0,
+              duration: 6,
+              kind: "frost",
+              power: 0.4,
+              dps: 0,
+              from: king,
+            });
+          }
+        }
+        this.spawnEnemy("icewisp");
+        this.spawnEnemy("icewisp");
+        this.fx.ring(king.x, king.y, 180, "#b8e0f0", { width: 5, life: 0.8 });
+        audio.play("frost");
+      }
     }
   }
 
@@ -2500,9 +2598,9 @@ export class Battle {
     attacker.lungeDir = this.normalize({ x: target.x - attacker.x, y: target.y - attacker.y });
     attacker.lunge = 1;
     const ranged = attacker.stats.range > 90;
-    if (attacker.enemyKind === "warlord" || attacker.enemyKind === "ogre") {
+    if (attacker.enemyKind === "warlord" || attacker.enemyKind === "ogre" || attacker.enemyKind === "rimeheart") {
       // ground-shaking slam that clips everyone near the target
-      const reach = attacker.enemyKind === "warlord" ? 70 : 52;
+      const reach = attacker.enemyKind === "warlord" ? 70 : attacker.enemyKind === "rimeheart" ? 78 : 52;
       for (const hero of this.livingHeroes()) {
         if (Math.hypot(hero.x - target.x, hero.y - target.y) < reach) {
           this.damage(hero, attacker.stats.damage, attacker);

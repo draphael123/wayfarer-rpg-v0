@@ -301,7 +301,7 @@ function drawBeastIcon(canvas: HTMLCanvasElement, kind: EnemyKind): void {
     ctx.stroke();
   };
   ctx.clearRect(0, 0, 64, 64);
-  if (kind === "wolf" || kind === "alpha") {
+  if (kind === "wolf" || kind === "alpha" || kind === "frostwolf") {
     ctx.fillStyle = def.body;
     ctx.beginPath();
     ctx.ellipse(c, 38, 17, 13, 0, 0, Math.PI * 2);
@@ -327,7 +327,30 @@ function drawBeastIcon(canvas: HTMLCanvasElement, kind: EnemyKind): void {
     ctx.fill();
     return;
   }
-  const big = kind === "brute" || kind === "warlord" || kind === "ogre";
+  if (kind === "icewisp") {
+    ctx.shadowColor = "#9fd6e8";
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = "#9fd6e8";
+    ctx.beginPath();
+    ctx.moveTo(c, 12);
+    ctx.lineTo(c + 12, 34);
+    ctx.lineTo(c, 54);
+    ctx.lineTo(c - 12, 34);
+    ctx.closePath();
+    ctx.fill();
+    stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#e8f8fc";
+    ctx.beginPath();
+    ctx.moveTo(c, 24);
+    ctx.lineTo(c + 5, 34);
+    ctx.lineTo(c, 44);
+    ctx.lineTo(c - 5, 34);
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
+  const big = kind === "brute" || kind === "warlord" || kind === "ogre" || kind === "rimetroll" || kind === "rimeheart";
   // shoulders
   ctx.fillStyle = def.trim;
   ctx.beginPath();
@@ -340,7 +363,7 @@ function drawBeastIcon(canvas: HTMLCanvasElement, kind: EnemyKind): void {
   ctx.arc(c, big ? 34 : 32, big ? 15 : 16, 0, Math.PI * 2);
   ctx.fill();
   stroke();
-  if (kind === "goblin" || kind === "archer" || kind === "shaman") {
+  if (kind === "goblin" || kind === "archer" || kind === "shaman" || kind === "snowhag") {
     for (const s of [-1, 1]) {
       ctx.beginPath();
       ctx.moveTo(c + s * 12, 28);
@@ -367,7 +390,7 @@ function drawBeastIcon(canvas: HTMLCanvasElement, kind: EnemyKind): void {
     ctx.fillRect(c - 6, 42, 4, 6);
     ctx.fillRect(c + 3, 42, 4, 6);
   }
-  if (kind === "shaman") {
+  if (kind === "shaman" || kind === "snowhag") {
     ctx.beginPath();
     ctx.arc(c, 30, 17, Math.PI * 0.85, Math.PI * 2.15);
     ctx.closePath();
@@ -410,6 +433,8 @@ export class Menus {
   private pendingSpell: string | null = null; // spell waiting for a slot in replace mode
   private figureTimer: number | null = null; // idle animation for the hero-sheet figure
   private selectedStage: number | null = null; // map node the scout report is showing
+  private mapAct: 0 | 1 = 0; // which panel of the world we're looking at
+  pendingFinale = false; // set when the Winterreach's king falls
   private shopAttr: AttrKey | "all" = "all"; // spell-shop filter
   private shopHideOwned = false;
   private lastGold: number | null = null; // for the counting-up gold chip
@@ -727,6 +752,15 @@ export class Menus {
     `);
     const maxIdx = Math.min(save.unlockedStage, STAGES.length - 1);
     this.selectedStage = Math.min(this.selectedStage ?? maxIdx, maxIdx);
+    this.mapAct = (this.selectedStage ?? 0) >= 6 ? 1 : 0;
+    if (save.unlockedStage >= 6) {
+      page.querySelector(".world-map")!.appendChild(
+        el(`<div class="act-tabs">
+          <button class="shop-tab ${this.mapAct === 0 ? "on" : ""}" data-mapact="0">⛰ The South Road</button>
+          <button class="shop-tab ${this.mapAct === 1 ? "on" : ""}" data-mapact="1">❄ The Winterreach</button>
+        </div>`),
+      );
+    }
     page.querySelector(".world-map")!.appendChild(this.buildWorldMap());
     const caption = page.querySelector(".stage-caption")!;
     caption.appendChild(this.buildScoutCard(this.selectedStage));
@@ -740,6 +774,14 @@ export class Menus {
       if (act === "party") {
         audio.play("click");
         this.renderParty();
+      }
+      const mapActBtn = (event.target as HTMLElement).closest("[data-mapact]");
+      if (mapActBtn) {
+        audio.play("click");
+        this.mapAct = Number(mapActBtn.getAttribute("data-mapact")) as 0 | 1;
+        this.selectedStage = this.mapAct === 1 ? Math.max(6, Math.min(this.save.unlockedStage, 11)) : Math.min(this.save.unlockedStage, 5);
+        this.renderMap();
+        return;
       }
       if (act === "bestiary") {
         audio.play("click");
@@ -811,6 +853,137 @@ export class Menus {
     }
   }
 
+  /** The Winterreach: act two's frost-painted panel. */
+  private buildWinterMap(): HTMLElement {
+    const save = this.save;
+    const nodes = [
+      { x: 70, y: 236 },
+      { x: 186, y: 172 },
+      { x: 300, y: 238 },
+      { x: 402, y: 150 },
+      { x: 502, y: 216 },
+      { x: 584, y: 96 },
+    ];
+    const road = nodes
+      .map((n, i) => {
+        if (i === 0) return `M ${n.x} ${n.y}`;
+        const prev = nodes[i - 1];
+        const mx = (prev.x + n.x) / 2 + (i % 2 ? -22 : 22);
+        const my = (prev.y + n.y) / 2 + (i % 2 ? 18 : -18);
+        return `Q ${mx} ${my} ${n.x} ${n.y}`;
+      })
+      .join(" ");
+    const rand = (n: number) => {
+      const v = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    let pines = "";
+    for (let i = 0; i < 40; i++) {
+      const tx = 18 + rand(i * 3) * 604;
+      const ty = 96 + rand(i * 7 + 1) * 200;
+      if (nodes.some((n) => Math.hypot(n.x - tx, n.y - ty) < 40)) continue;
+      const sc = 6 + rand(i * 11) * 9;
+      pines += `<path d="M ${tx} ${ty - sc * 2} L ${tx - sc} ${ty} L ${tx + sc} ${ty} Z" fill="#5a7a8c"/>`;
+      pines += `<path d="M ${tx} ${ty - sc * 2} L ${tx - sc * 0.5} ${ty - sc} L ${tx + sc * 0.5} ${ty - sc} Z" fill="#e8f0f5"/>`;
+    }
+    let travel = "";
+    if (this.travelFrom !== null && this.travelFrom >= 6 && this.travelFrom < 11) {
+      const a = nodes[this.travelFrom - 6];
+      const b = nodes[this.travelFrom - 5];
+      travel = `<g><circle r="7" fill="#ffe9a3" stroke="#1a2634" stroke-width="2"><animateMotion dur="1.6s" fill="freeze" path="M ${a.x} ${a.y} L ${b.x} ${b.y}"/></circle></g>`;
+      this.travelFrom = null;
+    }
+    let markers = "";
+    for (let i = 0; i < 6; i++) {
+      const sid = 6 + i;
+      const stage = STAGES[sid];
+      const n = nodes[i];
+      const done = sid < save.unlockedStage;
+      const isCurrent = sid === save.unlockedStage;
+      const unlocked = sid <= save.unlockedStage;
+      const fill = done ? "url(#nodeDoneW)" : isCurrent ? "url(#nodeNowW)" : "#3a4a5e";
+      const strokeC = done ? "#8ee88b" : isCurrent ? "#ffe9a3" : "#5a6a80";
+      const label = done ? "✓" : unlocked ? String(sid + 1) : "";
+      const nameW = stage.name.length * 6.4 + 16;
+      markers += `
+        <g class="map-node ${isCurrent ? "current" : ""} ${unlocked ? "open" : "locked"} ${sid === this.selectedStage ? "sel" : ""}" data-stage="${sid}">
+          <circle cx="${n.x}" cy="${n.y}" r="30" fill="transparent"/>
+          <circle class="sel-ring" cx="${n.x}" cy="${n.y}" r="24" fill="none" stroke="#ffe9a3" stroke-width="2" stroke-dasharray="5 6"/>
+          ${isCurrent ? `<circle class="node-pulse" cx="${n.x}" cy="${n.y}" r="20" fill="none" stroke="#ffe9a3" stroke-width="2.5"/>` : ""}
+          <circle cx="${n.x}" cy="${n.y}" r="17" fill="${fill}" stroke="#1a2634" stroke-width="4"/>
+          <circle cx="${n.x}" cy="${n.y}" r="17" fill="none" stroke="${strokeC}" stroke-width="2.5"/>
+          ${
+            unlocked
+              ? `<text x="${n.x}" y="${n.y + 5.5}" text-anchor="middle" font-size="16" font-weight="900" fill="#fdf8e7">${label}</text>`
+              : `<g transform="translate(${n.x},${n.y})"><rect x="-5" y="-3" width="10" height="9" rx="2" fill="#8d94a3"/><path d="M -3 -3 v -2.5 a 3 3 0 0 1 6 0 V -3" fill="none" stroke="#8d94a3" stroke-width="2"/></g>`
+          }
+          ${
+            unlocked
+              ? `<g><rect x="${n.x - nameW / 2}" y="${n.y + 24}" width="${nameW}" height="15" rx="7" fill="rgba(14,22,32,0.78)" stroke="${isCurrent ? "#ffe9a3" : "rgba(255,255,255,0.15)"}" stroke-width="1"/><text x="${n.x}" y="${n.y + 35}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#f2ecd8">${stage.name}</text></g>`
+              : `<text x="${n.x}" y="${n.y + 35}" text-anchor="middle" font-size="10" font-weight="700" fill="#7d8a9c">???</text>`
+          }
+        </g>`;
+    }
+    const svg = el(`
+      <div class="map-frame">
+        <svg viewBox="0 0 640 320" role="img" aria-label="The Winterreach">
+          <defs>
+            <linearGradient id="wsky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#2c3a54"/>
+              <stop offset="0.55" stop-color="#7a9ab8"/>
+              <stop offset="1" stop-color="#c8dae8"/>
+            </linearGradient>
+            <linearGradient id="wland" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#dce8f0"/>
+              <stop offset="1" stop-color="#b8ccd8"/>
+            </linearGradient>
+            <radialGradient id="nodeNowW" cx="0.5" cy="0.35" r="0.9">
+              <stop offset="0" stop-color="#ffdf8e"/>
+              <stop offset="1" stop-color="#c98a2e"/>
+            </radialGradient>
+            <radialGradient id="nodeDoneW" cx="0.5" cy="0.35" r="0.9">
+              <stop offset="0" stop-color="#5d9c62"/>
+              <stop offset="1" stop-color="#33633f"/>
+            </radialGradient>
+          </defs>
+          <rect width="640" height="320" rx="18" fill="url(#wsky)"/>
+          <!-- aurora -->
+          <path d="M 0 40 Q 160 10 320 44 T 640 30 L 640 0 L 0 0 Z" fill="rgba(120,232,180,0.14)"/>
+          <path d="M 0 62 Q 200 30 400 60 T 640 48 L 640 20 Q 400 44 200 26 Q 100 18 0 36 Z" fill="rgba(140,180,240,0.12)"/>
+          <circle cx="552" cy="46" r="16" fill="#e8ecf5" opacity="0.9"/>
+          <path d="M 0 104 Q 160 72 320 94 T 640 86 L 640 320 L 0 320 Z" fill="url(#wland)"/>
+          <path d="M 0 92 Q 110 62 220 84 T 430 76 T 640 70 L 640 46 Q 500 66 350 52 Q 180 40 0 62 Z" fill="#8fb0c8" opacity="0.6"/>
+          ${pines}
+          <path d="${road}" fill="none" stroke="#48607a" stroke-width="12" stroke-linecap="round"/>
+          <path d="${road}" fill="none" stroke="#e8f0f5" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+          <path d="${road}" fill="none" stroke="#9ab8cc" stroke-width="2.5" stroke-dasharray="1 10" stroke-linecap="round"/>
+          ${markers}
+          ${travel}
+        </svg>
+      </div>
+    `);
+    svg.addEventListener("click", (event) => {
+      const node = (event.target as Element).closest(".map-node.open") as Element | null;
+      if (!node) return;
+      const idx = Number(node.getAttribute("data-stage"));
+      audio.unlock();
+      audio.play("click");
+      if (this.selectedStage === idx) {
+        this.callbacks.startStage(idx);
+        return;
+      }
+      this.selectedStage = idx;
+      svg.querySelectorAll(".map-node.sel").forEach((g) => g.classList.remove("sel"));
+      node.classList.add("sel");
+      const caption = this.root.querySelector(".stage-caption");
+      if (caption) {
+        caption.innerHTML = "";
+        caption.appendChild(this.buildScoutCard(idx));
+      }
+    });
+    return svg;
+  }
+
   /** Scout report for a stage: what awaits, what it pays, and the band's record there. */
   private buildScoutCard(idx: number): HTMLElement {
     const save = this.save;
@@ -859,6 +1032,7 @@ export class Menus {
 
   /** Painted SVG overworld: dawn sky, layered ridges, a river, themed regions, and tappable stage nodes. */
   private buildWorldMap(): HTMLElement {
+    if (this.mapAct === 1) return this.buildWinterMap();
     const save = this.save;
     const nodes = [
       { x: 80, y: 252 },
@@ -1083,7 +1257,7 @@ export class Menus {
   renderBestiary(): void {
     this.root.innerHTML = "";
     this.show();
-    const kinds: EnemyKind[] = ["goblin", "wolf", "archer", "shaman", "brute", "ogre", "alpha", "warlord"];
+    const kinds: EnemyKind[] = ["goblin", "wolf", "archer", "shaman", "brute", "ogre", "alpha", "warlord", "frostwolf", "icewisp", "snowhag", "rimetroll", "rimeheart"];
     const discovered = kinds.filter((k) => (this.save.bestiary[k] ?? 0) > 0).length;
     const page = el(`
       <div class="page">
@@ -1299,6 +1473,41 @@ export class Menus {
       }
     });
     this.root.appendChild(page);
+  }
+
+  /** The campaign's last page: the king is down, the dawn comes, the road goes on. */
+  renderFinale(): void {
+    this.pendingFinale = false;
+    this.root.innerHTML = "";
+    this.show();
+    const lt = this.save.lifetime;
+    const done = DEEDS.filter((d) => d.done(this.save)).length;
+    const page = el(`
+      <div class="page title-page finale-page">
+        <div class="title-block">
+          <div class="game-logo" style="font-size:40px">THE ROAD'S END</div>
+          <div class="game-sub">Rimeheart is fallen. The Winterreach is quiet. Dawn finds the band still standing.</div>
+        </div>
+        <div class="chron-grid" style="max-width:560px">
+          <div class="chron-cell"><span>Battles fought</span><strong>${lt.battles}</strong></div>
+          <div class="chron-cell"><span>Foes slain</span><strong>${lt.kills}</strong></div>
+          <div class="chron-cell"><span>Heroes fallen</span><strong>${lt.deaths}</strong></div>
+          <div class="chron-cell"><span>Deeds done</span><strong>${done}/${DEEDS.length}</strong></div>
+        </div>
+        <div class="credit" style="font-size:14px;margin-top:8px">Every road ends. Every band walks on.<br/>Thank you for walking this one.</div>
+        <div class="title-buttons">
+          <button class="big-btn primary" data-act="finale-done">${ico("play")} The road goes on</button>
+        </div>
+      </div>
+    `);
+    page.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest('[data-act="finale-done"]')) {
+        audio.play("levelup");
+        this.renderMap();
+      }
+    });
+    this.root.appendChild(page);
+    audio.play("victory");
   }
 
   // ------------------------------------------------------------------ chronicle

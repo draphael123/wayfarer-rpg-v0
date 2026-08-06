@@ -176,6 +176,12 @@ class AudioKit {
       "3": { freq: 780, gain: 0.022 },
       "4": { freq: 480, gain: 0.035 }, // night wind
       "5": { freq: 700, gain: 0.022 },
+      "6": { freq: 520, gain: 0.028 },
+      "7": { freq: 620, gain: 0.02 },
+      "8": { freq: 480, gain: 0.024 },
+      "9": { freq: 300, gain: 0.02 },
+      "10": { freq: 700, gain: 0.05 },
+      "11": { freq: 380, gain: 0.03 },
     };
     const spec = bedSpec[String(kind)];
     if (spec) {
@@ -274,7 +280,9 @@ class AudioKit {
   private desiredTrack(): string {
     if (this.mood === "menu") return "music-menu";
     if (this.bossActive) return "music-boss";
-    return `music-stage${Math.max(0, Math.min(5, this.stageId))}`;
+    const act2Music: Record<number, number> = { 6: 0, 7: 1, 8: 2, 9: 4, 10: 3, 11: 5 };
+    const mapped = this.stageId >= 6 ? (act2Music[this.stageId] ?? 5) : this.stageId;
+    return `music-stage${Math.max(0, Math.min(5, mapped))}`;
   }
 
   private ensure(): AudioContext | null {

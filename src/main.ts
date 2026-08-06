@@ -219,7 +219,8 @@ function endBattleToMap(): void {
   tutorial = null;
   battleSave = save;
   audio.setMood("menu");
-  menus.renderMap();
+  if (menus.pendingFinale) menus.renderFinale();
+  else menus.renderMap();
 }
 
 let rolledLoot: { id: string; icon: string; name: string; rare: boolean } | null = null;
@@ -249,6 +250,7 @@ function settleVictory(): void {
   save.lifetime.gold += gold;
   if (battle.heroDeaths === 0) save.lifetime.flawless += 1;
   if (save.difficulty === 3) save.lifetime.brutalClears += 1;
+  if (currentStage === STAGES.length - 1) menus.pendingFinale = true;
   // a great foe's first fall yields its relic armor
   for (const relic of ARMORS) {
     if (relic.boss && (battle.killCounts[relic.boss] ?? 0) > 0 && !save.armory.includes(relic.id)) {

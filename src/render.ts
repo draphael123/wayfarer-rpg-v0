@@ -222,7 +222,7 @@ export function drawBackground(
   opts: BgOpts = {},
 ): void {
   const p = stage.palette;
-  const night = stage.id >= 4;
+  const night = stage.id === 4 || stage.id === 5 || stage.id === 9 || stage.id === 11;
   const camX = opts.camX ?? 0;
   const camY = opts.camY ?? 0;
   const dusk = opts.dusk ?? 0;
@@ -458,6 +458,39 @@ export function drawBackground(
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+  } else if (stage.id >= 6) {
+    // the Winterreach: snow, always snow (a flaying gale at the Pass)
+    const gale = stage.id === 10;
+    ctx.fillStyle = "rgba(240, 248, 252, 0.75)";
+    for (let i = 0; i < (gale ? 44 : 26); i++) {
+      const drift = gale ? time * 340 : time * 30 + Math.sin(time * 0.7 + i) * 24;
+      const sx = ((hash01(i * 11) * w - drift) % (w + 30) + (w + 30)) % (w + 30) - 15;
+      const sy = (hash01(i * 5) * h + time * (gale ? 120 : 42) * (0.6 + hash01(i * 3))) % h;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.2 + hash01(i) * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (stage.id === 11) {
+      // the aurora over the Hollow Crown
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (let band = 0; band < 3; band++) {
+        const grad = ctx.createLinearGradient(0, 0, 0, horizon * 0.75);
+        const hue = ["rgba(120, 232, 180,", "rgba(140, 180, 240,", "rgba(200, 140, 230,"][band];
+        grad.addColorStop(0, hue + " 0.16)");
+        grad.addColorStop(1, hue + " 0)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(-OVERSCAN, 0);
+        for (let x = -OVERSCAN; x <= w + OVERSCAN; x += 24) {
+          ctx.lineTo(x, horizon * (0.28 + band * 0.1) + Math.sin(x * 0.008 + time * (0.5 + band * 0.2) + band * 2) * 26);
+        }
+        ctx.lineTo(w + OVERSCAN, 0);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
   } else if (stage.id === 3) {
     // slow ash fall
     ctx.fillStyle = "rgba(200, 195, 188, 0.5)";
@@ -932,6 +965,84 @@ function drawSetDressing(
     ctx.lineTo(px + 3, py - 30);
     ctx.closePath();
     outlined(ctx, "#8a2f2a", 2);
+  } else if (stage.id >= 6) {
+    // the Winterreach's furniture: snow-caked pines, drifts, ice and old stone
+    for (let i = 0; i < 4; i++) {
+      const px = hash01(seed * 137.3 + i * 23 + stage.id * 13) * w;
+      const py = groundAt(seed * 137.3 + i * 3.7, 0.85);
+      const kind9 = stage.id === 9;
+      const kind11 = stage.id === 11;
+      if (kind9) {
+        // glowing crystal clusters light the deep
+        const glow = 0.5 + Math.abs(Math.sin(time * 1.4 + i * 2)) * 0.5;
+        ctx.shadowColor = "#6ab8f0";
+        ctx.shadowBlur = 12 * glow;
+        ctx.fillStyle = "#8fd0f8";
+        for (const [ox, sc] of [[-6, 1], [4, 0.7], [-1, 1.25]] as number[][]) {
+          ctx.beginPath();
+          ctx.moveTo(px + ox - 4 * sc, py);
+          ctx.lineTo(px + ox, py - 22 * sc);
+          ctx.lineTo(px + ox + 4 * sc, py);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+      } else if (kind11) {
+        // ancient ice monoliths ringing the king's seat
+        ctx.fillStyle = "#3d5570";
+        ctx.beginPath();
+        ctx.moveTo(px - 7, py);
+        ctx.lineTo(px - 4, py - 34 - hash01(i * 7) * 14);
+        ctx.lineTo(px + 5, py - 38 - hash01(i * 7) * 14);
+        ctx.lineTo(px + 8, py);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "#8fb8cc";
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(200, 236, 248, 0.5)";
+        ctx.beginPath();
+        ctx.moveTo(px - 2, py - 8);
+        ctx.lineTo(px + 1, py - 26);
+        ctx.stroke();
+      } else {
+        // snow-caked pine
+        const sc2 = 10 + hash01(seed + i * 31) * 10;
+        ctx.fillStyle = stage.palette.prop;
+        ctx.beginPath();
+        ctx.moveTo(px, py - sc2 * 2.4);
+        ctx.lineTo(px - sc2, py);
+        ctx.lineTo(px + sc2, py);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "rgba(240, 248, 252, 0.85)";
+        ctx.beginPath();
+        ctx.moveTo(px, py - sc2 * 2.4);
+        ctx.lineTo(px - sc2 * 0.55, py - sc2 * 1.1);
+        ctx.lineTo(px + sc2 * 0.55, py - sc2 * 1.1);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    // drifts and, on the lake, long cracks in the black ice
+    for (let i = 0; i < 3; i++) {
+      const dx2 = hash01(seed * 137.3 + i * 47 + stage.id) * w;
+      const dy2 = groundAt(seed * 137.3 + i * 5.9, 0.55);
+      if (stage.id === 8) {
+        ctx.strokeStyle = "rgba(60, 100, 130, 0.4)";
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(dx2 - 30, dy2);
+        ctx.lineTo(dx2 + 4, dy2 + 6);
+        ctx.lineTo(dx2 + 34, dy2 + 2);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = "rgba(244, 250, 253, 0.7)";
+        ctx.beginPath();
+        ctx.ellipse(dx2, dy2, 26 + hash01(i * 3) * 18, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 }
 
@@ -2202,6 +2313,11 @@ function drawHeroWeapon(
 // ------------------------------------------------------------------ enemies
 
 const ENEMY_COLORS: Record<string, { body: string; shade: string; trim: string }> = {
+  frostwolf: { body: "#b8c9d8", shade: "#94a8ba", trim: "#8fa8b8" },
+  icewisp: { body: "#9fd6e8", shade: "#7ab8d0", trim: "#d8f0f8" },
+  rimetroll: { body: "#7ba0b8", shade: "#5f8298", trim: "#4a6a80" },
+  snowhag: { body: "#a8b8c9", shade: "#8a9cb0", trim: "#e8f0f5" },
+  rimeheart: { body: "#8fb8cc", shade: "#6f98ac", trim: "#dcedf5" },
   goblin: { body: "#6f9c44", shade: "#54793156", trim: "#3c5c24" },
   wolf: { body: "#5f5a70", shade: "#48445533", trim: "#3b3844" },
   archer: { body: "#8a7844", shade: "#6b5c3444", trim: "#4b431f" },
@@ -2220,7 +2336,7 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
   const leapK = unit.leap ? Math.min(1, unit.leap.t / unit.leap.dur) : 0;
   const leapLift = unit.leap ? Math.sin(leapK * Math.PI) * r * 2.4 : 0;
   const gy = pose.groundY - pose.bounce * 0.7 - leapLift;
-  const colors = isAlpha ? { body: "#3f3a4d", trim: "#292534" } : ENEMY_COLORS.wolf;
+  const colors = isAlpha ? { body: "#3f3a4d", trim: "#292534" } : unit.enemyKind === "frostwolf" ? ENEMY_COLORS.frostwolf : ENEMY_COLORS.wolf;
   const stretchB = (isAlpha ? 1.18 : 1) * (unit.leap ? 1.22 : 1); // stretched out mid-flight
   drawShadow(ctx, unit, pose.bounce * 0.7 + leapLift);
   if (unit.leap) {
@@ -2422,23 +2538,70 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
 
 /** The same goblin dresses for the country it raids: cloth muddied in the
  *  marsh, soot-dark in the burn, cold slate at the pass. Bosses keep their look. */
-const REGION_TRIM: Record<number, string> = { 2: "#566047", 3: "#463c34", 4: "#46536b", 5: "#5e3a44" };
+const REGION_TRIM: Record<number, string> = { 2: "#566047", 3: "#463c34", 4: "#46536b", 5: "#5e3a44", 6: "#9ab4c4", 7: "#8aa8ba", 8: "#7ba4b8", 9: "#5a7a94", 10: "#98a8b4", 11: "#6a84a0" };
 
 function regionalColors(kind: string): { body: string; shade: string; trim: string } {
   const base = ENEMY_COLORS[kind];
   const trim = REGION_TRIM[regionStage];
-  if (!trim || kind === "warlord" || kind === "ogre") return base;
+  if (!trim || kind === "warlord" || kind === "ogre" || kind === "rimeheart") return base;
   return { ...base, trim };
+}
+
+function drawIceWisp(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const r = unit.radius;
+  const bob = Math.sin(time * 2.4 + unit.id) * 4;
+  const y = unit.y - r * 1.6 + bob;
+  // grounded shadow far below the hovering shard
+  drawShadow(ctx, unit, 6);
+  ctx.save();
+  ctx.translate(unit.x, y);
+  ctx.rotate(Math.sin(time * 1.3 + unit.id) * 0.15);
+  ctx.shadowColor = "#9fd6e8";
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.moveTo(0, -r * 1.5);
+  ctx.lineTo(r * 0.8, 0);
+  ctx.lineTo(0, r * 1.3);
+  ctx.lineTo(-r * 0.8, 0);
+  ctx.closePath();
+  outlined(ctx, "#9fd6e8", 2.2);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#e8f8fc";
+  ctx.beginPath();
+  ctx.moveTo(0, -r * 0.7);
+  ctx.lineTo(r * 0.34, 0);
+  ctx.lineTo(0, r * 0.6);
+  ctx.lineTo(-r * 0.34, 0);
+  ctx.closePath();
+  ctx.fill();
+  // cold motes orbiting
+  for (let i = 0; i < 3; i++) {
+    const a = time * 2 + (i / 3) * Math.PI * 2;
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = "#d8f0f8";
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * r * 1.3, Math.sin(a) * r * 0.9, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  flashOverlay(ctx, unit, unit.x, y, r * 1.3);
+  drawEffectPips(ctx, unit, unit.x, y - r * 2.2);
+  drawHealthBar(ctx, unit, y - r * 2);
 }
 
 function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
   const kind = unit.enemyKind!;
-  if (kind === "wolf" || kind === "alpha") {
+  if (kind === "wolf" || kind === "alpha" || kind === "frostwolf") {
     drawWolf(ctx, unit, time);
     return;
   }
+  if (kind === "icewisp") {
+    drawIceWisp(ctx, unit, time);
+    return;
+  }
   const pose = poseOf(unit, time);
-  const big = kind === "brute" || kind === "warlord" || kind === "ogre";
+  const big = kind === "brute" || kind === "warlord" || kind === "ogre" || kind === "rimetroll" || kind === "rimeheart";
   // slight per-unit size wobble keeps a wave from reading as stamped clones
   const wobble = big ? 1 : 0.94 + hash01(unit.id * 1.3) * 0.12;
   const H = unit.radius * (big ? 2.9 : 3.5) * wobble;
@@ -2541,7 +2704,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   head.arc(hx0, headY, headR, 0, Math.PI * 2);
   shaded(ctx, head, colors.body, f, hx0, headY, headR, 3);
   // goblinoid ears — per-goblin tilt so a mob doesn't read as clones
-  if (kind === "goblin" || kind === "archer" || kind === "shaman") {
+  if (kind === "goblin" || kind === "archer" || kind === "shaman" || kind === "snowhag") {
     const tilt = (hash01(unit.id * 3.7) - 0.5) * 8;
     ctx.beginPath();
     ctx.moveTo(cx - f * headR * 0.5, headY - 2);
@@ -2556,7 +2719,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.closePath();
     outlined(ctx, colors.body, 2);
   }
-  if (kind === "shaman") {
+  if (kind === "shaman" || kind === "snowhag") {
     // hood + glowing mask eyes + ritual paint
     ctx.beginPath();
     ctx.arc(cx + f * 1, headY - 1.5, headR * 1.04, Math.PI * 0.85, Math.PI * 2.15);
@@ -2746,7 +2909,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.arc(0, 0, H * 0.24, -Math.PI / 2.5, Math.PI / 2.5);
     ctx.stroke();
     ctx.restore();
-  } else if (kind === "shaman") {
+  } else if (kind === "shaman" || kind === "snowhag") {
     limb(ctx, shX, shY, shX + f * H * 0.16, shY - H * 0.1 - pose.swing * 5, legW * 0.8, colors.body);
     const sx = shX + f * H * 0.2;
     limb(ctx, sx, shY + H * 0.16, sx, shY - H * 0.42 - pose.swing * 4, 3, "#6d5638");
@@ -2788,8 +2951,48 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.restore();
   }
 
+  // the Rimeclad's casing: slabs of glacier ice until they shatter off
+  if (kind === "rimetroll" && unit.phase === 0) {
+    ctx.fillStyle = "rgba(200, 232, 244, 0.55)";
+    ctx.strokeStyle = "#d8f0f8";
+    ctx.lineWidth = 1.6;
+    for (const [ox, oy, pw, ph] of [[-0.3, 0.4, 0.32, 0.2], [0.05, 0.28, 0.3, 0.24], [-0.12, 0.55, 0.26, 0.16]] as number[][]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + ox * H, gy - oy * H);
+      ctx.lineTo(cx + (ox + pw) * H, gy - (oy + 0.04) * H);
+      ctx.lineTo(cx + (ox + pw * 0.8) * H, gy - (oy - ph) * H);
+      ctx.lineTo(cx + (ox + pw * 0.1) * H, gy - (oy - ph * 0.9) * H);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+  // the king's crown of icicles
+  if (kind === "rimeheart") {
+    ctx.fillStyle = "#dcedf5";
+    ctx.strokeStyle = "#8fb8cc";
+    ctx.lineWidth = 1.4;
+    for (let ic = -2; ic <= 2; ic++) {
+      const bx = cx + ic * H * 0.09;
+      const topY = headY - headR * (1.0 - Math.abs(ic) * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(bx - 2.6, topY);
+      ctx.lineTo(bx, topY - headR * (0.55 - Math.abs(ic) * 0.1));
+      ctx.lineTo(bx + 2.6, topY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    // frost breath haze
+    ctx.globalAlpha = 0.3 + Math.sin(time * 1.8) * 0.12;
+    ctx.fillStyle = "#d8f0f8";
+    ctx.beginPath();
+    ctx.ellipse(cx + f * H * 0.34, headY + headR * 0.4, 8, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
   // regional wear: mud of the marsh, soot of the burn, frost of the passes
-  if (regionStage >= 2 && kind !== "ogre" && kind !== "warlord") {
+  if (regionStage >= 2 && kind !== "ogre" && kind !== "warlord" && kind !== "rimeheart") {
     const sd = unit.id * 7.3;
     if (regionStage === 2) {
       ctx.fillStyle = "rgba(72, 60, 38, 0.7)";
@@ -3455,6 +3658,12 @@ const STAGE_GRADE: Record<number, string> = {
   3: "rgba(255, 130, 60, 0.2)",
   4: "rgba(120, 100, 220, 0.22)",
   5: "rgba(255, 90, 60, 0.18)",
+  6: "rgba(180, 210, 240, 0.16)",
+  7: "rgba(140, 190, 220, 0.18)",
+  8: "rgba(120, 200, 230, 0.16)",
+  9: "rgba(80, 130, 230, 0.26)",
+  10: "rgba(190, 200, 210, 0.2)",
+  11: "rgba(140, 160, 240, 0.24)",
 };
 
 export function drawColorGrade(ctx: CanvasRenderingContext2D, stage: StageDef, w: number, h: number): void {
@@ -3468,7 +3677,7 @@ export function drawColorGrade(ctx: CanvasRenderingContext2D, stage: StageDef, w
 }
 
 /** How dark each stage's night layer is (0 = fully lit). */
-export const STAGE_DARKNESS: Record<number, number> = { 2: 0.16, 4: 0.5, 5: 0.32 };
+export const STAGE_DARKNESS: Record<number, number> = { 2: 0.16, 4: 0.5, 5: 0.32, 9: 0.55, 11: 0.42 };
 
 let lightCanvas: HTMLCanvasElement | null = null;
 

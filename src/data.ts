@@ -589,6 +589,7 @@ export const ARMORS: ArmorDef[] = [
   { id: "mosstoothHide", name: "Mosstooth's Hide", family: "leather", cost: 0, icon: "skull", boss: "ogre", blurb: "+50 health, and wounds slowly knit themselves closed.", hook: "regen", mods: { hpFlat: 50 } },
   { id: "alphasPelt", name: "The Alpha's Pelt", family: "leather", cost: 0, icon: "moon", boss: "alpha", blurb: "+14% move, and the first blow of every wave misses you.", hook: "dodgeFirstHit", mods: { moveSpeed: 0.14, hpFlat: 15 } },
   { id: "gorehulkWall", name: "Gorehulk's Wall", family: "plate", cost: 0, icon: "skull", tint: "#8a5a4a", boss: "warlord", blurb: "+18% armor, +40 health, and melee blows are answered in kind.", hook: "retaliate", mods: { armorFlat: 0.18, hpFlat: 40 } },
+  { id: "rimeheartsCore", name: "Rimeheart's Core", family: "plate", cost: 0, icon: "skull", tint: "#a8d8ec", boss: "rimeheart", blurb: "+16% armor, +50 health, chill cannot take hold, and wounds slowly knit closed.", hook: "regen", mods: { armorFlat: 0.16, hpFlat: 50 } },
 ];
 
 export function armorById(id: string | null | undefined): ArmorDef | null {
@@ -1333,6 +1334,81 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     lore: "Gorehulk, warlord of the hollow. The forest itself seems to flinch.",
     habit: "His slam wounds everyone near it. Never clump up.",
   },
+  frostwolf: {
+    name: "Frostbite Wolf",
+    maxHp: 46,
+    damage: 9,
+    range: 30,
+    attackCooldown: 1.0,
+    speed: 130,
+    armor: 0,
+    radius: 15,
+    xp: 16,
+    body: "#b8c9d8",
+    trim: "#8fa8b8",
+    lore: "White as the drifts it sleeps beneath. You hear it only when the snow creaks.",
+    habit: "Its bite carries the cold — struck heroes slow. Keep moving, keep warm.",
+  },
+  icewisp: {
+    name: "Ice Wisp",
+    maxHp: 30,
+    damage: 8,
+    range: 210,
+    attackCooldown: 1.7,
+    speed: 70,
+    armor: 0,
+    radius: 11,
+    xp: 14,
+    body: "#9fd6e8",
+    trim: "#d8f0f8",
+    lore: "A splinter of living winter, humming with old cold.",
+    habit: "Chill-bolts from afar. Fragile — one good blow shatters it.",
+  },
+  rimetroll: {
+    name: "Rimeclad Troll",
+    maxHp: 130,
+    damage: 16,
+    range: 40,
+    attackCooldown: 2.2,
+    speed: 55,
+    armor: 0.5,
+    radius: 22,
+    xp: 34,
+    body: "#7ba0b8",
+    trim: "#4a6a80",
+    lore: "It wears the glacier like a second hide.",
+    habit: "Near-unhurtable until its ice casing SHATTERS — then it is soft. Commit your burst late.",
+  },
+  snowhag: {
+    name: "Snow Hag",
+    maxHp: 55,
+    damage: 7,
+    range: 190,
+    attackCooldown: 1.9,
+    speed: 62,
+    armor: 0,
+    radius: 14,
+    xp: 26,
+    body: "#a8b8c9",
+    trim: "#e8f0f5",
+    lore: "She sings the pack warm and sings the ground to ice.",
+    habit: "Mends her kin and freezes the ground under YOUR feet. Silence her first.",
+  },
+  rimeheart: {
+    name: "Rimeheart",
+    maxHp: 2200,
+    damage: 24,
+    range: 50,
+    attackCooldown: 2.6,
+    speed: 48,
+    armor: 0.35,
+    radius: 34,
+    xp: 160,
+    body: "#8fb8cc",
+    trim: "#dcedf5",
+    lore: "The Winterreach has one king, older than the snow that crowns it.",
+    habit: "Hail from above, breath that freezes the ground, and a heart that SHATTERS its own armor when cornered.",
+  },
 };
 
 export const STAGES: StageDef[] = [
@@ -1454,6 +1530,81 @@ export const STAGES: StageDef[] = [
       [{ kind: "brute", count: 2 }, { kind: "archer", count: 2 }],
       [{ kind: "warlord", count: 1 }, { kind: "shaman", count: 2 }],
     ],
+  },
+  // ---- ACT II: THE WINTERREACH (band levels ~12-20) ----
+  {
+    id: 6,
+    name: "The White Road",
+    subtitle: "Winter takes the land",
+    palette: { skyTop: "#a8c8e0", skyBottom: "#e8f0f5", hills: "#c9d8e4", ground: "#e0e8ee", groundDark: "#c4d2dc", prop: "#8fa8b8" },
+    scale: 2.7,
+    xpReward: 88,
+    waves: [
+      [{ kind: "frostwolf", count: 3 }],
+      [{ kind: "goblin", count: 3 }, { kind: "frostwolf", count: 2 }],
+      [{ kind: "icewisp", count: 2 }, { kind: "frostwolf", count: 3 }],
+    ],
+  },
+  {
+    id: 7,
+    name: "Hoarfrost Forest",
+    subtitle: "The pines wear glass",
+    palette: { skyTop: "#8fb0cc", skyBottom: "#d0e0ea", hills: "#a8c0d0", ground: "#d4e0e8", groundDark: "#b8c8d4", prop: "#5a7a8c" },
+    scale: 3.0,
+    xpReward: 100,
+    waves: [
+      [{ kind: "frostwolf", count: 3 }, { kind: "icewisp", count: 1 }],
+      [{ kind: "snowhag", count: 1 }, { kind: "archer", count: 2 }, { kind: "frostwolf", count: 2 }],
+      [{ kind: "rimetroll", count: 1 }, { kind: "icewisp", count: 2 }],
+    ],
+  },
+  {
+    id: 8,
+    name: "The Frozen Lake",
+    subtitle: "Black ice, thin as promises",
+    palette: { skyTop: "#7aa0c0", skyBottom: "#c8dce8", hills: "#98b4c8", ground: "#b8d4e0", groundDark: "#9cc0d0", prop: "#68889c" },
+    scale: 3.3,
+    xpReward: 112,
+    waves: [
+      [{ kind: "icewisp", count: 3 }, { kind: "goblin", count: 2 }],
+      [{ kind: "snowhag", count: 1 }, { kind: "frostwolf", count: 3 }],
+      [{ kind: "rimetroll", count: 1 }, { kind: "snowhag", count: 1 }, { kind: "icewisp", count: 2 }],
+    ],
+  },
+  {
+    id: 9,
+    name: "Glimmerdeep",
+    subtitle: "The mountain's cold blue heart",
+    palette: { skyTop: "#1c2438", skyBottom: "#2c3a54", hills: "#242e46", ground: "#38465e", groundDark: "#2a3850", prop: "#4a6a8c" },
+    scale: 3.6,
+    xpReward: 126,
+    waves: [
+      [{ kind: "icewisp", count: 4 }],
+      [{ kind: "rimetroll", count: 1 }, { kind: "icewisp", count: 2 }, { kind: "snowhag", count: 1 }],
+      [{ kind: "rimetroll", count: 2 }, { kind: "icewisp", count: 2 }],
+    ],
+  },
+  {
+    id: 10,
+    name: "Avalanche Pass",
+    subtitle: "The wind has teeth here",
+    palette: { skyTop: "#8898a8", skyBottom: "#b8c4cc", hills: "#a0b0bc", ground: "#ccd8de", groundDark: "#b0c0c8", prop: "#68808f" },
+    scale: 3.9,
+    xpReward: 140,
+    waves: [
+      [{ kind: "frostwolf", count: 4 }, { kind: "snowhag", count: 1 }],
+      [{ kind: "rimetroll", count: 1 }, { kind: "archer", count: 2 }, { kind: "icewisp", count: 2 }],
+      [{ kind: "rimetroll", count: 2 }, { kind: "snowhag", count: 2 }],
+    ],
+  },
+  {
+    id: 11,
+    name: "The Hollow Crown",
+    subtitle: "The Winterreach has one king",
+    palette: { skyTop: "#101a30", skyBottom: "#243450", hills: "#1a2640", ground: "#303f58", groundDark: "#243248", prop: "#3d5570" },
+    scale: 3.4,
+    xpReward: 170,
+    waves: [[{ kind: "rimeheart", count: 1 }]],
   },
 ];
 
@@ -1668,7 +1819,7 @@ export function trinketFlatHp(id: string | null | undefined): number {
 }
 
 /** Stages whose final wave is a boss — these drop rare trinkets. */
-export const BOSS_STAGES = [4, 5];
+export const BOSS_STAGES = [4, 5, 11];
 
 // ------------------------------------------------------------------ deeds
 
