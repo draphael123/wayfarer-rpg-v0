@@ -6,7 +6,9 @@ import {
   MAX_LEVEL,
   TALENTS,
   TALENT_TREES,
+  TIER_UNLOCK,
   talentPointBudget,
+  talentPointsInTree,
   talentPointsSpent,
   ARMOR_BONUS,
   ARMOR_HP_BONUS,
@@ -18,6 +20,7 @@ import {
   HEROES,
   MAX_EQUIPPED,
   PARTY_CAP,
+  POINTS_PER_LEVEL,
   RECRUIT_COST,
   SPELL_COSTS,
   STAGES,
@@ -49,7 +52,135 @@ const WEAPON_LABEL: Record<string, string> = {
   sword: "⚔ Blade",
   bow: "➳ Bow",
   staff: "✦ Staff",
+  stave: "✚ Stave",
 };
+
+const STAT_BLURBS: Record<string, string> = {
+  Health: "How much punishment a hero takes before falling.",
+  Damage: "Damage dealt by each basic attack.",
+  "Atk speed": "How many attacks land per second.",
+  Armor: "The share of incoming damage shrugged off.",
+  Range: "Melee fights up close — ranged strikes from a distance.",
+  Move: "How quickly the hero crosses the battlefield.",
+  Healing: "Health restored per second while channeling a heal.",
+  "Spell power": "Multiplies the strength of every spell they cast.",
+};
+
+/** Front-facing hero bust for menu cards; drawn in 64-unit space and scaled to the canvas. */
+export function drawHeroPortrait(canvas: HTMLCanvasElement, index: number, save: SaveData): void {
+  const ctx = canvas.getContext("2d")!;
+  const def = HEROES[index];
+  const hero = save.heroes[index];
+  const robed = dominantWeapon(hero.attrs) === "stave";
+  const aTier = hero.armorTier;
+  const outline = "#221a30";
+  const line = (w: number) => {
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = w;
+    ctx.stroke();
+  };
+  ctx.save();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.scale(canvas.width / 64, canvas.height / 64);
+  // bust
+  ctx.beginPath();
+  ctx.moveTo(9, 66);
+  ctx.quadraticCurveTo(11, 45, 24, 42);
+  ctx.lineTo(40, 42);
+  ctx.quadraticCurveTo(53, 45, 55, 66);
+  ctx.closePath();
+  ctx.fillStyle = robed ? "#efe6d0" : def.accent;
+  ctx.fill();
+  line(3);
+  if (robed) {
+    // accent stole down the robe
+    ctx.fillStyle = def.accent;
+    ctx.fillRect(28, 44, 8, 20);
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(28, 44, 8, 20);
+  }
+  if (!robed && aTier >= 1) {
+    for (const dir of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(32 + dir * 15, 46, 8, 5.5, dir * 0.25, 0, Math.PI * 2);
+      ctx.fillStyle = aTier >= 3 ? "#aab4c2" : "#7a5a3a";
+      ctx.fill();
+      line(2.4);
+    }
+  }
+  if (!robed && aTier >= 2) {
+    ctx.strokeStyle = aTier >= 3 ? "#c2ccda" : "#9aa3ad";
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    ctx.moveTo(21, 47);
+    ctx.lineTo(43, 59);
+    ctx.stroke();
+  }
+  // head
+  ctx.beginPath();
+  ctx.arc(32, 27, 14, 0, Math.PI * 2);
+  ctx.fillStyle = def.skin;
+  ctx.fill();
+  line(3);
+  if (robed) {
+    // deep hood framing the face
+    ctx.beginPath();
+    ctx.arc(32, 27, 16, Math.PI * 0.82, Math.PI * 2.18);
+    ctx.closePath();
+    ctx.fillStyle = "#efe6d0";
+    ctx.fill();
+    line(2.6);
+  } else if (aTier >= 3) {
+    // plate helm with nose guard and plume
+    ctx.beginPath();
+    ctx.arc(32, 25.5, 14.6, Math.PI * 0.95, Math.PI * 2.05);
+    ctx.closePath();
+    ctx.fillStyle = "#aab4c2";
+    ctx.fill();
+    line(2.6);
+    ctx.fillStyle = "#aab4c2";
+    ctx.fillRect(30.4, 22, 3.2, 10);
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 1.6;
+    ctx.strokeRect(30.4, 22, 3.2, 10);
+    ctx.beginPath();
+    ctx.moveTo(26, 13);
+    ctx.quadraticCurveTo(18, 4, 12, 10);
+    ctx.quadraticCurveTo(20, 13, 25, 17);
+    ctx.closePath();
+    ctx.fillStyle = def.accent;
+    ctx.fill();
+    line(2);
+  } else {
+    // hair cap
+    ctx.beginPath();
+    ctx.arc(32, 25, 14, Math.PI * 0.98, Math.PI * 2.02);
+    ctx.closePath();
+    ctx.fillStyle = def.hair;
+    ctx.fill();
+    line(2.4);
+  }
+  // face
+  ctx.fillStyle = outline;
+  ctx.beginPath();
+  ctx.arc(26.6, 28.5, 2, 0, Math.PI * 2);
+  ctx.arc(37.4, 28.5, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = outline;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(23.6, 24.4);
+  ctx.lineTo(29.4, 23.6);
+  ctx.moveTo(34.6, 23.6);
+  ctx.lineTo(40.4, 24.4);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(29.5, 34.6);
+  ctx.quadraticCurveTo(32, 36, 34.5, 34.6);
+  ctx.stroke();
+  ctx.restore();
+}
 
 /** Simplified enemy bust for bestiary cards. */
 function drawBeastIcon(canvas: HTMLCanvasElement, kind: EnemyKind): void {
@@ -89,7 +220,7 @@ function drawBeastIcon(canvas: HTMLCanvasElement, kind: EnemyKind): void {
     ctx.fill();
     return;
   }
-  const big = kind === "brute" || kind === "warlord";
+  const big = kind === "brute" || kind === "warlord" || kind === "ogre";
   // shoulders
   ctx.fillStyle = def.trim;
   ctx.beginPath();
@@ -168,6 +299,7 @@ export class Menus {
   root: HTMLElement;
   toast: HTMLElement | null = null;
   travelFrom: number | null = null; // cleared stage to animate the road-march from
+  pendingLevelUp: { level: number; gained: number } | null = null; // set on victory, shown once on the map
 
   constructor(
     rootId: string,
@@ -396,6 +528,36 @@ export class Menus {
       }
     });
     this.root.appendChild(page);
+    if (this.pendingLevelUp) {
+      const info = this.pendingLevelUp;
+      this.pendingLevelUp = null;
+      const talentsGained = Math.floor(info.level / 2) - Math.floor((info.level - info.gained) / 2);
+      const pop = el(`
+        <div class="levelup-pop">
+          <div class="levelup-card">
+            <div class="levelup-burst">✦</div>
+            <div class="levelup-title">LEVEL UP!</div>
+            <div class="levelup-line">The band reaches <strong>level ${info.level}</strong></div>
+            <div class="levelup-line">+${info.gained * POINTS_PER_LEVEL} attribute point${info.gained * POINTS_PER_LEVEL === 1 ? "" : "s"} for every hero${talentsGained > 0 ? ` · +${talentsGained} talent point${talentsGained === 1 ? "" : "s"}` : ""}</div>
+            <div class="levelup-actions">
+              <button class="big-btn primary" data-act="lv-spend">Spend points</button>
+              <button class="big-btn" data-act="lv-later">Later</button>
+            </div>
+          </div>
+        </div>
+      `);
+      pop.addEventListener("click", (event) => {
+        const act = (event.target as HTMLElement).closest("[data-act]")?.getAttribute("data-act");
+        if (act === "lv-spend") {
+          audio.play("click");
+          this.renderParty();
+        } else if (act === "lv-later" || event.target === pop) {
+          audio.play("click");
+          pop.remove();
+        }
+      });
+      this.root.appendChild(pop);
+    }
   }
 
   /** Painted SVG overworld: dawn sky, layered ridges, a river, themed regions, and tappable stage nodes. */
@@ -576,7 +738,7 @@ export class Menus {
   renderBestiary(): void {
     this.root.innerHTML = "";
     this.show();
-    const kinds: EnemyKind[] = ["goblin", "wolf", "archer", "shaman", "brute", "alpha", "warlord"];
+    const kinds: EnemyKind[] = ["goblin", "wolf", "archer", "shaman", "brute", "ogre", "alpha", "warlord"];
     const discovered = kinds.filter((k) => (this.save.bestiary[k] ?? 0) > 0).length;
     const page = el(`
       <div class="page">
@@ -760,39 +922,57 @@ export class Menus {
     const page = el(`
       <div class="page">
         <div class="map-header">
-          <div>
-            <div class="map-title">${def.name}'s Talents</div>
-            <div class="map-level">${free} point${free === 1 ? "" : "s"} to spend · earn 1 per 2 band levels (cap ${MAX_LEVEL})</div>
+          <div class="equip-title">
+            <div class="hero-avatar portrait" style="background:${def.accent}"><canvas width="64" height="64"></canvas></div>
+            <div>
+              <div class="map-title">${def.name}'s Talents</div>
+              <div class="map-level">${free} point${free === 1 ? "" : "s"} to spend · earn 1 per 2 band levels (cap ${MAX_LEVEL})</div>
+            </div>
           </div>
           <button class="big-btn party-btn" data-act="back">Party</button>
         </div>
+        <div class="shop-note">◆ marks <strong>keystones</strong> — one point, one new way to fight. Deeper tiers open at ${TIER_UNLOCK[1]} and ${TIER_UNLOCK[2]} points in a tree.</div>
         <div class="talent-trees"></div>
         <div class="map-footer">
           <button class="toggle-btn" data-act="reset-talents">Reset talents (free)</button>
         </div>
       </div>
     `);
+    drawHeroPortrait(page.querySelector(".hero-avatar canvas") as HTMLCanvasElement, index, save);
     const trees = page.querySelector(".talent-trees")!;
     for (const treeKey of ["str", "dex", "mag"] as const) {
       const tree = TALENT_TREES[treeKey];
+      const inTree = talentPointsInTree(hero.talents, treeKey);
       const column = el(`
         <div class="talent-col" style="--tree:${tree.color}">
-          <div class="talent-col-head">${tree.icon} ${tree.name}</div>
+          <div class="talent-col-head">${tree.icon} ${tree.name} <span class="tree-spent">${inTree}p</span></div>
         </div>
       `);
-      for (const talent of TALENTS.filter((t) => t.tree === treeKey)) {
-        const rank = hero.talents[talent.id] ?? 0;
-        const maxed = rank >= talent.maxRank;
-        const pips = Array.from({ length: talent.maxRank }, (_, r) => `<i class="${r < rank ? "on" : ""}"></i>`).join("");
-        column.appendChild(
-          el(`
-            <button class="talent-node ${maxed ? "maxed" : ""} ${free > 0 && !maxed ? "can" : ""}" data-talent="${talent.id}">
-              <div class="talent-name">${talent.name}</div>
-              <div class="talent-blurb">${talent.blurb} <em>/rank</em></div>
-              <div class="talent-pips">${pips}</div>
-            </button>
-          `),
-        );
+      for (const tier of [1, 2, 3] as const) {
+        const need = TIER_UNLOCK[tier - 1];
+        const open = inTree >= need;
+        if (tier > 1) {
+          column.appendChild(
+            el(`<div class="tier-rule ${open ? "open" : ""}">${open ? `— tier ${tier} —` : `🔒 ${need} points in ${tree.name}`}</div>`),
+          );
+        }
+        for (const talent of TALENTS.filter((t) => t.tree === treeKey && t.tier === tier)) {
+          const rank = hero.talents[talent.id] ?? 0;
+          const maxed = rank >= talent.maxRank;
+          const pips =
+            talent.maxRank > 1
+              ? `<div class="talent-pips">${Array.from({ length: talent.maxRank }, (_, r) => `<i class="${r < rank ? "on" : ""}"></i>`).join("")}</div>`
+              : `<div class="talent-pips key ${rank > 0 ? "on" : ""}">${rank > 0 ? "◆ learned" : "◆ keystone"}</div>`;
+          column.appendChild(
+            el(`
+              <button class="talent-node ${talent.keystone ? "keystone" : ""} ${maxed ? "maxed" : ""} ${open && free > 0 && !maxed ? "can" : ""} ${open ? "" : "tier-locked"}" data-talent="${talent.id}">
+                <div class="talent-name">${talent.keystone ? "◆ " : ""}${talent.name}</div>
+                <div class="talent-blurb">${talent.blurb}${talent.maxRank > 1 ? " <em>/rank</em>" : ""}</div>
+                ${pips}
+              </button>
+            `),
+          );
+        }
       }
       trees.appendChild(column);
     }
@@ -803,8 +983,13 @@ export class Menus {
         const id = node.getAttribute("data-talent")!;
         const talent = TALENTS.find((t) => t.id === id)!;
         const rank = hero.talents[id] ?? 0;
+        const inTree = talentPointsInTree(hero.talents, talent.tree);
+        if (inTree < TIER_UNLOCK[talent.tier - 1]) {
+          this.showToast(`Locked — spend ${TIER_UNLOCK[talent.tier - 1] - inTree} more point${TIER_UNLOCK[talent.tier - 1] - inTree === 1 ? "" : "s"} in ${TALENT_TREES[talent.tree].name} first`);
+          return;
+        }
         if (rank >= talent.maxRank) {
-          this.showToast(`${talent.name} is already at max rank`);
+          this.showToast(talent.keystone ? `${talent.name} is already learned` : `${talent.name} is already at max rank`);
           return;
         }
         if (talentPointBudget(save.level) - talentPointsSpent(hero.talents) <= 0) {
@@ -896,8 +1081,8 @@ export class Menus {
       const card = el(`
         <div class="hero-card ${hero.recruited ? "" : "locked-hero"}" style="--accent:${def.accent}">
           <div class="hero-head">
-            <div class="hero-avatar" style="background:${def.accent}${hero.recruited ? "" : ";opacity:.5"}">
-              <span style="background:${def.skin}"></span>
+            <div class="hero-avatar portrait" style="background:${def.accent}${hero.recruited ? "" : ";opacity:.55"}">
+              <canvas width="64" height="64"></canvas>
             </div>
             <div>
               <div class="hero-name">${def.name} <em>${def.title}</em></div>
@@ -911,6 +1096,7 @@ export class Menus {
           </div>
         </div>
       `);
+      drawHeroPortrait(card.querySelector(".hero-avatar canvas") as HTMLCanvasElement, i, save);
       body.appendChild(card);
     }
     body.addEventListener("click", (event) => {
@@ -938,7 +1124,7 @@ export class Menus {
       const card = el(`
         <div class="hero-card" style="--accent:${def.accent}">
           <div class="hero-head">
-            <div class="hero-avatar" style="background:${def.accent}"><span style="background:${def.skin}"></span></div>
+            <div class="hero-avatar portrait" style="background:${def.accent}"><canvas width="64" height="64"></canvas></div>
             <div>
               <div class="hero-name">${def.name}</div>
               <div class="hero-meta">${WEAPON_TIERS[hero.weaponTier].name} weapon · ${ARMOR_TIERS[hero.armorTier].name} armor</div>
@@ -958,6 +1144,7 @@ export class Menus {
           </div>
         </div>
       `);
+      drawHeroPortrait(card.querySelector(".hero-avatar canvas") as HTMLCanvasElement, i, save);
       body.appendChild(card);
     }
     body.addEventListener("click", (event) => {
@@ -1030,12 +1217,11 @@ export class Menus {
     }
     for (let i = 0; i < HEROES.length; i++) {
       if (this.save.heroes[i].recruited) continue;
-      list.appendChild(
-        el(`
+      const lockedCard = el(`
           <div class="hero-card locked-hero" style="--accent:${HEROES[i].accent}">
             <div class="hero-head">
-              <div class="hero-avatar" style="background:${HEROES[i].accent};opacity:.45">
-                <span style="background:${HEROES[i].skin}"></span>
+              <div class="hero-avatar portrait" style="background:${HEROES[i].accent};opacity:.45">
+                <canvas width="64" height="64"></canvas>
               </div>
               <div>
                 <div class="hero-name">${HEROES[i].name} <em>${HEROES[i].title}</em></div>
@@ -1044,8 +1230,9 @@ export class Menus {
               <div class="hero-points">🔒</div>
             </div>
           </div>
-        `),
-      );
+        `);
+      drawHeroPortrait(lockedCard.querySelector(".hero-avatar canvas") as HTMLCanvasElement, i, this.save);
+      list.appendChild(lockedCard);
     }
     page.addEventListener("click", (event) => {
       const act = (event.target as HTMLElement).closest("[data-act]")?.getAttribute("data-act");
@@ -1067,11 +1254,12 @@ export class Menus {
     const inParty = hero.active;
     const partySize = partyRoster(save).length;
 
+    const trinket = trinketById(hero.trinket);
     const card = el(`
       <div class="hero-card ${inParty ? "" : "benched"}" style="--accent:${def.accent}">
         <div class="hero-head">
-          <div class="hero-avatar" style="background:${def.accent}">
-            <span style="background:${def.skin}"></span>
+          <div class="hero-avatar portrait" style="background:${def.accent}">
+            <canvas width="64" height="64"></canvas>
           </div>
           <div>
             <div class="hero-name">${def.name} <em>${def.title}</em></div>
@@ -1083,27 +1271,38 @@ export class Menus {
           <div class="hero-points ${save.unspent[index] > 0 ? "has" : ""}">${save.unspent[index]} pts</div>
         </div>
         <div class="stat-grid">
-          <div><span>Health</span><strong>${stats.maxHp}</strong></div>
-          <div><span>Damage</span><strong>${Math.round(stats.damage)}</strong></div>
-          <div><span>Atk speed</span><strong>${(1 / stats.attackCooldown).toFixed(2)}/s</strong></div>
-          <div><span>Armor</span><strong>${Math.round(stats.armor * 100)}%</strong></div>
-          <div><span>Range</span><strong>${stats.range > 90 ? "Ranged" : "Melee"}</strong></div>
-          <div><span>Move</span><strong>${Math.round(stats.speed)}</strong></div>
-          <div><span>Healing</span><strong>${stats.healPower.toFixed(1)}/s</strong></div>
-          <div><span>Spell power</span><strong>×${stats.spellPower.toFixed(2)}</strong></div>
+          <div data-stat="Health"><span>Health</span><strong>${stats.maxHp}</strong></div>
+          <div data-stat="Damage"><span>Damage</span><strong>${Math.round(stats.damage)}</strong></div>
+          <div data-stat="Atk speed"><span>Atk speed</span><strong>${(1 / stats.attackCooldown).toFixed(2)}/s</strong></div>
+          <div data-stat="Armor"><span>Armor</span><strong>${Math.round(stats.armor * 100)}%</strong></div>
+          <div data-stat="Range"><span>Range</span><strong>${stats.range > 90 ? "Ranged" : "Melee"}</strong></div>
+          <div data-stat="Move"><span>Move</span><strong>${Math.round(stats.speed)}</strong></div>
+          <div data-stat="Healing"><span>Healing</span><strong>${stats.healPower.toFixed(1)}/s</strong></div>
+          <div data-stat="Spell power"><span>Spell power</span><strong>×${stats.spellPower.toFixed(2)}</strong></div>
         </div>
-        <button class="trinket-row" data-act="trinket">
-          ${(() => { const t = trinketById(hero.trinket); return t ? `${t.icon} <strong>${t.name}</strong> — ${t.blurb}${t.rarity === "rare" ? ' <span class="rare-tag">RARE</span>' : ""}` : "◇ No trinket — tap to equip loot"; })()}
+        <div class="stat-hint">tap any stat to see what it does</div>
+        <button class="trinket-row equip-row" data-act="equip">
+          🎒 <strong>Equipment</strong> — ⚔ ${WEAPON_TIERS[hero.weaponTier].name} · 🛡 ${ARMOR_TIERS[hero.armorTier].name} · ${trinket ? `${trinket.icon} ${trinket.name}` : "◇ no trinket"} · ✨ ${hero.equipped.length}/${MAX_EQUIPPED} spells
         </button>
         <div class="attr-rows"></div>
-        <div class="ability-row-title">Abilities <span>(tap to assign · max ${MAX_EQUIPPED} · buy new ones at the Village)</span></div>
-        <div class="ability-chips"></div>
         <div class="card-actions">
           <button class="toggle-btn talents-btn" data-act="talents">⭐ Talents</button>
           <button class="toggle-btn respec" data-act="respec">Respec (free)</button>
         </div>
       </div>
     `);
+    drawHeroPortrait(card.querySelector(".hero-avatar canvas") as HTMLCanvasElement, index, save);
+    card.querySelector(".stat-grid")!.addEventListener("click", (event) => {
+      const cell = (event.target as HTMLElement).closest("[data-stat]");
+      if (!cell) return;
+      const key = cell.getAttribute("data-stat")!;
+      audio.play("click");
+      this.showToast(`${key} — ${STAT_BLURBS[key]}`);
+    });
+    card.querySelector('[data-act="equip"]')!.addEventListener("click", () => {
+      audio.play("click");
+      this.renderEquipment(index);
+    });
 
     card.querySelector('[data-act="toggle-party"]')!.addEventListener("click", () => {
       if (inParty && partySize <= 1) {
@@ -1159,50 +1358,6 @@ export class Menus {
       this.refreshCard(card, index);
     });
 
-    const chips = card.querySelector(".ability-chips")!;
-    for (const ability of ABILITIES) {
-      const gateOk = unlocked.includes(ability.id);
-      const owned = save.unlockedSpells.includes(ability.id);
-      const usable = gateOk && owned;
-      const isEquipped = hero.equipped.includes(ability.id);
-      const gateText = !owned
-        ? `🪙 Unlock at the Village spell shop`
-        : gateOk
-          ? ability.blurb
-          : `Needs ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}`;
-      const chip = el(`
-        <button class="ability-chip ${usable ? "" : "locked"} ${isEquipped ? "equipped" : ""}"
-          style="--chip:${ability.color}" data-ability="${ability.id}">
-          <div class="chip-name">${ability.name}</div>
-          <div class="chip-gate">${gateText}</div>
-        </button>
-      `);
-      chips.appendChild(chip);
-    }
-    chips.addEventListener("click", (event) => {
-      const chip = (event.target as HTMLElement).closest("[data-ability]") as HTMLElement | null;
-      if (!chip) return;
-      const id = chip.getAttribute("data-ability")!;
-      if (!save.unlockedSpells.includes(id)) {
-        this.showToast("Buy this spell at the Village first");
-        return;
-      }
-      if (!unlockedAbilities(hero.attrs).some((a) => a.id === id)) {
-        audio.play("click");
-        return;
-      }
-      const at = hero.equipped.indexOf(id);
-      if (at >= 0) hero.equipped.splice(at, 1);
-      else if (hero.equipped.length < MAX_EQUIPPED) hero.equipped.push(id);
-      else {
-        this.showToast(`Max ${MAX_EQUIPPED} assigned — remove one first`);
-        return;
-      }
-      audio.play("click");
-      persist(save);
-      this.refreshCard(card, index);
-    });
-
     card.querySelector('[data-act="respec"]')!.addEventListener("click", () => {
       respecHero(save, index);
       audio.play("click");
@@ -1214,27 +1369,162 @@ export class Menus {
       this.renderTalents(index);
     });
 
-    card.querySelector('[data-act="trinket"]')!.addEventListener("click", () => {
-      // cycle through unequipped inventory trinkets (plus "none")
-      const takenElsewhere = save.heroes.filter((_, hi) => hi !== index).map((h) => h.trinket);
-      const pool = [...new Set(save.inventory)].filter((id) => {
-        const copies = save.inventory.filter((x) => x === id).length;
-        const used = takenElsewhere.filter((x) => x === id).length + (hero.trinket === id ? 1 : 0);
-        return copies > used || hero.trinket === id;
-      });
-      if (!pool.length && !hero.trinket) {
-        this.showToast("No loot yet — clear stages to find trinkets");
+    return card;
+  }
+
+  // ------------------------------------------------------------------ equipment
+
+  renderEquipment(index: number): void {
+    this.root.innerHTML = "";
+    this.show();
+    const save = this.save;
+    const def = HEROES[index];
+    const hero = save.heroes[index];
+    const weapon = dominantWeapon(hero.attrs);
+    const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
+    const nextW = hero.weaponTier + 1 < WEAPON_TIERS.length ? WEAPON_TIERS[hero.weaponTier + 1] : null;
+    const nextA = hero.armorTier + 1 < ARMOR_TIERS.length ? ARMOR_TIERS[hero.armorTier + 1] : null;
+    const trinket = trinketById(hero.trinket);
+    const page = el(`
+      <div class="page">
+        <div class="map-header">
+          <div class="equip-title">
+            <div class="hero-avatar portrait portrait-lg" style="background:${def.accent}">
+              <canvas width="96" height="96"></canvas>
+            </div>
+            <div>
+              <div class="map-title">${def.name}'s Pack</div>
+              <div class="map-level">${WEAPON_LABEL[weapon]} · <span class="gold-chip">🪙 ${save.gold}</span></div>
+            </div>
+          </div>
+          <button class="big-btn party-btn" data-act="back">Party</button>
+        </div>
+        <div class="equip-list">
+          <div class="equip-slot">
+            <div class="equip-slot-head">⚔ Weapon — <strong>${WEAPON_TIERS[hero.weaponTier].name}</strong> <span>+${WEAPON_DAMAGE_BONUS[hero.weaponTier]} dmg</span></div>
+            ${
+              nextW
+                ? `<button class="big-btn buy-btn ${save.gold < nextW.cost ? "cant" : ""}" data-gear="w">Upgrade to ${nextW.name} (+${WEAPON_DAMAGE_BONUS[hero.weaponTier + 1] - WEAPON_DAMAGE_BONUS[hero.weaponTier]} dmg) — 🪙 ${nextW.cost}</button>`
+                : `<div class="gear-max">Finest weapon in the realm</div>`
+            }
+          </div>
+          <div class="equip-slot">
+            <div class="equip-slot-head">🛡 Armor — <strong>${ARMOR_TIERS[hero.armorTier].name}</strong> <span>+${Math.round(ARMOR_BONUS[hero.armorTier] * 100)}% armor · +${ARMOR_HP_BONUS[hero.armorTier]} hp</span></div>
+            ${
+              nextA
+                ? `<button class="big-btn buy-btn ${save.gold < nextA.cost ? "cant" : ""}" data-gear="a">Upgrade to ${nextA.name} (+${Math.round((ARMOR_BONUS[hero.armorTier + 1] - ARMOR_BONUS[hero.armorTier]) * 100)}% armor, +${ARMOR_HP_BONUS[hero.armorTier + 1] - ARMOR_HP_BONUS[hero.armorTier]} hp) — 🪙 ${nextA.cost}</button>`
+                : `<div class="gear-max">Finest armor in the realm</div>`
+            }
+          </div>
+          <div class="equip-slot">
+            <div class="equip-slot-head">◇ Trinket — <strong>${trinket ? `${trinket.icon} ${trinket.name}` : "none"}</strong></div>
+            ${trinket ? `<div class="equip-blurb">${trinket.blurb}${trinket.rarity === "rare" ? ' <span class="rare-tag">RARE</span>' : ""}</div>` : ""}
+            <div class="trinket-options"></div>
+          </div>
+          <div class="equip-slot">
+            <div class="equip-slot-head">✨ Spells — <strong>${hero.equipped.length}/${MAX_EQUIPPED} assigned</strong> <span>tap to assign or remove</span></div>
+            <div class="ability-chips"></div>
+          </div>
+        </div>
+      </div>
+    `);
+    drawHeroPortrait(page.querySelector(".hero-avatar canvas") as HTMLCanvasElement, index, save);
+
+    // trinket choices: none + every distinct loot piece not worn by someone else
+    const options = page.querySelector(".trinket-options")!;
+    const takenElsewhere = save.heroes.filter((_, hi) => hi !== index).map((h) => h.trinket);
+    const pool = [...new Set(save.inventory)].filter((id) => {
+      const copies = save.inventory.filter((x) => x === id).length;
+      const used = takenElsewhere.filter((x) => x === id).length;
+      return copies > used;
+    });
+    if (!pool.length) {
+      options.appendChild(el(`<div class="equip-blurb">No loot yet — clear stages to find trinkets.</div>`));
+    } else {
+      options.appendChild(el(`<button class="toggle-btn trinket-opt ${hero.trinket === null ? "on" : ""}" data-trinket="none">◇ None</button>`));
+      for (const id of pool) {
+        const t = trinketById(id)!;
+        options.appendChild(
+          el(`<button class="toggle-btn trinket-opt ${hero.trinket === id ? "on" : ""}" data-trinket="${id}">${t.icon} ${t.name}${t.rarity === "rare" ? " ✦" : ""}</button>`),
+        );
+      }
+    }
+
+    const chips = page.querySelector(".ability-chips")!;
+    for (const ability of ABILITIES) {
+      const gateOk = unlocked.includes(ability.id);
+      const owned = save.unlockedSpells.includes(ability.id);
+      const usable = gateOk && owned;
+      const isEquipped = hero.equipped.includes(ability.id);
+      const gateText = !owned
+        ? `🪙 Unlock at the Village spell shop`
+        : gateOk
+          ? ability.blurb
+          : `Needs ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}`;
+      chips.appendChild(
+        el(`
+          <button class="ability-chip ${usable ? "" : "locked"} ${isEquipped ? "equipped" : ""}"
+            style="--chip:${ability.color}" data-ability="${ability.id}">
+            <div class="chip-name">${ability.name}</div>
+            <div class="chip-gate">${gateText}</div>
+          </button>
+        `),
+      );
+    }
+
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const gear = target.closest("[data-gear]");
+      if (gear) {
+        const slot = gear.getAttribute("data-gear")!;
+        const tier = slot === "w" ? hero.weaponTier + 1 : hero.armorTier + 1;
+        const item = (slot === "w" ? WEAPON_TIERS : ARMOR_TIERS)[tier];
+        if (!this.spend(item.cost)) return;
+        if (slot === "w") hero.weaponTier = tier;
+        else hero.armorTier = tier;
+        persist(save);
+        this.showToast(`${def.name} equips ${item.name} ${slot === "w" ? "weapon" : "armor"}!`);
+        this.renderEquipment(index);
         return;
       }
-      const options: (string | null)[] = [null, ...pool];
-      const at = options.indexOf(hero.trinket);
-      hero.trinket = options[(at + 1) % options.length];
-      persist(save);
-      audio.play("click");
-      this.refreshCard(card, index);
+      const trinketBtn = target.closest("[data-trinket]");
+      if (trinketBtn) {
+        const id = trinketBtn.getAttribute("data-trinket")!;
+        hero.trinket = id === "none" ? null : id;
+        persist(save);
+        audio.play("click");
+        this.renderEquipment(index);
+        return;
+      }
+      const chip = target.closest("[data-ability]");
+      if (chip) {
+        const id = chip.getAttribute("data-ability")!;
+        if (!save.unlockedSpells.includes(id)) {
+          this.showToast("Buy this spell at the Village first");
+          return;
+        }
+        if (!unlockedAbilities(hero.attrs).some((a) => a.id === id)) {
+          audio.play("click");
+          return;
+        }
+        const at = hero.equipped.indexOf(id);
+        if (at >= 0) hero.equipped.splice(at, 1);
+        else if (hero.equipped.length < MAX_EQUIPPED) hero.equipped.push(id);
+        else {
+          this.showToast(`Max ${MAX_EQUIPPED} assigned — remove one first`);
+          return;
+        }
+        audio.play("click");
+        persist(save);
+        this.renderEquipment(index);
+        return;
+      }
+      if (target.closest('[data-act="back"]')) {
+        audio.play("click");
+        this.renderParty();
+      }
     });
-
-    return card;
+    this.root.appendChild(page);
   }
 
   private refreshCard(card: HTMLElement, index: number): void {

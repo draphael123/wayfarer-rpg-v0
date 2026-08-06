@@ -246,11 +246,12 @@ export class Hud {
       if (target && target.team === "enemy") {
         this.battle.orderAttack(hero, target);
         audio.play("click");
-      } else if (target && target.team === "hero" && target !== hero) {
+      } else if (target && target.team === "hero" && (target !== hero || moved > 12)) {
+        // a drag looped back onto the healer themself is a self-heal
         if (hero.stats.healPower > 4) {
           this.battle.orderHeal(hero, target);
           audio.play("heal");
-        } else {
+        } else if (target !== hero) {
           this.battle.orderMove(hero, { x: target.x + 30, y: target.y });
           this.showHint(`${hero.name} has no Spirit to heal with`);
         }
@@ -453,7 +454,9 @@ export class Hud {
     if (drag.mode === "unit") {
       const target = this.battle.unitAt(drag.x, drag.y, undefined, 22);
       const hostile = target?.team === "enemy";
-      const friendly = target?.team === "hero" && target !== hero;
+      const friendly =
+        target?.team === "hero" &&
+        (target !== hero || Math.hypot(drag.x - drag.startX, drag.y - drag.startY) > 12);
       ctx.strokeStyle = hostile ? "#ff8a70" : friendly ? "#9be89b" : "rgba(255,250,220,0.85)";
       ctx.lineWidth = 3;
       ctx.setLineDash([8, 7]);
@@ -557,10 +560,12 @@ export class Hud {
       roundRect(ctx, x, y + 11, w * frac, 3, 1.5);
       ctx.fill();
     }
-    // phase markers at 60% / 30%
-    for (const mark of [0.6, 0.3]) {
-      ctx.fillStyle = frac > mark ? "#ffe9a3" : "rgba(255,255,255,0.25)";
-      ctx.fillRect(x + w * mark - 1, y + 9, 2, 13);
+    // phase markers at 60% / 30% (the Alpha's phase transitions)
+    if (this.battle.bossRef?.enemyKind === "alpha") {
+      for (const mark of [0.6, 0.3]) {
+        ctx.fillStyle = frac > mark ? "#ffe9a3" : "rgba(255,255,255,0.25)";
+        ctx.fillRect(x + w * mark - 1, y + 9, 2, 13);
+      }
     }
   }
 
@@ -585,7 +590,13 @@ export class Hud {
       ctx.fillText(boss.name.toUpperCase(), this.width / 2, y);
       ctx.font = "600 italic 13px Georgia, serif";
       ctx.fillStyle = "#e6dcc2";
-      ctx.fillText("Dodge the pounce. Punish the exhaustion.", this.width / 2, y + 22);
+      const tip =
+        boss.enemyKind === "alpha"
+          ? "Dodge the pounce. Punish the exhaustion."
+          : boss.enemyKind === "ogre"
+            ? "Never stand still for the slam."
+            : "His slam wounds everyone near it. Spread out.";
+      ctx.fillText(tip, this.width / 2, y + 22);
     }
   }
 

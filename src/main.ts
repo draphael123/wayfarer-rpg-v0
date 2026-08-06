@@ -233,10 +233,9 @@ function settleVictory(): void {
   persist(save);
   if (levels > 0) {
     audio.play("levelup");
-    setTimeout(() => menus.showToast(`Level up! +${gold} gold · loot: ${drop.icon} ${drop.name}${rare ? " (RARE)" : ""}`), 150);
-  } else {
-    setTimeout(() => menus.showToast(`+${gold} gold · loot: ${drop.icon} ${drop.name}${rare ? " (RARE)" : ""}`), 150);
+    menus.pendingLevelUp = { level: save.level, gained: levels };
   }
+  setTimeout(() => menus.showToast(`+${gold} gold · loot: ${drop.icon} ${drop.name}${rare ? " (RARE)" : ""}`), 150);
 }
 
 function handleHudAction(action: string): void {

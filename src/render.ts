@@ -347,6 +347,162 @@ function drawSetDressing(
   time: number,
 ): void {
   const groundAt = (t: number, band: number) => horizon + 14 + hash01(t) * (h - horizon - 30) * band;
+  // ground variation shared by every field: pebbles, worn patches, stray tufts
+  for (let i = 0; i < 9; i++) {
+    const px = hash01(i * 17 + stage.id * 91) * w;
+    const py = horizon + 20 + hash01(i * 29 + stage.id * 7) * (h - horizon - 40);
+    if (i % 3 === 0) {
+      ctx.fillStyle = "rgba(20, 14, 30, 0.08)";
+      ctx.beginPath();
+      ctx.ellipse(px, py, 26 + hash01(i) * 30, 7 + hash01(i * 3) * 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = "rgba(20, 14, 30, 0.18)";
+      ctx.beginPath();
+      ctx.arc(px, py, 1.6 + hash01(i * 5) * 1.8, 0, Math.PI * 2);
+      ctx.arc(px + 5, py + 2, 1.2 + hash01(i * 7) * 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (stage.id === 0) {
+    // meadow flowers nodding in the breeze
+    for (let i = 0; i < 6; i++) {
+      const fx2 = hash01(i * 41) * w;
+      const fy2 = horizon + 30 + hash01(i * 23) * (h - horizon - 50);
+      const sway = Math.sin(time * 1.8 + i * 2) * 1.5;
+      ctx.strokeStyle = "#5c7a3e";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(fx2, fy2);
+      ctx.quadraticCurveTo(fx2 + sway, fy2 - 6, fx2 + sway * 1.4, fy2 - 11);
+      ctx.stroke();
+      ctx.fillStyle = i % 2 ? "#e8d9b0" : "#d98a8a";
+      ctx.beginPath();
+      ctx.arc(fx2 + sway * 1.4, fy2 - 12, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#f2d16b";
+      ctx.beginPath();
+      ctx.arc(fx2 + sway * 1.4, fy2 - 12, 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // a broken cart, wheels off, spilled sacks — the goblins got here first
+    const cx2 = w * 0.3;
+    const cy2 = groundAt(6.1, 0.35);
+    ctx.save();
+    ctx.translate(cx2, cy2);
+    ctx.rotate(-0.09);
+    roundRect(ctx, -30, -18, 60, 16, 3);
+    outlined(ctx, "#7a5a38", 2.2);
+    ctx.strokeStyle = "#5c4228";
+    ctx.lineWidth = 1.4;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * 12, -18);
+      ctx.lineTo(i * 12, -2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // detached wheel leaning on the cart
+    ctx.beginPath();
+    ctx.arc(cx2 + 36, cy2 - 6, 10, 0, Math.PI * 2);
+    outlined(ctx, "#6b4a2a", 2.2);
+    ctx.strokeStyle = "#4a3220";
+    ctx.lineWidth = 1.6;
+    for (let s = 0; s < 3; s++) {
+      const a = (s / 3) * Math.PI;
+      ctx.beginPath();
+      ctx.moveTo(cx2 + 36 - Math.cos(a) * 9, cy2 - 6 - Math.sin(a) * 9);
+      ctx.lineTo(cx2 + 36 + Math.cos(a) * 9, cy2 - 6 + Math.sin(a) * 9);
+      ctx.stroke();
+    }
+    // spilled grain sack
+    ctx.beginPath();
+    ctx.ellipse(cx2 - 42, cy2 - 3, 11, 6, 0.4, 0, Math.PI * 2);
+    outlined(ctx, "#c9b98a", 1.8);
+    ctx.fillStyle = "#e8d9a8";
+    ctx.beginPath();
+    ctx.ellipse(cx2 - 50, cy2 + 2, 8, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (stage.id === 1) {
+    // the ogre's deadfall: gnawed bone pile + a claw-scarred trunk
+    const bx2 = w * 0.7;
+    const by2 = groundAt(2.2, 0.6);
+    ctx.fillStyle = "#d8cfc0";
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.ellipse(bx2, by2, 13, 5, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(bx2 - 10, by2 - 4);
+    ctx.lineTo(bx2 - 2, by2 - 9);
+    ctx.moveTo(bx2 + 3, by2 - 3);
+    ctx.lineTo(bx2 + 10, by2 - 8);
+    ctx.strokeStyle = "#c9bfae";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.stroke();
+    ctx.lineCap = "butt";
+    // mossy fallen log to fight around
+    const lx2 = w * 0.45;
+    const ly2 = groundAt(9.4, 0.85);
+    ctx.save();
+    ctx.translate(lx2, ly2);
+    ctx.rotate(0.06);
+    roundRect(ctx, -36, -6, 72, 12, 6);
+    outlined(ctx, "#4a3a2c", 2.2);
+    ctx.fillStyle = "#4f6a3a";
+    ctx.beginPath();
+    ctx.ellipse(-14, -5, 14, 4, 0, Math.PI, Math.PI * 2);
+    ctx.ellipse(16, -5, 10, 3, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  if (stage.id === 2) {
+    // clusters of glowing marsh mushrooms
+    for (let i = 0; i < 3; i++) {
+      const mx2 = w * (0.15 + i * 0.35) + hash01(i * 19) * 30;
+      const my2 = groundAt(i * 6.7, 0.9);
+      const pulse = 0.5 + Math.abs(Math.sin(time * 1.8 + i * 2.4)) * 0.5;
+      for (let m = 0; m < 3; m++) {
+        const ox = (m - 1) * 7 + hash01(m * 3 + i) * 3;
+        const mh = 6 + hash01(m + i * 5) * 5;
+        ctx.strokeStyle = "#5c7a66";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(mx2 + ox, my2);
+        ctx.lineTo(mx2 + ox, my2 - mh);
+        ctx.stroke();
+        ctx.shadowColor = "#7de8c9";
+        ctx.shadowBlur = 7 * pulse;
+        ctx.fillStyle = `rgba(125, 232, 201, ${0.5 + pulse * 0.4})`;
+        ctx.beginPath();
+        ctx.ellipse(mx2 + ox, my2 - mh, 4.5, 3, 0, Math.PI, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+  }
+  if (stage.id === 4) {
+    // wolf eyes blinking in the dark brush — the pack is watching
+    for (let i = 0; i < 3; i++) {
+      const ex = w * (0.1 + i * 0.4) + hash01(i * 7) * 40;
+      const ey = horizon + 12 + hash01(i * 11) * 14;
+      const blink = Math.abs(Math.sin(time * 0.7 + i * 2.9));
+      if (blink > 0.2) {
+        ctx.fillStyle = `rgba(255, 200, 90, ${Math.min(0.85, blink)})`;
+        ctx.shadowColor = "#ffc85a";
+        ctx.shadowBlur = 5;
+        ctx.beginPath();
+        ctx.arc(ex, ey, 1.7, 0, Math.PI * 2);
+        ctx.arc(ex + 7, ey, 1.7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+  }
   if (stage.id === 0) {
     // farmland: a worn fence line + a haystack
     const fy = horizon + 26;
@@ -1023,6 +1179,7 @@ const ENEMY_COLORS: Record<string, { body: string; shade: string; trim: string }
   wolf: { body: "#5f5a70", shade: "#48445533", trim: "#3b3844" },
   archer: { body: "#8a7844", shade: "#6b5c3444", trim: "#4b431f" },
   brute: { body: "#8a6350", shade: "#6b4c3c44", trim: "#4a3526" },
+  ogre: { body: "#75875a", shade: "#5a6a4444", trim: "#39442a" },
   shaman: { body: "#578a86", shade: "#3f6a6644", trim: "#2c4a48" },
   warlord: { body: "#9a5240", shade: "#743c2f44", trim: "#40201a" },
 };
@@ -1120,7 +1277,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     return;
   }
   const pose = poseOf(unit, time);
-  const big = kind === "brute" || kind === "warlord";
+  const big = kind === "brute" || kind === "warlord" || kind === "ogre";
   const H = unit.radius * (big ? 2.9 : 3.3);
   const { cx, f } = pose;
   const gy = pose.groundY - pose.bounce;
@@ -1168,6 +1325,20 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.closePath();
     outlined(ctx, "#5a4a52", 2);
   }
+  if (kind === "ogre") {
+    // moss grown over the shoulders — it slept a long time
+    ctx.fillStyle = "#4f6a3a";
+    ctx.beginPath();
+    ctx.ellipse(cx - bodyW * 0.3, shoulderY - 2, bodyW * 0.22, 5, 0.3, 0, Math.PI * 2);
+    ctx.ellipse(cx + bodyW * 0.35, shoulderY - 1, bodyW * 0.18, 4, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    // pot belly line
+    ctx.strokeStyle = "rgba(20,14,30,0.35)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, hipY - H * 0.05, bodyW * 0.34, Math.PI * 0.2, Math.PI * 0.8);
+    ctx.stroke();
+  }
   // loincloth
   ctx.fillStyle = colors.trim;
   ctx.fillRect(cx - bodyW * 0.32, hipY - 1, bodyW * 0.64, 4);
@@ -1195,7 +1366,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.beginPath();
     ctx.arc(cx + f * headR * 0.45, headY + 1, 2, 0, Math.PI * 2);
     ctx.fill();
-  } else if (kind === "brute" || kind === "warlord") {
+  } else if (kind === "brute" || kind === "warlord" || kind === "ogre") {
     // horns + underbite tusks
     for (const s of [-1, 1]) {
       ctx.beginPath();
