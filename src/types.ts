@@ -1,6 +1,6 @@
 export type Team = "hero" | "enemy";
 
-export type EnemyKind = "goblin" | "archer" | "brute" | "shaman" | "wolf" | "alpha" | "warlord";
+export type EnemyKind = "goblin" | "archer" | "brute" | "ogre" | "shaman" | "wolf" | "alpha" | "warlord";
 
 export interface Vec {
   x: number;

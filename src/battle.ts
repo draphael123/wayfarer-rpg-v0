@@ -227,22 +227,35 @@ export class Battle {
       audio.play("victory");
       return;
     }
-    const bossWave = this.stage.waves[this.waveIndex].some((e) => e.kind === "alpha" || e.kind === "warlord");
+    const BOSS_KINDS = ["alpha", "warlord", "ogre"];
+    const bossWave = this.stage.waves[this.waveIndex].some((e) => BOSS_KINDS.includes(e.kind));
     this.stage.waves[this.waveIndex].forEach((entry, at) => {
-      const count = entry.count + (at === 0 && entry.kind !== "warlord" && entry.kind !== "alpha" ? this.extraSpawn : 0);
+      const count = entry.count + (at === 0 && !BOSS_KINDS.includes(entry.kind) ? this.extraSpawn : 0);
       for (let i = 0; i < count; i++) this.spawnEnemy(entry.kind);
     });
     this.state = "fighting";
     this.waveBanner = 2.2;
     if (bossWave && !this.tutorialMode) {
-      this.bossRef = this.units.find((u) => u.alive && (u.enemyKind === "alpha" || u.enemyKind === "warlord")) ?? null;
+      this.bossRef = this.units.find((u) => u.alive && BOSS_KINDS.includes(u.enemyKind ?? "")) ?? null;
       if (this.bossRef) {
         this.cinematic = 2.6;
         this.waveBanner = 0;
         audio.play("roar");
       }
     }
+    // Wind Step: dodge-ready again at the start of every wave
+    for (const hero of this.livingHeroes()) {
+      if (this.heroTalentRank(hero, "windStep") > 0) this.windstepReady.add(hero.id);
+    }
     audio.play("wave");
+  }
+
+  private windstepReady = new Set<number>();
+
+  /** Rank of a talent on this unit's hero save (0 for enemies / no save). */
+  heroTalentRank(unit: Unit, id: string): number {
+    if (unit.team !== "hero" || unit.heroIndex < 0 || !this.saveRef) return 0;
+    return this.saveRef.heroes[unit.heroIndex]?.talents?.[id] ?? 0;
   }
 
   effect(unit: Unit, kind: StatusEffect["kind"]): StatusEffect | undefined {
@@ -266,6 +279,13 @@ export class Battle {
 
   damage(target: Unit, rawAmount: number, source: Unit | null, opts: { spell?: boolean; color?: string } = {}): void {
     if (!target.alive) return;
+    // Wind Step: shrug off the first hit of the wave entirely
+    if (target.team === "hero" && this.windstepReady.has(target.id)) {
+      this.windstepReady.delete(target.id);
+      this.fx.floatText(target.x, target.y - target.radius - 16, "dodged!", "#b6f0a8", 13);
+      this.fx.burst(target.x, target.y - 10, "#b6f0a8", 6, 80, { glow: true });
+      return;
+    }
     let amount = rawAmount * (1 - target.stats.armor);
     const vulnerable = this.effect(target, "vulnerable");
     if (vulnerable) amount *= 1 + vulnerable.power;
@@ -317,20 +337,57 @@ export class Battle {
       target.alert = 0.5;
       this.fx.floatText(target.x, target.y - target.radius * 3 - 8, "!", "#ff8a70", 17);
     }
-    if (target.hp <= 0) this.kill(target);
+    // Kindled Mind: damaging spells leave a scorch
+    if (
+      opts.spell &&
+      source?.team === "hero" &&
+      target.alive &&
+      target.team === "enemy" &&
+      this.heroTalentRank(source, "kindledMind") > 0 &&
+      !this.effect(target, "burn")
+    ) {
+      target.effects.push(makeEffect("burn", 3, 2.7, source));
+    }
+    if (target.hp <= 0) this.kill(target, source);
     else audio.play(opts.spell ? "hit" : "hit");
   }
 
-  heal(target: Unit, amount: number, showText = true): void {
+  heal(target: Unit, amount: number, showText = true, from: Unit | null = null): void {
     if (!target.alive || target.hp >= target.stats.maxHp) return;
     const applied = Math.min(target.stats.maxHp - target.hp, amount);
     target.hp += applied;
     if (showText && applied >= 1) {
       this.fx.floatText(target.x, target.y - target.radius - 14, `+${Math.round(applied)}`, "#8ee88b", 14);
     }
+    if (from && from.team === "hero") {
+      // Overflow: healing past full spills onto the most wounded other ally
+      const spill = amount - applied;
+      if (spill > 1 && this.heroTalentRank(from, "overflow") > 0) {
+        let worst: Unit | null = null;
+        let worstFrac = 0.999;
+        for (const ally of this.livingHeroes()) {
+          if (ally === target) continue;
+          const frac = ally.hp / ally.stats.maxHp;
+          if (frac < worstFrac) {
+            worstFrac = frac;
+            worst = ally;
+          }
+        }
+        if (worst) this.heal(worst, spill, showText, null);
+      }
+      // Mender's Ward: topping an ally off leaves a small ward
+      if (target.hp >= target.stats.maxHp && this.heroTalentRank(from, "mendersWard") > 0) {
+        const shield = this.effect(target, "shield");
+        if (!shield || shield.power < 10) {
+          target.effects = target.effects.filter((e) => e.kind !== "shield");
+          target.effects.push(makeEffect("shield", 9999, 10, from));
+          this.fx.ring(target.x, target.y - 12, target.radius * 2.2, "#cfe0f0", { width: 2.5, life: 0.4 });
+        }
+      }
+    }
   }
 
-  private kill(unit: Unit): void {
+  private kill(unit: Unit, killer: Unit | null = null): void {
     if (unit.team === "hero") this.heroDeaths++;
     unit.alive = false;
     unit.hp = 0;
@@ -349,6 +406,12 @@ export class Battle {
     this.fx.addShake(unit.radius > 20 ? 8 : 3);
     this.hitstop = Math.max(this.hitstop, unit.radius > 20 ? 0.1 : 0.06);
     if (unit.radius > 20) this.zoomPunch = Math.max(this.zoomPunch, 0.8);
+    // Battle Roar: kills whip the slayer into a brief fury
+    if (unit.team === "enemy" && killer?.team === "hero" && this.heroTalentRank(killer, "battleRoar") > 0) {
+      killer.effects = killer.effects.filter((e) => e.kind !== "haste");
+      killer.effects.push(makeEffect("haste", 2.5, 1.35, killer));
+      this.fx.burst(killer.x, killer.y - 16, "#ffd27d", 8, 90, { glow: true });
+    }
     audio.play("thud");
     if (
       unit.team === "enemy" &&
@@ -389,7 +452,7 @@ export class Battle {
   }
 
   orderHeal(hero: Unit, target: Unit): void {
-    if (!hero.alive || !target.alive || target === hero) return;
+    if (!hero.alive || !target.alive) return;
     hero.healTarget = target;
     hero.attackTarget = null;
     hero.moveTarget = null;
@@ -425,7 +488,7 @@ export class Battle {
         for (const enemy of this.livingEnemies()) {
           const d = Math.hypot(enemy.x - hero.x, enemy.y - hero.y);
           if (d < 78 + enemy.radius) {
-            this.damage(enemy, dmg, hero, { color: "#ffd27d" });
+            this.damage(enemy, dmg, hero, { spell: true, color: "#ffd27d" });
             if (enemy.alive) enemy.effects.push(makeEffect("stun", 0.4, 1, hero));
             hitAny = true;
           }
@@ -460,7 +523,7 @@ export class Battle {
         const reach = 430;
         for (const enemy of this.livingEnemies()) {
           if (this.distToRay(hero, dir, reach, enemy) < enemy.radius + 14) {
-            this.damage(enemy, dmg, hero, { color: "#b6f0a8" });
+            this.damage(enemy, dmg, hero, { spell: true, color: "#b6f0a8" });
           }
         }
         this.fx.burst(hero.x + dir.x * 30, hero.y + dir.y * 30 - 8, "#b6f0a8", 8, 120, { glow: true });
@@ -532,7 +595,7 @@ export class Battle {
           cast = false;
           break;
         }
-        this.heal(target, 30 + attrs.spi * 4);
+        this.heal(target, 30 + attrs.spi * 4, true, hero);
         this.fx.burst(target.x, target.y - 18, "#f2e7a0", 16, 110, { glow: true, gravity: -40 });
         this.fx.pool(target.x, target.y, 70, "255,235,160", 0.7);
         audio.play("heal");
@@ -542,7 +605,7 @@ export class Battle {
         for (const ally of this.livingHeroes()) {
           const d = Math.hypot(ally.x - hero.x, ally.y - hero.y);
           if (d < 190) {
-            this.heal(ally, 20 + attrs.spi * 2.6);
+            this.heal(ally, 20 + attrs.spi * 2.6, true, hero);
             this.fx.burst(ally.x, ally.y - 18, "#fff3c0", 10, 90, { glow: true, gravity: -50 });
             this.fx.ring(ally.x, ally.y, ally.radius * 2.4, "#fff3c0", { width: 2.5, life: 0.45 });
           }
@@ -648,6 +711,16 @@ export class Battle {
       this.updateEffects(unit, dt);
       for (const ability of unit.abilities) ability.timer = Math.max(0, ability.timer - dt);
       unit.attackTimer = Math.max(0, unit.attackTimer - dt);
+      // Juggernaut: shrug off stuns while above two-thirds health
+      if (
+        unit.team === "hero" &&
+        this.effect(unit, "stun") &&
+        this.heroTalentRank(unit, "juggernaut") > 0 &&
+        unit.hp > unit.stats.maxHp * (2 / 3)
+      ) {
+        unit.effects = unit.effects.filter((e) => e.kind !== "stun");
+        this.fx.floatText(unit.x, unit.y - unit.radius - 20, "unshaken!", "#ffd27d", 12);
+      }
       if (this.effect(unit, "stun")) {
         unit.windup = 0;
         unit.pendingTarget = null;
@@ -754,7 +827,6 @@ export class Battle {
       let worst: Unit | null = null;
       let worstFrac = 0.9;
       for (const ally of this.livingHeroes()) {
-        if (ally === hero) continue;
         const frac = ally.hp / ally.stats.maxHp;
         if (frac < worstFrac && unitDist(hero, ally) < 300) {
           worstFrac = frac;
@@ -770,8 +842,8 @@ export class Battle {
     if (hero.healTarget) {
       const target = hero.healTarget;
       const dist = Math.hypot(target.x - hero.x, target.y - hero.y);
-      if (dist > 90) {
-        this.moveToward(hero, target, dt, 80);
+      if (dist > 150) {
+        this.moveToward(hero, target, dt, 130);
       } else {
         hero.facing = target.x >= hero.x ? 1 : -1;
         const spi = this.attrOf(hero, "spi", save);
@@ -780,7 +852,7 @@ export class Battle {
           hero.channelBeam = 0;
         } else {
           hero.channelBeam = 1;
-          this.heal(target, rate * dt, false);
+          this.heal(target, rate * dt, false, hero);
           if (Math.floor((this.time - dt) * 1.25) !== Math.floor(this.time * 1.25)) {
             this.fx.floatText(target.x, target.y - target.radius - 14, `+${Math.round(rate * 0.8)}`, "#8ee88b", 12);
             this.fx.burst(target.x, target.y - 14, "#bff0b0", 2, 40, { gravity: -60, glow: true });
@@ -1046,16 +1118,17 @@ export class Battle {
     attacker.lungeDir = this.normalize({ x: target.x - attacker.x, y: target.y - attacker.y });
     attacker.lunge = 1;
     const ranged = attacker.stats.range > 90;
-    if (attacker.enemyKind === "warlord") {
+    if (attacker.enemyKind === "warlord" || attacker.enemyKind === "ogre") {
       // ground-shaking slam that clips everyone near the target
+      const reach = attacker.enemyKind === "warlord" ? 70 : 52;
       for (const hero of this.livingHeroes()) {
-        if (Math.hypot(hero.x - target.x, hero.y - target.y) < 70) {
+        if (Math.hypot(hero.x - target.x, hero.y - target.y) < reach) {
           this.damage(hero, attacker.stats.damage, attacker);
         }
       }
       this.fx.burst(target.x, target.y, "#c98a5a", 18, 170, { gravity: 220 });
-      this.fx.ring(target.x, target.y, 78, "#e8b088", { width: 5, life: 0.5 });
-      this.fx.addShake(9);
+      this.fx.ring(target.x, target.y, reach + 8, "#e8b088", { width: 5, life: 0.5 });
+      this.fx.addShake(attacker.enemyKind === "warlord" ? 9 : 6);
       this.hitstop = Math.max(this.hitstop, 0.08);
       audio.play("thud");
       return;
@@ -1067,6 +1140,15 @@ export class Battle {
       if (Math.random() < chance) {
         crit = true;
         dmg *= 1.6;
+      }
+      // Last Stand: fury below 30% health
+      const lastStand = this.heroTalentRank(attacker, "lastStand");
+      if (lastStand > 0 && attacker.hp < attacker.stats.maxHp * 0.3) {
+        dmg *= 1 + 0.08 * lastStand;
+      }
+      // Executioner: finish wounded foes
+      if (this.heroTalentRank(attacker, "executioner") > 0 && target.hp < target.stats.maxHp * 0.25) {
+        dmg *= 2;
       }
     }
     if (!ranged) {
@@ -1084,7 +1166,7 @@ export class Battle {
       const weapon = attacker.team === "hero" ? attacker.stats.weapon : attacker.enemyKind === "shaman" ? "staff" : "bow";
       const isArcane = weapon === "staff";
       const isHoly = weapon === "stave";
-      this.projectiles.push({
+      const missile = {
         x: attacker.x + attacker.facing * 10,
         y: attacker.y - 18,
         target,
@@ -1092,18 +1174,38 @@ export class Battle {
         speed: isArcane ? 300 : isHoly ? 260 : 420,
         damage: dmg,
         from: attacker,
-        kind: isArcane ? "bolt" : isHoly ? "spark" : "arrow",
+        kind: (isArcane ? "bolt" : isHoly ? "spark" : "arrow") as "bolt" | "spark" | "arrow",
         color: isArcane ? (attacker.enemyKind === "shaman" ? "#7de8c9" : "#b48ae8") : isHoly ? "#ffe9a3" : "#e8d9b0",
         heals: false,
         life: 3,
-      });
+      };
+      this.projectiles.push(missile);
+      // Twin Arrows: every 4th ranged attack looses a second missile
+      if (this.heroTalentRank(attacker, "twinArrows") > 0) {
+        const n = (this.shotCounts.get(attacker.id) ?? 0) + 1;
+        this.shotCounts.set(attacker.id, n);
+        if (n % 4 === 0) {
+          this.projectiles.push({ ...missile, y: missile.y - 7, speed: missile.speed * 0.88 });
+          this.fx.floatText(attacker.x, attacker.y - attacker.radius * 3 - 4, "twin!", "#b6f0a8", 11);
+        }
+      }
       audio.play(isArcane || isHoly ? "bolt" : "shoot");
     } else {
       this.damage(target, dmg, attacker, crit ? { color: "#ffd76b" } : {});
       if (crit) this.fx.floatText(target.x, target.y - target.radius - 30, "crit!", "#ffd76b", 12);
+      // Cleaving Blows: melee strikes splash to nearby foes
+      if (attacker.team === "hero" && this.heroTalentRank(attacker, "cleavingBlows") > 0) {
+        for (const other of this.livingEnemies()) {
+          if (other !== target && Math.hypot(other.x - target.x, other.y - target.y) < 60) {
+            this.damage(other, dmg * 0.3, attacker, { color: "#ffd27d" });
+          }
+        }
+      }
       audio.play("slash");
     }
   }
+
+  private shotCounts = new Map<number, number>();
 
   private separateUnits(dt: number): void {
     const living = this.units.filter((u) => u.alive);
@@ -1169,7 +1271,7 @@ export class Battle {
       const step = p.speed * dt;
       if (p.target && p.target.alive && dist <= step + p.target.radius * 0.6) {
         if (p.heals) {
-          this.heal(p.target, p.damage);
+          this.heal(p.target, p.damage, true, p.from);
           this.fx.burst(p.target.x, p.target.y - 16, p.color, 8, 80, { glow: true, gravity: -40 });
         } else {
           this.damage(p.target, p.damage, p.from, { color: p.kind === "bolt" ? "#d3b6f0" : undefined });

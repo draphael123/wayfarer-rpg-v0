@@ -386,6 +386,21 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     lore: "Masked menders of the war-bands, muttering green fire.",
     habit: "Heals its allies from the back. Kill it first.",
   },
+  ogre: {
+    name: "Mosstooth Ogre",
+    maxHp: 330,
+    damage: 26,
+    range: 44,
+    attackCooldown: 2.4,
+    speed: 58,
+    armor: 0.25,
+    radius: 27,
+    xp: 45,
+    body: "#6a7a4a",
+    trim: "#39442a",
+    lore: "It sleeps under the deadfall and wakes for the smell of iron. The pines grow crooked around it.",
+    habit: "Huge, slow, and crushing. Keep moving and never take two swings in a row.",
+  },
   alpha: {
     name: "Alpha of Thornwood",
     maxHp: 380,
@@ -457,7 +472,7 @@ export const STAGES: StageDef[] = [
       [{ kind: "wolf", count: 2 }, { kind: "goblin", count: 1 }],
       [{ kind: "archer", count: 1 }, { kind: "wolf", count: 2 }],
       [{ kind: "wolf", count: 3 }, { kind: "brute", count: 1 }],
-      [{ kind: "alpha", count: 1 }],
+      [{ kind: "ogre", count: 1 }],
     ],
   },
   {
@@ -518,7 +533,7 @@ export const STAGES: StageDef[] = [
       [{ kind: "wolf", count: 4 }],
       [{ kind: "shaman", count: 1 }, { kind: "brute", count: 2 }],
       [{ kind: "archer", count: 2 }, { kind: "wolf", count: 3 }],
-      [{ kind: "brute", count: 2 }, { kind: "shaman", count: 2 }],
+      [{ kind: "alpha", count: 1 }],
     ],
   },
   {
@@ -562,6 +577,8 @@ export interface TalentDef {
   name: string;
   blurb: string; // per-rank effect, human readable
   maxRank: number;
+  tier: 1 | 2 | 3; // deeper tiers unlock with points spent in the tree
+  keystone?: boolean; // one-rank talents that change how you fight
 }
 
 export const TALENT_TREES: Record<TalentTree, { name: string; color: string; icon: string }> = {
@@ -570,19 +587,37 @@ export const TALENT_TREES: Record<TalentTree, { name: string; color: string; ico
   mag: { name: "Magic", color: "#8a6fd1", icon: "✨" },
 };
 
+/** Points that must be spent inside a tree before each tier opens. */
+export const TIER_UNLOCK = [0, 5, 12];
+
 export const TALENTS: TalentDef[] = [
-  { id: "ironGrip", tree: "str", name: "Iron Grip", blurb: "+3% melee damage", maxRank: 5 },
-  { id: "oxBlood", tree: "str", name: "Ox Blood", blurb: "+3% max health", maxRank: 5 },
-  { id: "stoneSkin", tree: "str", name: "Stone Skin", blurb: "+1.5% armor", maxRank: 5 },
-  { id: "warEcho", tree: "str", name: "War Echo", blurb: "-3% ability cooldowns", maxRank: 5 },
-  { id: "keenEye", tree: "dex", name: "Keen Eye", blurb: "+3% ranged damage", maxRank: 5 },
-  { id: "quickHands", tree: "dex", name: "Quick Hands", blurb: "+3% attack speed", maxRank: 5 },
-  { id: "fleetFoot", tree: "dex", name: "Fleet Foot", blurb: "+3% move speed", maxRank: 5 },
-  { id: "deadEye", tree: "dex", name: "Dead Eye", blurb: "+3% chance to crit for 60% extra", maxRank: 5 },
-  { id: "focus", tree: "mag", name: "Focus", blurb: "+4% spell power", maxRank: 5 },
-  { id: "springs", tree: "mag", name: "Vital Springs", blurb: "+4% healing power", maxRank: 5 },
-  { id: "attune", tree: "mag", name: "Attunement", blurb: "-3% ability cooldowns", maxRank: 5 },
-  { id: "aegis", tree: "mag", name: "Lesser Aegis", blurb: "Start battles with an 8 hp ward", maxRank: 5 },
+  // --------------- Strength: hit harder, stand longer
+  { id: "ironGrip", tree: "str", tier: 1, name: "Iron Grip", blurb: "+3% melee damage", maxRank: 5 },
+  { id: "oxBlood", tree: "str", tier: 1, name: "Ox Blood", blurb: "+3% max health", maxRank: 5 },
+  { id: "stoneSkin", tree: "str", tier: 2, name: "Stone Skin", blurb: "+1.5% armor", maxRank: 5 },
+  { id: "warEcho", tree: "str", tier: 2, name: "War Echo", blurb: "-3% ability cooldowns", maxRank: 5 },
+  { id: "battleRoar", tree: "str", tier: 2, name: "Battle Roar", blurb: "Kills whip you into a fury: +35% attack speed for 2.5s", maxRank: 1, keystone: true },
+  { id: "cleavingBlows", tree: "str", tier: 3, name: "Cleaving Blows", blurb: "Melee strikes splash 30% damage to other nearby foes", maxRank: 1, keystone: true },
+  { id: "juggernaut", tree: "str", tier: 3, name: "Juggernaut", blurb: "Cannot be stunned while above two-thirds health", maxRank: 1, keystone: true },
+  { id: "lastStand", tree: "str", tier: 3, name: "Last Stand", blurb: "+8% damage while below 30% health", maxRank: 3 },
+  // --------------- Dexterity: speed, precision, evasion
+  { id: "keenEye", tree: "dex", tier: 1, name: "Keen Eye", blurb: "+3% ranged damage", maxRank: 5 },
+  { id: "quickHands", tree: "dex", tier: 1, name: "Quick Hands", blurb: "+3% attack speed", maxRank: 5 },
+  { id: "fleetFoot", tree: "dex", tier: 2, name: "Fleet Foot", blurb: "+3% move speed", maxRank: 5 },
+  { id: "deadEye", tree: "dex", tier: 2, name: "Dead Eye", blurb: "+3% chance to crit for 60% extra", maxRank: 5 },
+  { id: "twinArrows", tree: "dex", tier: 2, name: "Twin Arrows", blurb: "Every 4th ranged attack looses two missiles", maxRank: 1, keystone: true },
+  { id: "executioner", tree: "dex", tier: 3, name: "Executioner", blurb: "Foes below a quarter health take double damage from you", maxRank: 1, keystone: true },
+  { id: "windStep", tree: "dex", tier: 3, name: "Wind Step", blurb: "Shrug off the first hit of every wave", maxRank: 1, keystone: true },
+  { id: "huntersRhythm", tree: "dex", tier: 3, name: "Hunter's Rhythm", blurb: "+2% attack speed and move speed", maxRank: 3 },
+  // --------------- Magic: spellcraft and mending
+  { id: "focus", tree: "mag", tier: 1, name: "Focus", blurb: "+4% spell power", maxRank: 5 },
+  { id: "springs", tree: "mag", tier: 1, name: "Vital Springs", blurb: "+4% healing power", maxRank: 5 },
+  { id: "attune", tree: "mag", tier: 2, name: "Attunement", blurb: "-3% ability cooldowns", maxRank: 5 },
+  { id: "aegis", tree: "mag", tier: 2, name: "Lesser Aegis", blurb: "Start battles with an 8 hp ward", maxRank: 5 },
+  { id: "kindledMind", tree: "mag", tier: 2, name: "Kindled Mind", blurb: "Your damaging spells scorch foes for 8 over 3s", maxRank: 1, keystone: true },
+  { id: "overflow", tree: "mag", tier: 3, name: "Overflow", blurb: "Overhealing spills onto the most wounded other ally", maxRank: 1, keystone: true },
+  { id: "mendersWard", tree: "mag", tier: 3, name: "Mender's Ward", blurb: "Topping off an ally leaves a 10 hp ward on them", maxRank: 1, keystone: true },
+  { id: "archon", tree: "mag", tier: 3, name: "Archon", blurb: "+3% spell power and healing power", maxRank: 3 },
 ];
 
 export interface TalentRanks {
@@ -611,11 +646,11 @@ export function talentMods(ranks: TalentRanks | undefined): TalentMods {
     hpPct: r("oxBlood") * 0.03,
     armorFlat: r("stoneSkin") * 0.015,
     cdr: Math.min(0.45, r("warEcho") * 0.03 + r("attune") * 0.03),
-    atkSpeed: r("quickHands") * 0.03,
-    moveSpeed: r("fleetFoot") * 0.03,
+    atkSpeed: r("quickHands") * 0.03 + r("huntersRhythm") * 0.02,
+    moveSpeed: r("fleetFoot") * 0.03 + r("huntersRhythm") * 0.02,
     crit: r("deadEye") * 0.03,
-    spellPower: r("focus") * 0.04,
-    healPower: r("springs") * 0.04,
+    spellPower: r("focus") * 0.04 + r("archon") * 0.03,
+    healPower: r("springs") * 0.04 + r("archon") * 0.03,
     startShield: r("aegis") * 8,
   };
 }
@@ -628,6 +663,12 @@ export function talentPointBudget(level: number): number {
 export function talentPointsSpent(ranks: TalentRanks | undefined): number {
   if (!ranks) return 0;
   return Object.values(ranks).reduce((a, b) => a + b, 0);
+}
+
+/** Points spent inside one tree — gates the deeper tiers. */
+export function talentPointsInTree(ranks: TalentRanks | undefined, tree: TalentTree): number {
+  if (!ranks) return 0;
+  return TALENTS.filter((t) => t.tree === tree).reduce((sum, t) => sum + (ranks[t.id] ?? 0), 0);
 }
 
 
@@ -695,4 +736,4 @@ export function trinketFlatHp(id: string | null | undefined): number {
 }
 
 /** Stages whose final wave is a boss — these drop rare trinkets. */
-export const BOSS_STAGES = [1, 5];
+export const BOSS_STAGES = [4, 5];
