@@ -22,6 +22,20 @@ function outlined(ctx: CanvasRenderingContext2D, fill: string, lineWidth = 2.4):
   ctx.stroke();
 }
 
+/** Small mitten hand at the end of a limb. */
+function hand(ctx: CanvasRenderingContext2D, x: number, y: number, skin: string): void {
+  ctx.beginPath();
+  ctx.arc(x, y, 2.6, 0, Math.PI * 2);
+  outlined(ctx, skin, 1.4);
+}
+
+/** Boot cap planted at a foot position. */
+function boot(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
+  ctx.beginPath();
+  ctx.ellipse(x + 0.4, y, 4.4, 2.5, 0, 0, Math.PI * 2);
+  outlined(ctx, color, 1.6);
+}
+
 /** Capsule limb: dark outline pass then colored core, round caps. */
 function limb(
   ctx: CanvasRenderingContext2D,
@@ -996,11 +1010,19 @@ function poseOf(unit: Unit, time: number): Pose {
   };
 }
 
-function drawShadow(ctx: CanvasRenderingContext2D, unit: Unit): void {
-  ctx.fillStyle = "rgba(20, 14, 30, 0.30)";
+function drawShadow(ctx: CanvasRenderingContext2D, unit: Unit, bounce = 0): void {
+  // the shadow shrinks and fades a touch at the top of a hop — grounds the bounce
+  const lift = Math.min(1, bounce / 6);
+  ctx.fillStyle = `rgba(20, 14, 30, ${0.3 - lift * 0.1})`;
   ctx.beginPath();
-  ctx.ellipse(unit.x, unit.y + 2, unit.radius * 1.15, unit.radius * 0.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(unit.x, unit.y + 2, unit.radius * 1.15 * (1 - lift * 0.18), unit.radius * 0.4 * (1 - lift * 0.18), 0, 0, Math.PI * 2);
   ctx.fill();
+}
+
+/** Is this unit's blink shut right now? Cheap periodic blink, offset per unit. */
+function blinkShut(unit: Unit, time: number): boolean {
+  const period = 2.8 + hash01(unit.id * 13.7) * 2.2;
+  return ((time + unit.id * 1.31) % period) > period - 0.14;
 }
 
 function drawSelection(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
@@ -1108,7 +1130,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   const { cx, f } = pose;
   const gy = pose.groundY - pose.bounce;
 
-  drawShadow(ctx, unit);
+  drawShadow(ctx, unit, pose.bounce);
   if (selected) drawSelection(ctx, unit, time);
 
   const hipY = gy - H * 0.30;
@@ -1124,17 +1146,16 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   const aTier = gear?.armorTier ?? 0;
 
   // back leg, back arm behind body
-  if (!robed) limb(ctx, cx - f * 2, hipY, cx - f * 2 - f * pose.walk * stride, gy - 1, legW, "#3a2f47");
-  // free back arm
-  limb(
-    ctx,
-    cx - f * bodyW * 0.3,
-    shoulderY + 3,
-    cx - f * bodyW * 0.55,
-    shoulderY + H * 0.16 + pose.walk * 2,
-    legW * 0.85,
-    def.skin,
-  );
+  if (!robed) {
+    const bfx = cx - f * 2 - f * pose.walk * stride;
+    limb(ctx, cx - f * 2, hipY, bfx, gy - 1, legW, "#3a2f47");
+    boot(ctx, bfx, gy - 1, "#2b2136");
+  }
+  // free back arm swings opposite the stride
+  const bhx = cx - f * bodyW * 0.55 - f * pose.walk * H * 0.06;
+  const bhy = shoulderY + H * 0.16 + pose.walk * 2;
+  limb(ctx, cx - f * bodyW * 0.3, shoulderY + 3, bhx, bhy, legW * 0.85, def.skin);
+  hand(ctx, bhx, bhy, def.skin);
 
   if (robed) {
     // full healer's robe: cream cloth to the ground, accent stole, swaying hem
@@ -1164,7 +1185,9 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.stroke();
   } else {
     // front leg
-    limb(ctx, cx + f * 2, hipY, cx + f * 2 + f * pose.walk * stride, gy - 1, legW, "#4a3d5c");
+    const ffx = cx + f * 2 + f * pose.walk * stride;
+    limb(ctx, cx + f * 2, hipY, ffx, gy - 1, legW, "#4a3d5c");
+    boot(ctx, ffx, gy - 1, "#33283f");
 
     // tunic body (trapezoid, slightly leaning into facing)
     const tunic = new Path2D();
@@ -1274,10 +1297,20 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
       ctx.stroke();
     }
   }
-  // chibi face: two eyes toward facing, brows, a mouth, blush
+  // chibi face: two eyes toward facing (they blink!), brows, a living mouth, blush
   const eyeY = headY + headR * 0.1;
   const eyeXs = [faceX + f * headR * 0.62, faceX + f * headR * 0.06];
+  const shut = blinkShut(unit, time);
   for (const ex of eyeXs) {
+    if (shut) {
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(ex - f * headR * 0.17, eyeY + headR * 0.03);
+      ctx.quadraticCurveTo(ex, eyeY + headR * 0.12, ex + f * headR * 0.17, eyeY + headR * 0.03);
+      ctx.stroke();
+      continue;
+    }
     ctx.beginPath();
     ctx.ellipse(ex, eyeY, headR * 0.2, headR * 0.26, 0, 0, Math.PI * 2);
     ctx.fillStyle = "#fdf8ee";
@@ -1298,9 +1331,23 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.lineTo(ex + f * headR * 0.2, eyeY - headR * 0.36);
     ctx.stroke();
   }
+  // mouth tracks the fight: grit while swinging, worry when hurt, easy smile otherwise
+  const mouthX = faceX + f * headR * 0.34;
+  const mouthY = headY + headR * 0.5;
+  const hurt = unit.hp < unit.stats.maxHp * 0.3;
+  const fighting = (unit.attackTarget?.alive ?? false) || pose.swing > 0.25 || unit.windup > 0;
   ctx.lineWidth = 1.3;
   ctx.beginPath();
-  ctx.arc(faceX + f * headR * 0.34, headY + headR * 0.5, headR * 0.14, Math.PI * 0.15, Math.PI * 0.85);
+  if (hurt) {
+    ctx.arc(mouthX, mouthY + headR * 0.18, headR * 0.13, Math.PI * 1.15, Math.PI * 1.85);
+  } else if (fighting) {
+    ctx.moveTo(mouthX - headR * 0.17, mouthY + headR * 0.02);
+    ctx.lineTo(mouthX + headR * 0.17, mouthY - headR * 0.03);
+    ctx.moveTo(mouthX - headR * 0.04, mouthY - headR * 0.05);
+    ctx.lineTo(mouthX - headR * 0.04, mouthY + headR * 0.06);
+  } else {
+    ctx.arc(mouthX, mouthY, headR * 0.14, Math.PI * 0.15, Math.PI * 0.85);
+  }
   ctx.stroke();
   ctx.globalAlpha = 0.22;
   ctx.fillStyle = "#d96a4a";
@@ -1310,8 +1357,8 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   ctx.fill();
   ctx.globalAlpha = 1;
 
-  // weapon arm + weapon (front)
-  const shX = cx + f * bodyW * 0.36;
+  // weapon arm + weapon (front) — the shoulder sways against the stride
+  const shX = cx + f * bodyW * 0.36 - f * pose.walk * 1.4;
   const shY = shoulderY + 2;
   drawHeroWeapon(ctx, unit, def.accent, def.skin, shX, shY, H, f, pose.swing, unit.castGlow, time, legW, wTier);
 
@@ -1355,6 +1402,7 @@ function drawHeroWeapon(
     const handX = shX + Math.cos(angle) * H * 0.22;
     const handY = shY + Math.sin(angle) * H * 0.22 + H * 0.06;
     limb(ctx, shX, shY, handX, handY, armW * 0.9, skin);
+    hand(ctx, handX, handY, skin);
     // ghost trail of the blade sweeping through its arc
     if (swing > 0.15) {
       for (let g = 1; g <= 3; g++) {
@@ -1413,6 +1461,7 @@ function drawHeroWeapon(
     const handX = shX + f * H * 0.2;
     const handY = shY + H * 0.05;
     limb(ctx, shX, shY, handX, handY, armW * 0.85, skin);
+    hand(ctx, handX, handY, skin);
     ctx.save();
     ctx.translate(handX, handY);
     ctx.scale(f, 1);
@@ -1447,6 +1496,7 @@ function drawHeroWeapon(
     const handX = shX + Math.cos(angle) * H * 0.18;
     const handY = shY + Math.sin(angle) * H * 0.18 + H * 0.05;
     limb(ctx, shX, shY, handX, handY, armW * 0.85, skin);
+    hand(ctx, handX, handY, skin);
     ctx.save();
     ctx.translate(handX, handY);
     ctx.rotate(angle * 0.35 - f * 0.08);
@@ -1478,6 +1528,7 @@ function drawHeroWeapon(
     const handX = shX + Math.cos(angle) * H * 0.2;
     const handY = shY + Math.sin(angle) * H * 0.2 + H * 0.04;
     limb(ctx, shX, shY, handX, handY, armW * 0.85, skin);
+    hand(ctx, handX, handY, skin);
     ctx.save();
     ctx.translate(handX, handY);
     ctx.rotate(angle * 0.4 - f * 0.12);
@@ -1513,7 +1564,7 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
   const isAlpha = unit.enemyKind === "alpha";
   const colors = isAlpha ? { body: "#3f3a4d", trim: "#292534" } : ENEMY_COLORS.wolf;
   const stretchB = isAlpha ? 1.18 : 1; // longer, rangier frame for the boss
-  drawShadow(ctx, unit);
+  drawShadow(ctx, unit, pose.bounce * 0.7);
   const bodyY = gy - r * (isAlpha ? 1.05 : 0.9);
   // legs scissor
   const legPairs = [
@@ -1541,13 +1592,14 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
     ctx.closePath();
     outlined(ctx, "#524b63", 2);
   }
-  // tail
+  // tail — wags when the wolf has nothing to chase
+  const wag = pose.walk === 0 && pose.swing <= 0 ? Math.sin(time * 6 + unit.id) * r * 0.22 : 0;
   ctx.lineCap = "round";
   ctx.strokeStyle = OUTLINE;
   ctx.lineWidth = 6;
   ctx.beginPath();
   ctx.moveTo(cx - f * r * 1.2, bodyY - r * 0.2);
-  ctx.quadraticCurveTo(cx - f * r * 1.8, bodyY - r * 0.9, cx - f * r * 1.6, bodyY - r * 1.2);
+  ctx.quadraticCurveTo(cx - f * r * 1.8 - f * wag, bodyY - r * 0.9, cx - f * r * 1.6 - f * wag * 1.6, bodyY - r * 1.2 + Math.abs(wag) * 0.4);
   ctx.stroke();
   ctx.strokeStyle = colors.body;
   ctx.lineWidth = 3.6;
@@ -1603,9 +1655,11 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   const wobble = big ? 1 : 0.94 + hash01(unit.id * 1.3) * 0.12;
   const H = unit.radius * (big ? 2.9 : 3.5) * wobble;
   const { cx, f } = pose;
-  const gy = pose.groundY - pose.bounce;
+  // goblins scamper — springier hop than anyone else
+  const scamper = kind === "goblin" ? 1.45 : 1;
+  const gy = pose.groundY - pose.bounce * scamper;
   const colors = ENEMY_COLORS[kind];
-  drawShadow(ctx, unit);
+  drawShadow(ctx, unit, pose.bounce * scamper);
 
   const hipY = gy - H * (big ? 0.26 : 0.30);
   const shoulderY = gy - H * (big ? 0.6 : 0.52) + pose.breathe * 0.5;
@@ -1727,7 +1781,17 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     // beady yellow eyes under a scowling brow, plus a jagged grin
     const eyeY = headY + headR * 0.05;
     const eyeXs = [hx0 + f * headR * 0.55, hx0 + f * headR * 0.02];
+    const gobShut = blinkShut(unit, time);
     for (const ex of eyeXs) {
+      if (gobShut) {
+        ctx.strokeStyle = OUTLINE;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(ex - f * headR * 0.16, eyeY + headR * 0.02);
+        ctx.quadraticCurveTo(ex, eyeY + headR * 0.1, ex + f * headR * 0.16, eyeY + headR * 0.02);
+        ctx.stroke();
+        continue;
+      }
       ctx.beginPath();
       ctx.ellipse(ex, eyeY, headR * 0.19, headR * 0.22, 0, 0, Math.PI * 2);
       ctx.fillStyle = "#f2d16b";
@@ -1799,13 +1863,35 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.save();
     ctx.translate(hx, hy);
     ctx.rotate(angle - f * Math.PI / 2.4);
-    ctx.beginPath();
-    ctx.moveTo(-1.8, 0);
-    ctx.lineTo(-1, -H * 0.34);
-    ctx.lineTo(2.6, -H * 0.3);
-    ctx.lineTo(1.8, 0);
-    ctx.closePath();
-    outlined(ctx, "#b8b2a4", 1.8);
+    // scavenged arms: each goblin grabbed whatever was lying around
+    const arm = hash01(unit.id * 7.3);
+    if (arm < 0.45) {
+      // rusty cleaver
+      ctx.beginPath();
+      ctx.moveTo(-1.8, 0);
+      ctx.lineTo(-1, -H * 0.34);
+      ctx.lineTo(2.6, -H * 0.3);
+      ctx.lineTo(1.8, 0);
+      ctx.closePath();
+      outlined(ctx, "#b8b2a4", 1.8);
+    } else if (arm < 0.78) {
+      // knobbly club
+      roundRect(ctx, -2, -H * 0.36, 4.5, H * 0.36, 2);
+      outlined(ctx, "#7a5a38", 1.8);
+      ctx.beginPath();
+      ctx.arc(0.4, -H * 0.36, H * 0.06, 0, Math.PI * 2);
+      outlined(ctx, "#7a5a38", 1.8);
+    } else {
+      // stubby dagger
+      ctx.beginPath();
+      ctx.moveTo(-1.4, -2);
+      ctx.lineTo(0, -H * 0.26);
+      ctx.lineTo(1.4, -2);
+      ctx.closePath();
+      outlined(ctx, "#c9ccd2", 1.6);
+      ctx.fillStyle = "#6b4a2a";
+      ctx.fillRect(-1.6, -2, 3.2, 4);
+    }
     ctx.restore();
   } else if (kind === "archer") {
     limb(ctx, shX, shY, shX + f * H * 0.18, shY + H * 0.04, legW * 0.8, colors.body);
@@ -1923,6 +2009,8 @@ function drawFallen(ctx: CanvasRenderingContext2D, unit: Unit): void {
   ctx.globalAlpha = 1;
 }
 
+const stepPhases = new WeakMap<Unit, number>();
+
 export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: SaveData, selected: Unit | null): void {
   const sorted = [...battle.units].sort((a, b) => a.y - b.y);
   for (const unit of sorted) {
@@ -1934,6 +2022,13 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
     const squash = Math.min(0.22, unit.hitFlash * 1.4);
     const stretch = unit.lunge * 0.1;
     const moving = unit.moveTarget !== null || (unit.team === "enemy" && unit.lunge <= 0.01 && !unit.attackTarget);
+    // footfall dust: a small puff each time the stride plants
+    const stride = Math.sin(unit.bobPhase);
+    const prevStride = stepPhases.get(unit) ?? stride;
+    stepPhases.set(unit, stride);
+    if (moving && (prevStride >= 0) !== (stride >= 0)) {
+      battle.fx.burst(unit.x - unit.facing * 3, unit.y + 1, "rgba(185,170,145,0.6)", 2, 24, { gravity: -26, size: 2.4, life: 0.3 });
+    }
     const lowHp = unit.team === "hero" && unit.hp / unit.stats.maxHp < 0.25;
     if (lowHp) {
       // danger ring pulsing under the wounded hero
