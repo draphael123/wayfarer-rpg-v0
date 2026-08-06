@@ -95,6 +95,10 @@ const SAMPLE_VOLUME: Record<string, number> = {
 class AudioKit {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private sfxOut: GainNode | null = null; // every effect/ambience routes here so a slider can scale them
+  private musicVolNode: GainNode | null = null; // ditto for music, after the danger filter
+  private sfxLevel = 1;
+  private musicLevel = 1;
   private musicGain: GainNode | null = null;
   private musicTimer: number | null = null;
   private musicStep = 0;
@@ -178,7 +182,7 @@ class AudioKit {
       gain.gain.exponentialRampToValueAtTime(spec.gain, ctx.currentTime + 1.2);
       src.connect(filter);
       filter.connect(gain);
-      gain.connect(this.master);
+      gain.connect(this.sfxOut ?? this.master);
       src.start();
       this.ambienceBed = { src, gain };
     }
@@ -268,11 +272,17 @@ class AudioKit {
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.5;
       this.master.connect(this.ctx.destination);
+      this.sfxOut = this.ctx.createGain();
+      this.sfxOut.gain.value = this.sfxLevel;
+      this.sfxOut.connect(this.master);
       // all music routes through one lowpass so danger can muffle the world
       this.musicOut = this.ctx.createBiquadFilter();
       this.musicOut.type = "lowpass";
       this.musicOut.frequency.value = 18000;
-      this.musicOut.connect(this.master);
+      this.musicVolNode = this.ctx.createGain();
+      this.musicVolNode.gain.value = this.musicLevel;
+      this.musicOut.connect(this.musicVolNode);
+      this.musicVolNode.connect(this.master);
       this.musicGain = this.ctx.createGain();
       this.musicGain.gain.value = 0.16;
       this.musicGain.connect(this.musicOut);
@@ -365,7 +375,7 @@ class AudioKit {
     const gain = ctx.createGain();
     gain.gain.value = volume * (SAMPLE_VOLUME[name] ?? 0.75);
     src.connect(gain);
-    gain.connect(this.master);
+    gain.connect(this.sfxOut ?? this.master);
     src.start();
     return true;
   }
@@ -391,7 +401,7 @@ class AudioKit {
     gain.gain.linearRampToValueAtTime(volume, t0 + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     osc.connect(gain);
-    gain.connect(dest ?? this.master);
+    gain.connect(dest ?? this.sfxOut ?? this.master);
     osc.start(t0);
     osc.stop(t0 + dur + 0.02);
   }
@@ -414,7 +424,7 @@ class AudioKit {
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     src.connect(filter);
     filter.connect(gain);
-    gain.connect(this.master);
+    gain.connect(this.sfxOut ?? this.master);
     src.start(t0);
   }
 
@@ -706,6 +716,18 @@ class AudioKit {
     } else {
       this.stopTrack(0.25);
     }
+  }
+
+  /** 0-1 loudness for effects + ambience (independent of the on/off toggle). */
+  setSoundVolume(v: number): void {
+    this.sfxLevel = Math.max(0, Math.min(1, v));
+    if (this.sfxOut) this.sfxOut.gain.value = this.sfxLevel;
+  }
+
+  /** 0-1 loudness for music. */
+  setMusicVolume(v: number): void {
+    this.musicLevel = Math.max(0, Math.min(1, v));
+    if (this.musicVolNode) this.musicVolNode.gain.value = this.musicLevel;
   }
 }
 

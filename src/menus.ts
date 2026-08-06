@@ -26,6 +26,7 @@ import {
   ARMOR_BONUS,
   ARMOR_HP_BONUS,
   ARMOR_TIERS,
+  BOSS_STAGES,
   ATTR_BLURBS,
   ATTR_KEYS,
   ATTR_NAMES,
@@ -388,6 +389,9 @@ export class Menus {
   pendingLevelUp: { level: number; gained: number } | null = null; // set on victory, shown once on the map
   private pendingSpell: string | null = null; // spell waiting for a slot in replace mode
   private figureTimer: number | null = null; // idle animation for the hero-sheet figure
+  private selectedStage: number | null = null; // map node the scout report is showing
+  private shopAttr: AttrKey | "all" = "all"; // spell-shop filter
+  private shopHideOwned = false;
 
   constructor(
     rootId: string,
@@ -463,6 +467,8 @@ export class Menus {
             <button class="toggle-btn" data-act="sound"></button>
             <button class="toggle-btn" data-act="music"></button>
           </div>
+          <div class="slider-row"><span>Effects</span><input type="range" min="0" max="100" data-vol="sound"></div>
+          <div class="slider-row"><span>Music</span><input type="range" min="0" max="100" data-vol="music"></div>
           <button class="toggle-btn" data-act="speed"></button>
           <div class="settings-row">
             <button class="toggle-btn" data-act="export-save">${ico("upload")} Export save</button>
@@ -482,6 +488,25 @@ export class Menus {
       (page.querySelector('[data-act="speed"]') as HTMLElement).textContent = `Combat speed: ×${this.save.speed}`;
     };
     syncToggles();
+    // volume sliders live-update the mixer, persisting on release
+    for (const kind of ["sound", "music"] as const) {
+      const slider = page.querySelector(`[data-vol="${kind}"]`) as HTMLInputElement;
+      slider.value = String(Math.round((kind === "sound" ? this.save.soundVol : this.save.musicVol) * 100));
+      slider.addEventListener("input", () => {
+        const v = Number(slider.value) / 100;
+        if (kind === "sound") {
+          this.save.soundVol = v;
+          audio.setSoundVolume(v);
+        } else {
+          this.save.musicVol = v;
+          audio.setMusicVolume(v);
+        }
+      });
+      slider.addEventListener("change", () => {
+        persist(this.save);
+        if (kind === "sound") audio.play("click"); // a little proof of loudness
+      });
+    }
     page.addEventListener("click", (event) => {
       const act = (event.target as HTMLElement).closest("[data-act]")?.getAttribute("data-act");
       if (!act) return;
@@ -593,27 +618,17 @@ export class Menus {
         </div>
       </div>
     `);
+    const maxIdx = Math.min(save.unlockedStage, STAGES.length - 1);
+    this.selectedStage = Math.min(this.selectedStage ?? maxIdx, maxIdx);
     page.querySelector(".world-map")!.appendChild(this.buildWorldMap());
     const caption = page.querySelector(".stage-caption")!;
-    const currentIdx = Math.min(save.unlockedStage, STAGES.length - 1);
-    const current = STAGES[currentIdx];
-    caption.appendChild(
-      el(`
-        <div class="embark-card">
-          <div class="embark-info">
-            <strong>${current.name}</strong>
-            <em>${current.subtitle} · ${current.waves.length} wave${current.waves.length === 1 ? "" : "s"}</em>
-          </div>
-          <button class="big-btn primary embark-btn" data-act="embark">${ico("play")} Set out</button>
-        </div>
-      `),
-    );
+    caption.appendChild(this.buildScoutCard(this.selectedStage));
     page.addEventListener("click", (event) => {
       const act = (event.target as HTMLElement).closest("[data-act]")?.getAttribute("data-act");
       if (act === "embark") {
         audio.unlock();
         audio.play("click");
-        this.callbacks.startStage(currentIdx);
+        this.callbacks.startStage(this.selectedStage ?? maxIdx);
       }
       if (act === "party") {
         audio.play("click");
@@ -682,6 +697,52 @@ export class Menus {
       });
       this.root.appendChild(pop);
     }
+  }
+
+  /** Scout report for a stage: what awaits, what it pays, and the band's record there. */
+  private buildScoutCard(idx: number): HTMLElement {
+    const save = this.save;
+    const stage = STAGES[idx];
+    const rec = save.stageStats[idx];
+    const rare = BOSS_STAGES.includes(idx);
+    const kinds: EnemyKind[] = [];
+    for (const wave of stage.waves) for (const entry of wave) if (!kinds.includes(entry.kind)) kinds.push(entry.kind);
+    const mult = DIFFICULTIES[save.difficulty]?.rewardMult ?? 1;
+    const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+    const card = el(`
+      <div class="embark-card scout-card">
+        <div class="embark-main">
+          <div class="embark-info">
+            <strong>${stage.name}</strong>
+            <em>${stage.subtitle}</em>
+          </div>
+          <button class="big-btn primary embark-btn" data-act="embark">${ico("play")} Set out</button>
+        </div>
+        <div class="scout-row">
+          <span class="scout-chip">${ico("sword")} ${stage.waves.length} wave${stage.waves.length === 1 ? "" : "s"}</span>
+          <span class="scout-chip">${ico("star")} ≈${Math.round(stage.xpReward * mult)} xp</span>
+          <span class="scout-chip">${ico("gem")} ${rare ? "RARE trinket" : "trinket drop"}</span>
+          ${
+            rec
+              ? `<span class="scout-chip best">✓ best ${fmt(rec.bestTime)} · ×${rec.clears}</span>`
+              : `<span class="scout-chip unbeaten">unconquered</span>`
+          }
+        </div>
+        <div class="scout-foes"><span class="scout-label">scouts report:</span></div>
+      </div>
+    `);
+    const foes = card.querySelector(".scout-foes")!;
+    for (const kind of kinds) {
+      const known = (save.bestiary[kind] ?? 0) > 0;
+      if (known) {
+        const chip = el(`<span class="scout-foe" title="${ENEMIES[kind].name}"><canvas width="64" height="64"></canvas></span>`);
+        drawBeastIcon(chip.querySelector("canvas")!, kind);
+        foes.appendChild(chip);
+      } else {
+        foes.appendChild(el(`<span class="scout-foe unknown" title="an unknown creature">?</span>`));
+      }
+    }
+    return card;
   }
 
   /** Painted SVG overworld: dawn sky, layered ridges, a river, themed regions, and tappable stage nodes. */
@@ -753,8 +814,9 @@ export class Menus {
       const label = done ? "✓" : unlocked ? String(i + 1) : "";
       const nameW = stage.name.length * 6.4 + 16;
       markers += `
-        <g class="map-node ${isCurrent ? "current" : ""} ${unlocked ? "open" : "locked"}" data-stage="${i}">
+        <g class="map-node ${isCurrent ? "current" : ""} ${unlocked ? "open" : "locked"} ${i === this.selectedStage ? "sel" : ""}" data-stage="${i}">
           <circle cx="${n.x}" cy="${n.y}" r="30" fill="transparent"/>
+          <circle class="sel-ring" cx="${n.x}" cy="${n.y}" r="24" fill="none" stroke="#ffe9a3" stroke-width="2" stroke-dasharray="5 6"/>
           <ellipse cx="${n.x}" cy="${n.y + 16}" rx="14" ry="4" fill="rgba(10,18,12,0.35)"/>
           ${isCurrent ? `<circle class="node-pulse" cx="${n.x}" cy="${n.y}" r="20" fill="none" stroke="#ffe9a3" stroke-width="2.5"/>` : ""}
           <circle cx="${n.x}" cy="${n.y}" r="17" fill="${fill}" stroke="#1a2b20" stroke-width="4"/>
@@ -873,7 +935,19 @@ export class Menus {
       const idx = Number(node.getAttribute("data-stage"));
       audio.unlock();
       audio.play("click");
-      this.callbacks.startStage(idx);
+      // first tap scouts the stage; tapping the scouted node again sets out
+      if (this.selectedStage === idx) {
+        this.callbacks.startStage(idx);
+        return;
+      }
+      this.selectedStage = idx;
+      svg.querySelectorAll(".map-node.sel").forEach((g) => g.classList.remove("sel"));
+      node.classList.add("sel");
+      const caption = this.root.querySelector(".stage-caption");
+      if (caption) {
+        caption.innerHTML = "";
+        caption.appendChild(this.buildScoutCard(idx));
+      }
     });
     return svg;
   }
@@ -1086,6 +1160,7 @@ export class Menus {
       </div>
     `);
     drawHeroPortrait(page.querySelector(".hero-avatar canvas") as HTMLCanvasElement, index, save);
+    page.querySelector(".map-header")!.after(this.heroTabs(index, "talents"));
     const trees = page.querySelector(".talent-trees")!;
     for (const treeKey of ["str", "dex", "mag"] as const) {
       const tree = TALENT_TREES[treeKey];
@@ -1436,10 +1511,26 @@ export class Menus {
     body.appendChild(
       el(`<div class="shop-note">Unlock a spell once, then assign it to any hero who meets its attribute — up to ${MAX_EQUIPPED} spells per hero, on the Party screen.</div>`),
     );
-    // shelved by attribute, cheapest gate first
-    const shelf = [...ABILITIES].sort(
-      (a, b) => ATTR_KEYS.indexOf(a.gate.attr) - ATTR_KEYS.indexOf(b.gate.attr) || a.gate.value - b.gate.value,
+    // filter rail: thirty spells is a long shelf without one
+    const owned = ABILITIES.filter((a) => save.unlockedSpells.includes(a.id)).length;
+    body.appendChild(
+      el(`
+        <div class="shop-filters">
+          <button class="filter-chip ${this.shopAttr === "all" ? "on" : ""}" data-filter="all">All</button>
+          ${ATTR_KEYS.map(
+            (k) => `<button class="filter-chip ${this.shopAttr === k ? "on" : ""}" data-filter="${k}">${ATTR_NAMES[k]}</button>`,
+          ).join("")}
+          <button class="filter-chip owned-chip ${this.shopHideOwned ? "on" : ""}" data-filter="hide-owned">Hide owned · ${owned}/${ABILITIES.length}</button>
+        </div>
+      `),
     );
+    // shelved by attribute, cheapest gate first
+    const shelf = [...ABILITIES]
+      .sort((a, b) => ATTR_KEYS.indexOf(a.gate.attr) - ATTR_KEYS.indexOf(b.gate.attr) || a.gate.value - b.gate.value)
+      .filter((a) => (this.shopAttr === "all" || a.gate.attr === this.shopAttr) && !(this.shopHideOwned && save.unlockedSpells.includes(a.id)));
+    if (!shelf.length) {
+      body.appendChild(el(`<div class="shop-note">Nothing left on this shelf — the band owns it all.</div>`));
+    }
     for (const ability of shelf) {
       const owned = save.unlockedSpells.includes(ability.id);
       const cost = SPELL_COSTS[ability.id] ?? 100;
@@ -1465,6 +1556,15 @@ export class Menus {
       body.appendChild(card);
     }
     body.addEventListener("click", (event) => {
+      const filter = (event.target as HTMLElement).closest("[data-filter]");
+      if (filter) {
+        const f = filter.getAttribute("data-filter")!;
+        if (f === "hide-owned") this.shopHideOwned = !this.shopHideOwned;
+        else this.shopAttr = f as AttrKey | "all";
+        audio.play("click");
+        this.renderShop("spells");
+        return;
+      }
       const btn = (event.target as HTMLElement).closest("[data-spell]");
       if (!btn) return;
       const id = btn.getAttribute("data-spell")!;
@@ -1474,6 +1574,82 @@ export class Menus {
       this.showToast(`${ABILITIES.find((a) => a.id === id)?.name} unlocked — assign it on the Party screen`);
       this.renderShop("spells");
     });
+  }
+
+  // ------------------------------------------------------------------ hero hub
+
+  /** Tab rail every hero screen shares: one hero, four facets, plus ‹ › to walk the roster. */
+  private heroTabs(index: number, active: "overview" | "loadout" | "talents" | "calling"): HTMLElement {
+    const save = this.save;
+    const canCall = !!save.heroes[index].calling || save.level >= CALLING_UNLOCK_LEVEL;
+    const roster = save.heroes.map((h, i) => ({ h, i })).filter(({ h }) => h.recruited).map(({ i }) => i);
+    const strip = el(`
+      <div class="shop-tabs hero-tabs">
+        <button class="hero-step" data-hstep="-1" title="previous hero">‹</button>
+        <button class="shop-tab ${active === "overview" ? "on" : ""}" data-htab="overview">${ico("banner")} Overview</button>
+        <button class="shop-tab ${active === "loadout" ? "on" : ""}" data-htab="loadout">${ico("bag")} Loadout</button>
+        <button class="shop-tab ${active === "talents" ? "on" : ""}" data-htab="talents">${ico("star")} Talents</button>
+        <button class="shop-tab ${active === "calling" ? "on" : ""}" data-htab="calling" ${canCall ? "" : "disabled"}>${ico("sword")} Calling</button>
+        <button class="hero-step" data-hstep="1" title="next hero">›</button>
+      </div>
+    `);
+    const open = (i: number, tab: string) => {
+      if (tab === "overview") this.renderHeroOverview(i);
+      else if (tab === "loadout") this.renderEquipment(i);
+      else if (tab === "talents") this.renderTalents(i);
+      else if (this.save.heroes[i].calling || this.save.level >= CALLING_UNLOCK_LEVEL) this.renderCalling(i);
+      else this.renderHeroOverview(i);
+    };
+    strip.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const step = target.closest("[data-hstep]");
+      if (step && roster.length > 1) {
+        const at = roster.indexOf(index);
+        const next = roster[(at + Number(step.getAttribute("data-hstep")) + roster.length) % roster.length];
+        audio.play("click");
+        open(next, active);
+        return;
+      }
+      const tab = target.closest("[data-htab]");
+      if (!tab || tab.hasAttribute("disabled")) return;
+      const kind = tab.getAttribute("data-htab")!;
+      if (kind === active) return;
+      audio.play("click");
+      open(index, kind);
+    });
+    return strip;
+  }
+
+  /** The hero's front page: the full stat/attribute card under the hub tabs. */
+  renderHeroOverview(index: number): void {
+    this.root.innerHTML = "";
+    this.show();
+    const def = HEROES[index];
+    const page = el(`
+      <div class="page">
+        <div class="map-header">
+          <div class="equip-title">
+            <div class="hero-avatar portrait" style="background:${def.accent}"><canvas width="64" height="64"></canvas></div>
+            <div>
+              <div class="map-title">${def.name} <em class="sheet-title">${def.title}</em></div>
+              <div class="map-level"><span class="gold-chip">${ico("coin")} ${this.save.gold}</span></div>
+            </div>
+          </div>
+          <button class="big-btn party-btn" data-act="back">Party</button>
+        </div>
+        <div class="hero-list single"></div>
+      </div>
+    `);
+    drawHeroPortrait(page.querySelector(".hero-avatar canvas") as HTMLCanvasElement, index, this.save);
+    page.querySelector(".map-header")!.after(this.heroTabs(index, "overview"));
+    page.querySelector(".hero-list")!.appendChild(this.heroCard(index));
+    page.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest('[data-act="back"]')) {
+        audio.play("click");
+        this.renderParty();
+      }
+    });
+    this.root.appendChild(page);
   }
 
   // ------------------------------------------------------------------ party
@@ -1610,6 +1786,13 @@ export class Menus {
       </div>
     `);
     drawHeroPortrait(card.querySelector(".hero-avatar canvas") as HTMLCanvasElement, index, save);
+    // the portrait itself opens the hero's hub page
+    const avatar = card.querySelector(".hero-avatar") as HTMLElement;
+    avatar.style.cursor = "pointer";
+    avatar.addEventListener("click", () => {
+      audio.play("click");
+      this.renderHeroOverview(index);
+    });
     const slotStrip = card.querySelector(".loadout-slots")!;
     for (let s = 0; s < MAX_EQUIPPED; s++) slotStrip.appendChild(spellSlotEl(hero.equipped[s] ?? null, 22));
     card.querySelector(".stat-grid")!.addEventListener("click", (event) => {
@@ -1737,6 +1920,7 @@ export class Menus {
         <div class="calling-grid"></div>
       </div>
     `);
+    page.querySelector(".map-header")!.after(this.heroTabs(index, "calling"));
     const grid = page.querySelector(".calling-grid")!;
     for (const c of CALLINGS) {
       const eligible = callingEligible(c, hero.attrs);
@@ -1932,6 +2116,7 @@ export class Menus {
         </div>
       </div>
     `);
+    page.querySelector(".map-header")!.after(this.heroTabs(index, "loadout"));
     // live figure: the real battle render, idling
     const fig = page.querySelector(".figure-canvas") as HTMLCanvasElement;
     drawHeroFigure(fig, index, save, 0);

@@ -2562,6 +2562,17 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
       idleFlourishFx(battle, unit);
     }
     idlePrev.set(unit, unit.idleAnim);
+    // Hard+ difficulty shows on the enemies themselves: a smoldering crimson ring
+    if (unit.team === "enemy" && (save.difficulty ?? 1) >= 2 && unit.entered) {
+      const brutal = (save.difficulty ?? 1) >= 3;
+      ctx.globalAlpha = brutal ? 0.4 : 0.24;
+      ctx.strokeStyle = brutal ? "#ff5a48" : "#c85a3a";
+      ctx.lineWidth = brutal ? 2.4 : 1.8;
+      ctx.beginPath();
+      ctx.ellipse(unit.x, unit.y + 2, unit.radius * 1.5, unit.radius * 0.6, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
     const lowHp = unit.team === "hero" && unit.hp / unit.stats.maxHp < 0.25;
     if (lowHp) {
       // danger ring pulsing under the wounded hero

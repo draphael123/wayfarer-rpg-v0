@@ -54,6 +54,10 @@ export class Hud {
   drag: DragState = null;
   selected: Unit | null = null;
   paused = false;
+  /** A pressed ability button: short press casts/aims, a long hold peeks at the tooltip. */
+  hold: { hero: Unit; ability: AbilityState; x: number; y: number; w: number; time: number } | null = null;
+  /** Recently planted move orders — a flag marks where the hero was sent. */
+  private moveMarks: { x: number; y: number; t: number }[] = [];
   private abilityButtons: AbilityButtonRect[] = [];
   private portraits: PortraitRect[] = [];
   private overlayButtons: OverlayButton[] = [];
@@ -176,13 +180,14 @@ export class Hud {
       for (const b of this.abilityButtons) {
         if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
           if (!b.hero.alive) return null;
+          this.hold = { hero: b.hero, ability: b.ability, x: b.x, y: b.y, w: b.w, time: 0 };
           if (b.ability.timer > 0) {
             audio.play("click");
             return null;
           }
           this.selected = b.hero;
           if (b.ability.def.targeting === "instant") {
-            this.battle.castAbility(b.hero, b.ability, this.save, null, null);
+            // cast lands on release — a long hold shows the tooltip instead
           } else {
             this.drag = {
               mode: "ability",
@@ -223,25 +228,52 @@ export class Hud {
     }
     if (!unit && this.selected && this.selected.alive) {
       this.battle.orderMove(this.selected, wp);
+      this.moveMarks.push({ x: wp.x, y: wp.y, t: 0 });
       return null;
     }
     return null;
   }
 
   pointerMove(x: number, y: number): void {
-    if (!this.drag) return;
+    if (!this.drag) {
+      // sliding off a pressed ability button abandons both tooltip and tap
+      if (this.hold) {
+        const h = this.hold;
+        if (x < h.x - 18 || x > h.x + h.w + 18 || y < h.y - 18 || y > h.y + h.w + 18) this.hold = null;
+      }
+      return;
+    }
     const wp = this.toWorld(x, y);
     this.drag.x = wp.x;
     this.drag.y = wp.y;
     if (this.drag.mode === "ability") {
       this.drag.hero.castGlow = Math.min(0.55, this.drag.hero.castGlow + 0.04);
+      // once the aim gesture is really pulling, the tooltip peek is over
+      if (this.hold && Math.hypot(this.drag.x - this.drag.startX, this.drag.y - this.drag.startY) > 14) this.hold = null;
     }
   }
 
   pointerUp(sx: number, sy: number): void {
+    const hold = this.hold;
+    this.hold = null;
     const drag = this.drag;
     this.drag = null;
-    if (!drag) return;
+    if (!drag) {
+      // a tapped instant ability fires on release; a long hold only peeked
+      if (
+        hold &&
+        hold.ability.def.targeting === "instant" &&
+        hold.time < 0.45 &&
+        hold.hero.alive &&
+        hold.ability.timer <= 0 &&
+        sx >= hold.x - 18 &&
+        sx <= hold.x + hold.w + 18 &&
+        sy >= hold.y - 18
+      ) {
+        this.battle.castAbility(hold.hero, hold.ability, this.save, null, null);
+      }
+      return;
+    }
     const wp = this.toWorld(sx, sy);
     const x = wp.x;
     const y = wp.y;
@@ -265,6 +297,7 @@ export class Hud {
         }
       } else if (moved > 12 && sy < this.height - HUD_H + 20) {
         this.battle.orderMove(hero, { x, y });
+        this.moveMarks.push({ x, y, t: 0 });
       }
       return;
     }
@@ -295,6 +328,9 @@ export class Hud {
 
   update(dt: number): void {
     this.hintTime = Math.max(0, this.hintTime - dt);
+    if (this.hold) this.hold.time += dt;
+    for (const m of this.moveMarks) m.t += dt;
+    this.moveMarks = this.moveMarks.filter((m) => m.t < 0.9);
     if (this.overlayActive() && (this.battle.state === "victory" || this.battle.state === "defeat")) {
       this.overlayAge += dt;
     } else if (this.battle.state === "fighting") {
@@ -356,9 +392,46 @@ export class Hud {
 
   /** World-space overlays: drawn inside the camera transform. */
   drawWorld(ctx: CanvasRenderingContext2D): void {
+    this.drawMoveMarks(ctx);
     this.drawTargetMarkers(ctx);
     this.drawCastingSigil(ctx);
     this.drawDragIndicators(ctx);
+  }
+
+  /** A brief planted pennant wherever a move order landed. */
+  private drawMoveMarks(ctx: CanvasRenderingContext2D): void {
+    for (const m of this.moveMarks) {
+      const life = 1 - m.t / 0.9;
+      const pop = Math.min(1, m.t / 0.12); // the flag plants with a little pop
+      ctx.globalAlpha = life * 0.9;
+      // expanding ground ring
+      ctx.strokeStyle = "rgba(255,250,220,0.9)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(m.x, m.y + 2, 10 + m.t * 26, (10 + m.t * 26) * 0.42, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      // pennant: pole + fluttering triangle
+      const h = 22 * pop;
+      ctx.strokeStyle = "#e0c896";
+      ctx.lineWidth = 2.4;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(m.x, m.y + 2);
+      ctx.lineTo(m.x, m.y + 2 - h);
+      ctx.stroke();
+      ctx.lineCap = "butt";
+      if (pop >= 1) {
+        const wave = Math.sin(this.battle.time * 9 + m.x) * 1.6;
+        ctx.fillStyle = "#ffe9a3";
+        ctx.beginPath();
+        ctx.moveTo(m.x, m.y + 2 - h);
+        ctx.lineTo(m.x + 11, m.y + 2 - h + 3.4 + wave);
+        ctx.lineTo(m.x, m.y + 2 - h + 7);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
   }
 
   /** A rotating spell circle under a hero while their gesture is being aimed. */
@@ -410,6 +483,7 @@ export class Hud {
     this.drawTopBar(ctx);
     this.drawBossBar(ctx);
     this.drawBar(ctx);
+    this.drawAbilityTooltip(ctx);
     this.drawBanner(ctx);
     this.drawIntroBanner(ctx);
     this.drawTutorialCard(ctx);
@@ -634,6 +708,45 @@ export class Hud {
       ? `${this.battle.stage.name} — wave ${Math.max(1, waveNumber)}/${this.battle.stage.waves.length}`
       : this.battle.stage.name;
     ctx.fillText(label, 20, 29);
+    // wave pips under the chip: done · current (lit) · to come (boss waves ringed red)
+    const total = this.battle.stage.waves.length;
+    if (total > 1) {
+      const BOSSY = ["alpha", "warlord", "ogre"];
+      for (let i = 0; i < total; i++) {
+        const px = 22 + i * 15;
+        const py = 48;
+        const done = i < this.battle.waveIndex || this.battle.state === "victory";
+        const now = i === this.battle.waveIndex && this.battle.state !== "victory";
+        const boss = this.battle.stage.waves[i].some((e) => BOSSY.includes(e.kind));
+        ctx.beginPath();
+        ctx.arc(px, py, now ? 4.6 : 3.6, 0, Math.PI * 2);
+        ctx.fillStyle = done ? "#8ee88b" : now ? "#ffe9a3" : "rgba(255,255,255,0.22)";
+        ctx.fill();
+        if (now) {
+          ctx.strokeStyle = `rgba(255,233,163,${0.4 + Math.abs(Math.sin(this.battle.time * 4)) * 0.5})`;
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.arc(px, py, 7, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        if (boss && !done) {
+          ctx.strokeStyle = "#ff8a70";
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.arc(px, py, now ? 4.6 : 3.6, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+      // the breather between waves gets a heads-up
+      if (this.battle.state === "wavebreak" && this.battle.waveIndex >= 0) {
+        ctx.globalAlpha = 0.55 + Math.abs(Math.sin(this.battle.time * 5)) * 0.45;
+        ctx.fillStyle = "#ffb4a0";
+        ctx.font = "700 11px 'Trebuchet MS', Verdana, sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText("the next wave approaches…", 22 + total * 15 + 6, 52);
+        ctx.globalAlpha = 1;
+      }
+    }
     // pause button
     ctx.fillStyle = "rgba(20, 16, 28, 0.55)";
     roundRect(ctx, this.width - 42, 10, 32, 30, 8);
@@ -922,6 +1035,12 @@ export class Hud {
         ctx.restore();
       }
 
+      // active effects march along the portrait's bottom edge
+      if (hero.alive) {
+        const shown = hero.effects.filter((e) => e.time > 0).slice(0, 4);
+        shown.forEach((eff, k) => this.drawEffectPip(ctx, x0 + 8 + k * 12.5, py + ps - 8, eff.kind, eff.time));
+      }
+
       // hp sliver under portrait
       const frac = Math.max(0, hero.hp / hero.stats.maxHp);
       ctx.fillStyle = "rgba(18,14,24,0.8)";
@@ -997,6 +1116,170 @@ export class Hud {
         ctx.fillText("train attributes", bx0, py + 32);
       }
     }
+  }
+
+  /** Tiny status chip: what's riding on this hero right now. */
+  private drawEffectPip(ctx: CanvasRenderingContext2D, cx: number, cy: number, kind: string, time: number): void {
+    const COLORS: Record<string, string> = {
+      shield: "#7db4e8",
+      haste: "#8ee88b",
+      guard: "#c9d2dd",
+      stun: "#ffe9a3",
+      slow: "#7de8e0",
+      burn: "#ff9a5a",
+      taunt: "#ff8a70",
+      vulnerable: "#c9a0ff",
+    };
+    const color = COLORS[kind] ?? "#cfc7de";
+    // expiring effects blink out
+    ctx.globalAlpha = time < 1 ? 0.35 + Math.abs(Math.sin(this.battle.time * 8)) * 0.65 : 1;
+    ctx.fillStyle = "rgba(16, 12, 24, 0.9)";
+    roundRect(ctx, cx - 5.5, cy - 5.5, 11, 11, 3);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.2;
+    roundRect(ctx, cx - 5.5, cy - 5.5, 11, 11, 3);
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    switch (kind) {
+      case "shield": // a little kite shield
+        ctx.moveTo(cx, cy - 3.2);
+        ctx.lineTo(cx + 2.8, cy - 1.4);
+        ctx.quadraticCurveTo(cx + 2.4, cy + 2, cx, cy + 3.4);
+        ctx.quadraticCurveTo(cx - 2.4, cy + 2, cx - 2.8, cy - 1.4);
+        ctx.closePath();
+        ctx.stroke();
+        break;
+      case "haste": // double chevron
+        ctx.moveTo(cx - 3, cy - 2.6);
+        ctx.lineTo(cx - 0.6, cy);
+        ctx.lineTo(cx - 3, cy + 2.6);
+        ctx.moveTo(cx + 0.6, cy - 2.6);
+        ctx.lineTo(cx + 3, cy);
+        ctx.lineTo(cx + 0.6, cy + 2.6);
+        ctx.stroke();
+        break;
+      case "guard": // heavy bracket
+        ctx.moveTo(cx - 2.8, cy - 3);
+        ctx.lineTo(cx - 2.8, cy + 3);
+        ctx.moveTo(cx + 2.8, cy - 3);
+        ctx.lineTo(cx + 2.8, cy + 3);
+        ctx.moveTo(cx - 2.8, cy);
+        ctx.lineTo(cx + 2.8, cy);
+        ctx.stroke();
+        break;
+      case "stun": // dazed star
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + Math.cos(a) * 3.4, cy + Math.sin(a) * 3.4);
+        }
+        ctx.stroke();
+        break;
+      case "slow": // snowflake
+        for (let i = 0; i < 3; i++) {
+          const a = (i / 3) * Math.PI;
+          ctx.moveTo(cx - Math.cos(a) * 3.4, cy - Math.sin(a) * 3.4);
+          ctx.lineTo(cx + Math.cos(a) * 3.4, cy + Math.sin(a) * 3.4);
+        }
+        ctx.stroke();
+        break;
+      case "burn": // flame lick
+        ctx.moveTo(cx, cy + 3.2);
+        ctx.quadraticCurveTo(cx - 3, cy, cx - 0.6, cy - 1.4);
+        ctx.quadraticCurveTo(cx + 0.4, cy - 2.4, cx, cy - 3.4);
+        ctx.quadraticCurveTo(cx + 3.2, cy - 0.6, cx, cy + 3.2);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      case "taunt": // exclamation
+        ctx.moveTo(cx, cy - 3.2);
+        ctx.lineTo(cx, cy + 0.8);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy + 3, 0.9, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      case "vulnerable": // cracked-open arrow down
+        ctx.moveTo(cx, cy - 3);
+        ctx.lineTo(cx, cy + 2.6);
+        ctx.moveTo(cx - 2.4, cy + 0.4);
+        ctx.lineTo(cx, cy + 3.2);
+        ctx.lineTo(cx + 2.4, cy + 0.4);
+        ctx.stroke();
+        break;
+      default:
+        ctx.arc(cx, cy, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.lineCap = "butt";
+    ctx.globalAlpha = 1;
+  }
+
+  /** Hold an ability button ~half a second and its card unfolds above the bar. */
+  private drawAbilityTooltip(ctx: CanvasRenderingContext2D): void {
+    const hold = this.hold;
+    if (!hold || hold.time < 0.42 || this.overlayActive()) return;
+    const def = hold.ability.def;
+    const grow = Math.min(1, (hold.time - 0.42) / 0.12);
+    // wrap the blurb to ~2 lines
+    ctx.font = "600 11.5px 'Trebuchet MS', Verdana, sans-serif";
+    const words = def.blurb.split(" ");
+    const lines: string[] = [];
+    let line = "";
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width > 186 && line) {
+        lines.push(line);
+        line = word;
+      } else line = test;
+    }
+    if (line) lines.push(line);
+    const oath = hold.ability.ult ? callingById(hold.hero.calling) : null;
+    const footer = hold.ability.ult
+      ? oath
+        ? `ULTIMATE · ${oath.chargeHint}`
+        : "ULTIMATE"
+      : `cooldown ${def.cooldown}s${def.targeting === "instant" ? "" : " · drag to aim"}`;
+    const w = 210;
+    const h = 44 + lines.length * 14;
+    const x = Math.max(8, Math.min(this.width - w - 8, hold.x + hold.w / 2 - w / 2));
+    const y = this.height - HUD_H - h - 10;
+    ctx.save();
+    ctx.globalAlpha = grow;
+    ctx.translate(0, (1 - grow) * 8);
+    ctx.fillStyle = "rgba(24, 18, 38, 0.94)";
+    roundRect(ctx, x, y, w, h, 10);
+    ctx.fill();
+    ctx.strokeStyle = def.color;
+    ctx.lineWidth = 1.6;
+    roundRect(ctx, x, y, w, h, 10);
+    ctx.stroke();
+    // little tail pointing at the held button
+    const tx = Math.max(x + 14, Math.min(x + w - 14, hold.x + hold.w / 2));
+    ctx.fillStyle = "rgba(24, 18, 38, 0.94)";
+    ctx.beginPath();
+    ctx.moveTo(tx - 7, y + h);
+    ctx.lineTo(tx, y + h + 7);
+    ctx.lineTo(tx + 7, y + h);
+    ctx.closePath();
+    ctx.fill();
+    drawAbilityGlyph(ctx, def.icon, x + 17, y + 17, 8.5, def.color);
+    ctx.fillStyle = def.color;
+    ctx.font = "800 13px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(def.name, x + 32, y + 21);
+    ctx.fillStyle = "#e8e2f2";
+    ctx.font = "600 11.5px 'Trebuchet MS', Verdana, sans-serif";
+    lines.forEach((l, i) => ctx.fillText(l, x + 12, y + 38 + i * 14));
+    ctx.fillStyle = "#a89fc0";
+    ctx.font = "700 10px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.fillText(footer, x + 12, y + h - 8);
+    ctx.restore();
   }
 
   private drawAbilityButton(

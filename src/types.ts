@@ -181,6 +181,8 @@ export interface SaveData {
   heroes: HeroSave[];
   sound: boolean;
   music: boolean;
+  soundVol: number; // 0-1 effects loudness
+  musicVol: number; // 0-1 music loudness
   speed: number; // combat speed multiplier
   bestiary: Partial<Record<EnemyKind, number>>; // kills per enemy kind
   gold: number;
@@ -188,4 +190,5 @@ export interface SaveData {
   inventory: string[]; // trinket ids collected as loot
   difficulty: number; // index into DIFFICULTIES
   seenIntro: boolean; // first-run tutorial prompt shown
+  stageStats: Record<number, { bestTime: number; clears: number }>; // per-stage clear records
 }

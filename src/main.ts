@@ -29,6 +29,8 @@ const ctx = canvas.getContext("2d")!;
 let save: SaveData = loadSave();
 audio.setSound(save.sound);
 audio.setMusic(save.music);
+audio.setSoundVolume(save.soundVol);
+audio.setMusicVolume(save.musicVol);
 
 let logicalW = 960;
 let logicalH = 560;
@@ -102,6 +104,8 @@ const menus = new Menus("ui", save, {
     persist(save);
     audio.setSound(save.sound);
     audio.setMusic(save.music);
+    audio.setSoundVolume(save.soundVol);
+    audio.setMusicVolume(save.musicVol);
     menus.save = save;
     menus.renderTitle();
   },
@@ -223,6 +227,10 @@ function settleVictory(): void {
   const gold = Math.round((battle.goldEarned + Math.round(battle.stage.xpReward * 0.8)) * rewardMult);
   const levels = grantXp(save, xp);
   save.gold += gold;
+  // stage record book: clears + fastest time feed the map's scout report
+  const rec = save.stageStats[currentStage];
+  const t = Math.round(battle.time * 10) / 10;
+  save.stageStats[currentStage] = { clears: (rec?.clears ?? 0) + 1, bestTime: rec ? Math.min(rec.bestTime, t) : t };
   // loot was revealed on the victory card; bank it now
   rollLoot();
   const drop = rolledLoot!;
@@ -421,7 +429,10 @@ canvas.addEventListener("pointerup", releasePointer);
 canvas.addEventListener("pointercancel", (event) => {
   if (event.pointerId === activePointer) {
     activePointer = null;
-    if (hud) hud.drag = null;
+    if (hud) {
+      hud.drag = null;
+      hud.hold = null;
+    }
   }
 });
 

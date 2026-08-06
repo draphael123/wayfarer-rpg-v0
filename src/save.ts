@@ -27,6 +27,8 @@ export function defaultSave(): SaveData {
     heroes: HEROES.map((_, i) => defaultHero(i)),
     sound: true,
     music: true,
+    soundVol: 1,
+    musicVol: 1,
     speed: 0.5,
     bestiary: {},
     gold: 0,
@@ -34,6 +36,7 @@ export function defaultSave(): SaveData {
     inventory: [],
     difficulty: 1,
     seenIntro: false,
+    stageStats: {},
   };
 }
 
@@ -96,6 +99,9 @@ export function loadSave(): SaveData {
     if (!Array.isArray(parsed.inventory)) parsed.inventory = [];
     if (typeof parsed.difficulty !== "number" || parsed.difficulty < 0 || parsed.difficulty > 3) parsed.difficulty = 1;
     if (typeof parsed.seenIntro !== "boolean") parsed.seenIntro = parsed.unlockedStage > 0;
+    if (typeof parsed.soundVol !== "number" || parsed.soundVol < 0 || parsed.soundVol > 1) parsed.soundVol = 1;
+    if (typeof parsed.musicVol !== "number" || parsed.musicVol < 0 || parsed.musicVol > 1) parsed.musicVol = 1;
+    if (!parsed.stageStats || typeof parsed.stageStats !== "object") parsed.stageStats = {};
     return parsed;
   } catch {
     return defaultSave();
