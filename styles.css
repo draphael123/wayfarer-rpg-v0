@@ -1423,7 +1423,7 @@ html, body {
 }
 
 .talent-node.tier-locked {
-  opacity: 0.45;
+  opacity: 0.62;
 }
 
 .talent-node.keystone {
@@ -2597,3 +2597,32 @@ button.hero-points { font: inherit; cursor: pointer; }
 }
 
 .spell-section em { font-style: normal; color: #8d84a3; text-transform: none; letter-spacing: 0; }
+
+/* ---- seven talent paths: chip selector + single wide column ---- */
+.tree-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 2px 2px; }
+.tree-chip {
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  padding: 7px 11px; border-radius: 999px; color: #cfc7de;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.tree-chip .tree-spent {
+  display: inline-block; min-width: 16px; text-align: center; margin-left: 3px;
+  font-size: 11px; border-radius: 999px; padding: 1px 4px;
+  background: rgba(0, 0, 0, 0.35); color: var(--tree);
+}
+.tree-chip.sel { color: #fff; border-color: var(--tree); background: color-mix(in srgb, var(--tree) 22%, transparent); box-shadow: 0 0 0 1px var(--tree) inset; }
+.talent-trees:has(.talent-col.wide) { grid-template-columns: 1fr; }
+.talent-col.wide {
+  width: 100%;
+  max-width: 680px;
+  margin: 8px auto 0;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.talent-col.wide .talent-col-head,
+.talent-col.wide .tier-rule { width: 100%; }
+.talent-col.wide .talent-node { width: calc(50% - 5px); }
+@media (max-width: 560px) {
+  .talent-col.wide .talent-node { width: 100%; }
+}
+.big-text .tree-chip { font-size: 15px; }

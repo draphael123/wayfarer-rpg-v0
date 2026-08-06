@@ -1630,7 +1630,7 @@ export const MAX_EQUIPPED = 3;
 
 export const MAX_LEVEL = 100;
 
-export type TalentTree = "str" | "dex" | "mag";
+export type TalentTree = "might" | "precision" | "sorcery" | "faith" | "bulwark" | "swiftness" | "fortune";
 
 export interface TalentDef {
   id: string;
@@ -1643,42 +1643,64 @@ export interface TalentDef {
 }
 
 export const TALENT_TREES: Record<TalentTree, { name: string; color: string; icon: string }> = {
-  str: { name: "Strength", color: "#e05c4b", icon: "🛡" },
-  dex: { name: "Dexterity", color: "#58b368", icon: "🏹" },
-  mag: { name: "Magic", color: "#8a6fd1", icon: "✨" },
+  might: { name: "Might", color: "#e05c4b", icon: "⚔" },
+  precision: { name: "Precision", color: "#58b368", icon: "🎯" },
+  sorcery: { name: "Sorcery", color: "#b48ae8", icon: "✦" },
+  faith: { name: "Faith", color: "#f2d16b", icon: "✚" },
+  bulwark: { name: "Bulwark", color: "#8fd0a8", icon: "🛡" },
+  swiftness: { name: "Swiftness", color: "#7bc8d8", icon: "»" },
+  fortune: { name: "Fortune", color: "#e8c25a", icon: "◈" },
 };
 
 /** Points that must be spent inside a tree before each tier opens. */
 export const TIER_UNLOCK = [0, 5, 12];
 
 export const TALENTS: TalentDef[] = [
-  // --------------- Strength: hit harder, stand longer
-  { id: "ironGrip", tree: "str", tier: 1, name: "Iron Grip", blurb: "+3% melee damage", maxRank: 5 },
-  { id: "oxBlood", tree: "str", tier: 1, name: "Ox Blood", blurb: "+3% max health", maxRank: 5 },
-  { id: "stoneSkin", tree: "str", tier: 2, name: "Stone Skin", blurb: "+1.5% armor", maxRank: 5 },
-  { id: "warEcho", tree: "str", tier: 2, name: "War Echo", blurb: "-3% ability cooldowns", maxRank: 5 },
-  { id: "battleRoar", tree: "str", tier: 2, name: "Battle Roar", blurb: "Kills whip you into a fury: +35% attack speed for 2.5s", maxRank: 1, keystone: true },
-  { id: "cleavingBlows", tree: "str", tier: 3, name: "Cleaving Blows", blurb: "Melee strikes splash 30% damage to other nearby foes", maxRank: 1, keystone: true },
-  { id: "juggernaut", tree: "str", tier: 3, name: "Juggernaut", blurb: "Cannot be stunned while above two-thirds health", maxRank: 1, keystone: true },
-  { id: "lastStand", tree: "str", tier: 3, name: "Last Stand", blurb: "+8% damage while below 30% health", maxRank: 3 },
-  // --------------- Dexterity: speed, precision, evasion
-  { id: "keenEye", tree: "dex", tier: 1, name: "Keen Eye", blurb: "+3% ranged damage", maxRank: 5 },
-  { id: "quickHands", tree: "dex", tier: 1, name: "Quick Hands", blurb: "+3% attack speed", maxRank: 5 },
-  { id: "fleetFoot", tree: "dex", tier: 2, name: "Fleet Foot", blurb: "+3% move speed", maxRank: 5 },
-  { id: "deadEye", tree: "dex", tier: 2, name: "Dead Eye", blurb: "+3% chance to crit for 60% extra", maxRank: 5 },
-  { id: "twinArrows", tree: "dex", tier: 2, name: "Twin Arrows", blurb: "Every 4th ranged attack looses two missiles", maxRank: 1, keystone: true },
-  { id: "executioner", tree: "dex", tier: 3, name: "Executioner", blurb: "Foes below a quarter health take double damage from you", maxRank: 1, keystone: true },
-  { id: "windStep", tree: "dex", tier: 3, name: "Wind Step", blurb: "Shrug off the first hit of every wave", maxRank: 1, keystone: true },
-  { id: "huntersRhythm", tree: "dex", tier: 3, name: "Hunter's Rhythm", blurb: "+2% attack speed and move speed", maxRank: 3 },
-  // --------------- Magic: spellcraft and mending
-  { id: "focus", tree: "mag", tier: 1, name: "Focus", blurb: "+4% spell power", maxRank: 5 },
-  { id: "springs", tree: "mag", tier: 1, name: "Vital Springs", blurb: "+4% healing power", maxRank: 5 },
-  { id: "attune", tree: "mag", tier: 2, name: "Attunement", blurb: "-3% ability cooldowns", maxRank: 5 },
-  { id: "aegis", tree: "mag", tier: 2, name: "Lesser Aegis", blurb: "Start battles with an 8 hp ward", maxRank: 5 },
-  { id: "kindledMind", tree: "mag", tier: 2, name: "Kindled Mind", blurb: "Your damaging spells scorch foes for 8 over 3s", maxRank: 1, keystone: true },
-  { id: "overflow", tree: "mag", tier: 3, name: "Overflow", blurb: "Overhealing spills onto the most wounded other ally", maxRank: 1, keystone: true },
-  { id: "mendersWard", tree: "mag", tier: 3, name: "Mender's Ward", blurb: "Topping off an ally leaves a 10 hp ward on them", maxRank: 1, keystone: true },
-  { id: "archon", tree: "mag", tier: 3, name: "Archon", blurb: "+3% spell power and healing power", maxRank: 3 },
+  // MIGHT — hit harder
+  { id: "ironGrip", tree: "might", tier: 1, name: "Iron Grip", blurb: "+3% melee damage", maxRank: 5 },
+  { id: "slayer", tree: "might", tier: 1, name: "Slayer's Eye", blurb: "+2% melee damage and +2% crit", maxRank: 3 },
+  { id: "battleRoar", tree: "might", tier: 2, name: "Battle Roar", blurb: "Kills whip you into a fury: +35% attack speed for 2.5s", maxRank: 1, keystone: true },
+  { id: "lastStand", tree: "might", tier: 2, name: "Last Stand", blurb: "+8% damage while below 30% health", maxRank: 3 },
+  { id: "cleavingBlows", tree: "might", tier: 3, name: "Cleaving Blows", blurb: "Melee strikes splash 30% damage to other nearby foes", maxRank: 1, keystone: true },
+  // PRECISION — the perfect shot
+  { id: "keenEye", tree: "precision", tier: 1, name: "Keen Eye", blurb: "+3% ranged damage", maxRank: 5 },
+  { id: "deadEye", tree: "precision", tier: 2, name: "Dead Eye", blurb: "+3% chance to crit for 60% extra", maxRank: 5 },
+  { id: "huntersMark", tree: "precision", tier: 2, name: "Hunter's Mark", blurb: "+25% damage to foes still at full health", maxRank: 1, keystone: true },
+  { id: "twinArrows", tree: "precision", tier: 2, name: "Twin Arrows", blurb: "Every 4th ranged attack looses two missiles", maxRank: 1, keystone: true },
+  { id: "executioner", tree: "precision", tier: 3, name: "Executioner", blurb: "Foes below a quarter health take double damage from you", maxRank: 1, keystone: true },
+  { id: "huntersRhythm", tree: "precision", tier: 3, name: "Hunter's Rhythm", blurb: "+2% attack speed and move speed", maxRank: 3 },
+  // SORCERY — the burning mind
+  { id: "focus", tree: "sorcery", tier: 1, name: "Focus", blurb: "+4% spell power", maxRank: 5 },
+  { id: "runeMemory", tree: "sorcery", tier: 1, name: "Rune Memory", blurb: "+2% spell power, -1% cooldowns", maxRank: 5 },
+  { id: "attune", tree: "sorcery", tier: 2, name: "Attunement", blurb: "-3% ability cooldowns", maxRank: 5 },
+  { id: "kindledMind", tree: "sorcery", tier: 2, name: "Kindled Mind", blurb: "Your damaging spells scorch foes for 8 over 3s", maxRank: 1, keystone: true },
+  { id: "archon", tree: "sorcery", tier: 3, name: "Archon", blurb: "+3% spell power and healing power", maxRank: 3 },
+  // FAITH — the mender's road
+  { id: "springs", tree: "faith", tier: 1, name: "Vital Springs", blurb: "+4% healing power", maxRank: 5 },
+  { id: "devotion", tree: "faith", tier: 1, name: "Devotion", blurb: "+2% healing, +1% armor", maxRank: 5 },
+  { id: "aegis", tree: "faith", tier: 2, name: "Lesser Aegis", blurb: "Start battles with an 8 hp ward", maxRank: 5 },
+  { id: "overflow", tree: "faith", tier: 3, name: "Overflow", blurb: "Overhealing spills onto the most wounded other ally", maxRank: 1, keystone: true },
+  { id: "mendersWard", tree: "faith", tier: 3, name: "Mender's Ward", blurb: "Topping off an ally leaves a 10 hp ward on them", maxRank: 1, keystone: true },
+  // BULWARK — stand and be struck
+  { id: "oxBlood", tree: "bulwark", tier: 1, name: "Ox Blood", blurb: "+3% max health", maxRank: 5 },
+  { id: "thickHide", tree: "bulwark", tier: 1, name: "Thick Hide", blurb: "+1% armor", maxRank: 5 },
+  { id: "stoneSkin", tree: "bulwark", tier: 2, name: "Stone Skin", blurb: "+1.5% armor", maxRank: 5 },
+  { id: "secondBreath", tree: "bulwark", tier: 2, name: "Second Breath", blurb: "Recover 6% health as each new fight begins", maxRank: 1, keystone: true },
+  { id: "juggernaut", tree: "bulwark", tier: 3, name: "Juggernaut", blurb: "Cannot be stunned while above two-thirds health", maxRank: 1, keystone: true },
+  { id: "fortress", tree: "bulwark", tier: 3, name: "Fortress", blurb: "+2% health and +0.5% armor", maxRank: 3 },
+  // SWIFTNESS — never where the blow lands
+  { id: "fleetFoot", tree: "swiftness", tier: 1, name: "Fleet Foot", blurb: "+3% move speed", maxRank: 5 },
+  { id: "quickHands", tree: "swiftness", tier: 1, name: "Quick Hands", blurb: "+3% attack speed", maxRank: 5 },
+  { id: "surefoot", tree: "swiftness", tier: 2, name: "Surefoot", blurb: "+2% move speed, -1% cooldowns", maxRank: 5 },
+  { id: "warEcho", tree: "swiftness", tier: 2, name: "War Echo", blurb: "-3% ability cooldowns", maxRank: 5 },
+  { id: "windStep", tree: "swiftness", tier: 3, name: "Wind Step", blurb: "Shrug off the first hit of every wave", maxRank: 1, keystone: true },
+  { id: "momentum", tree: "swiftness", tier: 3, name: "Momentum", blurb: "+2% attack speed and +2% move", maxRank: 3 },
+  // FORTUNE — the road provides
+  { id: "luckyCharm", tree: "fortune", tier: 1, name: "Lucky Charm", blurb: "+2% crit", maxRank: 5 },
+  { id: "providence", tree: "fortune", tier: 1, name: "Providence", blurb: "Start battles with a 10 hp ward", maxRank: 5 },
+  { id: "deepPockets", tree: "fortune", tier: 2, name: "Deep Pockets", blurb: "+20% gold from every battle", maxRank: 1, keystone: true },
+  { id: "windfall", tree: "fortune", tier: 2, name: "Windfall", blurb: "Your kills shake 3 extra gold loose", maxRank: 1, keystone: true },
+  { id: "gamblersEdge", tree: "fortune", tier: 3, name: "Gambler's Edge", blurb: "+3% crit", maxRank: 3 },
 ];
 
 export interface TalentRanks {
@@ -1702,17 +1724,17 @@ export interface TalentMods {
 export function talentMods(ranks: TalentRanks | undefined): TalentMods {
   const r = (id: string) => ranks?.[id] ?? 0;
   return {
-    meleeDmg: r("ironGrip") * 0.03,
+    meleeDmg: r("ironGrip") * 0.03 + r("slayer") * 0.02,
     rangedDmg: r("keenEye") * 0.03,
-    hpPct: r("oxBlood") * 0.03,
-    armorFlat: r("stoneSkin") * 0.015,
-    cdr: Math.min(0.45, r("warEcho") * 0.03 + r("attune") * 0.03),
-    atkSpeed: r("quickHands") * 0.03 + r("huntersRhythm") * 0.02,
-    moveSpeed: r("fleetFoot") * 0.03 + r("huntersRhythm") * 0.02,
-    crit: r("deadEye") * 0.03,
-    spellPower: r("focus") * 0.04 + r("archon") * 0.03,
-    healPower: r("springs") * 0.04 + r("archon") * 0.03,
-    startShield: r("aegis") * 8,
+    hpPct: r("oxBlood") * 0.03 + r("fortress") * 0.02,
+    armorFlat: r("stoneSkin") * 0.015 + r("thickHide") * 0.01 + r("devotion") * 0.01 + r("fortress") * 0.005,
+    cdr: Math.min(0.45, r("warEcho") * 0.03 + r("attune") * 0.03 + r("runeMemory") * 0.01 + r("surefoot") * 0.01),
+    atkSpeed: r("quickHands") * 0.03 + r("huntersRhythm") * 0.02 + r("momentum") * 0.02,
+    moveSpeed: r("fleetFoot") * 0.03 + r("huntersRhythm") * 0.02 + r("surefoot") * 0.02 + r("momentum") * 0.02,
+    crit: r("deadEye") * 0.03 + r("slayer") * 0.02 + r("luckyCharm") * 0.02 + r("gamblersEdge") * 0.03,
+    spellPower: r("focus") * 0.04 + r("archon") * 0.03 + r("runeMemory") * 0.02,
+    healPower: r("springs") * 0.04 + r("archon") * 0.03 + r("devotion") * 0.02,
+    startShield: r("aegis") * 8 + r("providence") * 10,
   };
 }
 

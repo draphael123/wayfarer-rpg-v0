@@ -252,7 +252,9 @@ function settleVictory(): void {
   const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * rewardMult);
   const gold = Math.round((battle.goldEarned + Math.round(battle.stage.xpReward * 0.8)) * rewardMult);
   const levels = grantXp(save, xp);
-  save.gold += gold;
+  // Deep Pockets: someone in the band knows where coin hides
+  const deepPockets = save.heroes.some((h) => h.active && (h.talents?.deepPockets ?? 0) > 0);
+  save.gold += Math.round(gold * (deepPockets ? 1.2 : 1));
   // stage record book: clears + fastest time feed the map's scout report
   const rec = save.stageStats[currentStage];
   const t = Math.round(battle.time * 10) / 10;

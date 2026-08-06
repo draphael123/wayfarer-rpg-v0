@@ -298,6 +298,10 @@ export class Battle {
     // Wind Step: dodge-ready again at the start of every wave
     for (const hero of this.livingHeroes()) {
       if (this.heroTalentRank(hero, "windStep") > 0) this.windstepReady.add(hero.id);
+      // Second Breath: a gulp of air between fights
+      if (this.heroTalentRank(hero, "secondBreath") > 0 && hero.hp < hero.stats.maxHp) {
+        this.heal(hero, hero.stats.maxHp * 0.06, true, null);
+      }
       const armorHook = this.armorHookOf(hero);
       if (armorHook === "dodgeFirstHit" || hero.advCalling === "phantom") this.armorDodgeReady.add(hero.id);
       if (armorHook === "waveShield") {
@@ -523,6 +527,19 @@ export class Battle {
       target.alert = 0.5;
       this.fx.floatText(target.x, target.y - target.radius * 3 - 8, "!", "#ff8a70", 17);
     }
+    // a struck hero answers back — unless already trading blows with someone else
+    if (
+      target.team === "hero" &&
+      target.alive &&
+      target.stance === "attack" &&
+      !target.healTarget &&
+      source &&
+      source.team === "enemy" &&
+      source.alive &&
+      (!target.attackTarget || !target.attackTarget.alive)
+    ) {
+      target.attackTarget = source;
+    }
     // Kindled Mind: damaging spells leave a scorch
     if (
       opts.spell &&
@@ -655,6 +672,11 @@ export class Battle {
       killer.effects = killer.effects.filter((e) => e.kind !== "haste");
       killer.effects.push(makeEffect("haste", 2.5, 1.35, killer));
       this.fx.burst(killer.x, killer.y - 16, "#ffd27d", 8, 90, { glow: true });
+    }
+    // Windfall: kills shake loose extra coin
+    if (unit.team === "enemy" && killer?.team === "hero" && this.heroTalentRank(killer, "windfall") > 0) {
+      this.goldEarned += 3;
+      this.fx.floatText(unit.x, unit.y - unit.radius - 6, "+3g", "#ffd76b", 11);
     }
     audio.play("thud");
     if (
@@ -1743,7 +1765,7 @@ export class Battle {
             const fy = this.field.top + 40 + rank * ((this.field.bottom - this.field.top - 80) / 4);
             hero.moveTarget = { x: fx + 26, y: fy };
             hero.facing = 1;
-            this.moveToward(hero, { x: fx, y: fy }, dt, 8);
+            if (this.moveToward(hero, { x: fx, y: fy }, dt, 8)) hero.bobPhase += dt * 10;
           }
         }
         if (this.breakTimer <= 0) this.startNextWave();
@@ -2659,6 +2681,10 @@ export class Battle {
       const lastStand = this.heroTalentRank(attacker, "lastStand");
       if (lastStand > 0 && attacker.hp < attacker.stats.maxHp * 0.3) {
         dmg *= 1 + 0.08 * lastStand;
+      }
+      // Hunter's Mark: the first blood is the deepest
+      if (this.heroTalentRank(attacker, "huntersMark") > 0 && target.hp >= target.stats.maxHp * 0.995) {
+        dmg *= 1.25;
       }
       // Executioner: finish wounded foes
       if (this.heroTalentRank(attacker, "executioner") > 0 && target.hp < target.stats.maxHp * 0.25) {

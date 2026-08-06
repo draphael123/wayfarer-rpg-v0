@@ -19,6 +19,7 @@ import {
   MAX_LEVEL,
   TALENTS,
   TALENT_TREES,
+  type TalentTree,
   TIER_UNLOCK,
   talentPointBudget,
   talentPointsInTree,
@@ -1758,6 +1759,8 @@ export class Menus {
 
   // ------------------------------------------------------------------ talents
 
+  private talentTreeSel: TalentTree | null = null;
+
   renderTalents(index: number): void {
     this.pushNav("talents", index);
     this.root.innerHTML = "";
@@ -1790,11 +1793,25 @@ export class Menus {
     drawHeroPortrait(page.querySelector(".hero-avatar canvas") as HTMLCanvasElement, index, save);
     page.querySelector(".map-header")!.after(this.heroTabs(index, "talents"));
     const trees = page.querySelector(".talent-trees")!;
-    for (const treeKey of ["str", "dex", "mag"] as const) {
+    const treeKeys = Object.keys(TALENT_TREES) as TalentTree[];
+    if (!this.talentTreeSel) this.talentTreeSel = treeKeys[0];
+    const chips = el(`<div class="tree-chips"></div>`);
+    for (const key of treeKeys) {
+      const t = TALENT_TREES[key];
+      const pts = talentPointsInTree(hero.talents, key);
+      chips.appendChild(
+        el(
+          `<button class="tree-chip ${key === this.talentTreeSel ? "sel" : ""}" style="--tree:${t.color}" data-tree="${key}">${t.icon} ${t.name}${pts > 0 ? ` <span class="tree-spent">${pts}</span>` : ""}</button>`,
+        ),
+      );
+    }
+    trees.before(chips);
+    const treeKey = this.talentTreeSel;
+    {
       const tree = TALENT_TREES[treeKey];
       const inTree = talentPointsInTree(hero.talents, treeKey);
       const column = el(`
-        <div class="talent-col" style="--tree:${tree.color}">
+        <div class="talent-col wide" style="--tree:${tree.color}">
           <div class="talent-col-head">${tree.icon} ${tree.name} <span class="tree-spent">${inTree}p</span></div>
         </div>
       `);
@@ -1828,6 +1845,13 @@ export class Menus {
     }
     page.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
+      const chip = target.closest("[data-tree]");
+      if (chip) {
+        this.talentTreeSel = chip.getAttribute("data-tree") as TalentTree;
+        audio.play("click");
+        this.renderTalents(index);
+        return;
+      }
       const node = target.closest("[data-talent]");
       if (node) {
         const id = node.getAttribute("data-talent")!;
