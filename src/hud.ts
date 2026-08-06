@@ -145,6 +145,8 @@ export class Hud {
   private readyFlash: Record<number, number> = {}; // per ability-slot key
   private prevTimers: Record<number, number> = {};
   private portraitShake: Record<number, number> = {};
+  private clusterAnim: Record<number, number> = {}; // hero id -> eased cluster width
+  private frameDt = 1 / 60;
   private prevHp: Record<number, number> = {};
   private lastChime = -10;
   overlayAge = 0;
@@ -435,6 +437,7 @@ export class Hud {
   }
 
   update(dt: number): void {
+    this.frameDt = dt;
     this.hintTime = Math.max(0, this.hintTime - dt);
     // teach the new game, once each, at the moment it matters
     if (!this.marchHintShown && this.battle.marching) {
@@ -1062,7 +1065,15 @@ export class Hud {
     const selBtns = Math.max(1, effSel?.abilities.length ?? 1);
     const selNeed = 8 + 52 + 7 + selBtns * (bs + 6) + 6;
     const selW = Math.max(compactW, Math.min(this.width - compactW * (count - 1), Math.max(230, selNeed)));
-    const widths = heroes.map((h) => (h === effSel ? selW : compactW));
+    // clusters glide open and closed instead of snapping when selection moves
+    const ease = this.save.reducedMotion ? 1 : Math.min(1, this.frameDt * 14);
+    const widths = heroes.map((h) => {
+      const target = h === effSel ? selW : compactW;
+      const cur = this.clusterAnim[h.id] ?? target;
+      const next = Math.abs(target - cur) < 0.5 ? target : cur + (target - cur) * ease;
+      this.clusterAnim[h.id] = next;
+      return next;
+    });
     const rowX0 = (this.width - widths.reduce((a, b) => a + b, 0)) / 2;
     let clusterX = rowX0;
     for (let i = 0; i < heroes.length; i++) {
@@ -1094,10 +1105,11 @@ export class Hud {
       ctx.fill();
       const hpFrac = hero.alive ? hero.hp / hero.stats.maxHp : 1;
       const critical = hero.alive && hpFrac < 0.25;
+      const breathe = 0.75 + Math.abs(Math.sin(this.battle.time * 2.2)) * 0.25;
       ctx.strokeStyle = critical
         ? `rgba(255, 90, 72, ${0.55 + Math.abs(Math.sin(this.battle.time * 5)) * 0.45})`
         : isSel
-          ? "#ffe9a3"
+          ? `rgba(255, 233, 163, ${this.save.reducedMotion ? 1 : breathe})`
           : "rgba(255,255,255,0.14)";
       ctx.lineWidth = critical ? 2.6 : isSel ? 2 : 1.2;
       roundRect(ctx, x0, py, ps, ps, 9);
@@ -1251,8 +1263,25 @@ export class Hud {
         this.stanceChips.push({ x: chipX - 6, y: chipY - 6, w: cs + 12, h: cs + 12, hero });
       }
 
-      // ability buttons: only the selected hero unfolds their full row
-      if (hero !== effSel) continue;
+      // ability buttons: only the selected hero unfolds their full row.
+      // folded cards still whisper when something is ready to fire.
+      if (hero !== effSel) {
+        if (hero.alive && hero.ultCharge >= 100) {
+          const pulse = 0.6 + Math.abs(Math.sin(this.battle.time * 4)) * 0.4;
+          const oathColor = callingById(hero.calling)?.color ?? "#ffe9a3";
+          ctx.save();
+          ctx.globalAlpha = pulse;
+          ctx.translate(x0 + ps - 4, py + ps - 4);
+          ctx.rotate(Math.PI / 4);
+          ctx.fillStyle = oathColor;
+          ctx.fillRect(-4.5, -4.5, 9, 9);
+          ctx.strokeStyle = "#fff6d8";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(-4.5, -4.5, 9, 9);
+          ctx.restore();
+        }
+        continue;
+      }
       const bx0 = x0 + ps + 7;
       for (let a = 0; a < hero.abilities.length; a++) {
         const ability = hero.abilities[a];

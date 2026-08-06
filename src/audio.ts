@@ -38,6 +38,12 @@ type SfxName =
   | "ultNova"
   | "ultShadows"
   | "relic"
+  | "armorSurge"
+  | "armorTumble"
+  | "armorRally"
+  | "armorBrace"
+  | "anvil"
+  | "setChime"
   | "howl"
   | "warhorn"
   | "flawless"
@@ -566,6 +572,48 @@ class AudioKit {
         this.tone(659, 0.16, "triangle", 0.16, 0, 0.14);
         this.tone(784, 0.2, "triangle", 0.16, 0, 0.28);
         this.tone(1047, 0.5, "sine", 0.14, 0, 0.42);
+        break;
+      // ---- armor skills: each family speaks in its own voice
+      case "armorSurge":
+        // cloth: time itself hurried along — a rising arcane spin
+        for (let i = 0; i < 4; i++) this.tone(620 + i * 210, 0.09, "triangle", 0.09, 240, i * 0.05);
+        this.tone(1660, 0.3, "sine", 0.08, -180, 0.2);
+        this.noise(0.12, 0.05, 4600, 0.02);
+        break;
+      case "armorTumble":
+        // leather: a roll through the dust and away
+        this.noise(0.14, 0.2, 1400);
+        this.noise(0.1, 0.16, 2600, 0.08);
+        this.tone(300, 0.12, "sine", 0.1, 260, 0.1);
+        break;
+      case "armorRally":
+        // mail: a steadying shout with steel under it
+        this.tone(196, 0.24, "sawtooth", 0.12, 14);
+        this.tone(294, 0.3, "triangle", 0.12, 8, 0.08);
+        this.tone(392, 0.4, "sine", 0.1, 0, 0.16);
+        this.noise(0.1, 0.04, 800, 0.02);
+        break;
+      case "armorBrace":
+        // plate: feet planted like a dropped portcullis
+        this.tone(75, 0.3, "sine", 0.26, -16);
+        this.noise(0.16, 0.2, 600);
+        this.tone(440, 0.08, "square", 0.08, -120, 0.03);
+        this.tone(110, 0.4, "sine", 0.14, -8, 0.1);
+        break;
+      case "anvil":
+        // the forge answers: hammer, ring, and settling sparks
+        this.tone(520, 0.06, "square", 0.16, -80);
+        this.noise(0.08, 0.18, 3400);
+        this.tone(1240, 0.5, "triangle", 0.1, -40, 0.05);
+        this.noise(0.3, 0.05, 5200, 0.1);
+        break;
+      case "setChime":
+        // three pieces of one family lock into place
+        this.tone(392, 0.14, "triangle", 0.14);
+        this.tone(523, 0.14, "triangle", 0.14, 0, 0.11);
+        this.tone(659, 0.18, "triangle", 0.13, 0, 0.22);
+        this.tone(784, 0.55, "sine", 0.12, 0, 0.33);
+        this.noise(0.1, 0.03, 5000, 0.33);
         break;
       case "ultWhirlwind":
         this.noise(0.34, 0.28, 1500);

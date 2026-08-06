@@ -329,6 +329,9 @@ export class Battle {
       if (armorHook === "waveShield" || this.armorSetHookOf(hero) === "waveShield") {
         hero.effects = hero.effects.filter((e) => e.kind !== "shield");
         hero.effects.push(makeEffect("shield", 9999, 30, null));
+        // the ward shimmers into place so the player sees where it came from
+        this.fx.ring(hero.x, hero.y - 14, hero.radius * 2.4, "#7db4e8", { width: 2.5, life: 0.6 });
+        this.fx.burst(hero.x, hero.y - 18, "#b8d8f5", 6, 50, { glow: true, gravity: -50, life: 0.5 });
       }
     }
     audio.play("wave");
@@ -1967,9 +1970,16 @@ export class Battle {
         for (const ab of hero.abilities) {
           if (ab !== state && !ab.ult && ab.timer > 0) ab.timer = Math.max(0, ab.timer - shave);
         }
+        // ceremony: a clock of sparks spun forward around the caster
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2;
+          this.fx.burst(hero.x + Math.cos(a) * 26, hero.y - 16 + Math.sin(a) * 16, "#d4baf5", 3, 60, { glow: true, life: 0.35, gravity: -40 });
+        }
         this.fx.ring(hero.x, hero.y, 60, "#b48ae8", { width: 3, life: 0.5 });
-        this.fx.burst(hero.x, hero.y - 20, "#d4baf5", 14, 130, { glow: true, gravity: -70 });
-        audio.play("spWard");
+        this.fx.ring(hero.x, hero.y, 34, "#e8dcff", { width: 2, life: 0.35 });
+        this.fx.beam(hero.x, hero.y - 8, 70, 14, "#b48ae8", 0.35);
+        hero.castGlow = 0.6;
+        audio.play("armorSurge");
         break;
       }
       case "armorTumble": {
@@ -1983,9 +1993,12 @@ export class Battle {
         }
         hero.lunge = 1;
         hero.lungeDir = dir;
-        this.fx.burst(hero.x, hero.y - 6, "#c9b490", 12, 110, { gravity: 60 });
+        // ceremony: a dust-streak the shape of the escape
+        this.fx.tracer(hero.x - dir.x * 44, hero.y - dir.y * 44 - 10, hero.x + dir.x * 20, hero.y + dir.y * 20 - 10, "#e8dcc0", 0.3, 4);
+        this.fx.tracer(hero.x - dir.x * 30, hero.y - dir.y * 30 - 16, hero.x + dir.x * 16, hero.y + dir.y * 16 - 16, "#8ed081", 0.24, 2.5);
+        this.fx.burst(hero.x - dir.x * 18, hero.y - 4, "#c9b490", 14, 110, { gravity: 70, life: 0.5 });
         this.fx.ring(hero.x, hero.y, 36, "#8ed081", { width: 2.5, life: 0.3 });
-        audio.play("spRush");
+        audio.play("armorTumble");
         break;
       }
       case "armorRally": {
@@ -1994,9 +2007,13 @@ export class Battle {
         for (const ally of this.livingHeroes()) {
           if (ally !== hero && Math.hypot(ally.x - hero.x, ally.y - hero.y) > 130) continue;
           this.heal(ally, ally.stats.maxHp * frac, true, hero);
+          // ceremony: rising motes over everyone the shout reaches
+          this.fx.burst(ally.x, ally.y - 24, "#bfe8d4", 8, 60, { glow: true, gravity: -90, life: 0.7 });
+          this.fx.ring(ally.x, ally.y - 10, ally.radius * 2, "#9fd4e8", { width: 2, life: 0.45 });
         }
         this.fx.ring(hero.x, hero.y, 130, "#9fd4e8", { width: 4, life: 0.6 });
-        audio.play("spSecondwind");
+        this.fx.beam(hero.x, hero.y - 6, 90, 20, "#bfe8d4", 0.5);
+        audio.play("armorRally");
         break;
       }
       case "armorBrace": {
@@ -2005,9 +2022,14 @@ export class Battle {
         hero.effects = hero.effects.filter((e) => e.kind !== "guard");
         hero.effects.push(makeEffect("guard", 3 + forge * 0.35, 0.55 + forge * 0.05, hero));
         hero.moveTarget = null;
-        this.fx.ring(hero.x, hero.y, 46, "#c9d2dd", { width: 4, life: 0.5 });
-        this.fx.burst(hero.x, hero.y - 10, "#e8edf2", 10, 90, { glow: true });
-        audio.play("spShieldslam");
+        // ceremony: the ground takes the weight
+        this.fx.ring(hero.x, hero.y, 46, "#c9d2dd", { width: 4, life: 0.5, squash: 0.4 });
+        this.fx.ring(hero.x, hero.y, 70, "#8a93a2", { width: 2.5, life: 0.6, squash: 0.4 });
+        this.fx.burst(hero.x - 14, hero.y, "#b8aa90", 6, 70, { gravity: 90, life: 0.5 });
+        this.fx.burst(hero.x + 14, hero.y, "#b8aa90", 6, 70, { gravity: 90, life: 0.5 });
+        this.fx.addShake(4);
+        this.hitstop = Math.max(this.hitstop, 0.05);
+        audio.play("armorBrace");
         break;
       }
       default:

@@ -445,6 +445,7 @@ export class Menus {
   pendingLevelUp: { level: number; gained: number } | null = null; // set on victory, shown once on the map
   private pendingSpell: string | null = null; // spell waiting for a slot in replace mode
   private figureTimer: number | null = null; // idle animation for the hero-sheet figure
+  private justDonned = false; // flash the figure preview on the next sheet render
   private selectedStage: number | null = null; // map node the scout report is showing
   private mapAct: 0 | 1 = 0; // which panel of the world we're looking at
   pendingFinale = false; // set when the Winterreach's king falls
@@ -2280,8 +2281,21 @@ export class Menus {
         if (!this.spend(forgeCost(piece, lvl + 1))) return;
         save.forge[id] = lvl + 1;
         persist(save);
-        audio.play(lvl + 1 >= FORGE_MAX ? "levelup" : "clink");
+        audio.play("anvil");
+        if (lvl + 1 >= FORGE_MAX) audio.play("levelup");
         navigator.vibrate?.([12, 20, 30]);
+        // hammer sparks fly from the button that was struck
+        const rect = (forgeBtn as HTMLElement).getBoundingClientRect();
+        const sparks = el(`<div class="forge-sparks ${lvl + 1 >= FORGE_MAX ? "master" : ""}" style="left:${rect.left + rect.width / 2}px;top:${rect.top + rect.height / 2}px"></div>`);
+        for (let i = 0; i < 7; i++) {
+          const s = document.createElement("i");
+          s.style.setProperty("--dx", `${(Math.random() - 0.5) * 90}px`);
+          s.style.setProperty("--dy", `${-30 - Math.random() * 60}px`);
+          s.style.animationDelay = `${Math.random() * 0.08}s`;
+          sparks.appendChild(s);
+        }
+        document.body.appendChild(sparks);
+        setTimeout(() => sparks.remove(), 800);
         this.showToast(`${piece.name} reforged to +${lvl + 1}${lvl + 1 >= FORGE_MAX ? " — masterwork!" : ""}`);
         this.renderShop("armory");
         return;
@@ -3059,6 +3073,10 @@ export class Menus {
     page.querySelector(".map-header")!.after(this.heroTabs(index, "loadout"));
     // live figure: the real battle render, idling
     const fig = page.querySelector(".figure-canvas") as HTMLCanvasElement;
+    if (this.justDonned) {
+      this.justDonned = false;
+      page.querySelector(".figure-frame")?.classList.add("donned");
+    }
     drawHeroFigure(fig, index, save, 0);
     if (this.figureTimer) clearInterval(this.figureTimer);
     let figT = 0;
@@ -3130,7 +3148,7 @@ export class Menus {
     const wornSet = armorSetOf(gearNow());
     gearHolder.appendChild(
       el(`
-        <div class="equip-slot set-meter">
+        <div class="equip-slot set-meter ${wornSet?.tier === 3 ? "complete" : ""}">
           <div class="equip-slot-head">${ico("banner")} Family set — <strong>${wornSet ? `${wornSet.family} ${wornSet.tier}/3` : "none"}</strong> ${wornSet ? "" : '<span class="loadout-hint">wear 2+ pieces of one family</span>'}</div>
           ${
             wornSet
@@ -3261,34 +3279,39 @@ export class Menus {
         this.renderEquipment(index);
         return;
       }
+      // donning gear: one path for all three slots, with a fanfare when a set completes
+      const donGear = (slot: "armor" | "helm" | "boots", id: string, toastOn: string, toastOff: string) => {
+        const setBefore = armorSetOf(heroGearOf(hero))?.tier ?? 0;
+        hero[slot] = id === "none" ? null : id;
+        persist(save);
+        const setAfter = armorSetOf(heroGearOf(hero));
+        if (id !== "none") this.justDonned = true;
+        if ((setAfter?.tier ?? 0) >= 3 && setBefore < 3) {
+          audio.play("setChime");
+          navigator.vibrate?.([15, 20, 15, 20, 40]);
+          this.showToast(`${setAfter!.family.toUpperCase()} SET COMPLETE — ${SET_BONUSES[setAfter!.family].three}`);
+        } else {
+          audio.play("clink");
+          this.showToast(id === "none" ? toastOff : toastOn);
+        }
+        this.renderEquipment(index);
+      };
       const armorBtn = target.closest("[data-armor]");
       if (armorBtn) {
         const id = armorBtn.getAttribute("data-armor")!;
-        hero.armor = id === "none" ? null : id;
-        persist(save);
-        audio.play("clink");
-        this.showToast(id === "none" ? `${def.name} travels light` : `${def.name} dons the ${armorById(id)!.name}`);
-        this.renderEquipment(index);
+        donGear("armor", id, `${def.name} dons the ${armorById(id)?.name}`, `${def.name} travels light`);
         return;
       }
       const helmBtn = target.closest("[data-helm]");
       if (helmBtn) {
         const id = helmBtn.getAttribute("data-helm")!;
-        hero.helm = id === "none" ? null : id;
-        persist(save);
-        audio.play("clink");
-        this.showToast(id === "none" ? `${def.name} goes bare-headed` : `${def.name} dons the ${armorById(id)!.name}`);
-        this.renderEquipment(index);
+        donGear("helm", id, `${def.name} dons the ${armorById(id)?.name}`, `${def.name} goes bare-headed`);
         return;
       }
       const bootsBtn = target.closest("[data-boots]");
       if (bootsBtn) {
         const id = bootsBtn.getAttribute("data-boots")!;
-        hero.boots = id === "none" ? null : id;
-        persist(save);
-        audio.play("clink");
-        this.showToast(id === "none" ? `${def.name} trusts their own soles` : `${def.name} laces the ${armorById(id)!.name}`);
-        this.renderEquipment(index);
+        donGear("boots", id, `${def.name} laces the ${armorById(id)?.name}`, `${def.name} trusts their own soles`);
         return;
       }
       const trinketBtn = target.closest("[data-trinket]");
