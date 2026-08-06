@@ -2,6 +2,61 @@ import { ATTR_KEYS, HEROES, MAX_EQUIPPED, MAX_LEVEL, POINTS_PER_LEVEL, unlockedA
 import type { Attributes, HeroSave, SaveData } from "./types";
 
 const KEY = "wayband-save-v1";
+const SLOT_POINTER = "wayband-active-slot";
+
+/** Three fully independent bands. Slot 0 keeps the legacy key so existing saves just work. */
+export const SLOT_NAMES = ["Band of the Oak", "Band of the River", "Band of the Ash"];
+
+export function activeSlot(): number {
+  try {
+    const n = Number(localStorage.getItem(SLOT_POINTER) ?? "0");
+    return Number.isInteger(n) && n >= 0 && n < SLOT_NAMES.length ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function setActiveSlot(n: number): void {
+  try {
+    localStorage.setItem(SLOT_POINTER, String(n));
+  } catch {
+    // storage unavailable — the game stays on the in-memory save
+  }
+}
+
+export function slotKey(n: number = activeSlot()): string {
+  return n === 0 ? KEY : `${KEY}-s${n + 1}`;
+}
+
+export interface SlotPeek {
+  empty: boolean;
+  level: number;
+  stage: number;
+  gold: number;
+  victories: number;
+  recruits: number;
+}
+
+/** A cheap look inside a slot for the picker — no migration, no validation. */
+export function peekSlot(n: number): SlotPeek {
+  const none: SlotPeek = { empty: true, level: 1, stage: 0, gold: 0, victories: 0, recruits: 2 };
+  try {
+    const raw = localStorage.getItem(slotKey(n));
+    if (!raw) return none;
+    const p = JSON.parse(raw) as Partial<SaveData>;
+    if (!p || !Array.isArray(p.heroes)) return none;
+    return {
+      empty: false,
+      level: p.level ?? 1,
+      stage: p.unlockedStage ?? 0,
+      gold: p.gold ?? 0,
+      victories: p.lifetime?.victories ?? 0,
+      recruits: p.heroes.filter((h) => h?.recruited).length,
+    };
+  } catch {
+    return none;
+  }
+}
 
 /** Spells the band owns from the start — enough for the founding duo to function. */
 const STARTING_SPELLS = ["cleave", "mend"];
@@ -62,7 +117,7 @@ export function speedLabel(speed: number): string {
 
 export function loadSave(): SaveData {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(slotKey());
     if (!raw) return defaultSave();
     const parsed = JSON.parse(raw) as SaveData;
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.heroes) || parsed.heroes.length < 4 || parsed.heroes.length > HEROES.length) {
@@ -134,7 +189,7 @@ export function loadSave(): SaveData {
 
 export function persist(save: SaveData): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(save));
+    localStorage.setItem(slotKey(), JSON.stringify(save));
   } catch {
     // Private browsing or storage quota — play on without persistence.
   }

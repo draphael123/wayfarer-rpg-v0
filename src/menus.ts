@@ -55,7 +55,7 @@ function bestAttr(index: number): AttrKey {
 }
 import { drawAbilityGlyph, ico } from "./icons";
 import { drawHeroFigure, setColorSafe } from "./render";
-import { nextSpeed, persist, respecHero } from "./save";
+import { activeSlot, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey } from "./save";
 import { exportTelemetry, telemetrySummary } from "./telemetry";
 import type { SaveData } from "./types";
 
@@ -496,6 +496,7 @@ export class Menus {
             <button class="toggle-btn" data-act="colorsafe"></button>
           </div>
           <button class="toggle-btn" data-act="bigtext"></button>
+          <button class="toggle-btn" data-act="bands">${ico("banner")} Bands — save slots</button>
           <div class="settings-row">
             <button class="toggle-btn" data-act="export-save">${ico("upload")} Export save</button>
             <button class="toggle-btn" data-act="import-save">${ico("download")} Import save</button>
@@ -551,6 +552,7 @@ export class Menus {
         }
       }
       if (act === "tutorial") this.renderTutorials();
+      if (act === "bands") this.renderProfiles();
       if (act === "sound") {
         this.save.sound = !this.save.sound;
         audio.setSound(this.save.sound);
@@ -608,7 +610,7 @@ export class Menus {
           try {
             const data = JSON.parse(decodeURIComponent(escape(atob(code.trim()))));
             if (!data || data.version !== 1 || !Array.isArray(data.heroes)) throw new Error("bad");
-            localStorage.setItem("wayband-save-v1", JSON.stringify(data));
+            localStorage.setItem(slotKey(), JSON.stringify(data));
             location.reload();
           } catch {
             this.showToast("That code didn't look like a Wayband save");
@@ -1095,6 +1097,63 @@ export class Menus {
       if (act === "back") {
         audio.play("click");
         this.renderMap();
+      }
+    });
+    this.root.appendChild(page);
+  }
+
+  // ------------------------------------------------------------------ save slots
+
+  /** Three bands, three tales — pick which one takes the road. */
+  renderProfiles(): void {
+    this.root.innerHTML = "";
+    this.show();
+    const current = activeSlot();
+    const page = el(`
+      <div class="page">
+        <div class="map-header">
+          <div>
+            <div class="map-title">The Bands</div>
+            <div class="map-level">Three tales, kept apart — switching never loses a thing</div>
+          </div>
+          <button class="big-btn party-btn" data-act="back">Title</button>
+        </div>
+        <div class="slot-list"></div>
+      </div>
+    `);
+    const list = page.querySelector(".slot-list")!;
+    SLOT_NAMES.forEach((name, i) => {
+      const peek = peekSlot(i);
+      const isCurrent = i === current;
+      list.appendChild(
+        el(`
+          <div class="slot-card ${isCurrent ? "current" : ""} ${peek.empty ? "empty" : ""}" data-slot="${i}">
+            <div class="slot-head">
+              <strong>${name}</strong>
+              ${isCurrent ? '<span class="slot-now">playing now</span>' : ""}
+            </div>
+            ${
+              peek.empty
+                ? '<em class="slot-sub">An unwritten tale — begin here.</em>'
+                : `<em class="slot-sub">Band level ${peek.level} · stage ${Math.min(peek.stage + 1, STAGES.length)} of ${STAGES.length} · ${peek.recruits} heroes · ${ico("coin")} ${peek.gold} · ${peek.victories} victories</em>`
+            }
+            ${isCurrent ? "" : `<button class="big-btn ${peek.empty ? "" : "primary"} slot-btn" data-pick="${i}">${peek.empty ? "Begin this tale" : "Take up this band"}</button>`}
+          </div>
+        `),
+      );
+    });
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const pick = target.closest("[data-pick]");
+      if (pick) {
+        audio.play("click");
+        setActiveSlot(Number(pick.getAttribute("data-pick")));
+        location.reload();
+        return;
+      }
+      if (target.closest('[data-act="back"]')) {
+        audio.play("click");
+        this.renderTitle();
       }
     });
     this.root.appendChild(page);
