@@ -191,4 +191,26 @@ export interface SaveData {
   difficulty: number; // index into DIFFICULTIES
   seenIntro: boolean; // first-run tutorial prompt shown
   stageStats: Record<number, { bestTime: number; clears: number }>; // per-stage clear records
+  lifetime: LifetimeStats; // the band's whole story in numbers
+  presets: (PartyPreset | null)[]; // two savable band configurations
+  reducedMotion: boolean; // calmer screen: no shake/zoom punch, no menu animation
+  colorSafe: boolean; // colorblind-friendly health bars (hero bars go blue)
+  bigText: boolean; // larger menu + hint text
+}
+
+export interface LifetimeStats {
+  battles: number; // real battles finished, any outcome
+  victories: number;
+  kills: number;
+  casts: number;
+  gold: number; // gold earned all-time
+  deaths: number; // heroes fallen all-time
+  fuses: number; // tinker's bench fusions
+  flawless: number; // victories with no hero fallen
+  brutalClears: number; // victories on Brutal
+}
+
+export interface PartyPreset {
+  name: string;
+  loadout: { equipped: string[]; trinket: string | null; active: boolean }[]; // per hero index
 }

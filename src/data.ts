@@ -5,6 +5,7 @@ import type {
   DerivedStats,
   EnemyKind,
   HeroSave,
+  SaveData,
   StageDef,
   WeaponKind,
 } from "./types";
@@ -1390,3 +1391,98 @@ export function trinketFlatHp(id: string | null | undefined): number {
 
 /** Stages whose final wave is a boss — these drop rare trinkets. */
 export const BOSS_STAGES = [4, 5];
+
+// ------------------------------------------------------------------ deeds
+
+export interface DeedDef {
+  id: string;
+  name: string;
+  blurb: string;
+  done: (save: SaveData) => boolean;
+  progress?: (save: SaveData) => string;
+}
+
+/** The chronicle's deeds — every one is provable from the save itself. */
+export const DEEDS: DeedDef[] = [
+  {
+    id: "firstBlood",
+    name: "First Blood",
+    blurb: "Slay your first foe.",
+    done: (s) => s.lifetime.kills >= 1,
+  },
+  {
+    id: "centurion",
+    name: "Centurion",
+    blurb: "A hundred foes put down.",
+    done: (s) => s.lifetime.kills >= 100,
+    progress: (s) => `${Math.min(100, s.lifetime.kills)}/100`,
+  },
+  {
+    id: "ogrefall",
+    name: "Ogrefall",
+    blurb: "Fell Mosstooth, the Thornwood ogre.",
+    done: (s) => (s.bestiary.ogre ?? 0) >= 1,
+  },
+  {
+    id: "wolfsbane",
+    name: "Wolfsbane",
+    blurb: "Bring down the Night Alpha.",
+    done: (s) => (s.bestiary.alpha ?? 0) >= 1,
+  },
+  {
+    id: "warbreaker",
+    name: "Warbreaker",
+    blurb: "Break the Goblin Warlord.",
+    done: (s) => (s.bestiary.warlord ?? 0) >= 1,
+  },
+  {
+    id: "untouched",
+    name: "Untouched",
+    blurb: "Win a battle without a single hero falling.",
+    done: (s) => s.lifetime.flawless >= 1,
+  },
+  {
+    id: "fullHouse",
+    name: "Full House",
+    blurb: "Every seat at the campfire filled — six heroes hired.",
+    done: (s) => s.heroes.every((h) => h.recruited),
+    progress: (s) => `${s.heroes.filter((h) => h.recruited).length}/${s.heroes.length}`,
+  },
+  {
+    id: "oathbound",
+    name: "Oathbound",
+    blurb: "A hero swears their first calling.",
+    done: (s) => s.heroes.some((h) => h.calling),
+  },
+  {
+    id: "ascendant",
+    name: "Ascendant",
+    blurb: "An oath deepened — any advanced calling taken.",
+    done: (s) => s.heroes.some((h) => h.advCalling),
+  },
+  {
+    id: "scholar",
+    name: "Scholar of the Band",
+    blurb: "Fifteen spells in the band's library.",
+    done: (s) => s.unlockedSpells.length >= 15,
+    progress: (s) => `${Math.min(15, s.unlockedSpells.length)}/15`,
+  },
+  {
+    id: "tinker",
+    name: "Tinker's Friend",
+    blurb: "Fuse two trinkets into something rare.",
+    done: (s) => s.lifetime.fuses >= 1,
+  },
+  {
+    id: "brutalist",
+    name: "No Quarter",
+    blurb: "Clear any stage on Brutal.",
+    done: (s) => s.lifetime.brutalClears >= 1,
+  },
+  {
+    id: "roadsEnd",
+    name: "The Road's End",
+    blurb: "Clear the final stage of the Long Road.",
+    done: (s) => (s.stageStats[STAGES.length - 1]?.clears ?? 0) >= 1,
+  },
+];

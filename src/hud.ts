@@ -58,6 +58,10 @@ export class Hud {
   hold: { hero: Unit; ability: AbilityState; x: number; y: number; w: number; time: number } | null = null;
   /** Recently planted move orders — a flag marks where the hero was sent. */
   private moveMarks: { x: number; y: number; t: number }[] = [];
+  /** Double-tapping an enemy converges the whole band on it. */
+  private lastEnemyTap: { id: number; time: number } | null = null;
+  /** When true the sim AI fights the battle; any time is a good time to retake command. */
+  autopilot = false;
   private abilityButtons: AbilityButtonRect[] = [];
   private portraits: PortraitRect[] = [];
   private overlayButtons: OverlayButton[] = [];
@@ -141,6 +145,13 @@ export class Hud {
       audio.play("click");
       return "pause";
     }
+    // AUTO chip beside it: hand the battle to the band (or take it back)
+    if (x > this.width - 104 && x <= this.width - 46 && y < 42 && this.battle.state === "fighting" && !this.tutorial) {
+      this.autopilot = !this.autopilot;
+      audio.play("click");
+      this.showHint(this.autopilot ? "The band fights on its own — tap AUTO to retake command" : "Command is yours again");
+      return null;
+    }
 
     if (this.tutorial && this.skipRect) {
       const s = this.skipRect;
@@ -222,6 +233,19 @@ export class Hud {
       return null;
     }
     if (unit && unit.team === "enemy" && this.selected && this.selected.alive) {
+      // double-tap: everyone who fights converges on this one
+      if (this.lastEnemyTap && this.lastEnemyTap.id === unit.id && this.battle.time - this.lastEnemyTap.time < 0.5) {
+        for (const hero of this.battle.livingHeroes()) {
+          if (hero.stance === "heal" && hero.stats.healPower >= 8) continue;
+          this.battle.orderAttack(hero, unit);
+        }
+        this.battle.fx.ring(unit.x, unit.y + 2, unit.radius * 2.6, "#ff8a70", { width: 3.4, life: 0.5 });
+        this.showHint("The band converges!");
+        audio.play("click");
+        this.lastEnemyTap = null;
+        return null;
+      }
+      this.lastEnemyTap = { id: unit.id, time: this.battle.time };
       this.battle.orderAttack(this.selected, unit);
       audio.play("click");
       return null;
@@ -754,6 +778,24 @@ export class Hud {
     ctx.fillStyle = "#f2ecd8";
     ctx.fillRect(this.width - 33, 17, 4.5, 16);
     ctx.fillRect(this.width - 25, 17, 4.5, 16);
+    // AUTO chip: lets the band fight for itself on farmed stages
+    if (this.battle.state === "fighting" && !this.tutorial) {
+      const on = this.autopilot;
+      ctx.fillStyle = on ? "rgba(56, 44, 20, 0.75)" : "rgba(20, 16, 28, 0.55)";
+      roundRect(ctx, this.width - 100, 10, 52, 30, 8);
+      ctx.fill();
+      if (on) {
+        ctx.strokeStyle = `rgba(255, 233, 163, ${0.5 + Math.abs(Math.sin(this.battle.time * 3)) * 0.5})`;
+        ctx.lineWidth = 1.6;
+        roundRect(ctx, this.width - 100, 10, 52, 30, 8);
+        ctx.stroke();
+      }
+      ctx.fillStyle = on ? "#ffe9a3" : "rgba(242, 236, 216, 0.55)";
+      ctx.font = "800 11px 'Trebuchet MS', Verdana, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("AUTO", this.width - 74, 29);
+      ctx.textAlign = "left";
+    }
   }
 
   private drawIntroBanner(ctx: CanvasRenderingContext2D): void {
@@ -878,7 +920,7 @@ export class Hud {
   private drawHintText(ctx: CanvasRenderingContext2D): void {
     if (this.hintTime <= 0) return;
     ctx.globalAlpha = Math.min(1, this.hintTime);
-    ctx.font = "600 14px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.font = `600 ${this.save.bigText ? 16.5 : 14}px 'Trebuchet MS', Verdana, sans-serif`;
     ctx.textAlign = "center";
     ctx.fillStyle = "rgba(20,16,28,0.6)";
     const y = this.height - HUD_H - 26;
@@ -1047,7 +1089,7 @@ export class Hud {
       roundRect(ctx, x0, py + ps + 6, ps, 7, 3);
       ctx.fill();
       if (frac > 0) {
-        ctx.fillStyle = frac > 0.35 ? "#6fce65" : "#e0b23e";
+        ctx.fillStyle = frac > 0.35 ? (this.save.colorSafe ? "#5aa7ff" : "#6fce65") : "#e0b23e";
         roundRect(ctx, x0 + 1, py + ps + 7, (ps - 2) * frac, 5, 2);
         ctx.fill();
       }
@@ -1482,7 +1524,7 @@ export class Hud {
       ctx,
       victory ? "Victory!" : "The band falls...",
       victory ? "#8ee88b" : "#ff8a70",
-      victory ? 318 : 262,
+      victory ? 384 : 262,
     );
     ctx.fillStyle = "#cfc7de";
     ctx.font = "600 14px 'Trebuchet MS', Verdana, sans-serif";
@@ -1529,15 +1571,68 @@ export class Hud {
         ctx.textAlign = "center";
       };
       drawReward(rowY, `+${shownXp}`, "experience", "star");
-      drawReward(rowY + 26, `+${shownGold}`, "gold", "coin");
+      drawReward(rowY + 24, `+${shownGold}`, "gold", "coin");
       // battle summary
       ctx.font = "600 12px 'Trebuchet MS', Verdana, sans-serif";
       ctx.fillStyle = "#a89fc0";
       ctx.fillText(
         `Cleared in ${mins}:${secs} · ${this.battle.heroDeaths === 0 ? "no heroes fell" : `${this.battle.heroDeaths} hero${this.battle.heroDeaths === 1 ? "" : "es"} fell`}`,
         this.width / 2,
-        rowY + 48,
+        rowY + 44,
       );
+      // the recap: what each hero actually did, with a crown for the battle's finest
+      const band = this.battle.heroes();
+      if (band.length) {
+        const recapY = rowY + 58;
+        const cw = (frame.w - 52) / band.length;
+        let mvp = -1;
+        let mvpScore = 0;
+        band.forEach((h, i) => {
+          const t = this.battle.tallies[h.heroIndex] ?? { dealt: 0, taken: 0, healed: 0 };
+          const score = t.dealt + t.healed * 1.1;
+          if (score > mvpScore) {
+            mvpScore = score;
+            mvp = i;
+          }
+        });
+        band.forEach((h, i) => {
+          const t = this.battle.tallies[h.heroIndex] ?? { dealt: 0, taken: 0, healed: 0 };
+          const cx = frame.x + 26 + cw * i + cw / 2;
+          const isMvp = i === mvp && mvpScore > 0;
+          if (isMvp) {
+            // a small crown over the name
+            ctx.fillStyle = "#ffd76b";
+            ctx.beginPath();
+            ctx.moveTo(cx - 7, recapY - 1);
+            ctx.lineTo(cx - 7, recapY - 7);
+            ctx.lineTo(cx - 3.2, recapY - 3.6);
+            ctx.lineTo(cx, recapY - 8.5);
+            ctx.lineTo(cx + 3.2, recapY - 3.6);
+            ctx.lineTo(cx + 7, recapY - 7);
+            ctx.lineTo(cx + 7, recapY - 1);
+            ctx.closePath();
+            ctx.fill();
+          }
+          ctx.font = "800 11px 'Trebuchet MS', Verdana, sans-serif";
+          ctx.fillStyle = isMvp ? "#ffd76b" : "#e8e2f2";
+          ctx.fillText(HEROES[h.heroIndex].name, cx, recapY + 11);
+          ctx.font = "700 10px 'Trebuchet MS', Verdana, sans-serif";
+          ctx.fillStyle = "#ffcf8e";
+          ctx.fillText(`dmg ${Math.round(t.dealt)}`, cx, recapY + 25);
+          ctx.fillStyle = "#8ee88b";
+          ctx.fillText(`heal ${Math.round(t.healed)}`, cx, recapY + 38);
+          ctx.fillStyle = "#c98f9a";
+          ctx.fillText(`took ${Math.round(t.taken)}`, cx, recapY + 51);
+          if (i > 0) {
+            ctx.strokeStyle = "rgba(255,245,225,0.1)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(frame.x + 26 + cw * i, recapY + 2);
+            ctx.lineTo(frame.x + 26 + cw * i, recapY + 48);
+            ctx.stroke();
+          }
+        });
+      }
       // loot reveal: card flips in after a beat
       if (this.pendingLoot) {
         const flip = Math.min(1, Math.max(0, (this.overlayAge - 0.5) / 0.45));
@@ -1546,7 +1641,7 @@ export class Hud {
         const cw = 216;
         const ch = 34;
         const cxm = this.width / 2;
-        const cy = frame.y + 148;
+        const cy = frame.y + 216;
         ctx.save();
         ctx.translate(cxm, cy + ch / 2);
         ctx.scale(Math.max(0.04, scaleX), 1);
@@ -1600,9 +1695,9 @@ export class Hud {
     const bw = frame.w - 60;
     const bx = frame.x + 30;
     if (victory) {
-      this.addOverlayButton(ctx, "continue", "Continue", bx, frame.y + 200, bw, "#8ee88b");
-      this.addOverlayButton(ctx, "retry", "Replay", bx, frame.y + 248, (bw - 10) / 2);
-      this.addOverlayButton(ctx, "share", "Share", bx + (bw - 10) / 2 + 10, frame.y + 248, (bw - 10) / 2, "#ffe9a3");
+      this.addOverlayButton(ctx, "continue", "Continue", bx, frame.y + 268, bw, "#8ee88b");
+      this.addOverlayButton(ctx, "retry", "Replay", bx, frame.y + 316, (bw - 10) / 2);
+      this.addOverlayButton(ctx, "share", "Share", bx + (bw - 10) / 2 + 10, frame.y + 316, (bw - 10) / 2, "#ffe9a3");
     } else {
       this.addOverlayButton(ctx, "retry", "Try Again", bx, frame.y + 126, bw, "#ff8a70");
       this.addOverlayButton(ctx, "map", "Back to Map", bx, frame.y + 174, bw);

@@ -17,6 +17,10 @@ function defaultHero(index: number): HeroSave {
   return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armorTier: 0, talents: {}, trinket: null, calling: null, advCalling: null, armorVariant: null };
 }
 
+function emptyLifetime() {
+  return { battles: 0, victories: 0, kills: 0, casts: 0, gold: 0, deaths: 0, fuses: 0, flawless: 0, brutalClears: 0 };
+}
+
 export function defaultSave(): SaveData {
   return {
     version: 1,
@@ -37,6 +41,11 @@ export function defaultSave(): SaveData {
     difficulty: 1,
     seenIntro: false,
     stageStats: {},
+    lifetime: emptyLifetime(),
+    presets: [null, null],
+    reducedMotion: false,
+    colorSafe: false,
+    bigText: false,
   };
 }
 
@@ -102,6 +111,21 @@ export function loadSave(): SaveData {
     if (typeof parsed.soundVol !== "number" || parsed.soundVol < 0 || parsed.soundVol > 1) parsed.soundVol = 1;
     if (typeof parsed.musicVol !== "number" || parsed.musicVol < 0 || parsed.musicVol > 1) parsed.musicVol = 1;
     if (!parsed.stageStats || typeof parsed.stageStats !== "object") parsed.stageStats = {};
+    if (!parsed.lifetime || typeof parsed.lifetime !== "object") {
+      // veterans keep credit for what the save already proves
+      parsed.lifetime = emptyLifetime();
+      parsed.lifetime.kills = Object.values(parsed.bestiary).reduce((a: number, b) => a + (b ?? 0), 0);
+      parsed.lifetime.victories = Object.values(parsed.stageStats).reduce((a: number, r) => a + (r?.clears ?? 0), 0);
+      parsed.lifetime.battles = parsed.lifetime.victories;
+    }
+    for (const key of Object.keys(emptyLifetime()) as (keyof typeof parsed.lifetime)[]) {
+      if (typeof parsed.lifetime[key] !== "number") parsed.lifetime[key] = 0;
+    }
+    if (!Array.isArray(parsed.presets)) parsed.presets = [null, null];
+    while (parsed.presets.length < 2) parsed.presets.push(null);
+    if (typeof parsed.reducedMotion !== "boolean") parsed.reducedMotion = false;
+    if (typeof parsed.colorSafe !== "boolean") parsed.colorSafe = false;
+    if (typeof parsed.bigText !== "boolean") parsed.bigText = false;
     return parsed;
   } catch {
     return defaultSave();

@@ -51,6 +51,8 @@ export class Battle {
   extraSpawn = 0;
   castCounts: Record<string, number> = {};
   heroDeaths = 0;
+  /** Per-hero battle ledger (keyed by heroIndex) — feeds the victory recap. */
+  tallies: Record<number, { dealt: number; taken: number; healed: number }> = {};
   ordersIssued = 0;
   introBanner = 2.6;
   zoomPunch = 0;
@@ -362,6 +364,12 @@ export class Battle {
     }
     target.hp -= amount;
     if (this.tutorialMode && target.team === "hero" && target.hp < 1) target.hp = 1;
+    if (source && source.team === "hero" && source.heroIndex >= 0 && target.team === "enemy") {
+      this.tally(source.heroIndex).dealt += amount;
+    }
+    if (target.team === "hero" && target.heroIndex >= 0) {
+      this.tally(target.heroIndex).taken += amount;
+    }
     // ultimate charge: playing your calling's role feeds the meter
     if (source?.team === "hero" && target.team === "enemy") {
       const primary = source.calling === "reaver" || source.calling === "ranger" || source.calling === "arcanist";
@@ -420,10 +428,17 @@ export class Battle {
     else audio.play(opts.spell ? "hit" : "hit");
   }
 
+  private tally(heroIndex: number): { dealt: number; taken: number; healed: number } {
+    return (this.tallies[heroIndex] ??= { dealt: 0, taken: 0, healed: 0 });
+  }
+
   heal(target: Unit, amount: number, showText = true, from: Unit | null = null): void {
     if (!target.alive || target.hp >= target.stats.maxHp) return;
     const applied = Math.min(target.stats.maxHp - target.hp, amount);
     target.hp += applied;
+    if (from && from.team === "hero" && from.heroIndex >= 0 && applied >= 1) {
+      this.tally(from.heroIndex).healed += applied;
+    }
     if (from && from.team === "hero" && target !== from) {
       this.gainUlt(from, applied * (from.calling === "chaplain" ? 0.36 : 0.12));
     }

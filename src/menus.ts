@@ -30,6 +30,7 @@ import {
   ATTR_BLURBS,
   ATTR_KEYS,
   ATTR_NAMES,
+  DEEDS,
   ENEMIES,
   HEROES,
   MAX_EQUIPPED,
@@ -53,7 +54,7 @@ function bestAttr(index: number): AttrKey {
   return ATTR_KEYS.reduce((best, k) => (attrs[k] > attrs[best] ? k : best), ATTR_KEYS[0]);
 }
 import { drawAbilityGlyph, ico } from "./icons";
-import { drawHeroFigure } from "./render";
+import { drawHeroFigure, setColorSafe } from "./render";
 import { nextSpeed, persist, respecHero } from "./save";
 import { exportTelemetry, telemetrySummary } from "./telemetry";
 import type { SaveData } from "./types";
@@ -392,6 +393,26 @@ export class Menus {
   private selectedStage: number | null = null; // map node the scout report is showing
   private shopAttr: AttrKey | "all" = "all"; // spell-shop filter
   private shopHideOwned = false;
+  private lastGold: number | null = null; // for the counting-up gold chip
+
+  /** Animate the header gold chip counting from its last shown value. */
+  private tickGold(page: HTMLElement): void {
+    const target = this.save.gold;
+    const from = this.lastGold;
+    this.lastGold = target;
+    if (from === null || from === target) return;
+    const num = page.querySelector(".gold-num");
+    if (!num) return;
+    const t0 = performance.now();
+    const dur = 550;
+    const step = (now: number) => {
+      const f = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - f, 3);
+      num.textContent = String(Math.round(from + (target - from) * eased));
+      if (f < 1 && document.body.contains(num)) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
 
   constructor(
     rootId: string,
@@ -471,6 +492,11 @@ export class Menus {
           <div class="slider-row"><span>Music</span><input type="range" min="0" max="100" data-vol="music"></div>
           <button class="toggle-btn" data-act="speed"></button>
           <div class="settings-row">
+            <button class="toggle-btn" data-act="motion"></button>
+            <button class="toggle-btn" data-act="colorsafe"></button>
+          </div>
+          <button class="toggle-btn" data-act="bigtext"></button>
+          <div class="settings-row">
             <button class="toggle-btn" data-act="export-save">${ico("upload")} Export save</button>
             <button class="toggle-btn" data-act="import-save">${ico("download")} Import save</button>
           </div>
@@ -486,6 +512,9 @@ export class Menus {
       (page.querySelector('[data-act="sound"]') as HTMLElement).textContent = `Sound: ${this.save.sound ? "on" : "off"}`;
       (page.querySelector('[data-act="music"]') as HTMLElement).textContent = `Music: ${this.save.music ? "on" : "off"}`;
       (page.querySelector('[data-act="speed"]') as HTMLElement).textContent = `Combat speed: ×${this.save.speed}`;
+      (page.querySelector('[data-act="motion"]') as HTMLElement).textContent = `Calm motion: ${this.save.reducedMotion ? "on" : "off"}`;
+      (page.querySelector('[data-act="colorsafe"]') as HTMLElement).textContent = `Safe colors: ${this.save.colorSafe ? "on" : "off"}`;
+      (page.querySelector('[data-act="bigtext"]') as HTMLElement).textContent = `Large text: ${this.save.bigText ? "on" : "off"}`;
     };
     syncToggles();
     // volume sliders live-update the mixer, persisting on release
@@ -539,6 +568,24 @@ export class Menus {
         persist(this.save);
         syncToggles();
       }
+      if (act === "motion") {
+        this.save.reducedMotion = !this.save.reducedMotion;
+        document.body.classList.toggle("reduced-motion", this.save.reducedMotion);
+        persist(this.save);
+        syncToggles();
+      }
+      if (act === "colorsafe") {
+        this.save.colorSafe = !this.save.colorSafe;
+        setColorSafe(this.save.colorSafe);
+        persist(this.save);
+        syncToggles();
+      }
+      if (act === "bigtext") {
+        this.save.bigText = !this.save.bigText;
+        document.body.classList.toggle("big-text", this.save.bigText);
+        persist(this.save);
+        syncToggles();
+      }
       if (act === "install") {
         const holder = window as unknown as { __installPrompt?: { prompt: () => void } | null };
         holder.__installPrompt?.prompt();
@@ -578,9 +625,30 @@ export class Menus {
         }
       }
       if (act === "reset") {
-        if (confirm("Erase all progress and start over?")) {
-          this.callbacks.resetProgress();
-        }
+        const pop = el(`
+          <div class="levelup-pop">
+            <div class="levelup-card reset-card">
+              <div class="levelup-title" style="color:#ff8a70">ERASE EVERYTHING?</div>
+              <div class="levelup-line">The whole road — levels, gold, heroes, deeds — gone for good.</div>
+              <div class="levelup-actions">
+                <button class="big-btn danger-btn" data-reset="yes">Erase it all</button>
+                <button class="big-btn primary" data-reset="no">Keep playing</button>
+              </div>
+            </div>
+          </div>
+        `);
+        pop.addEventListener("click", (ev) => {
+          const choice = (ev.target as HTMLElement).closest("[data-reset]")?.getAttribute("data-reset");
+          if (choice === "yes") {
+            audio.play("click");
+            pop.remove();
+            this.callbacks.resetProgress();
+          } else if (choice === "no" || ev.target === pop) {
+            audio.play("click");
+            pop.remove();
+          }
+        });
+        this.root.appendChild(pop);
       }
     });
     this.root.appendChild(page);
@@ -601,7 +669,7 @@ export class Menus {
         <div class="map-header">
           <div>
             <div class="map-title">The Long Road</div>
-            <div class="map-level">Band level ${save.level}/${MAX_LEVEL} · ${save.xp}/${need} xp · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div>
+            <div class="map-level">Band level ${save.level}/${MAX_LEVEL} · ${save.xp}/${need} xp · <span class="gold-chip">${ico("coin")} <span class="gold-num">${save.gold}</span></span></div>
             <div class="xp-bar"><div class="xp-fill" style="width:${xpPct}%"></div></div>
           </div>
           <button class="big-btn party-btn" data-act="party">
@@ -614,6 +682,7 @@ export class Menus {
           <button class="toggle-btn" data-act="difficulty" style="border-color:${DIFFICULTIES[save.difficulty].color};color:${DIFFICULTIES[save.difficulty].color}">${ico("skull")} ${DIFFICULTIES[save.difficulty].name}</button>
           <button class="toggle-btn" data-act="shop">${ico("home")} Village</button>
           <button class="toggle-btn" data-act="bestiary">${ico("book")} Bestiary</button>
+          <button class="toggle-btn" data-act="chronicle">${ico("chart")} Chronicle</button>
           <button class="toggle-btn" data-act="home">Title</button>
         </div>
       </div>
@@ -638,6 +707,10 @@ export class Menus {
         audio.play("click");
         this.renderBestiary();
       }
+      if (act === "chronicle") {
+        audio.play("click");
+        this.renderChronicle();
+      }
       if (act === "shop") {
         audio.play("click");
         this.renderShop("tavern");
@@ -656,6 +729,7 @@ export class Menus {
       }
     });
     this.root.appendChild(page);
+    this.tickGold(page);
     if (this.pendingLevelUp) {
       const info = this.pendingLevelUp;
       this.pendingLevelUp = null;
@@ -976,14 +1050,27 @@ export class Menus {
       const def = ENEMIES[kind];
       const kills = this.save.bestiary[kind] ?? 0;
       if (kills > 0) {
+        // knowledge is earned in tiers: lore at first blood, habits at 10, full measure at 25
+        const T2 = 10;
+        const T3 = 25;
+        const habitLine =
+          kills >= T2
+            ? `<div class="beast-habit">${ico("sword")} ${def.habit}</div>`
+            : `<div class="beast-habit beast-locked">${ico("sword")} Its ways are unclear — slay ${T2 - kills} more</div>`;
+        const statLine =
+          kills >= T3
+            ? `<div class="beast-stats">${def.maxHp} hp · ${def.damage} dmg · ${def.range > 100 ? "ranged" : "melee"}${def.armor ? " · armored" : ""}</div>`
+            : `<div class="beast-stats beast-locked">Full measure at ${T3} slain (${kills}/${T3})</div>`;
+        const rank = kills >= T3 ? ' · <span class="beast-rank">mastered</span>' : "";
         const card = el(`
           <div class="beast-card" style="--beast:${def.body}">
             <div class="beast-icon"><canvas width="64" height="64"></canvas></div>
             <div class="beast-info">
-              <div class="beast-name">${def.name} <span class="beast-kills">×${kills} slain</span></div>
+              <div class="beast-name">${def.name} <span class="beast-kills">×${kills} slain${rank}</span></div>
               <div class="beast-lore">${def.lore}</div>
-              <div class="beast-habit">${ico("sword")} ${def.habit}</div>
-              <div class="beast-stats">${def.maxHp} hp · ${def.damage} dmg · ${def.range > 100 ? "ranged" : "melee"}${def.armor ? " · armored" : ""}</div>
+              ${habitLine}
+              ${statLine}
+              ${kills < T3 ? `<div class="beast-bar"><div style="width:${Math.min(100, (kills / T3) * 100)}%"></div></div>` : ""}
             </div>
           </div>
         `);
@@ -1006,6 +1093,60 @@ export class Menus {
     page.addEventListener("click", (event) => {
       const act = (event.target as HTMLElement).closest("[data-act]")?.getAttribute("data-act");
       if (act === "back") {
+        audio.play("click");
+        this.renderMap();
+      }
+    });
+    this.root.appendChild(page);
+  }
+
+  // ------------------------------------------------------------------ chronicle
+
+  /** The band's whole story: lifetime numbers and the deeds they prove. */
+  renderChronicle(): void {
+    this.root.innerHTML = "";
+    this.show();
+    const save = this.save;
+    const lt = save.lifetime;
+    const done = DEEDS.filter((d) => d.done(save)).length;
+    const found = new Set(save.inventory).size;
+    const stats: [string, string][] = [
+      ["Battles fought", String(lt.battles)],
+      ["Victories", String(lt.victories)],
+      ["Foes slain", String(lt.kills)],
+      ["Spells cast", String(lt.casts)],
+      ["Gold earned", String(lt.gold)],
+      ["Heroes fallen", String(lt.deaths)],
+      ["Flawless wins", String(lt.flawless)],
+      ["Curios found", `${found}/${TRINKETS.length}`],
+    ];
+    const page = el(`
+      <div class="page">
+        <div class="map-header">
+          <div>
+            <div class="map-title">The Chronicle</div>
+            <div class="map-level">Deeds done: ${done}/${DEEDS.length} — the road remembers everything</div>
+          </div>
+          <button class="big-btn party-btn" data-act="back">Map</button>
+        </div>
+        <div class="chron-grid">
+          ${stats.map(([k, v]) => `<div class="chron-cell"><span>${k}</span><strong>${v}</strong></div>`).join("")}
+        </div>
+        <div class="deed-list">
+          ${DEEDS.map((d) => {
+            const is = d.done(save);
+            const prog = !is && d.progress ? `<span class="deed-prog">${d.progress(save)}</span>` : "";
+            return `<div class="deed-card ${is ? "done" : ""}">
+              <span class="deed-mark">${is ? "✓" : "◇"}</span>
+              <span class="deed-text"><strong>${d.name}</strong><em>${d.blurb}</em></span>
+              ${prog}
+            </div>`;
+          }).join("")}
+        </div>
+      </div>
+    `);
+    page.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest('[data-act="back"]')) {
         audio.play("click");
         this.renderMap();
       }
@@ -1241,7 +1382,7 @@ export class Menus {
 
   // ------------------------------------------------------------------ village shops
 
-  renderShop(tab: "tavern" | "armory" | "spells"): void {
+  renderShop(tab: "tavern" | "armory" | "spells" | "curios"): void {
     this.root.innerHTML = "";
     this.show();
     const save = this.save;
@@ -1250,7 +1391,7 @@ export class Menus {
         <div class="map-header">
           <div>
             <div class="map-title">The Village</div>
-            <div class="map-level"><span class="gold-chip">${ico("coin")} ${save.gold} gold</span></div>
+            <div class="map-level"><span class="gold-chip">${ico("coin")} <span class="gold-num">${save.gold}</span> gold</span></div>
           </div>
           <button class="big-btn party-btn" data-act="back">Map</button>
         </div>
@@ -1258,6 +1399,7 @@ export class Menus {
           <button class="shop-tab ${tab === "tavern" ? "on" : ""}" data-tab="tavern">🍺 Tavern</button>
           <button class="shop-tab ${tab === "armory" ? "on" : ""}" data-tab="armory">${ico("shield")} Armory</button>
           <button class="shop-tab ${tab === "spells" ? "on" : ""}" data-tab="spells">${ico("spark")} Spells</button>
+          <button class="shop-tab ${tab === "curios" ? "on" : ""}" data-tab="curios">${ico("gem")} Curios</button>
         </div>
         <div class="shop-body"></div>
       </div>
@@ -1265,13 +1407,14 @@ export class Menus {
     const body = page.querySelector(".shop-body")!;
     if (tab === "tavern") this.buildTavern(body);
     else if (tab === "armory") this.buildArmory(body);
+    else if (tab === "curios") this.buildCabinet(body);
     else this.buildSpellShop(body);
     page.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
       const tabBtn = target.closest("[data-tab]");
       if (tabBtn) {
         audio.play("click");
-        this.renderShop(tabBtn.getAttribute("data-tab") as "tavern" | "armory" | "spells");
+        this.renderShop(tabBtn.getAttribute("data-tab") as "tavern" | "armory" | "spells" | "curios");
         return;
       }
       if (target.closest('[data-act="back"]')) {
@@ -1280,6 +1423,33 @@ export class Menus {
       }
     });
     this.root.appendChild(page);
+    this.tickGold(page);
+  }
+
+  /** The curio cabinet: every trinket in the realm, found or still out there. */
+  private buildCabinet(body: Element): void {
+    const save = this.save;
+    const found = new Set(save.inventory);
+    body.appendChild(
+      el(`<div class="shop-note">${found.size}/${TRINKETS.length} curios found — victories drop them, bosses drop the rare ones. The Tinker's Bench fuses duplicates.</div>`),
+    );
+    for (const t of TRINKETS) {
+      const owned = save.inventory.filter((x) => x === t.id).length;
+      const wearers = HEROES.filter((_, i) => save.heroes[i].trinket === t.id).map((h) => h.name);
+      const rare = t.rarity === "rare";
+      body.appendChild(
+        el(`
+          <div class="curio-card ${owned ? "" : "unfound"} ${rare ? "rare" : ""}">
+            <span class="curio-icon">${owned ? t.icon : "?"}</span>
+            <span class="curio-text">
+              <strong>${t.name}${rare ? ' <span class="rare-tag">RARE</span>' : ""}${owned > 1 ? ` <span class="curio-count">×${owned}</span>` : ""}</strong>
+              <em>${owned ? t.blurb : "Not yet found."}</em>
+              ${wearers.length ? `<em class="curio-worn">worn by ${wearers.join(" & ")}</em>` : ""}
+            </span>
+          </div>
+        `),
+      );
+    }
   }
 
   private spend(cost: number): boolean {
@@ -1482,6 +1652,7 @@ export class Menus {
           const rares = TRINKETS.filter((r) => r.rarity === "rare");
           const forged = rares[Math.floor(Math.random() * rares.length)];
           save.inventory.push(forged.id);
+          save.lifetime.fuses += 1;
           audio.play("levelup");
           navigator.vibrate?.([15, 25, 40]);
           this.showToast(`The tinker forges ${forged.icon} ${forged.name} — RARE!`);
@@ -1666,6 +1837,18 @@ export class Menus {
           </div>
           <button class="big-btn party-btn" data-act="back">Map</button>
         </div>
+        <div class="preset-row">
+          <span class="preset-label">${ico("banner")} Band presets</span>
+          ${[0, 1]
+            .map(
+              (i) => `<span class="preset-slot">
+                <em>${this.save.presets[i] ? `Preset ${i + 1}` : "empty"}</em>
+                <button class="toggle-btn preset-btn" data-preset-save="${i}">Save</button>
+                <button class="toggle-btn preset-btn" data-preset-load="${i}" ${this.save.presets[i] ? "" : "disabled"}>Load</button>
+              </span>`,
+            )
+            .join("")}
+        </div>
         <div class="hero-list"></div>
       </div>
     `);
@@ -1698,7 +1881,48 @@ export class Menus {
       list.appendChild(lockedCard);
     }
     page.addEventListener("click", (event) => {
-      const act = (event.target as HTMLElement).closest("[data-act]")?.getAttribute("data-act");
+      const target = event.target as HTMLElement;
+      const saveBtn = target.closest("[data-preset-save]");
+      if (saveBtn) {
+        const at = Number(saveBtn.getAttribute("data-preset-save"));
+        this.save.presets[at] = {
+          name: `Preset ${at + 1}`,
+          loadout: this.save.heroes.map((h) => ({ equipped: [...h.equipped], trinket: h.trinket, active: h.active })),
+        };
+        persist(this.save);
+        audio.play("click");
+        this.showToast(`Preset ${at + 1} saved — the band's current shape, remembered`);
+        this.renderParty();
+        return;
+      }
+      const loadBtn = target.closest("[data-preset-load]");
+      if (loadBtn && !loadBtn.hasAttribute("disabled")) {
+        const at = Number(loadBtn.getAttribute("data-preset-load"));
+        const preset = this.save.presets[at];
+        if (!preset) return;
+        this.save.heroes.forEach((h, i) => {
+          const p = preset.loadout[i];
+          if (!p) return;
+          // only what still holds: owned spells the hero still qualifies for
+          const gated = unlockedAbilities(h.attrs).map((a) => a.id);
+          h.equipped = p.equipped.filter((id) => this.save.unlockedSpells.includes(id) && gated.includes(id)).slice(0, MAX_EQUIPPED);
+          h.trinket = p.trinket && this.save.inventory.includes(p.trinket) ? p.trinket : null;
+          if (h.recruited) h.active = p.active;
+        });
+        // party discipline: never over the cap, never empty
+        const actives = this.save.heroes.map((h, i) => ({ h, i })).filter(({ h }) => h.recruited && h.active);
+        actives.slice(PARTY_CAP).forEach(({ h }) => (h.active = false));
+        if (!actives.length) {
+          const first = this.save.heroes.find((h) => h.recruited);
+          if (first) first.active = true;
+        }
+        persist(this.save);
+        audio.play("levelup");
+        this.showToast(`Preset ${at + 1} takes the field`);
+        this.renderParty();
+        return;
+      }
+      const act = target.closest("[data-act]")?.getAttribute("data-act");
       if (act === "back") {
         audio.play("click");
         this.renderMap();
@@ -1769,6 +1993,7 @@ export class Menus {
         </button>
         <div class="attr-rows"></div>
         <div class="card-actions">
+          ${save.unspent[index] > 0 ? `<button class="toggle-btn suggest-btn" data-act="suggest">${ico("spark")} Suggest</button>` : ""}
           <button class="toggle-btn talents-btn" data-act="talents">${ico("star")} Talents</button>
           <button class="toggle-btn calling-btn ${!sworn && save.level >= CALLING_UNLOCK_LEVEL ? "beckons" : ""}"
             data-act="calling" ${!sworn && save.level < CALLING_UNLOCK_LEVEL ? "disabled" : ""}
@@ -1880,6 +2105,43 @@ export class Menus {
       respecHero(save, index);
       audio.play("click");
       this.refreshCard(card, index);
+    });
+
+    // one tap spends every point along the hero's natural bent
+    card.querySelector('[data-act="suggest"]')?.addEventListener("click", () => {
+      const pts = save.unspent[index];
+      if (pts <= 0) return;
+      const base = HEROES[index].baseAttrs;
+      const effC = () => {
+        const c = callingById(hero.calling);
+        return c && callingEligible(c, hero.attrs) ? hero.calling : null;
+      };
+      const before = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.armorVariant);
+      for (let p = 0; p < pts; p++) {
+        let bestK = ATTR_KEYS[0];
+        let bestScore = -1;
+        for (const k of ATTR_KEYS) {
+          const score = base[k] / (hero.attrs[k] - base[k] + 1);
+          if (score > bestScore) {
+            bestScore = score;
+            bestK = k;
+          }
+        }
+        hero.attrs[bestK] += 1;
+      }
+      save.unspent[index] = 0;
+      // pocket any spells the training just unlocked
+      for (const a of unlockedAbilities(hero.attrs)) {
+        if (save.unlockedSpells.includes(a.id) && !hero.equipped.includes(a.id) && hero.equipped.length < MAX_EQUIPPED) {
+          hero.equipped.push(a.id);
+        }
+      }
+      persist(save);
+      audio.play("levelup");
+      this.showToast(`${def.name}'s training follows their nature — ${pts} point${pts === 1 ? "" : "s"} spent`);
+      const after = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.armorVariant);
+      const freshCard = this.refreshCard(card, index);
+      flashStatDeltas(freshCard, before, after);
     });
 
     card.querySelector('[data-act="talents"]')!.addEventListener("click", () => {

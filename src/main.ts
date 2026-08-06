@@ -17,6 +17,7 @@ import {
   drawUnits,
   drawVignette,
   drawZones,
+  setColorSafe,
 } from "./render";
 import { defaultSave, grantXp, loadSave, nextSpeed, persist } from "./save";
 import { logEvent } from "./telemetry";
@@ -31,6 +32,14 @@ audio.setSound(save.sound);
 audio.setMusic(save.music);
 audio.setSoundVolume(save.soundVol);
 audio.setMusicVolume(save.musicVol);
+
+/** Comfort settings ride on body classes (menus) and flags the loop reads (battle). */
+function applyComfort(s: SaveData): void {
+  document.body.classList.toggle("reduced-motion", s.reducedMotion);
+  document.body.classList.toggle("big-text", s.bigText);
+  setColorSafe(s.colorSafe);
+}
+applyComfort(save);
 
 let logicalW = 960;
 let logicalH = 560;
@@ -172,14 +181,19 @@ function startTutorial(kind = "basics"): void {
 
 function mergeBestiary(): void {
   if (!battle || battle.tutorialMode) return;
-  let changed = false;
+  let kills = 0;
   for (const [kind, count] of Object.entries(battle.killCounts)) {
     if (!count) continue;
     save.bestiary[kind as keyof typeof save.bestiary] = (save.bestiary[kind as keyof typeof save.bestiary] ?? 0) + count;
-    changed = true;
+    kills += count;
   }
   battle.killCounts = {};
-  if (changed) persist(save);
+  // the chronicle's ledger: every real battle leaves a mark
+  save.lifetime.battles += 1;
+  save.lifetime.kills += kills;
+  save.lifetime.deaths += battle.heroDeaths;
+  save.lifetime.casts += Object.values(battle.castCounts).reduce((a, b) => a + b, 0);
+  persist(save);
 }
 
 function endBattleToMap(): void {
@@ -231,6 +245,10 @@ function settleVictory(): void {
   const rec = save.stageStats[currentStage];
   const t = Math.round(battle.time * 10) / 10;
   save.stageStats[currentStage] = { clears: (rec?.clears ?? 0) + 1, bestTime: rec ? Math.min(rec.bestTime, t) : t };
+  save.lifetime.victories += 1;
+  save.lifetime.gold += gold;
+  if (battle.heroDeaths === 0) save.lifetime.flawless += 1;
+  if (save.difficulty === 3) save.lifetime.brutalClears += 1;
   // loot was revealed on the victory card; bank it now
   rollLoot();
   const drop = rolledLoot!;
@@ -482,6 +500,8 @@ function frame(now: number): void {
       }
       // bullet time while aiming a gesture — lining up the shot is the fun part
       if (hud.drag && hud.drag.mode === "ability") simDt *= 0.22;
+      // AUTO: the band runs on the sim's judgment until the player takes over
+      if (hud.autopilot && battle.state === "fighting" && !tutorial) autopilotTick(battle, battleSave);
       battle.update(simDt, battleSave);
       fx.update(simDt);
       if (tutorial) {
@@ -530,8 +550,10 @@ function frame(now: number): void {
     cam.zoom = 1 + cam.punch * 0.045 + cineZoom;
     hud.cam = cam;
 
-    const shakeX = fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
-    const shakeY = fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
+    const calm = save.reducedMotion;
+    if (calm) cam.punch = 0;
+    const shakeX = !calm && fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
+    const shakeY = !calm && fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
 
     const CY = (logicalH - HUD_H) * 0.5;
     const worldH = logicalH - HUD_H + 20;
@@ -606,6 +628,43 @@ function frame(now: number): void {
 menus.renderTitle();
 rafId = requestAnimationFrame(frame);
 
+/** One tick of the band's own judgment: healers triage, fighters take the
+ *  nearest foe, spells fire the moment they're ready. Shared by the headless
+ *  sim and the in-battle AUTO toggle. */
+function autopilotTick(b: Battle, simSave: SaveData): number {
+  let casts = 0;
+  const enemies = b.units.filter((u) => u.team === "enemy" && u.alive);
+  for (const heroU of b.units) {
+    if (heroU.team !== "hero" || !heroU.alive) continue;
+    if (heroU.stats.healPower >= 8) {
+      const wounded = b.units
+        .filter((u) => u.team === "hero" && u.alive && u !== heroU && u.hp < u.stats.maxHp * 0.7)
+        .sort((a, c) => a.hp / a.stats.maxHp - c.hp / c.stats.maxHp)[0];
+      heroU.healTarget = wounded ?? null;
+      if (wounded) heroU.attackTarget = null;
+    }
+    if (!heroU.healTarget && (!heroU.attackTarget || !heroU.attackTarget.alive) && enemies.length) {
+      let best = enemies[0];
+      let bd = Infinity;
+      for (const e of enemies) {
+        const d = Math.hypot(e.x - heroU.x, e.y - heroU.y);
+        if (d < bd) {
+          bd = d;
+          best = e;
+        }
+      }
+      heroU.attackTarget = best;
+    }
+    for (const ab of heroU.abilities) {
+      if (ab.timer > 0) continue;
+      const target = heroU.attackTarget && heroU.attackTarget.alive ? heroU.attackTarget : enemies[0];
+      const aim = target ? { x: target.x, y: target.y } : null;
+      if (b.castAbility(heroU, ab, simSave, aim, null)) casts++;
+    }
+  }
+  return casts;
+}
+
 /**
  * Headless battle for balance work: auto-orders every hero (nearest-enemy
  * aggro, healers channel the wounded, abilities fire on cooldown) and runs the
@@ -623,35 +682,7 @@ function runSim(
   let casts = 0;
   const dt = 1 / 30;
   while (b.state !== "victory" && b.state !== "defeat" && b.time < maxT) {
-    const enemies = b.units.filter((u) => u.team === "enemy" && u.alive);
-    for (const heroU of b.units) {
-      if (heroU.team !== "hero" || !heroU.alive) continue;
-      if (heroU.stats.healPower >= 8) {
-        const wounded = b.units
-          .filter((u) => u.team === "hero" && u.alive && u !== heroU && u.hp < u.stats.maxHp * 0.7)
-          .sort((a, c) => a.hp / a.stats.maxHp - c.hp / c.stats.maxHp)[0];
-        heroU.healTarget = wounded ?? null;
-        if (wounded) heroU.attackTarget = null;
-      }
-      if (!heroU.healTarget && (!heroU.attackTarget || !heroU.attackTarget.alive) && enemies.length) {
-        let best = enemies[0];
-        let bd = Infinity;
-        for (const e of enemies) {
-          const d = Math.hypot(e.x - heroU.x, e.y - heroU.y);
-          if (d < bd) {
-            bd = d;
-            best = e;
-          }
-        }
-        heroU.attackTarget = best;
-      }
-      for (const ab of heroU.abilities) {
-        if (ab.timer > 0) continue;
-        const target = heroU.attackTarget && heroU.attackTarget.alive ? heroU.attackTarget : enemies[0];
-        const aim = target ? { x: target.x, y: target.y } : null;
-        if (b.castAbility(heroU, ab, simSave, aim, null)) casts++;
-      }
-    }
+    casts += autopilotTick(b, simSave);
     b.update(dt, simSave);
     fxSys.update(dt);
     if (fxSys.particles.length > 300) fxSys.particles.length = 0;

@@ -1037,6 +1037,13 @@ export function drawZones(ctx: CanvasRenderingContext2D, battle: Battle): void {
 
 const hpGhosts = new WeakMap<Unit, number>();
 
+let colorSafeBars = false;
+
+/** Colorblind-friendly mode: hero health reads blue instead of green. */
+export function setColorSafe(on: boolean): void {
+  colorSafeBars = on;
+}
+
 function drawHealthBar(ctx: CanvasRenderingContext2D, unit: Unit, top: number): void {
   const w = Math.max(28, unit.radius * 2.2);
   const x = unit.x - w / 2;
@@ -1056,7 +1063,7 @@ function drawHealthBar(ctx: CanvasRenderingContext2D, unit: Unit, top: number): 
   }
   if (frac > 0) {
     roundRect(ctx, x, y, w * frac, 4, 2);
-    ctx.fillStyle = unit.team === "hero" ? (frac > 0.35 ? "#6fce65" : "#e0b23e") : "#d1543f";
+    ctx.fillStyle = unit.team === "hero" ? (frac > 0.35 ? (colorSafeBars ? "#5aa7ff" : "#6fce65") : "#e0b23e") : "#d1543f";
     ctx.fill();
     ctx.fillStyle = "rgba(255,255,255,0.35)";
     roundRect(ctx, x, y, w * frac, 1.6, 0.8);

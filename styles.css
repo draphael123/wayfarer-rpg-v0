@@ -2301,3 +2301,148 @@ html, body {
 .hero-step:active { transform: translateY(1px); }
 
 .hero-list.single { margin-top: 2px; }
+
+/* ---------------------------------------------------------- chronicle */
+
+.chron-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
+.chron-cell {
+  background: rgba(255, 245, 225, 0.04);
+  border: 1px solid rgba(255, 235, 180, 0.1);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.chron-cell span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #8d84a3;
+}
+
+.chron-cell strong { font-size: 19px; color: #ffe9a3; font-family: Cinzel, Palatino, Georgia, serif; }
+
+.deed-list { display: flex; flex-direction: column; gap: 7px; width: 100%; }
+
+.deed-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: rgba(255, 245, 225, 0.03);
+  border: 1px solid rgba(255, 235, 180, 0.08);
+  border-radius: 12px;
+  padding: 9px 13px;
+  opacity: 0.62;
+}
+
+.deed-card.done { opacity: 1; border-color: rgba(142, 232, 139, 0.35); background: rgba(120, 200, 120, 0.05); }
+
+.deed-mark { font-size: 15px; font-weight: 800; color: #7d7590; width: 18px; text-align: center; }
+
+.deed-card.done .deed-mark { color: #8ee88b; }
+
+.deed-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+
+.deed-text strong { font-size: 13px; }
+
+.deed-text em { font-style: normal; font-size: 11px; color: #a89fc0; }
+
+.deed-prog { font-size: 11px; font-weight: 800; color: #e0b23e; }
+
+/* ---------------------------------------------------------- curio cabinet */
+
+.curio-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: rgba(255, 245, 225, 0.04);
+  border: 1px solid rgba(255, 235, 180, 0.1);
+  border-radius: 12px;
+  padding: 9px 13px;
+}
+
+.curio-card.rare { border-color: rgba(201, 160, 255, 0.35); }
+
+.curio-card.unfound { opacity: 0.5; }
+
+.curio-icon { font-size: 20px; width: 28px; text-align: center; }
+
+.curio-card.unfound .curio-icon { color: #7d7590; font-weight: 800; }
+
+.curio-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+
+.curio-text strong { font-size: 13px; }
+
+.curio-text em { font-style: normal; font-size: 11px; color: #a89fc0; }
+
+.curio-worn { color: #8ee88b !important; }
+
+.curio-count { color: #e0b23e; }
+
+/* ---------------------------------------------------------- party presets */
+
+.preset-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+  background: rgba(255, 245, 225, 0.03);
+  border: 1px solid rgba(255, 235, 180, 0.09);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+
+.preset-label { font-size: 11.5px; font-weight: 800; letter-spacing: 0.05em; color: #cfc7de; display: inline-flex; align-items: center; gap: 6px; }
+
+.preset-slot { display: inline-flex; align-items: center; gap: 6px; }
+
+.preset-slot em { font-style: normal; font-size: 11px; color: #8d84a3; font-weight: 700; }
+
+.preset-btn { padding: 5px 11px; font-size: 11.5px; }
+
+.preset-btn[disabled] { opacity: 0.4; cursor: default; }
+
+.suggest-btn { border-color: rgba(255, 233, 163, 0.5); color: #ffe9a3; }
+
+/* ---------------------------------------------------------- bestiary ranks */
+
+.beast-locked { opacity: 0.55; font-style: italic; }
+
+.beast-rank { color: #ffe9a3; }
+
+.beast-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(18, 12, 24, 0.7);
+  margin-top: 5px;
+  overflow: hidden;
+}
+
+.beast-bar div { height: 100%; border-radius: 2px; background: var(--beast, #8ee88b); opacity: 0.8; }
+
+/* ---------------------------------------------------------- comfort modes */
+
+.danger-btn { border-color: #ff8a70; color: #ff8a70; background: rgba(120, 40, 30, 0.25); }
+
+body.reduced-motion #ui *,
+body.reduced-motion #ui *::before,
+body.reduced-motion #ui *::after {
+  animation-duration: 0.001s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001s !important;
+}
+
+body.big-text #ui { font-size: 112%; }
+
+body.big-text .page { zoom: 1.1; }
