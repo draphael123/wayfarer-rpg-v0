@@ -37,7 +37,8 @@ export interface AbilityDef {
 
 export interface AbilityState {
   def: AbilityDef;
-  timer: number; // seconds until ready; 0 = ready
+  timer: number; // seconds until ready; 0 = ready (ultimates mirror charge here: 1 = charging, 0 = full)
+  ult?: boolean; // calling ultimate: gated by Unit.ultCharge, not time
 }
 
 export interface DerivedStats {
@@ -58,7 +59,8 @@ export interface Unit {
   team: Team;
   heroIndex: number; // -1 for enemies
   enemyKind: EnemyKind | null;
-  calling: string | null; // sworn calling (heroes only)
+  calling: string | null; // sworn calling (heroes only, null while the oath is dormant)
+  ultCharge: number; // 0-100, fills from the calling's role actions
   x: number;
   y: number;
   radius: number;

@@ -243,7 +243,8 @@ export interface CallingDef {
   color: string;
   entry: { attr: AttrKey; value: number }[];
   passive: string; // menu description of the always-on perk
-  signature: AbilityDef; // 4th battle ability, exclusive to the calling
+  signature: AbilityDef; // charge-based ultimate, exclusive to the calling
+  chargeHint: string; // how the ultimate meter fills
 }
 
 export const CALLING_UNLOCK_LEVEL = 5;
@@ -269,7 +270,8 @@ export const CALLINGS: CallingDef[] = [
     color: "#e0a34b",
     entry: [{ attr: "vit", value: 8 }],
     passive: "+5% armor, and +10% more while an enemy is at arm's reach.",
-    signature: sig("challenge", "Challenge", "instant", 14, "#e0a34b", "Bellow a challenge: nearby foes must attack you; you brace, taking less damage."),
+    chargeHint: "Charges from damage you take",
+    signature: sig("challenge", "Challenge", "instant", 14, "#e0a34b", "Ultimate: every nearby foe must attack you while you brace behind a holy shield."),
   },
   {
     id: "reaver",
@@ -279,7 +281,8 @@ export const CALLINGS: CallingDef[] = [
     color: "#d1543f",
     entry: [{ attr: "str", value: 8 }],
     passive: "+8% melee damage, +20% more against foes below 40% health.",
-    signature: sig("whirlwind", "Whirlwind", "instant", 12, "#d1543f", "Spin in a circle of steel, striking and shoving everything adjacent."),
+    chargeHint: "Charges from damage you deal",
+    signature: sig("whirlwind", "Whirlwind", "instant", 12, "#d1543f", "Ultimate: a devastating spin that staggers and shoves everything around you."),
   },
   {
     id: "ranger",
@@ -289,7 +292,8 @@ export const CALLINGS: CallingDef[] = [
     color: "#7ba05a",
     entry: [{ attr: "dex", value: 8 }],
     passive: "+8% move, +6% ranged damage, attack faster while nothing is in your face.",
-    signature: sig("volley", "Volley", "point", 14, "#a8d080", "Rain arrows on a spot, wounding and briefly slowing everything under them."),
+    chargeHint: "Charges from damage you deal",
+    signature: sig("volley", "Volley", "point", 14, "#a8d080", "Ultimate: a storm of arrows that wounds and slows everything under it."),
   },
   {
     id: "arcanist",
@@ -299,7 +303,8 @@ export const CALLINGS: CallingDef[] = [
     color: "#9a7bd8",
     entry: [{ attr: "int", value: 8 }],
     passive: "Spells recharge 10% faster and hit 8% harder.",
-    signature: sig("barrage", "Arcane Barrage", "instant", 13, "#b79aee", "Hurl three seeking bolts at the nearest enemies."),
+    chargeHint: "Charges from damage you deal",
+    signature: sig("barrage", "Arcane Barrage", "instant", 13, "#b79aee", "Ultimate: hurl five seeking bolts at the nearest enemies."),
   },
   {
     id: "chaplain",
@@ -309,7 +314,8 @@ export const CALLINGS: CallingDef[] = [
     color: "#e8d9a0",
     entry: [{ attr: "spi", value: 8 }],
     passive: "+10% healing; your channel spills 30% onto another wounded ally nearby.",
-    signature: sig("sanctuary", "Sanctuary", "point", 16, "#f2e7a0", "Consecrate ground that steadily mends every ally standing on it."),
+    chargeHint: "Charges from healing you give",
+    signature: sig("sanctuary", "Sanctuary", "point", 16, "#f2e7a0", "Ultimate: consecrate ground that swiftly mends every ally standing on it."),
   },
   {
     id: "trickster",
@@ -322,7 +328,8 @@ export const CALLINGS: CallingDef[] = [
       { attr: "int", value: 6 },
     ],
     passive: "+6% move and abilities recharge 6% faster.",
-    signature: sig("blink", "Blink", "ray", 11, "#9adeee", "Vanish and reappear a short dash away, shedding every foe hunting you."),
+    chargeHint: "Charges fast from kills",
+    signature: sig("blink", "Blink", "ray", 11, "#9adeee", "Ultimate: vanish and reappear in a burst of speed, shedding every foe hunting you."),
   },
 ];
 

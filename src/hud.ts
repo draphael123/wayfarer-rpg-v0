@@ -974,28 +974,59 @@ export class Hud {
     readyFlash = 0,
   ): void {
     const ready = ability.timer <= 0 && hero.alive;
+    const isUlt = !!ability.ult;
+    const charge = Math.min(1, hero.ultCharge / 100);
     const grad = ctx.createLinearGradient(x, y, x, y + s);
     grad.addColorStop(0, ready ? "#3d3356" : "#282138");
     grad.addColorStop(1, ready ? "#2c2440" : "#1f1a2c");
     ctx.fillStyle = grad;
     roundRect(ctx, x, y, s, s, 8);
     ctx.fill();
+    if (isUlt) {
+      // the meter IS the button: charge fills bottom-up in the calling color
+      ctx.save();
+      roundRect(ctx, x, y, s, s, 8);
+      ctx.clip();
+      ctx.globalAlpha = ready ? 0.4 : 0.3;
+      ctx.fillStyle = ability.def.color;
+      ctx.fillRect(x, y + s * (1 - charge), s, s * charge);
+      if (!ready && charge > 0.02) {
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = "#fff6d8";
+        ctx.fillRect(x, y + s * (1 - charge), s, 1.4);
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+    const pulse = isUlt && ready ? 0.5 + Math.abs(Math.sin(this.battle.time * 4)) * 0.5 : 1;
     if (ready) {
       ctx.shadowColor = ability.def.color;
-      ctx.shadowBlur = 6;
+      ctx.shadowBlur = isUlt ? 6 + pulse * 8 : 6;
     }
-    ctx.strokeStyle = ready ? ability.def.color : "rgba(255,255,255,0.12)";
-    ctx.lineWidth = ready ? 2 : 1;
+    ctx.strokeStyle = ready ? ability.def.color : isUlt ? `rgba(255,255,255,0.2)` : "rgba(255,255,255,0.12)";
+    ctx.lineWidth = ready ? (isUlt ? 2.5 : 2) : 1;
     roundRect(ctx, x, y, s, s, 8);
     ctx.stroke();
     ctx.shadowBlur = 0;
+    if (isUlt) {
+      // ultimate marker: a small diamond stud at the top edge
+      ctx.save();
+      ctx.translate(x + s / 2, y);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = ready ? ability.def.color : "rgba(255,255,255,0.35)";
+      ctx.fillRect(-3, -3, 6, 6);
+      ctx.strokeStyle = "#17111f";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-3, -3, 6, 6);
+      ctx.restore();
+    }
 
     ctx.save();
-    ctx.globalAlpha = ready ? 1 : 0.4;
+    ctx.globalAlpha = ready ? 1 : isUlt ? 0.55 : 0.4;
     drawAbilityGlyph(ctx, ability.def.icon, x + s / 2, y + s / 2, s * 0.3, ability.def.color);
     ctx.restore();
 
-    if (ability.timer > 0) {
+    if (!isUlt && ability.timer > 0) {
       const frac = ability.timer / ability.def.cooldown;
       ctx.fillStyle = "rgba(12, 9, 18, 0.65)";
       ctx.beginPath();

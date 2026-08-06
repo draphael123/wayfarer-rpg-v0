@@ -1358,8 +1358,9 @@ export class Menus {
     const save = this.save;
     const def = HEROES[index];
     const hero = save.heroes[index];
-    const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, hero.calling);
     const sworn = callingById(hero.calling);
+    const oathHolds = sworn ? callingEligible(sworn, hero.attrs) : false;
+    const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, oathHolds ? hero.calling : null);
     const weapon = dominantWeapon(hero.attrs);
     const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
     const inParty = hero.active;
@@ -1374,7 +1375,13 @@ export class Menus {
           </div>
           <div>
             <div class="hero-name">${def.name} <em>${sworn ? sworn.epithet : def.title}</em></div>
-            <div class="hero-meta">${sworn ? `<span class="calling-tag" style="color:${sworn.color}">${sworn.name}</span> · ` : ""}${WEAPON_LABEL[weapon]} · ${WEAPON_TIERS[hero.weaponTier].name} / ${ARMOR_TIERS[hero.armorTier].name}</div>
+            <div class="hero-meta">${
+              sworn
+                ? oathHolds
+                  ? `<span class="calling-tag" style="color:${sworn.color}">${sworn.name}</span> · `
+                  : `<span class="calling-tag dormant">${sworn.name} — dormant</span> · `
+                : ""
+            }${WEAPON_LABEL[weapon]} · ${WEAPON_TIERS[hero.weaponTier].name} / ${ARMOR_TIERS[hero.armorTier].name}</div>
           </div>
           <button class="toggle-btn party-toggle ${inParty ? "in" : ""}" data-act="toggle-party">
             ${inParty ? `${ico("banner")} In party` : `${ico("moon")} Benched`}
@@ -1402,8 +1409,14 @@ export class Menus {
           <button class="toggle-btn talents-btn" data-act="talents">${ico("star")} Talents</button>
           <button class="toggle-btn calling-btn ${!sworn && save.level >= CALLING_UNLOCK_LEVEL ? "beckons" : ""}"
             data-act="calling" ${!sworn && save.level < CALLING_UNLOCK_LEVEL ? "disabled" : ""}
-            ${sworn ? `style="border-color:${sworn.color};color:${sworn.color}"` : ""}>
-            ${sworn ? `${ico(sworn.crest)} ${sworn.name}` : save.level >= CALLING_UNLOCK_LEVEL ? "Choose a Calling" : `Calling at band lv ${CALLING_UNLOCK_LEVEL}`}
+            ${sworn ? (oathHolds ? `style="border-color:${sworn.color};color:${sworn.color}"` : 'style="border-color:#ff9a85;color:#ff9a85"') : ""}>
+            ${
+              sworn
+                ? `${ico(sworn.crest)} ${sworn.name}${oathHolds ? "" : " (dormant)"}`
+                : save.level >= CALLING_UNLOCK_LEVEL
+                  ? "Choose a Calling"
+                  : `Calling at band lv ${CALLING_UNLOCK_LEVEL}`
+            }
           </button>
           <button class="toggle-btn respec" data-act="respec">Respec (free)</button>
         </div>
@@ -1462,7 +1475,11 @@ export class Menus {
       const btn = (event.target as HTMLElement).closest("[data-attr]") as HTMLElement | null;
       if (!btn || save.unspent[index] <= 0) return;
       const key = btn.getAttribute("data-attr") as (typeof ATTR_KEYS)[number];
-      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket);
+      const effCalling = () => {
+        const c = callingById(hero.calling);
+        return c && callingEligible(c, hero.attrs) ? hero.calling : null;
+      };
+      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, effCalling());
       hero.attrs[key] += 1;
       save.unspent[index] -= 1;
       const before = unlocked.length;
@@ -1483,7 +1500,7 @@ export class Menus {
         audio.play("click");
       }
       persist(save);
-      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket);
+      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, effCalling());
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, statsBefore, statsAfter);
     });
@@ -1541,15 +1558,24 @@ export class Menus {
           <div class="calling-head">
             <span class="calling-crest">${ico(c.crest)}</span>
             <div class="calling-title"><strong>${c.name}</strong><em>${c.epithet}</em></div>
-            ${isSworn ? '<span class="sworn-badge">Sworn</span>' : ""}
+            ${isSworn ? `<span class="sworn-badge ${eligible ? "" : "dormant"}">${eligible ? "Sworn" : "Dormant"}</span>` : ""}
           </div>
+          ${
+            isSworn && !eligible
+              ? '<div class="dormant-note">Oath dormant — passive and ultimate are offline until the requirements are met again.</div>'
+              : ""
+          }
           <div class="calling-req">${c.entry
             .map((e) => `<span class="req-chip ${hero.attrs[e.attr] >= e.value ? "met" : ""}">${ATTR_NAMES[e.attr]} ${e.value}</span>`)
             .join("")}</div>
           <div class="calling-passive">${c.passive}</div>
           <div class="calling-sig">
             <span class="spell-ico"></span>
-            <span class="spell-info"><strong>${c.signature.name}</strong><em>${c.signature.blurb}</em></span>
+            <span class="spell-info">
+              <strong>${c.signature.name} <span class="ult-chip">ULT</span></strong>
+              <em>${c.signature.blurb}</em>
+              <em class="charge-hint">${c.chargeHint}</em>
+            </span>
           </div>
           ${
             isSworn
@@ -1701,14 +1727,15 @@ export class Menus {
       }
       slotRow.appendChild(slot);
     }
-    // sworn calling's signature rides along as a bonus fourth slot
+    // sworn calling's ultimate rides along as a bonus fourth slot
     const swornCalling = callingById(hero.calling);
+    const sheetOathHolds = swornCalling ? callingEligible(swornCalling, hero.attrs) : false;
     if (swornCalling) {
       const sigSlot = el(`
-        <div class="big-slot filled signature" style="--chip:${swornCalling.color}">
+        <div class="big-slot filled signature ${sheetOathHolds ? "" : "dormant"}" style="--chip:${sheetOathHolds ? swornCalling.color : "#7d7590"}">
           <span class="big-slot-ico"></span>
           <span class="big-slot-name">${swornCalling.signature.name}</span>
-          <span class="sig-tag">${ico(swornCalling.crest)} ${swornCalling.name}</span>
+          <span class="sig-tag">${ico(swornCalling.crest)} ${sheetOathHolds ? `${swornCalling.name} ultimate` : "oath dormant"}</span>
         </div>
       `);
       const sigHolder = sigSlot.querySelector(".big-slot-ico")!;

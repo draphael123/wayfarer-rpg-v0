@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { DIFFICULTIES, ENEMIES, HEROES, abilityById, callingById, cooldownReduction, deriveStats, partyRoster, talentMods, trinketMods } from "./data";
+import { DIFFICULTIES, ENEMIES, HEROES, abilityById, callingById, callingEligible, cooldownReduction, deriveStats, partyRoster, talentMods, trinketMods } from "./data";
 import type { FxSystem } from "./fx";
 import type {
   AbilityState,
@@ -84,20 +84,23 @@ export class Battle {
         y: midY - spread + t * spread * 2,
       };
       const heroSave = save.heroes[i];
-      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier, heroSave.talents, heroSave.trinket, heroSave.calling);
+      // an oath only holds while its stat requirements are still met
+      const sworn = callingById(heroSave.calling);
+      const oath = sworn && callingEligible(sworn, heroSave.attrs) ? sworn : null;
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier, heroSave.talents, heroSave.trinket, oath?.id ?? null);
       const abilities: AbilityState[] = heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d)
         .map((def) => ({ def, timer: 0 }));
-      const sworn = callingById(heroSave.calling);
-      if (sworn) abilities.push({ def: sworn.signature, timer: 0 });
+      if (oath) abilities.push({ def: oath.signature, timer: 1, ult: true });
       this.units.push({
         id: nextUnitId++,
         name: HEROES[i].name,
         team: "hero",
         heroIndex: i,
         enemyKind: null,
-        calling: heroSave.calling,
+        calling: oath?.id ?? null,
+        ultCharge: 0,
         x: pos.x,
         y: pos.y,
         radius: 15,
@@ -165,6 +168,7 @@ export class Battle {
       heroIndex: -1,
       enemyKind: kind,
       calling: null,
+      ultCharge: 0,
       x,
       y,
       radius: def.radius,
@@ -273,6 +277,17 @@ export class Battle {
     return speed;
   }
 
+  /** Feed a hero's ultimate meter; announces the moment it fills. */
+  private gainUlt(hero: Unit, amount: number): void {
+    if (!hero.calling || !hero.alive || amount <= 0) return;
+    const before = hero.ultCharge;
+    hero.ultCharge = Math.min(100, hero.ultCharge + amount);
+    if (before < 100 && hero.ultCharge >= 100) {
+      this.fx.floatText(hero.x, hero.y - hero.radius * 3 - 12, "ultimate ready!", callingById(hero.calling)?.color ?? "#ffe9a3", 13);
+      this.fx.ring(hero.x, hero.y, 46, callingById(hero.calling)?.color ?? "#ffe9a3", { width: 3, life: 0.5 });
+    }
+  }
+
   private attackIntervalOf(unit: Unit): number {
     let interval = unit.stats.attackCooldown;
     const haste = this.effect(unit, "haste");
@@ -311,6 +326,14 @@ export class Battle {
     }
     target.hp -= amount;
     if (this.tutorialMode && target.team === "hero" && target.hp < 1) target.hp = 1;
+    // ultimate charge: playing your calling's role feeds the meter
+    if (source?.team === "hero" && target.team === "enemy") {
+      const primary = source.calling === "reaver" || source.calling === "ranger" || source.calling === "arcanist";
+      this.gainUlt(source, amount * (primary ? 0.3 : source.calling === "trickster" ? 0.18 : 0.12));
+    }
+    if (target.team === "hero") {
+      this.gainUlt(target, amount * (target.calling === "vanguard" ? 0.42 : 0.12));
+    }
     if (amount > 24) this.hitstop = Math.max(this.hitstop, 0.055);
     if (amount > 18 && source) {
       const kdx = target.x - source.x;
@@ -364,6 +387,9 @@ export class Battle {
     if (!target.alive || target.hp >= target.stats.maxHp) return;
     const applied = Math.min(target.stats.maxHp - target.hp, amount);
     target.hp += applied;
+    if (from && from.team === "hero" && target !== from) {
+      this.gainUlt(from, applied * (from.calling === "chaplain" ? 0.36 : 0.12));
+    }
     if (showText && applied >= 1) {
       this.fx.floatText(target.x, target.y - target.radius - 14, `+${Math.round(applied)}`, "#8ee88b", 14);
     }
@@ -414,6 +440,10 @@ export class Battle {
     this.fx.addShake(unit.radius > 20 ? 8 : 3);
     this.hitstop = Math.max(this.hitstop, unit.radius > 20 ? 0.1 : 0.06);
     if (unit.radius > 20) this.zoomPunch = Math.max(this.zoomPunch, 0.8);
+    // kills surge the slayer's ultimate — Tricksters feast on them
+    if (unit.team === "enemy" && killer?.team === "hero") {
+      this.gainUlt(killer, killer.calling === "trickster" ? 18 : 6);
+    }
     // Battle Roar: kills whip the slayer into a brief fury
     if (unit.team === "enemy" && killer?.team === "hero" && this.heroTalentRank(killer, "battleRoar") > 0) {
       killer.effects = killer.effects.filter((e) => e.kind !== "haste");
@@ -635,39 +665,46 @@ export class Battle {
       // ----- calling signatures -----
       case "challenge": {
         for (const enemy of this.livingEnemies()) {
-          if (Math.hypot(enemy.x - hero.x, enemy.y - hero.y) < 150) {
+          if (Math.hypot(enemy.x - hero.x, enemy.y - hero.y) < 175) {
             enemy.effects = enemy.effects.filter((e) => e.kind !== "taunt");
-            enemy.effects.push(makeEffect("taunt", 4, 1, hero));
+            enemy.effects.push(makeEffect("taunt", 6, 1, hero));
             enemy.alert = 0.5;
           }
         }
-        hero.effects.push(makeEffect("guard", 3.5, 0.25, hero));
-        this.fx.ring(hero.x, hero.y, 150, "#e0a34b", { width: 4, life: 0.5 });
-        this.fx.burst(hero.x, hero.y - 22, "#e0a34b", 14, 140, { glow: true });
-        this.fx.addShake(4);
+        hero.effects.push(makeEffect("guard", 5, 0.35, hero));
+        hero.effects = hero.effects.filter((e) => e.kind !== "shield");
+        hero.effects.push(makeEffect("shield", 6, 20 + attrs.vit * 3, hero));
+        this.fx.ring(hero.x, hero.y, 175, "#e0a34b", { width: 5, life: 0.6 });
+        this.fx.ring(hero.x, hero.y, 100, "#ffdf9e", { width: 3, life: 0.45 });
+        this.fx.burst(hero.x, hero.y - 22, "#e0a34b", 20, 170, { glow: true });
+        this.fx.addShake(6);
+        this.zoomPunch = Math.max(this.zoomPunch, 0.5);
         audio.play("warcry");
         break;
       }
       case "whirlwind": {
-        const dmg = hero.stats.damage * 1.25;
+        const dmg = hero.stats.damage * 2.3;
         let hitAny = false;
         for (const enemy of this.livingEnemies()) {
           const d = Math.hypot(enemy.x - hero.x, enemy.y - hero.y);
-          if (d < 72 + enemy.radius) {
+          if (d < 85 + enemy.radius) {
             this.damage(enemy, dmg, hero, { spell: true, color: "#ff9a85" });
             if (enemy.alive) {
+              enemy.effects.push(makeEffect("stun", 0.7, 1, hero));
               const away = this.normalize({ x: enemy.x - hero.x, y: enemy.y - hero.y });
-              const shoved = this.clampToField({ x: enemy.x + away.x * 26, y: enemy.y + away.y * 26 }, enemy.radius);
+              const shoved = this.clampToField({ x: enemy.x + away.x * 36, y: enemy.y + away.y * 36 }, enemy.radius);
               enemy.x = shoved.x;
               enemy.y = shoved.y;
             }
             hitAny = true;
           }
         }
-        this.fx.slash(hero.x, hero.y - 12, 0, 58, "#ff9a85", Math.PI * 2);
-        this.fx.slash(hero.x, hero.y - 12, Math.PI, 44, "#ffd0c5", Math.PI * 2);
-        this.fx.ring(hero.x, hero.y, 86, "#d1543f", { width: 4, life: 0.4 });
-        this.fx.addShake(hitAny ? 6 : 3);
+        this.fx.slash(hero.x, hero.y - 12, 0, 66, "#ff9a85", Math.PI * 2);
+        this.fx.slash(hero.x, hero.y - 12, Math.PI, 50, "#ffd0c5", Math.PI * 2);
+        this.fx.ring(hero.x, hero.y, 100, "#d1543f", { width: 5, life: 0.5 });
+        this.fx.addShake(hitAny ? 9 : 4);
+        this.hitstop = Math.max(this.hitstop, hitAny ? 0.08 : 0);
+        this.zoomPunch = Math.max(this.zoomPunch, 0.7);
         hero.lunge = 0.8;
         audio.play("slash");
         break;
@@ -678,21 +715,22 @@ export class Battle {
           break;
         }
         const at = this.clampToField(aim, 0);
-        const dmg = 8 + attrs.dex * 2.0;
+        const dmg = 14 + attrs.dex * 3.2;
         for (const enemy of this.livingEnemies()) {
-          if (Math.hypot(enemy.x - at.x, enemy.y - at.y) < 80 + enemy.radius) {
+          if (Math.hypot(enemy.x - at.x, enemy.y - at.y) < 95 + enemy.radius) {
             this.damage(enemy, dmg, hero, { spell: true, color: "#cfe8b0" });
-            if (enemy.alive) enemy.effects.push(makeEffect("slow", 1.2, 0.3, hero));
+            if (enemy.alive) enemy.effects.push(makeEffect("slow", 2, 0.35, hero));
           }
         }
         // arrowfall
-        for (let i = 0; i < 12; i++) {
-          const ax = at.x + (Math.random() - 0.5) * 130;
-          const ay = at.y + (Math.random() - 0.5) * 60;
-          this.fx.burst(ax, ay - 6, "#e8d9b0", 2, 60, { gravity: 240, life: 0.35 });
+        for (let i = 0; i < 20; i++) {
+          const ax = at.x + (Math.random() - 0.5) * 160;
+          const ay = at.y + (Math.random() - 0.5) * 72;
+          this.fx.burst(ax, ay - 6, "#e8d9b0", 2, 70, { gravity: 260, life: 0.4 });
         }
-        this.fx.ring(at.x, at.y, 88, "#a8d080", { width: 4, life: 0.45 });
-        this.fx.pool(at.x, at.y, 90, "168,208,128", 0.6);
+        this.fx.ring(at.x, at.y, 100, "#a8d080", { width: 5, life: 0.5 });
+        this.fx.pool(at.x, at.y, 105, "168,208,128", 0.8);
+        this.fx.addShake(5);
         hero.lungeDir = dir;
         hero.lunge = 0.6;
         audio.play("shoot");
@@ -701,14 +739,14 @@ export class Battle {
       case "barrage": {
         const targets = this.livingEnemies()
           .map((e) => ({ e, d: Math.hypot(e.x - hero.x, e.y - hero.y) }))
-          .filter((t) => t.d < 280)
+          .filter((t) => t.d < 300)
           .sort((a, b) => a.d - b.d)
-          .slice(0, 3);
+          .slice(0, 5);
         if (!targets.length) {
           cast = false;
           break;
         }
-        const dmg = (8 + attrs.int * 2.2) * (0.5 + hero.stats.spellPower * 0.5);
+        const dmg = (10 + attrs.int * 2.6) * (0.5 + hero.stats.spellPower * 0.5);
         for (const { e } of targets) {
           this.damage(e, dmg, hero, { spell: true, color: "#b79aee" });
           this.fx.burst(e.x, e.y - 14, "#b79aee", 10, 120, { glow: true });
@@ -732,28 +770,31 @@ export class Battle {
         this.zones.push({
           x: at.x,
           y: at.y,
-          radius: 78,
+          radius: 92,
           time: 0,
-          duration: 5,
+          duration: 6.5,
           kind: "sanctuary",
           power: 0,
-          dps: 6 + attrs.spi * 1.6,
+          dps: 9 + attrs.spi * 2.2,
           from: hero,
         });
-        this.fx.ring(at.x, at.y, 82, "#f2e7a0", { width: 4, life: 0.6 });
+        this.fx.ring(at.x, at.y, 96, "#f2e7a0", { width: 4, life: 0.6 });
         this.fx.burst(at.x, at.y - 10, "#f2e7a0", 16, 100, { glow: true, gravity: -60 });
         this.fx.pool(at.x, at.y, 95, "242,231,160", 1.1);
         audio.play("heal");
         break;
       }
       case "blink": {
-        const dist = aim ? Math.min(170, Math.hypot(aim.x - hero.x, aim.y - hero.y)) : 130;
+        const dist = aim ? Math.min(200, Math.hypot(aim.x - hero.x, aim.y - hero.y)) : 150;
         const from = { x: hero.x, y: hero.y };
         const to = this.clampToField({ x: hero.x + dir.x * dist, y: hero.y + dir.y * dist }, hero.radius);
         this.fx.burst(from.x, from.y - 14, "#9adeee", 12, 110, { glow: true });
         hero.x = to.x;
         hero.y = to.y;
         hero.moveTarget = null;
+        // emerge quicksilver: a burst of speed and slipperiness
+        hero.effects.push(makeEffect("haste", 3, 1.8, hero));
+        hero.effects.push(makeEffect("guard", 2, 0.3, hero));
         // shed every hunter
         for (const enemy of this.livingEnemies()) {
           if (enemy.aggro === hero) enemy.aggro = null;
@@ -770,8 +811,13 @@ export class Battle {
     }
     if (cast) {
       this.castCounts[id] = (this.castCounts[id] ?? 0) + 1;
-      const cdr = hero.heroIndex >= 0 ? cooldownReduction(save.heroes[hero.heroIndex]) : 0;
-      state.timer = state.def.cooldown * (1 - cdr);
+      if (state.ult) {
+        hero.ultCharge = 0;
+        state.timer = 1;
+      } else {
+        const cdr = hero.heroIndex >= 0 ? cooldownReduction(save.heroes[hero.heroIndex]) : 0;
+        state.timer = state.def.cooldown * (1 - cdr);
+      }
       hero.castGlow = 0.4;
     }
     return cast;
@@ -963,6 +1009,11 @@ export class Battle {
     if (hero.attackTarget && !hero.attackTarget.alive) hero.attackTarget = null;
     if (hero.healTarget && !hero.healTarget.alive) hero.healTarget = null;
     // auto orders release when finished so the player's own orders always win
+    // ultimate: slow ambient charge, and mirror readiness into the button timer
+    if (hero.calling && this.state === "fighting") this.gainUlt(hero, dt * 1.2);
+    const ultState = hero.abilities.find((a) => a.ult);
+    if (ultState) ultState.timer = hero.ultCharge >= 100 ? 0 : 1;
+
     if (hero.autoOrder && hero.healTarget && hero.healTarget.hp >= hero.healTarget.stats.maxHp * 0.98) {
       hero.healTarget = null;
       hero.autoOrder = false;
