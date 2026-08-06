@@ -550,12 +550,27 @@ function frame(now: number): void {
     drawLighting(ctx, battle, logicalW, worldH);
     drawColorGrade(ctx, battle.stage, logicalW, worldH);
     drawVignette(ctx, logicalW, worldH);
+    // ultimate ceremony: the screen edges flare in the oath's color
+    if (battle.ultFlash) {
+      const uf = battle.ultFlash;
+      const a = Math.min(1, uf.time / 0.55);
+      const fl = ctx.createRadialGradient(logicalW / 2, worldH * 0.45, Math.min(logicalW, worldH) * 0.32, logicalW / 2, worldH / 2, Math.max(logicalW, worldH) * 0.7);
+      fl.addColorStop(0, "rgba(0,0,0,0)");
+      const rgb = uf.color;
+      fl.addColorStop(1, rgb);
+      ctx.save();
+      ctx.globalAlpha = a * 0.34;
+      ctx.fillStyle = fl;
+      ctx.fillRect(0, 0, logicalW, worldH);
+      ctx.restore();
+    }
     // danger pulse: red edges close in when a hero is nearly down
     if (battle.state === "fighting") {
       let frailest = 1;
       for (const u of battle.units) {
         if (u.team === "hero" && u.alive) frailest = Math.min(frailest, u.hp / u.stats.maxHp);
       }
+      audio.setDanger(frailest < 0.28);
       if (frailest < 0.28) {
         const danger = (0.28 - frailest) / 0.28;
         const pulse = 0.55 + Math.abs(Math.sin(battle.time * 4)) * 0.45;
@@ -565,6 +580,8 @@ function frame(now: number): void {
         ctx.fillStyle = dv;
         ctx.fillRect(0, 0, logicalW, worldH);
       }
+    } else {
+      audio.setDanger(false);
     }
     hud.draw(ctx);
   } else {

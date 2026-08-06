@@ -284,6 +284,25 @@ export function drawBackground(
     ctx.fill();
   }
 
+  // birds crossing the day sky
+  if (stage.id <= 1) {
+    ctx.strokeStyle = "rgba(60, 58, 48, 0.7)";
+    ctx.lineWidth = 1.6;
+    ctx.lineCap = "round";
+    for (let i = 0; i < 2; i++) {
+      const bx = ((time * (16 + i * 7) + i * 420) % (w + 160)) - 80;
+      const by = 34 + i * 26 + Math.sin(time * 1.8 + i * 3) * 8;
+      const flap = Math.sin(time * 9 + i * 2) * 3;
+      const s = 5 - i;
+      ctx.beginPath();
+      ctx.moveTo(bx - s, by + flap * 0.4);
+      ctx.quadraticCurveTo(bx - s * 0.4, by - 2 - flap, bx, by);
+      ctx.quadraticCurveTo(bx + s * 0.4, by - 2 - flap, bx + s, by + flap * 0.4);
+      ctx.stroke();
+    }
+    ctx.lineCap = "butt";
+  }
+
   // far hill layer (lighter) then near hills
   ctx.globalAlpha = 0.55;
   ctx.fillStyle = p.hills;
@@ -1691,10 +1710,12 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   ctx.fill();
   ctx.globalAlpha = 1;
 
-  // weapon arm + weapon (front) — the shoulder sways against the stride
+  // weapon arm + weapon (front) — the shoulder sways against the stride,
+  // and idle flourishes raise the weapon in a small salute
   const shX = cx + f * bodyW * 0.36 - f * pose.walk * 1.4;
   const shY = shoulderY + 2;
-  drawHeroWeapon(ctx, unit, def.accent, def.skin, shX, shY, H, f, pose.swing, unit.castGlow, time, legW, wTier);
+  const idleRaise = unit.idleAnim > 0 ? Math.sin((1 - unit.idleAnim / 0.7) * Math.PI) * 0.14 : 0;
+  drawHeroWeapon(ctx, unit, def.accent, def.skin, shX, shY, H, f, Math.max(pose.swing, idleRaise), unit.castGlow, time, legW, wTier);
 
   flashOverlay(ctx, unit, cx, gy - H * 0.45, H * 0.5);
   if (unit.castGlow > 0) {
@@ -2344,6 +2365,31 @@ function drawFallen(ctx: CanvasRenderingContext2D, unit: Unit): void {
 }
 
 const stepPhases = new WeakMap<Unit, number>();
+const idlePrev = new WeakMap<Unit, number>();
+
+/** Each hero's idle flourish leaves a little signature in the air. */
+function idleFlourishFx(battle: Battle, unit: Unit): void {
+  switch (unit.heroIndex) {
+    case 0: // Bram: a glint along the raised blade
+      battle.fx.burst(unit.x + unit.facing * 14, unit.y - 34, "#fff6d8", 3, 40, { glow: true, life: 0.3 });
+      break;
+    case 1: // Wren: a leaf shaken loose
+      battle.fx.burst(unit.x - unit.facing * 6, unit.y - 30, "#8ba86b", 3, 36, { gravity: 50, life: 0.7 });
+      break;
+    case 2: // Ezri: embers flicked off a fingertip
+      battle.fx.burst(unit.x + unit.facing * 10, unit.y - 28, "#ff9b42", 4, 46, { glow: true, gravity: -50, life: 0.5 });
+      break;
+    case 3: // Sol: drifting light motes
+      battle.fx.burst(unit.x, unit.y - 32, "#ffe9a3", 4, 34, { glow: true, gravity: -60, life: 0.7 });
+      break;
+    case 4: // Maren: a scatter of seawater droplets
+      battle.fx.burst(unit.x + unit.facing * 8, unit.y - 26, "#7bc8d8", 4, 50, { gravity: 140, life: 0.5 });
+      break;
+    case 5: // Kellan: a heavy stomp of dust
+      battle.fx.burst(unit.x, unit.y + 1, "rgba(185,170,145,0.7)", 5, 40, { gravity: -25, size: 3, life: 0.4 });
+      break;
+  }
+}
 
 export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: SaveData, selected: Unit | null): void {
   const sorted = [...battle.units].sort((a, b) => a.y - b.y);
@@ -2363,6 +2409,11 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
     if (moving && (prevStride >= 0) !== (stride >= 0)) {
       battle.fx.burst(unit.x - unit.facing * 3, unit.y + 1, "rgba(185,170,145,0.6)", 2, 24, { gravity: -26, size: 2.4, life: 0.3 });
     }
+    // idle flourishes: fire once as each flourish begins
+    if (unit.team === "hero" && unit.idleAnim > 0.6 && (idlePrev.get(unit) ?? 0) <= 0.6) {
+      idleFlourishFx(battle, unit);
+    }
+    idlePrev.set(unit, unit.idleAnim);
     const lowHp = unit.team === "hero" && unit.hp / unit.stats.maxHp < 0.25;
     if (lowHp) {
       // danger ring pulsing under the wounded hero

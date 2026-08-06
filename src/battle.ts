@@ -60,6 +60,7 @@ export class Battle {
   cinematic = 0; // boss-intro seconds remaining
   bossRef: Unit | null = null;
   slowmo = 0; // kill-cam seconds remaining
+  ultFlash: { color: string; time: number } | null = null; // ult-cast screen tint
 
   constructor(
     public stage: StageDef,
@@ -414,6 +415,7 @@ export class Battle {
     ) {
       target.effects.push(makeEffect("burn", 3, 2.7, source));
     }
+    if (amount > 22) audio.play("hitHeavy");
     if (target.hp <= 0) this.kill(target, source);
     else audio.play(opts.spell ? "hit" : "hit");
   }
@@ -475,6 +477,17 @@ export class Battle {
     this.fx.addShake(unit.radius > 20 ? 8 : 3);
     this.hitstop = Math.max(this.hitstop, unit.radius > 20 ? 0.1 : 0.06);
     if (unit.radius > 20) this.zoomPunch = Math.max(this.zoomPunch, 0.8);
+    // a boss falls like a felled tower: slow motion, soul geyser, the works
+    if (unit.team === "enemy" && ["alpha", "warlord", "ogre"].includes(unit.enemyKind ?? "")) {
+      this.slowmo = Math.max(this.slowmo, 1.6);
+      this.zoomPunch = Math.max(this.zoomPunch, 1.2);
+      this.fx.beam(unit.x, unit.y, 200, 22, "rgba(215, 240, 230, 0.85)", 1.4);
+      this.fx.burst(unit.x, unit.y - 20, "#d8efe8", 26, 200, { glow: true, gravity: -120, life: 1 });
+      this.fx.burst(unit.x, unit.y - 10, "#ffd76b", 18, 160, { glow: true, gravity: 60 });
+      this.fx.ring(unit.x, unit.y, 180, "#d8efe8", { width: 6, life: 0.9 });
+      this.fx.addShake(13);
+      audio.play("roar");
+    }
     // kills surge the slayer's ultimate — Tricksters feast on them
     if (unit.team === "enemy" && killer?.team === "hero") {
       this.gainUlt(killer, killer.advCalling === "spellthief" ? 25 : killer.calling === "trickster" ? 18 : 6);
@@ -722,7 +735,7 @@ export class Battle {
         this.fx.slash(victim.x, victim.y - 14, Math.atan2(hero.lungeDir.y, hero.lungeDir.x), 40, "#ffb46b", Math.PI * 0.8);
         this.fx.addShake(6);
         this.hitstop = Math.max(this.hitstop, 0.06);
-        audio.play("slash");
+        audio.play("spOverpower");
         break;
       }
       case "caltrops": {
@@ -734,7 +747,7 @@ export class Battle {
         this.zones.push({ x: at.x, y: at.y, radius: 70, time: 0, duration: 6, kind: "frost", power: 0.3, dps: 1 + attrs.dex * 0.5, from: hero });
         this.fx.burst(at.x, at.y - 4, "#9db36b", 10, 90, { gravity: 200, size: 2.6 });
         this.fx.ring(at.x, at.y, 74, "#9db36b", { width: 3, life: 0.4 });
-        audio.play("shoot");
+        audio.play("spCaltrops");
         break;
       }
       case "chainspark": {
@@ -751,8 +764,9 @@ export class Battle {
         let prev: Unit = hero;
         for (const { e } of struck) {
           this.damage(e, dmg, hero, { spell: true, color: "#8fc7e8" });
-          // jagged arc from the last link in the chain
-          const steps2 = 5;
+          // the arc itself, link to link, with sparks along it
+          this.fx.tracer(prev.x, prev.y - 16, e.x, e.y - 14, "#8fc7e8", 0.3, 2.5);
+          const steps2 = 4;
           for (let s = 1; s < steps2; s++) {
             const t = s / steps2;
             const jx = prev.x + (e.x - prev.x) * t + (Math.random() - 0.5) * 10;
@@ -761,7 +775,7 @@ export class Battle {
           }
           prev = e;
         }
-        audio.play("bolt");
+        audio.play("spChainspark");
         break;
       }
       case "sunlance": {
@@ -781,13 +795,12 @@ export class Battle {
             this.heal(ally, 8 + attrs.spi * 1.6, true, hero);
           }
         }
-        // the pillar itself
-        for (let i = 0; i < 4; i++) {
-          this.fx.burst(at.x + (Math.random() - 0.5) * 20, at.y - 10 - i * 14, "#ffe9a3", 4, 50, { glow: true, gravity: -80 });
-        }
+        // the pillar itself: a true column of light
+        this.fx.beam(at.x, at.y, 170, 16, "rgba(255, 220, 130, 0.95)", 0.65);
+        this.fx.burst(at.x, at.y - 12, "#ffe9a3", 10, 90, { glow: true, gravity: -90 });
         this.fx.ring(at.x, at.y, 66, "#ffd76b", { width: 4, life: 0.5 });
         this.fx.pool(at.x, at.y, 80, "255,215,107", 0.8);
-        audio.play("heal");
+        audio.play("spSunlance");
         break;
       }
       case "shieldslam": {
@@ -811,7 +824,7 @@ export class Battle {
         }
         this.fx.burst(victim.x, victim.y - 10, "#c9b38a", 8, 100, { glow: true });
         this.fx.addShake(5);
-        audio.play("thud");
+        audio.play("spShieldslam");
         break;
       }
       case "stoneskin": {
@@ -821,7 +834,7 @@ export class Battle {
         target.effects.push(makeEffect("shield", 6, 10 + attrs.vit * 2, hero));
         this.fx.ring(target.x, target.y - 14, target.radius * 2.4, "#a8a29a", { width: 4, life: 0.5, squash: 1 });
         this.fx.burst(target.x, target.y - 14, "#c9c2b8", 10, 80, { gravity: 120 });
-        audio.play("shield");
+        audio.play("spStoneskin");
         break;
       }
       case "sunder": {
@@ -839,7 +852,7 @@ export class Battle {
         hero.lungeDir = this.normalize({ x: victim.x - hero.x, y: victim.y - hero.y });
         hero.lunge = 1;
         this.fx.burst(victim.x, victim.y - 12, "#c25a3a", 8, 100, { glow: true });
-        audio.play("slash");
+        audio.play("spSunder");
         break;
       }
       case "groundbreaker": {
@@ -855,7 +868,7 @@ export class Battle {
         this.fx.burst(hero.x, hero.y, "rgba(150,120,90,0.8)", 18, 150, { gravity: 220, size: 4 });
         this.fx.addShake(hitAny ? 9 : 5);
         this.hitstop = Math.max(this.hitstop, 0.06);
-        audio.play("thud");
+        audio.play("spGroundbreaker");
         break;
       }
       case "rush": {
@@ -876,11 +889,12 @@ export class Battle {
         hero.lungeDir = this.normalize({ x: prey.x - hero.x, y: prey.y - hero.y });
         hero.lunge = 1;
         this.damage(prey, 12 + attrs.str * 3, hero, { spell: true, color: "#e0494b" });
+        this.fx.tracer(from.x, from.y - 12, hero.x, hero.y - 12, "#e0494b", 0.35, 4);
         for (let t2 = 0.15; t2 < 1; t2 += 0.2) {
           this.fx.burst(from.x + (hero.x - from.x) * t2, from.y + (hero.y - from.y) * t2 - 10, "#e0494b", 2, 40, { glow: true, life: 0.25 });
         }
         this.fx.addShake(6);
-        audio.play("slash");
+        audio.play("spRush");
         break;
       }
       case "twinshot": {
@@ -900,7 +914,7 @@ export class Battle {
         }
         hero.lungeDir = dir;
         hero.lunge = 0.7;
-        audio.play("shoot");
+        audio.play("spTwinshot");
         break;
       }
       case "smokebomb": {
@@ -911,7 +925,7 @@ export class Battle {
         const at = this.clampToField(aim, 0);
         this.zones.push({ x: at.x, y: at.y, radius: 82, time: 0, duration: 5, kind: "smoke", power: 0.33, dps: 0, from: hero });
         this.fx.burst(at.x, at.y - 8, "rgba(150,158,175,0.8)", 20, 90, { gravity: -30, size: 5, life: 0.8 });
-        audio.play("shield");
+        audio.play("spSmokebomb");
         break;
       }
       case "deadeye": {
@@ -934,14 +948,15 @@ export class Battle {
         }
         this.damage(best, 20 + attrs.dex * 4, hero, { spell: true, color: "#c9e86b" });
         if (best.alive) best.effects.push(makeEffect("vulnerable", 4, 0.2, hero));
-        for (let t2 = 24; t2 < bestT; t2 += 22) {
-          this.fx.burst(hero.x + dir.x * t2, hero.y + dir.y * t2 - 8, "#f2ffd0", 1, 20, { glow: true, life: 0.2 });
-        }
+        // the shot hangs in the air as a tracer
+        this.fx.tracer(hero.x + dir.x * 14, hero.y - 12, best.x, best.y - 12, "#c9e86b", 0.45, 3);
+        this.fx.burst(hero.x + dir.x * 16, hero.y - 12, "#f2ffd0", 6, 70, { glow: true, life: 0.25 });
+        this.fx.burst(best.x, best.y - 12, "#c9e86b", 10, 110, { glow: true });
         this.fx.addShake(5);
         this.hitstop = Math.max(this.hitstop, 0.06);
         hero.lungeDir = dir;
         hero.lunge = 0.8;
-        audio.play("shoot");
+        audio.play("spDeadeye");
         break;
       }
       case "missiles": {
@@ -967,7 +982,7 @@ export class Battle {
           });
         }
         hero.castGlow = 0.4;
-        audio.play("bolt");
+        audio.play("spMissiles");
         break;
       }
       case "gravity": {
@@ -979,7 +994,7 @@ export class Battle {
         this.zones.push({ x: at.x, y: at.y, radius: 95, time: 0, duration: 3.5, kind: "gravity", power: 65, dps: 1 + attrs.int * 0.5, from: hero });
         this.fx.ring(at.x, at.y, 95, "#7a6ae8", { width: 4, life: 0.6 });
         this.fx.burst(at.x, at.y - 8, "#9a8af2", 14, 110, { glow: true, gravity: -40 });
-        audio.play("bolt");
+        audio.play("spGravity");
         break;
       }
       case "meteor": {
@@ -990,7 +1005,7 @@ export class Battle {
         const at = this.clampToField(aim, 0);
         this.telegraphs.push({ x: at.x, y: at.y, radius: 92, time: 0, duration: 1.2, owner: hero, kind: "meteor" });
         hero.castGlow = 0.5;
-        audio.play("fireball");
+        audio.play("spMeteor");
         break;
       }
       case "blessing": {
@@ -999,7 +1014,7 @@ export class Battle {
         target.effects = target.effects.filter((e) => e.kind !== "slow" && e.kind !== "burn");
         target.effects.push(makeEffect("haste", 5, 1.3, hero));
         this.fx.burst(target.x, target.y - 18, "#e8d98a", 14, 100, { glow: true, gravity: -50 });
-        audio.play("heal");
+        audio.play("spBlessing");
         break;
       }
       case "ward": {
@@ -1008,7 +1023,7 @@ export class Battle {
         target.effects.push(makeEffect("shield", 8, 15 + attrs.spi * 2.5, hero));
         this.fx.ring(target.x, target.y - 14, target.radius * 2.6, "#f2e0b0", { width: 4, life: 0.6, squash: 1 });
         this.fx.burst(target.x, target.y - 16, "#fff0c8", 10, 80, { glow: true });
-        audio.play("shield");
+        audio.play("spWard");
         break;
       }
       case "judgement": {
@@ -1019,18 +1034,19 @@ export class Battle {
         }
         for (const enemy of guilty) {
           this.damage(enemy, 12 + attrs.spi * 2.2, hero, { spell: true, color: "#fff0b4" });
+          this.fx.beam(enemy.x, enemy.y, 140, 11, "rgba(255, 240, 180, 0.9)", 0.55);
           this.fx.burst(enemy.x, enemy.y - 30, "#fff0b4", 8, 70, { glow: true, gravity: 160 });
           this.fx.pool(enemy.x, enemy.y, 46, "255,240,180", 0.5);
         }
         this.fx.addShake(5);
-        audio.play("heal");
+        audio.play("spJudgement");
         break;
       }
       case "secondwind": {
         this.heal(hero, 12 + attrs.vit * 2.5, true, hero);
         hero.effects = hero.effects.filter((e) => e.kind !== "burn");
         this.fx.burst(hero.x, hero.y - 16, "#b8c9a0", 12, 90, { glow: true, gravity: -60 });
-        audio.play("heal");
+        audio.play("spSecondwind");
         break;
       }
       case "ramwall": {
@@ -1057,7 +1073,7 @@ export class Battle {
         hero.lunge = 1;
         this.fx.burst(from.x, from.y, "rgba(185,170,145,0.7)", 10, 80, { gravity: -20, size: 3.5 });
         this.fx.addShake(7);
-        audio.play("thud");
+        audio.play("spRamwall");
         break;
       }
       case "bastion": {
@@ -1075,7 +1091,7 @@ export class Battle {
         }
         this.fx.ring(hero.x, hero.y, 160, "#d8ccb0", { width: 5, life: 0.6 });
         this.fx.addShake(5);
-        audio.play("warcry");
+        audio.play("spBastion");
         break;
       }
       // ----- calling signatures -----
@@ -1279,6 +1295,11 @@ export class Battle {
         hero.ultCharge = 0;
         state.timer = 1;
         navigator.vibrate?.([18, 26, 42]);
+        // ceremony: the world catches its breath in the oath's color
+        this.ultFlash = { color: callingById(hero.calling)?.color ?? "#ffe9a3", time: 0.55 };
+        this.slowmo = Math.max(this.slowmo, 0.35);
+        this.hitstop = Math.max(this.hitstop, 0.1);
+        this.zoomPunch = Math.max(this.zoomPunch, 0.8);
       } else {
         const cdr = hero.heroIndex >= 0 ? cooldownReduction(save.heroes[hero.heroIndex]) : 0;
         state.timer = state.def.cooldown * (1 - cdr);
@@ -1321,6 +1342,10 @@ export class Battle {
     this.time += dt;
     this.waveBanner = Math.max(0, this.waveBanner - dt);
     this.introBanner = Math.max(0, this.introBanner - dt);
+    if (this.ultFlash) {
+      this.ultFlash.time -= dt;
+      if (this.ultFlash.time <= 0) this.ultFlash = null;
+    }
 
     if (this.state === "victory" || this.state === "defeat") {
       this.resultDelay = Math.max(0, this.resultDelay - dt);
@@ -2076,7 +2101,16 @@ export class Battle {
     for (let i = this.zones.length - 1; i >= 0; i--) {
       const zone = this.zones[i];
       zone.time += dt;
-      if (zone.time >= zone.duration) this.zones.splice(i, 1);
+      if (zone.time >= zone.duration) {
+        this.zones.splice(i, 1);
+        // a gravity well dies violently: everything it held gets one last yank
+        if (zone.kind === "gravity") {
+          this.fx.burst(zone.x, zone.y - 6, "#9a8af2", 20, 160, { glow: true });
+          this.fx.ring(zone.x, zone.y, zone.radius * 0.7, "#7a6ae8", { width: 5, life: 0.4 });
+          this.fx.addShake(5);
+          audio.play("bolt");
+        }
+      }
     }
   }
 

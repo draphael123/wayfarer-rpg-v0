@@ -55,13 +55,46 @@ export interface LightPool {
   color: string; // rgb triplet like "255,150,60"
 }
 
+export interface Beam {
+  x: number;
+  y: number; // ground point the column stands on
+  height: number;
+  width: number;
+  life: number;
+  maxLife: number;
+  color: string;
+}
+
+export interface Tracer {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  life: number;
+  maxLife: number;
+  color: string;
+  width: number;
+}
+
 export class FxSystem {
   particles: Particle[] = [];
   floaters: Floater[] = [];
   rings: Ring[] = [];
   arcs: SlashArc[] = [];
   pools: LightPool[] = [];
+  beams: Beam[] = [];
+  tracers: Tracer[] = [];
   shake = 0;
+
+  /** Vertical column of light standing on a ground point. */
+  beam(x: number, y: number, height: number, width: number, color: string, life = 0.5): void {
+    this.beams.push({ x, y, height, width, life, maxLife: life, color });
+  }
+
+  /** Straight glowing line — sniper trails, chain arcs. */
+  tracer(x1: number, y1: number, x2: number, y2: number, color: string, life = 0.3, width = 2.5): void {
+    this.tracers.push({ x1, y1, x2, y2, life, maxLife: life, color, width });
+  }
 
   pool(x: number, y: number, r: number, color: string, life = 0.7): void {
     this.pools.push({ x, y, r, life, maxLife: life, color });
@@ -194,6 +227,14 @@ export class FxSystem {
       this.pools[i].life -= dt;
       if (this.pools[i].life <= 0) this.pools.splice(i, 1);
     }
+    for (let i = this.beams.length - 1; i >= 0; i--) {
+      this.beams[i].life -= dt;
+      if (this.beams[i].life <= 0) this.beams.splice(i, 1);
+    }
+    for (let i = this.tracers.length - 1; i >= 0; i--) {
+      this.tracers[i].life -= dt;
+      if (this.tracers[i].life <= 0) this.tracers.splice(i, 1);
+    }
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
@@ -215,6 +256,42 @@ export class FxSystem {
       ctx.beginPath();
       ctx.ellipse(ring.x, ring.y, ring.r, ring.r * ring.squash, 0, 0, Math.PI * 2);
       ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    for (const beam of this.beams) {
+      const a = Math.max(0, beam.life / beam.maxLife);
+      const w = beam.width * (0.5 + a * 0.5);
+      const grad = ctx.createLinearGradient(beam.x, beam.y - beam.height, beam.x, beam.y);
+      grad.addColorStop(0, "rgba(255,255,255,0)");
+      grad.addColorStop(0.35, beam.color);
+      grad.addColorStop(1, beam.color);
+      ctx.globalAlpha = a * 0.75;
+      ctx.fillStyle = grad;
+      ctx.fillRect(beam.x - w / 2, beam.y - beam.height, w, beam.height);
+      ctx.globalAlpha = a * 0.35;
+      ctx.fillRect(beam.x - w * 1.4, beam.y - beam.height * 0.92, w * 2.8, beam.height * 0.92);
+      // pooled light where it meets the ground
+      ctx.globalAlpha = a * 0.6;
+      ctx.beginPath();
+      ctx.ellipse(beam.x, beam.y, w * 2.2, w * 0.75, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    for (const tr of this.tracers) {
+      const a = Math.max(0, tr.life / tr.maxLife);
+      ctx.globalAlpha = a;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = tr.width * a + 0.6;
+      ctx.beginPath();
+      ctx.moveTo(tr.x1, tr.y1);
+      ctx.lineTo(tr.x2, tr.y2);
+      ctx.stroke();
+      ctx.strokeStyle = tr.color;
+      ctx.lineWidth = (tr.width + 2.4) * a;
+      ctx.globalAlpha = a * 0.4;
+      ctx.stroke();
+      ctx.lineCap = "butt";
     }
     ctx.globalAlpha = 1;
     for (const arc of this.arcs) {
@@ -273,6 +350,8 @@ export class FxSystem {
     this.rings.length = 0;
     this.arcs.length = 0;
     this.pools.length = 0;
+    this.beams.length = 0;
+    this.tracers.length = 0;
     this.shake = 0;
   }
 }

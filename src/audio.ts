@@ -32,7 +32,29 @@ type SfxName =
   | "ultVolley"
   | "ultBarrage"
   | "ultSanctuary"
-  | "ultBlink";
+  | "ultBlink"
+  | "hitHeavy"
+  | "spSunder"
+  | "spOverpower"
+  | "spGroundbreaker"
+  | "spRush"
+  | "spTwinshot"
+  | "spCaltrops"
+  | "spSmokebomb"
+  | "spDeadeye"
+  | "spMissiles"
+  | "spChainspark"
+  | "spGravity"
+  | "spMeteor"
+  | "spBlessing"
+  | "spSunlance"
+  | "spWard"
+  | "spJudgement"
+  | "spShieldslam"
+  | "spSecondwind"
+  | "spRamwall"
+  | "spStoneskin"
+  | "spBastion";
 
 /** SFX that have recorded versions; each entry lists variants to pick from. */
 const SAMPLE_SFX: Partial<Record<SfxName, string[]>> = {
@@ -87,11 +109,143 @@ class AudioKit {
   private samplesRequested = false;
   private trackNode: { name: string; src: AudioBufferSourceNode; gain: GainNode } | null = null;
 
+  // ---- ambience + danger ducking
+  private musicOut: BiquadFilterNode | null = null;
+  private dangerOn = false;
+  private ambienceKind: "menu" | number | null = null;
+  private ambienceTimer: number | null = null;
+  private ambienceBed: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
+
   setMood(mood: "menu" | "battle", stageId?: number): void {
     this.mood = mood;
     if (stageId !== undefined) this.stageId = stageId;
-    if (mood === "menu") this.bossActive = false;
+    if (mood === "menu") {
+      this.bossActive = false;
+      this.setDanger(false);
+    }
     this.syncMusic();
+    this.setAmbience(mood === "menu" ? "menu" : this.stageId);
+  }
+
+  /** Muffle the music while a hero is at death's door. */
+  setDanger(on: boolean): void {
+    if (this.dangerOn === on) return;
+    this.dangerOn = on;
+    const ctx = this.ctx;
+    if (!ctx || !this.musicOut) return;
+    const f = this.musicOut.frequency;
+    f.cancelScheduledValues(ctx.currentTime);
+    f.setValueAtTime(Math.max(200, f.value), ctx.currentTime);
+    f.exponentialRampToValueAtTime(on ? 620 : 18000, ctx.currentTime + 0.45);
+  }
+
+  // ---- ambience: quiet living beds under the music, per place
+
+  private setAmbience(kind: "menu" | number | null): void {
+    if (this.ambienceKind === kind) return;
+    this.stopAmbience();
+    const ctx = this.ctx;
+    if (!ctx || kind === null || !this.soundOn || !this.master) {
+      // not ready yet — leave kind unset so a later call re-arms
+      this.ambienceKind = null;
+      return;
+    }
+    this.ambienceKind = kind;
+    // continuous bed: filtered noise loop (wind, rain, ember hush)
+    const bedSpec: Record<string, { freq: number; gain: number } | undefined> = {
+      menu: { freq: 420, gain: 0.02 },
+      "0": { freq: 900, gain: 0.012 },
+      "1": { freq: 700, gain: 0.016 },
+      "2": { freq: 2400, gain: 0.035 }, // the rain players can finally hear
+      "3": { freq: 780, gain: 0.022 },
+      "4": { freq: 480, gain: 0.035 }, // night wind
+      "5": { freq: 700, gain: 0.022 },
+    };
+    const spec = bedSpec[String(kind)];
+    if (spec) {
+      const len = Math.floor(ctx.sampleRate * 2);
+      const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.loop = true;
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = spec.freq;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(spec.gain, ctx.currentTime + 1.2);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.master);
+      src.start();
+      this.ambienceBed = { src, gain };
+    }
+    this.ambienceTimer = window.setInterval(() => this.ambiencePunctuate(), 1500);
+  }
+
+  private stopAmbience(): void {
+    if (this.ambienceTimer !== null) {
+      clearInterval(this.ambienceTimer);
+      this.ambienceTimer = null;
+    }
+    if (this.ambienceBed && this.ctx) {
+      const { src, gain } = this.ambienceBed;
+      gain.gain.setValueAtTime(Math.max(0.0001, gain.gain.value), this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.6);
+      src.stop(this.ctx.currentTime + 0.7);
+      this.ambienceBed = null;
+    }
+  }
+
+  /** Occasional life: birdsong, frogs, owls, crackling embers. */
+  private ambiencePunctuate(): void {
+    if (!this.soundOn || this.ambienceKind === null) return;
+    const roll = Math.random();
+    const kind = this.ambienceKind;
+    if (kind === "menu") {
+      // campfire crackle
+      if (roll < 0.85) {
+        for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) {
+          this.noise(0.02 + Math.random() * 0.03, 0.05 + Math.random() * 0.05, 1100 + Math.random() * 900, Math.random() * 0.9);
+        }
+      }
+      return;
+    }
+    if (kind === 0 || kind === 1) {
+      // meadow and forest birdsong
+      if (roll < 0.4) {
+        const base = 2100 + Math.random() * 700;
+        this.tone(base, 0.07, "sine", 0.045, 320);
+        this.tone(base + 260, 0.09, "sine", 0.04, -180, 0.11);
+        if (Math.random() < 0.5) this.tone(base + 120, 0.06, "sine", 0.035, 240, 0.24);
+      }
+    } else if (kind === 2) {
+      // swamp: drips and the odd frog
+      if (roll < 0.45) {
+        this.tone(940, 0.05, "sine", 0.05, -420);
+        this.tone(300, 0.07, "sine", 0.045, 60, 0.07);
+      } else if (roll < 0.6) {
+        this.tone(150, 0.12, "sawtooth", 0.035, 26);
+        this.tone(140, 0.1, "sawtooth", 0.03, 22, 0.16);
+      }
+    } else if (kind === 3 || kind === 5) {
+      // burnt lands: embers pop, something rumbles far off
+      if (roll < 0.55) {
+        for (let i = 0; i < 2; i++) this.noise(0.03, 0.06, 1400 + Math.random() * 800, Math.random() * 0.8);
+      } else if (roll < 0.65) {
+        this.tone(52, 0.5, "sine", 0.05, -8);
+      }
+    } else if (kind === 4) {
+      // gloaming: owls, and worse
+      if (roll < 0.25) {
+        this.tone(480, 0.16, "sine", 0.05, -30);
+        this.tone(430, 0.22, "sine", 0.05, -25, 0.24);
+      } else if (roll < 0.35) {
+        this.tone(680, 0.18, "sawtooth", 0.03, -320);
+      }
+    }
   }
 
   /** Boss waves swap to the boss theme; cleared when the battle ends. */
@@ -114,9 +268,14 @@ class AudioKit {
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.5;
       this.master.connect(this.ctx.destination);
+      // all music routes through one lowpass so danger can muffle the world
+      this.musicOut = this.ctx.createBiquadFilter();
+      this.musicOut.type = "lowpass";
+      this.musicOut.frequency.value = 18000;
+      this.musicOut.connect(this.master);
       this.musicGain = this.ctx.createGain();
       this.musicGain.gain.value = 0.16;
-      this.musicGain.connect(this.master);
+      this.musicGain.connect(this.musicOut);
     }
     if (this.ctx.state === "suspended") void this.ctx.resume();
     return this.ctx;
@@ -127,6 +286,7 @@ class AudioKit {
     this.ensure();
     this.loadSamples();
     this.syncMusic();
+    this.setAmbience(this.mood === "menu" ? "menu" : this.stageId);
     if (!this.trackNode) this.startMusic();
   }
 
@@ -180,7 +340,7 @@ class AudioKit {
     gain.gain.setValueAtTime(0.0001, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(level, ctx.currentTime + 0.8);
     src.connect(gain);
-    gain.connect(this.master);
+    gain.connect(this.musicOut ?? this.master);
     src.start();
     this.trackNode = { name: want, src, gain };
   }
@@ -315,6 +475,108 @@ class AudioKit {
         this.noise(0.12, 0.16, 4200);
         this.tone(480, 0.1, "triangle", 0.14, 320, 0.12);
         break;
+      case "hitHeavy":
+        this.tone(85, 0.14, "sine", 0.2, -30);
+        this.noise(0.09, 0.16, 800);
+        break;
+      // ---- spell voices: every spell sounds like itself
+      case "spSunder":
+        this.noise(0.08, 0.24, 3200);
+        this.tone(180, 0.12, "square", 0.13, -60);
+        this.tone(90, 0.1, "sine", 0.12, 0, 0.05);
+        break;
+      case "spOverpower":
+        this.noise(0.1, 0.28, 2000);
+        this.tone(120, 0.16, "square", 0.15, -50);
+        break;
+      case "spGroundbreaker":
+        this.tone(58, 0.42, "sine", 0.28, -18);
+        this.noise(0.3, 0.24, 500);
+        this.noise(0.16, 0.18, 320, 0.16);
+        break;
+      case "spRush":
+        this.noise(0.16, 0.22, 2400);
+        this.tone(520, 0.1, "sawtooth", 0.1, -260, 0.1);
+        this.noise(0.07, 0.2, 3200, 0.14);
+        break;
+      case "spTwinshot":
+        this.noise(0.07, 0.2, 3000);
+        this.noise(0.07, 0.2, 3300, 0.09);
+        break;
+      case "spCaltrops":
+        for (let i = 0; i < 4; i++) this.noise(0.035, 0.14, 2500 + i * 300, i * 0.05);
+        this.tone(1700, 0.05, "triangle", 0.07, -300, 0.08);
+        break;
+      case "spSmokebomb":
+        this.noise(0.42, 0.2, 850);
+        this.tone(220, 0.16, "sine", 0.08, -110);
+        break;
+      case "spDeadeye":
+        this.tone(1400, 0.05, "square", 0.14, -900);
+        this.noise(0.2, 0.26, 4200);
+        this.tone(220, 0.32, "sine", 0.1, -120, 0.05);
+        break;
+      case "spMissiles":
+        for (let i = 0; i < 3; i++) this.tone(900 - i * 60, 0.08, "square", 0.1, -420, i * 0.08);
+        break;
+      case "spChainspark":
+        this.tone(1250, 0.09, "square", 0.11, -650);
+        this.tone(950, 0.09, "square", 0.09, -520, 0.08);
+        this.noise(0.14, 0.1, 5200);
+        break;
+      case "spGravity":
+        this.tone(320, 0.6, "sine", 0.13, -190);
+        this.tone(470, 0.6, "sine", 0.09, -270, 0.05);
+        this.noise(0.5, 0.07, 550);
+        break;
+      case "spMeteor":
+        // the whistle of something enormous falling
+        this.tone(1500, 1.1, "sine", 0.11, -1150);
+        this.noise(0.9, 0.06, 2400, 0.1);
+        break;
+      case "spBlessing":
+        this.tone(660, 0.2, "triangle", 0.13, 80);
+        this.tone(990, 0.3, "sine", 0.11, 0, 0.12);
+        break;
+      case "spSunlance":
+        this.tone(523, 0.5, "sine", 0.13, 130);
+        this.tone(1046, 0.42, "sine", 0.1, 0, 0.1);
+        this.noise(0.28, 0.07, 2100);
+        break;
+      case "spWard":
+        this.tone(880, 0.24, "triangle", 0.12);
+        this.tone(1320, 0.34, "sine", 0.09, 0, 0.08);
+        this.noise(0.2, 0.045, 5200);
+        break;
+      case "spJudgement":
+        this.tone(392, 0.7, "sine", 0.11);
+        this.tone(494, 0.7, "sine", 0.1, 0, 0.03);
+        this.tone(587, 0.7, "sine", 0.09, 0, 0.06);
+        this.noise(0.2, 0.12, 700, 0.05);
+        break;
+      case "spShieldslam":
+        this.tone(400, 0.12, "square", 0.16, -160);
+        this.noise(0.1, 0.2, 1500);
+        this.tone(150, 0.1, "sine", 0.14);
+        break;
+      case "spSecondwind":
+        this.noise(0.24, 0.1, 1100);
+        this.tone(330, 0.3, "triangle", 0.12, 120, 0.15);
+        break;
+      case "spRamwall":
+        this.tone(80, 0.3, "sawtooth", 0.16, 40);
+        this.noise(0.12, 0.24, 700, 0.24);
+        this.tone(58, 0.15, "sine", 0.18, 0, 0.24);
+        break;
+      case "spStoneskin":
+        this.noise(0.3, 0.18, 550);
+        this.tone(110, 0.26, "sawtooth", 0.09, -25);
+        break;
+      case "spBastion":
+        this.tone(196, 0.5, "sawtooth", 0.15, 20);
+        this.tone(294, 0.5, "sawtooth", 0.11, 20, 0.03);
+        this.tone(1046, 0.3, "triangle", 0.09, 0, 0.3);
+        break;
       case "slash":
         this.noise(0.09, 0.25, 2600);
         this.tone(220, 0.06, "sawtooth", 0.08, -80);
@@ -425,6 +687,15 @@ class AudioKit {
 
   setSound(on: boolean): void {
     this.soundOn = on;
+    if (!on) {
+      this.stopAmbience();
+      this.ambienceKind = null;
+    } else {
+      // re-arm the current place's ambience
+      const kind = this.mood === "menu" ? ("menu" as const) : this.stageId;
+      this.ambienceKind = null;
+      this.setAmbience(kind);
+    }
   }
 
   setMusic(on: boolean): void {
