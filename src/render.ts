@@ -2432,6 +2432,7 @@ const ENEMY_COLORS: Record<string, { body: string; shade: string; trim: string }
   harrier: { body: "#8a7a9c", shade: "#6a5e7c44", trim: "#d8cfc0" },
   drummer: { body: "#a05c3c", shade: "#7c462e44", trim: "#e8a05a" },
   warbanner: { body: "#9a2f28", shade: "#742420", trim: "#5a4a52" },
+  wyrm: { body: "#8fb8cc", shade: "#6f98ac", trim: "#dcedf5" },
 };
 
 function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
@@ -2759,6 +2760,139 @@ function drawHarrier(ctx: CanvasRenderingContext2D, unit: Unit, time: number): v
   }
 }
 
+/** THE WINTER WYRM — a serpent of old ice wearing the mountain like a shell.
+ *  Its body follows the head's memory; its heart glows brightest when bared. */
+function drawWyrm(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const trail = unit.trail ?? [];
+  const f = unit.facing;
+  if (unit.submerged) {
+    // only a moving darkness and a fin ridge cutting the snow
+    ctx.beginPath();
+    ctx.ellipse(unit.x, unit.y, unit.radius * 2.6, unit.radius * 1.0, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(30, 48, 70, 0.32)";
+    ctx.fill();
+    for (let i = 0; i < 3; i++) {
+      const p = trail[i * 3];
+      if (!p) break;
+      ctx.beginPath();
+      ctx.moveTo(p.x - 6, unit.y + 2);
+      ctx.lineTo(p.x, unit.y - 10 - Math.sin(time * 6 + i) * 3);
+      ctx.lineTo(p.x + 6, unit.y + 2);
+      ctx.closePath();
+      outlined(ctx, "#9fc4d8", 1.6);
+    }
+    // frost spray in its wake
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = "#dcedf5";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(unit.x - f * 20, unit.y + 6);
+    ctx.quadraticCurveTo(unit.x - f * 46, unit.y + 2 + Math.sin(time * 8) * 3, unit.x - f * 66, unit.y + 8);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    return;
+  }
+  const bared = unit.effects.some((e) => e.kind === "vulnerable");
+  // body: tapering plated segments following the head
+  const segs = 11;
+  for (let i = segs - 1; i >= 0; i--) {
+    const p = trail[Math.min(trail.length - 1, i * 2 + 2)] ?? { x: unit.x - f * (i + 1) * 14, y: unit.y };
+    const r = unit.radius * (0.92 - i * 0.065);
+    const sway = Math.sin(time * 2.2 + i * 0.7) * 2;
+    const py = p.y - 14 + sway;
+    // segment shadow
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + 4, r * 1.1, r * 0.35, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(20, 14, 30, 0.22)";
+    ctx.fill();
+    const seg = new Path2D();
+    seg.ellipse(p.x, py, r, r * 0.85, sway * 0.02, 0, Math.PI * 2);
+    shaded(ctx, seg, i % 2 === 0 ? "#8fb8cc" : "#7ba8be", 1, p.x, py, r, 2.4);
+    // dorsal ice-fin on every other segment
+    if (i % 2 === 1 && i < 8) {
+      ctx.beginPath();
+      ctx.moveTo(p.x - 4, py - r * 0.7);
+      ctx.lineTo(p.x + 1, py - r * 0.7 - r * 0.9);
+      ctx.lineTo(p.x + 6, py - r * 0.7);
+      ctx.closePath();
+      outlined(ctx, "#dcedf5", 1.8);
+    }
+    // THE HEART rides the second segment — dim in armor, blazing when bared
+    if (i === 2) {
+      const pulse = bared ? 0.75 + Math.abs(Math.sin(time * 7)) * 0.25 : 0.3 + Math.abs(Math.sin(time * 2)) * 0.15;
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.shadowColor = bared ? "#ffe9a3" : "#9fd6e8";
+      ctx.shadowBlur = bared ? 18 : 8;
+      ctx.beginPath();
+      ctx.arc(p.x, py + r * 0.15, r * (bared ? 0.5 : 0.34), 0, Math.PI * 2);
+      ctx.fillStyle = bared ? "#ffd76b" : "#9fd6e8";
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+  // head: an angular skull of old ice under a broken crown
+  const hx = unit.x;
+  const hy = unit.y - 16 + Math.sin(time * 2.2) * 2;
+  const hr = unit.radius;
+  const skull = new Path2D();
+  skull.moveTo(hx + f * hr * 1.5, hy + hr * 0.1);
+  skull.lineTo(hx + f * hr * 0.6, hy - hr * 0.75);
+  skull.lineTo(hx - f * hr * 0.7, hy - hr * 0.65);
+  skull.lineTo(hx - f * hr * 0.95, hy + hr * 0.3);
+  skull.lineTo(hx - f * hr * 0.3, hy + hr * 0.75);
+  skull.lineTo(hx + f * hr * 0.9, hy + hr * 0.6);
+  skull.closePath();
+  shaded(ctx, skull, "#a5c8da", f, hx, hy, hr * 1.2, 2.8);
+  // the jaw, slightly parted — winter breathes
+  ctx.beginPath();
+  ctx.moveTo(hx + f * hr * 1.45, hy + hr * 0.35);
+  ctx.lineTo(hx + f * hr * 0.5, hy + hr * 0.72);
+  ctx.lineTo(hx - f * hr * 0.2, hy + hr * 0.7);
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = "#efe8d4";
+  for (const tx of [1.25, 0.95, 0.65]) {
+    ctx.beginPath();
+    ctx.moveTo(hx + f * hr * tx, hy + hr * 0.42);
+    ctx.lineTo(hx + f * hr * (tx - 0.08), hy + hr * 0.62);
+    ctx.lineTo(hx + f * hr * (tx - 0.18), hy + hr * 0.42);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // horn crown: the old king's shape, grown from the skull
+  for (const [ox, len, tilt] of [[-0.55, 1.15, -0.5], [-0.15, 1.45, -0.15], [0.25, 1.1, 0.25]] as [number, number, number][]) {
+    ctx.beginPath();
+    ctx.moveTo(hx + f * hr * ox, hy - hr * 0.6);
+    ctx.quadraticCurveTo(hx + f * hr * (ox + tilt), hy - hr * (0.6 + len * 0.7), hx + f * hr * (ox + tilt * 1.4), hy - hr * (0.6 + len));
+    ctx.lineWidth = 4.5;
+    ctx.strokeStyle = OUTLINE;
+    ctx.stroke();
+    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = "#dcedf5";
+    ctx.stroke();
+  }
+  // one eye of cold light
+  ctx.save();
+  ctx.shadowColor = bared ? "#ffd76b" : "#9fd6e8";
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.arc(hx + f * hr * 0.55, hy - hr * 0.15, hr * 0.16, 0, Math.PI * 2);
+  ctx.fillStyle = bared ? "#ffd76b" : "#b8ecff";
+  ctx.fill();
+  ctx.restore();
+  // breath vapor curling from the jaw
+  ctx.globalAlpha = 0.35 + Math.abs(Math.sin(time * 1.7)) * 0.2;
+  ctx.strokeStyle = "#dcedf5";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(hx + f * hr * 1.5, hy + hr * 0.25);
+  ctx.quadraticCurveTo(hx + f * hr * 2.0, hy + hr * 0.1 + Math.sin(time * 3) * 4, hx + f * hr * 2.4, hy - hr * 0.2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
 function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
   const kind = unit.enemyKind!;
   if (kind === "wolf" || kind === "alpha" || kind === "frostwolf") {
@@ -2771,6 +2905,10 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   }
   if (kind === "harrier") {
     drawHarrier(ctx, unit, time);
+    return;
+  }
+  if (kind === "wyrm") {
+    drawWyrm(ctx, unit, time);
     return;
   }
   if (kind === "warbanner") {

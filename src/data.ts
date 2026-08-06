@@ -610,7 +610,7 @@ export const ARMORS: ArmorDef[] = [
   { id: "mosstoothHide", name: "Mosstooth's Hide", family: "leather", cost: 0, icon: "skull", boss: "ogre", blurb: "+50 health, and wounds slowly knit themselves closed.", hook: "regen", mods: { hpFlat: 50 } },
   { id: "alphasPelt", name: "The Alpha's Pelt", family: "leather", cost: 0, icon: "moon", boss: "alpha", blurb: "+14% move, and the first blow of every wave misses you.", hook: "dodgeFirstHit", mods: { moveSpeed: 0.14, hpFlat: 15 } },
   { id: "gorehulkWall", name: "Gorehulk's Wall", family: "plate", cost: 0, icon: "skull", tint: "#8a5a4a", boss: "warlord", blurb: "+18% armor, +40 health, and melee blows are answered in kind.", hook: "retaliate", mods: { armorFlat: 0.18, hpFlat: 40 } },
-  { id: "rimeheartsCore", name: "Rimeheart's Core", family: "plate", cost: 0, icon: "skull", tint: "#a8d8ec", boss: "rimeheart", blurb: "+16% armor, +50 health, chill cannot take hold, and wounds slowly knit closed.", hook: "regen", mods: { armorFlat: 0.16, hpFlat: 50 } },
+  { id: "rimeheartsCore", name: "The Wyrm's Heart", family: "plate", cost: 0, icon: "skull", tint: "#a8d8ec", boss: "wyrm", blurb: "+16% armor, +50 health, chill cannot take hold, and wounds slowly knit closed.", hook: "regen", mods: { armorFlat: 0.16, hpFlat: 50 } },
 ];
 
 // --- helms & boots: smaller pieces that tune stats and complete a family set ---
@@ -1693,6 +1693,22 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     habit: "Each drumbeat quickens every foe near it. Silence the drum first.",
   },
 
+  wyrm: {
+    name: "The Winter Wyrm",
+    maxHp: 1080,
+    damage: 19,
+    range: 64,
+    attackCooldown: 1.45,
+    speed: 108,
+    armor: 0.32,
+    radius: 26,
+    xp: 280,
+    body: "#8fb8cc",
+    trim: "#dcedf5",
+    lore: "The crown was never the king. Under the Hollow Crown's ice something older coils — the heart of winter itself, wearing the mountain like a shell.",
+    habit: "It circles, it breathes, it hunts beneath the ice. When it breaches, its heart lies bare — that is the whole fight.",
+  },
+
   warbanner: {
     name: "War Banner",
     maxHp: 240,
@@ -2020,11 +2036,11 @@ export const STAGES: StageDef[] = [
   {
     id: 11,
     name: "The Hollow Crown",
-    subtitle: "The Winterreach has one king",
+    subtitle: "The heart of winter stirs",
     palette: { skyTop: "#101a30", skyBottom: "#243450", hills: "#1a2640", ground: "#303f58", groundDark: "#243248", prop: "#3d5570" },
     scale: 3.4,
     xpReward: 170,
-    waves: [[{ kind: "rimeheart", count: 1 }]],
+    waves: [[{ kind: "wyrm", count: 1 }]],
   },
 ];
 

@@ -20,7 +20,8 @@ export type EnemyKind =
   | "shieldbearer"
   | "harrier"
   | "drummer"
-  | "warbanner";
+  | "warbanner"
+  | "wyrm";
 
 export interface Vec {
   x: number;
@@ -123,6 +124,8 @@ export interface Unit {
   marching?: boolean; // held in the between-fights walk — render keeps the legs moving
   aloft?: boolean; // harriers circle out of melee reach until they dive
   affix?: string; // elite modifier (stubborn/swift/burning/bulwark/vengeful)
+  trail?: { x: number; y: number }[]; // the Wyrm's body follows its head through these
+  submerged?: boolean; // the Wyrm beneath the ice — only a shadow and a fin
 }
 
 export interface Projectile {

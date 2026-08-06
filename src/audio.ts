@@ -48,6 +48,7 @@ type SfxName =
   | "screech"
   | "wingbeat"
   | "drumbeat"
+  | "breach"
   | "howl"
   | "warhorn"
   | "flawless"
@@ -603,6 +604,13 @@ class AudioKit {
         // heavy air taken twice
         this.noise(0.12, 0.16, 700);
         this.noise(0.12, 0.14, 620, 0.16);
+        break;
+      case "breach":
+        // the lake explodes: deep water, shattering glass, a serpent's cry
+        this.tone(60, 0.6, "sine", 0.3, -14);
+        this.noise(0.4, 0.24, 800);
+        for (let i = 0; i < 5; i++) this.tone(1200 + i * 340, 0.14, "triangle", 0.06, -240, 0.08 + i * 0.03);
+        this.tone(340, 0.7, "sawtooth", 0.12, 220, 0.12);
         break;
       case "drumbeat":
         // three strikes of the hide drum: DOOM-doom-doom

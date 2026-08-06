@@ -36,7 +36,7 @@ function makeEffect(kind: StatusEffect["kind"], time: number, power: number, sou
 }
 
 /** The great foes — they hunt by threat, not by proximity or frailty. */
-const BOSS_KINDS = ["alpha", "warlord", "ogre", "rimeheart"];
+const BOSS_KINDS = ["alpha", "warlord", "ogre", "rimeheart", "wyrm"];
 
 export class Battle {
   units: Unit[] = [];
@@ -345,10 +345,19 @@ export class Battle {
       this.bossRef = this.units.find((u) => u.alive && BOSS_KINDS.includes(u.enemyKind ?? "")) ?? null;
       if (this.bossRef) {
         this.bossStagger = 0;
-        this.bossStaggerMax = this.bossRef.enemyKind === "rimeheart" ? 400 : this.bossRef.enemyKind === "warlord" ? 340 : this.bossRef.enemyKind === "alpha" ? 280 : 240;
+        this.bossStaggerMax =
+          this.bossRef.enemyKind === "wyrm" ? 440 : this.bossRef.enemyKind === "rimeheart" ? 400 : this.bossRef.enemyKind === "warlord" ? 340 : this.bossRef.enemyKind === "alpha" ? 280 : 240;
         this.cinematic = 2.6;
         this.waveBanner = 0;
-        audio.play(this.bossRef.enemyKind === "warlord" ? "warhorn" : this.bossRef.enemyKind === "alpha" ? "howl" : this.bossRef.enemyKind === "rimeheart" ? "glacialGroan" : "roar");
+        audio.play(
+          this.bossRef.enemyKind === "warlord"
+            ? "warhorn"
+            : this.bossRef.enemyKind === "alpha"
+              ? "howl"
+              : this.bossRef.enemyKind === "rimeheart" || this.bossRef.enemyKind === "wyrm"
+                ? "glacialGroan"
+                : "roar",
+        );
       }
     }
     this.seerGuard = this.livingHeroes().filter((h) => h.calling === "seer").length;
@@ -482,6 +491,11 @@ export class Battle {
     // a circling harrier is simply out of a blade's reach
     if (target.aloft && source && source.team === "hero" && !opts.spell && source.stats.range <= 90) {
       this.fx.floatText(target.x, target.y - target.radius - 40, "aloft!", "#d8cfc0", 11);
+      return;
+    }
+    // the Wyrm beneath the ice cannot be touched — wait for the breach
+    if (target.submerged && source && source.team === "hero") {
+      if (Math.random() < 0.3) this.fx.floatText(target.x, target.y - 34, "beneath the ice!", "#b8e0f0", 11);
       return;
     }
     // FLANKING: a blade from behind bites deeper — for everyone. Positioning pays.
@@ -2682,6 +2696,10 @@ export class Battle {
       this.updateBanner(enemy, dt);
       return;
     }
+    if (enemy.enemyKind === "wyrm") {
+      this.updateWyrm(enemy, dt);
+      return;
+    }
     // Rimeclad ice casing: it cracks off at three-quarters strength
     if (enemy.enemyKind === "rimetroll" && enemy.phase === 0 && enemy.hp < enemy.stats.maxHp * 0.75) {
       enemy.phase = 1;
@@ -3037,6 +3055,162 @@ export class Battle {
     }
   }
 
+  /** Frozen-lake law, shared by the old king and the Wyrm: statues fall through. */
+  private crackStillIce(owner: Unit, dt: number): void {
+    for (const hero of this.livingHeroes()) {
+      const rec = this.stillness[hero.id] ?? { x: hero.x, y: hero.y, t: 0 };
+      if (Math.hypot(hero.x - rec.x, hero.y - rec.y) < 7) {
+        rec.t += dt;
+        if (rec.t > 2.6) {
+          this.telegraphs.push({ x: hero.x, y: hero.y, radius: 55, time: 0, duration: 1.1, owner, kind: "sweep" });
+          this.fx.floatText(hero.x, hero.y - hero.radius - 26, "the ice cracks!", "#b8e0f0", 12);
+          audio.play("frost");
+          rec.t = -1.5; // grace after each crack
+        }
+      } else {
+        rec.x = hero.x;
+        rec.y = hero.y;
+        rec.t = Math.max(0, rec.t - dt);
+      }
+      this.stillness[hero.id] = rec;
+    }
+  }
+
+  /** THE WINTER WYRM — the Winterreach's true finale. Solo, no trash: it coils
+   *  and breathes, hunts beneath the ice, and bares its heart when it breaches.
+   *  The whole fight is learning its rhythm and punishing the open heart. */
+  private wyrm: { mode: "coil" | "hunt" | "bared"; t: number; anchor: number; breath: number; slam: number; hunt: number } | null = null;
+
+  private updateWyrm(wyrm: Unit, dt: number): void {
+    if (!this.wyrm) {
+      this.wyrm = { mode: "coil", t: 0, anchor: Math.random() * Math.PI * 2, breath: 6, slam: 9, hunt: 15 };
+      wyrm.trail = [];
+    }
+    const W = this.wyrm;
+    const frac = wyrm.hp / wyrm.stats.maxHp;
+    const heroes = this.livingHeroes();
+    if (!heroes.length) return;
+    const cx = heroes.reduce((a, h) => a + h.x, 0) / heroes.length;
+    const cy = heroes.reduce((a, h) => a + h.y, 0) / heroes.length;
+
+    // phase turns: the court's law returns, and the hunts come faster
+    if (frac < 0.66 && wyrm.phase < 2) {
+      wyrm.phase = 2;
+      this.fx.floatText(wyrm.x, wyrm.y - wyrm.radius * 2.4, "IT REMEMBERS THE COURT'S LAW!", "#b8e0f0", 18);
+      this.forbidSpell(wyrm);
+      W.hunt = Math.min(W.hunt, 2);
+      audio.play("glacialGroan");
+    }
+    if (frac < 0.33 && wyrm.phase < 3) {
+      wyrm.phase = 3;
+      this.fx.floatText(wyrm.x, wyrm.y - wyrm.radius * 2.4, "WINTER UNBOUND!", "#ff8a70", 20);
+      wyrm.effects.push(makeEffect("haste", 999, 1.2, null));
+      this.forbidSpell(wyrm);
+      this.fx.addShake(9);
+      audio.play("staggerBreak");
+    }
+    if (wyrm.phase === 0) wyrm.phase = 1;
+
+    // the body remembers where the head has been
+    const trail = (wyrm.trail ??= []);
+    const last = trail[0];
+    if (!last || Math.hypot(wyrm.x - last.x, wyrm.y - last.y) > 7) {
+      trail.unshift({ x: wyrm.x, y: wyrm.y });
+      if (trail.length > 30) trail.pop();
+    }
+
+    // statues fall through, from the second phase on
+    if (wyrm.phase >= 2) this.crackStillIce(wyrm, dt);
+
+    W.t += dt;
+    if (W.mode === "bared") {
+      // the heart lies bare — the band's window; it does nothing but breathe
+      if (W.t >= (wyrm.phase >= 3 ? 3 : 4)) {
+        W.mode = "coil";
+        W.t = 0;
+        W.breath = 4;
+        W.slam = 7;
+        W.hunt = wyrm.phase >= 3 ? 11 : 15;
+        this.fx.floatText(wyrm.x, wyrm.y - wyrm.radius * 2.4, "it coils again…", "#b8e0f0", 13);
+      }
+      return;
+    }
+
+    if (W.mode === "hunt") {
+      // beneath the ice: untouchable, chasing, cracking the lake as it comes
+      const prey = this.nearestHero(wyrm);
+      if (prey) this.moveToward(wyrm, prey, dt, 10, 1.35);
+      if (W.t < 3.5 && Math.floor((W.t - dt) / 0.7) !== Math.floor(W.t / 0.7)) {
+        this.telegraphs.push({ x: wyrm.x, y: wyrm.y, radius: 46, time: 0, duration: 1.0, owner: wyrm, kind: "sweep" });
+        audio.play("frost");
+      }
+      if (W.t >= 3.5 && W.t - dt < 3.5) {
+        // the water goes still — then the lake EXPLODES
+        this.telegraphs.push({ x: wyrm.x, y: wyrm.y, radius: 95, time: 0, duration: 1.1, owner: wyrm, kind: "sweep" });
+        this.fx.floatText(wyrm.x, wyrm.y - 30, "the water stills…", "#dcedf5", 13);
+      }
+      if (W.t >= 4.7) {
+        wyrm.submerged = false;
+        W.mode = "bared";
+        W.t = 0;
+        wyrm.effects.push(makeEffect("vulnerable", wyrm.phase >= 3 ? 3 : 4, 0.5, null));
+        this.fx.burst(wyrm.x, wyrm.y - 16, "#dcedf5", 30, 240, { glow: true, gravity: 160 });
+        this.fx.burst(wyrm.x, wyrm.y - 10, "#8fb8cc", 18, 170, { gravity: 220 });
+        this.fx.ring(wyrm.x, wyrm.y, 120, "#b8e0f0", { width: 6, life: 0.7 });
+        this.fx.floatText(wyrm.x, wyrm.y - wyrm.radius * 3, "ITS HEART LIES BARE!", "#ffe9a3", 20);
+        this.fx.addShake(11);
+        this.hitstop = Math.max(this.hitstop, 0.1);
+        this.zoomPunch = Math.max(this.zoomPunch, 1);
+        audio.play("breach");
+      }
+      return;
+    }
+
+    // COIL: it swims a tightening ellipse around the band, biting what it passes
+    W.anchor += dt * 0.5;
+    const orbit = { x: cx + Math.cos(W.anchor) * 180, y: cy + Math.sin(W.anchor) * 90 };
+    this.moveToward(wyrm, this.clampToField(orbit, wyrm.radius), dt, 8, 1.05);
+    const bite = heroes.find((h) => unitDist(wyrm, h) < wyrm.stats.range + h.radius);
+    if (bite && wyrm.attackTimer <= 0 && wyrm.windup <= 0) this.startAttack(wyrm, bite);
+
+    // BREATH: a sweeping line of frostfire with readable gaps
+    W.breath -= dt;
+    if (W.breath <= 0 && !this.effect(wyrm, "stun")) {
+      W.breath = wyrm.phase >= 3 ? 7 : 9;
+      const across = Math.random() < 0.5;
+      for (let i = 0; i < 5; i++) {
+        const fx2 = across ? this.field.left + 70 + i * ((this.field.right - this.field.left - 140) / 4) : cx + (i - 2) * 15;
+        const fy = across ? cy + (i % 2 === 0 ? -18 : 26) : this.field.top + 24 + i * ((this.field.bottom - this.field.top - 48) / 4);
+        this.telegraphs.push({ x: fx2, y: fy, radius: 56, time: 0, duration: this.telegraphTime * 0.8 + i * 0.32, owner: wyrm, kind: "sweep" });
+      }
+      this.fx.floatText(wyrm.x, wyrm.y - wyrm.radius * 2.4, "it draws breath—", "#b8e0f0", 14);
+      audio.play("glacialGroan");
+    }
+    // TAIL: one hard promise on a single head
+    W.slam -= dt;
+    if (W.slam <= 0 && !this.effect(wyrm, "stun")) {
+      W.slam = 8;
+      const prey = heroes[Math.floor(Math.random() * heroes.length)];
+      this.telegraphs.push({ x: prey.x, y: prey.y, radius: 60, time: 0, duration: this.telegraphTime, owner: wyrm, kind: "sweep" });
+      audio.play("warcry");
+    }
+    // THE HUNT BENEATH: it slips under and the lake goes quiet — from the very
+    // first phase, so the fight teaches its central rhythm early
+    {
+      W.hunt -= dt;
+      if (W.hunt <= 0 && !this.effect(wyrm, "stun")) {
+        W.mode = "hunt";
+        W.t = 0;
+        wyrm.submerged = true;
+        this.fx.burst(wyrm.x, wyrm.y - 8, "#b8e0f0", 20, 160, { gravity: 200 });
+        this.fx.ring(wyrm.x, wyrm.y, 90, "#8fb8cc", { width: 4, life: 0.6 });
+        this.fx.floatText(wyrm.x, wyrm.y - wyrm.radius * 2.4, "IT GOES BENEATH!", "#b8e0f0", 17);
+        this.fx.addShake(7);
+        audio.play("glacialGroan");
+      }
+    }
+  }
+
   private updateRimeheart(king: Unit, dt: number): void {
     const frac = king.hp / king.stats.maxHp;
     if (king.phase === 0) {
@@ -3066,25 +3240,7 @@ export class Battle {
     }
     // NEMESIS RULE — the cracking ice (phase 2+): stand still too long and the
     // lake opens under you. The court allows no statues.
-    if (king.phase >= 2) {
-      for (const hero of this.livingHeroes()) {
-        const rec = this.stillness[hero.id] ?? { x: hero.x, y: hero.y, t: 0 };
-        if (Math.hypot(hero.x - rec.x, hero.y - rec.y) < 7) {
-          rec.t += dt;
-          if (rec.t > 2.6) {
-            this.telegraphs.push({ x: hero.x, y: hero.y, radius: 55, time: 0, duration: 1.1, owner: king, kind: "sweep" });
-            this.fx.floatText(hero.x, hero.y - hero.radius - 26, "the ice cracks!", "#b8e0f0", 12);
-            audio.play("frost");
-            rec.t = -1.5; // grace after each crack
-          }
-        } else {
-          rec.x = hero.x;
-          rec.y = hero.y;
-          rec.t = Math.max(0, rec.t - dt);
-        }
-        this.stillness[hero.id] = rec;
-      }
-    }
+    if (king.phase >= 2) this.crackStillIce(king, dt);
     // HAIL: ice falls where heroes stand
     this.rimeHail -= dt;
     if (this.rimeHail <= 0 && !this.effect(king, "stun")) {
@@ -3568,10 +3724,13 @@ export class Battle {
               struck++;
             }
           }
-          // dodging is a weapon: a promise that finds nobody costs the boss poise
+          // dodging is a weapon: a promise that finds nobody costs the boss poise —
+          // but only in proportion to how big the promise was. Slipping one circle
+          // of a five-lane breath is expected play, not a triumph.
           if (struck === 0 && lord === this.bossRef && this.bossStaggerMax > 0) {
-            this.bossStagger += this.bossStaggerMax * (isFlop ? 0.5 : 0.18);
-            this.fx.floatText(mark.x, mark.y - 20, isFlop ? "FACE-FIRST!" : "wide open!", "#ffe9a3", isFlop ? 18 : 14);
+            const poiseFrac = isFlop ? 0.5 : mark.radius >= 90 ? 0.3 : mark.radius >= 60 ? 0.12 : 0.05;
+            this.bossStagger += this.bossStaggerMax * poiseFrac;
+            if (poiseFrac >= 0.12) this.fx.floatText(mark.x, mark.y - 20, isFlop ? "FACE-FIRST!" : "wide open!", "#ffe9a3", isFlop ? 18 : 14);
             if (isFlop && lord.alive) {
               lord.effects.push(makeEffect("stun", 2.6, 1, null));
               lord.effects.push(makeEffect("vulnerable", 2.6, 0.45, null));
@@ -3718,9 +3877,9 @@ export class Battle {
     attacker.lungeDir = this.normalize({ x: target.x - attacker.x, y: target.y - attacker.y });
     attacker.lunge = 1;
     const ranged = attacker.stats.range > 90;
-    if (attacker.enemyKind === "warlord" || attacker.enemyKind === "ogre" || attacker.enemyKind === "rimeheart") {
+    if (attacker.enemyKind === "warlord" || attacker.enemyKind === "ogre" || attacker.enemyKind === "rimeheart" || attacker.enemyKind === "wyrm") {
       // ground-shaking slam that clips everyone near the target
-      const reach = attacker.enemyKind === "warlord" ? 70 : attacker.enemyKind === "rimeheart" ? 78 : 52;
+      const reach = attacker.enemyKind === "warlord" ? 70 : attacker.enemyKind === "rimeheart" ? 78 : attacker.enemyKind === "wyrm" ? 74 : 52;
       for (const hero of this.livingHeroes()) {
         if (Math.hypot(hero.x - target.x, hero.y - target.y) < reach) {
           this.damage(hero, attacker.stats.damage, attacker);
