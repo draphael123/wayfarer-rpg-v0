@@ -435,6 +435,21 @@ export function drawBackground(
       ctx.lineTo(rx - 3, ry + 11);
     }
     ctx.stroke();
+    // drops striking the wet ground ring outward and fade
+    ctx.strokeStyle = "rgba(205, 230, 235, 0.55)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 7; i++) {
+      const rate = 0.9 + hash01(i * 3) * 0.6;
+      const n = Math.floor(time * rate + hash01(i * 11) * 5);
+      const cyc = (time * rate + hash01(i * 11) * 5) % 1;
+      const sx = hash01(i * 29 + n * 1.7) * w;
+      const sy = horizon + 30 + hash01(i * 7 + n * 2.3) * (h - horizon - 44);
+      ctx.globalAlpha = (1 - cyc) * 0.45;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, 3 + cyc * 9, (3 + cyc * 9) * 0.38, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
   } else if (stage.id === 3) {
     // slow ash fall
     ctx.fillStyle = "rgba(200, 195, 188, 0.5)";
@@ -488,6 +503,70 @@ export function drawBackground(
       ctx.beginPath();
       ctx.ellipse(mx, my, 130 + i * 20, 13 + i * 3, 0, 0, Math.PI * 2);
       ctx.fill();
+    }
+  }
+
+  // true tumbling leaves over the fields and through the pines
+  if (stage.id <= 1) {
+    const leaves = stage.id === 1 ? 13 : 8;
+    for (let i = 0; i < leaves; i++) {
+      const sd = i * 17.3 + stage.id * 5;
+      const fall = 16 + hash01(sd) * 14;
+      const lx = ((hash01(sd * 1.7) * (w + 60) + Math.sin(time * (0.7 + hash01(sd) * 0.5) + i) * 34 + time * 6) % (w + 60)) - 30;
+      const ly = ((hash01(sd * 2.3) * (h + 40) + time * fall) % (h + 40)) - 20;
+      const rot = time * (1.1 + hash01(sd) * 1.6) + i;
+      const s = 2.6 + hash01(sd * 3.1) * 2.2;
+      ctx.save();
+      ctx.translate(lx, ly);
+      ctx.rotate(rot);
+      ctx.scale(1, 0.55 + Math.sin(rot * 1.7) * 0.3); // foreshortens as it tumbles
+      ctx.fillStyle = i % 3 === 0 ? "rgba(214, 178, 84, 0.7)" : "rgba(122, 160, 88, 0.65)";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, s, s * 0.62, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // god rays: morning light slanting down through the air toward the sun's side
+  if ((stage.id === 0 || stage.id === 1) && dusk < 0.85) {
+    const rayA = (stage.id === 1 ? 0.1 : 0.05) * (1 - dusk);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = 0; i < 3; i++) {
+      const baseX = w * (0.52 + i * 0.16) + Math.sin(time * 0.14 + i * 2.1) * 18;
+      const topW = 26 + i * 10;
+      const grad = ctx.createLinearGradient(0, -OVERSCAN, 0, h * 0.94);
+      grad.addColorStop(0, `rgba(255, 244, 200, ${rayA * (0.8 + 0.2 * Math.sin(time * 0.5 + i * 1.4))})`);
+      grad.addColorStop(1, "rgba(255, 244, 200, 0)");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(baseX, -OVERSCAN);
+      ctx.lineTo(baseX + topW, -OVERSCAN);
+      ctx.lineTo(baseX - h * 0.34 + topW * 2.6, h * 0.94);
+      ctx.lineTo(baseX - h * 0.34, h * 0.94);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // a falling star over the road's end
+  if (stage.id === 5) {
+    const cyc = time % 9;
+    if (cyc < 0.7) {
+      const k = cyc / 0.7;
+      const n = Math.floor(time / 9);
+      const sx = w * (0.2 + hash01(n * 3.7) * 0.6) + k * 130;
+      const sy = 20 + hash01(n * 7.1) * horizon * 0.3 + k * 46;
+      ctx.strokeStyle = `rgba(255,255,255,${(1 - k) * 0.8})`;
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(sx - 26, sy - 9);
+      ctx.lineTo(sx, sy);
+      ctx.stroke();
+      ctx.lineCap = "butt";
     }
   }
 }
@@ -1131,10 +1210,27 @@ function poseOf(unit: Unit, time: number): Pose {
   };
 }
 
+/** How far into dusk this battle is (0-1) — set by drawUnits, stretches every shadow. */
+let shadowDusk = 0;
+/** Which stage the current battle is on — regional dress for enemies keys off it. */
+let regionStage = 0;
+
 function drawShadow(ctx: CanvasRenderingContext2D, unit: Unit, bounce = 0): void {
   // the shadow shrinks and fades a touch at the top of a hop — grounds the bounce
   const lift = Math.min(1, bounce / 6);
-  ctx.fillStyle = `rgba(20, 14, 30, ${0.3 - lift * 0.1})`;
+  const alpha = (0.3 - lift * 0.1) * (1 - shadowDusk * 0.25);
+  ctx.fillStyle = `rgba(20, 14, 30, ${alpha})`;
+  if (shadowDusk > 0.02) {
+    // the sinking sun drags every shadow long toward the east
+    ctx.save();
+    ctx.translate(unit.x, unit.y + 2);
+    ctx.transform(1, 0, -shadowDusk * 1.1, 1, 0, 0);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, unit.radius * 1.15 * (1 - lift * 0.18) * (1 + shadowDusk * 0.9), unit.radius * 0.4 * (1 - lift * 0.18), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
   ctx.beginPath();
   ctx.ellipse(unit.x, unit.y + 2, unit.radius * 1.15 * (1 - lift * 0.18), unit.radius * 0.4 * (1 - lift * 0.18), 0, 0, Math.PI * 2);
   ctx.fill();
@@ -1778,7 +1874,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.strokeStyle = def.accent;
     ctx.lineWidth = 2.6;
     ctx.beginPath();
-    ctx.arc(cx, gy - H * 0.45, H * 0.55 + (0.4 - unit.castGlow) * 26, 0, Math.PI * 2);
+    ctx.arc(cx, gy - H * 0.45, Math.max(2, H * 0.55 + (0.4 - unit.castGlow) * 26), 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
@@ -2103,6 +2199,17 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
   drawHealthBar(ctx, unit, bodyY - r * 1.7);
 }
 
+/** The same goblin dresses for the country it raids: cloth muddied in the
+ *  marsh, soot-dark in the burn, cold slate at the pass. Bosses keep their look. */
+const REGION_TRIM: Record<number, string> = { 2: "#566047", 3: "#463c34", 4: "#46536b", 5: "#5e3a44" };
+
+function regionalColors(kind: string): { body: string; shade: string; trim: string } {
+  const base = ENEMY_COLORS[kind];
+  const trim = REGION_TRIM[regionStage];
+  if (!trim || kind === "warlord" || kind === "ogre") return base;
+  return { ...base, trim };
+}
+
 function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
   const kind = unit.enemyKind!;
   if (kind === "wolf" || kind === "alpha") {
@@ -2118,7 +2225,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   // goblins scamper — springier hop than anyone else
   const scamper = kind === "goblin" ? 1.45 : 1;
   const gy = pose.groundY - pose.bounce * scamper;
-  const colors = ENEMY_COLORS[kind];
+  const colors = regionalColors(kind);
   drawShadow(ctx, unit, pose.bounce * scamper);
 
   const hipY = gy - H * (big ? 0.26 : 0.30);
@@ -2460,6 +2567,35 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.restore();
   }
 
+  // regional wear: mud of the marsh, soot of the burn, frost of the passes
+  if (regionStage >= 2 && kind !== "ogre" && kind !== "warlord") {
+    const sd = unit.id * 7.3;
+    if (regionStage === 2) {
+      ctx.fillStyle = "rgba(72, 60, 38, 0.7)";
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.arc(cx + (hash01(sd + i) - 0.5) * H * 0.3, gy - 2 - hash01(sd + i * 2.7) * H * 0.18, 1.2 + hash01(sd + i * 1.7), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (regionStage === 3) {
+      ctx.fillStyle = "rgba(30, 26, 24, 0.45)";
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(cx + (hash01(sd + i * 3.1) - 0.5) * H * 0.28, hipY - hash01(sd + i * 1.9) * H * 0.2, 1.6 + hash01(sd + i) * 1.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      // frost glinting along the shoulders
+      ctx.fillStyle = "rgba(205, 228, 255, 0.75)";
+      for (let i = 0; i < 3; i++) {
+        const tw = 0.4 + Math.abs(Math.sin(time * 2.2 + sd + i * 2.4)) * 0.6;
+        ctx.globalAlpha = tw;
+        ctx.fillRect(cx + (hash01(sd + i * 4.3) - 0.5) * H * 0.3, shoulderY - 2 - hash01(sd + i * 2.2) * 3, 1.4, 1.4);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
   flashOverlay(ctx, unit, cx, gy - H * 0.45, H * 0.5);
   drawEffectPips(ctx, unit, cx, gy - H - 14);
   drawHealthBar(ctx, unit, gy - H - 10);
@@ -2547,6 +2683,12 @@ function idleFlourishFx(battle: Battle, unit: Unit): void {
 }
 
 export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: SaveData, selected: Unit | null): void {
+  regionStage = battle.stage.id;
+  // night stages have no sinking sun; everyone else's shadows stretch as the waves wear on
+  shadowDusk =
+    battle.tutorialMode || battle.stage.id >= 4 || battle.stage.waves.length <= 1
+      ? 0
+      : (Math.max(0, battle.waveIndex) / (battle.stage.waves.length - 1)) * 0.8;
   const sorted = [...battle.units].sort((a, b) => a.y - b.y);
   for (const unit of sorted) {
     if (!unit.alive) drawFallen(ctx, unit);
@@ -2775,6 +2917,126 @@ export function drawDecals(ctx: CanvasRenderingContext2D, battle: Battle): void 
       ctx.fill();
     }
   }
+  drawBossDressing(ctx, battle);
+}
+
+/** The arena dresses for its boss: banners for the Warlord, old bones for the
+ *  Alpha, a wrecked cart for the ogre. Fades in with the introduction. */
+function drawBossDressing(ctx: CanvasRenderingContext2D, battle: Battle): void {
+  const boss = battle.bossRef;
+  if (!boss || battle.tutorialMode) return;
+  const a = Math.min(1, Math.max(0, (2.6 - battle.cinematic) / 0.9));
+  if (a <= 0) return;
+  const fl = battle.field;
+  const t = battle.time;
+  ctx.save();
+  ctx.globalAlpha = a;
+  const ground = (x: number, y: number, rx: number) => {
+    ctx.fillStyle = "rgba(20, 14, 30, 0.22)";
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, rx * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  if (boss.enemyKind === "warlord") {
+    // war banners planted at the field's shoulders
+    for (const [bx, by, dir] of [
+      [fl.left + 46, fl.top + 20, 1],
+      [fl.right - 46, fl.top + 34, -1],
+    ] as [number, number, number][]) {
+      ground(bx, by + 2, 12);
+      ctx.strokeStyle = "#4a3826";
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx, by - 52);
+      ctx.stroke();
+      ctx.lineCap = "butt";
+      const flut = Math.sin(t * 3 + bx) * 2.5;
+      ctx.fillStyle = "#8a2f3d";
+      ctx.beginPath();
+      ctx.moveTo(bx, by - 52);
+      ctx.lineTo(bx + dir * 26, by - 47 + flut);
+      ctx.lineTo(bx, by - 40);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(20, 14, 30, 0.8)";
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+      // crude skull daub on the cloth
+      ctx.fillStyle = "#e8ddc8";
+      ctx.beginPath();
+      ctx.arc(bx + dir * 11, by - 46.5 + flut * 0.5, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (boss.enemyKind === "alpha") {
+    // the pack's old kills, strewn where they fell
+    for (let i = 0; i < 4; i++) {
+      const px = fl.left + 30 + hash01(i * 13.7) * (fl.right - fl.left - 60);
+      const py = fl.top + 12 + hash01(i * 7.1) * 40;
+      ground(px, py + 2, 10);
+      ctx.strokeStyle = "#d9d2c2";
+      ctx.lineWidth = 2.6;
+      ctx.lineCap = "round";
+      for (let b = 0; b < 2; b++) {
+        const ang = hash01(i * 5 + b * 3) * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(px - Math.cos(ang) * 7, py - Math.sin(ang) * 2.4);
+        ctx.lineTo(px + Math.cos(ang) * 7, py + Math.sin(ang) * 2.4);
+        ctx.stroke();
+      }
+      ctx.lineCap = "butt";
+      if (i % 2 === 0) {
+        ctx.fillStyle = "#d9d2c2";
+        ctx.beginPath();
+        ctx.arc(px + 6, py - 3, 3.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#2a2436";
+        ctx.fillRect(px + 4.6, py - 4, 1.4, 1.4);
+      }
+    }
+  } else if (boss.enemyKind === "ogre") {
+    // a wrecked cart nobody came back for
+    const cx = fl.right - 74;
+    const cy = fl.top + 30;
+    ground(cx, cy + 6, 26);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-0.12);
+    ctx.fillStyle = "#5e4a30";
+    for (const [px, py, pw, ph, rot] of [
+      [-20, -8, 34, 6, 0.05],
+      [-16, -16, 30, 6, -0.08],
+      [4, -24, 6, 20, 0.3],
+    ] as number[][]) {
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(rot);
+      roundRect(ctx, 0, 0, pw, ph, 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(20, 14, 30, 0.7)";
+      ctx.lineWidth = 1.6;
+      roundRect(ctx, 0, 0, pw, ph, 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // the broken wheel, half-sunk
+    ctx.strokeStyle = "#4a3826";
+    ctx.lineWidth = 3.4;
+    ctx.beginPath();
+    ctx.arc(22, -4, 12, Math.PI * 1.05, Math.PI * 2.4);
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    for (let s = 0; s < 3; s++) {
+      const ang = Math.PI * 1.2 + s * 0.55;
+      ctx.beginPath();
+      ctx.moveTo(22, -4);
+      ctx.lineTo(22 + Math.cos(ang) * 11, -4 + Math.sin(ang) * 11);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
 /** Per-stage ambient color grade over the whole scene (soft-light keeps detail). */

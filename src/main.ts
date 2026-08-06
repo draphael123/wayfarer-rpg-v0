@@ -483,7 +483,8 @@ let lastTime = performance.now();
 let rafId = 0;
 
 function frame(now: number): void {
-  let dt = Math.min(0.05, (now - lastTime) / 1000);
+  // clamped both ways: a clock hiccup must never run time backwards
+  let dt = Math.max(0, Math.min(0.05, (now - lastTime) / 1000));
   lastTime = now;
 
   if (battle && hud && fx) {
@@ -564,22 +565,26 @@ function frame(now: number): void {
     ctx.scale(cam.zoom, cam.zoom);
     ctx.translate(-logicalW / 2 - cam.x, -CY - cam.y);
     const horizon = (logicalH - HUD_H) * 0.34;
-    drawBackground(ctx, battle.stage, logicalW, worldH, horizon, battle.time, {
-      camX: cam.x,
-      camY: cam.y,
-      dusk: battle.tutorialMode ? 0 : dusk * 0.8,
-      units: battle.units,
-    });
-    drawDecals(ctx, battle);
-    drawReflections(ctx, battle, battleSave, logicalW, worldH, horizon, battle.time);
-    drawZones(ctx, battle);
-    drawTelegraphs(ctx, battle);
-    drawUnits(ctx, battle, battleSave, hud.selected);
-    drawProjectiles(ctx, battle);
-    fx.draw(ctx);
-    hud.drawWorld(ctx);
-    drawForeground(ctx, battle.stage, logicalW, worldH, battle.time, { camX: cam.x, camY: cam.y, units: battle.units });
-    ctx.restore();
+    try {
+      drawBackground(ctx, battle.stage, logicalW, worldH, horizon, battle.time, {
+        camX: cam.x,
+        camY: cam.y,
+        dusk: battle.tutorialMode ? 0 : dusk * 0.8,
+        units: battle.units,
+      });
+      drawDecals(ctx, battle);
+      drawReflections(ctx, battle, battleSave, logicalW, worldH, horizon, battle.time);
+      drawZones(ctx, battle);
+      drawTelegraphs(ctx, battle);
+      drawUnits(ctx, battle, battleSave, hud.selected);
+      drawProjectiles(ctx, battle);
+      fx.draw(ctx);
+      hud.drawWorld(ctx);
+      drawForeground(ctx, battle.stage, logicalW, worldH, battle.time, { camX: cam.x, camY: cam.y, units: battle.units });
+    } finally {
+      // a bad frame must not leak the camera transform into every frame after it
+      ctx.restore();
+    }
     drawLighting(ctx, battle, logicalW, worldH);
     drawColorGrade(ctx, battle.stage, logicalW, worldH);
     drawVignette(ctx, logicalW, worldH);
@@ -703,6 +708,8 @@ Object.defineProperty(window, "__wayband", {
     step(dt = 1 / 60) {
       cancelAnimationFrame(rafId);
       frame(lastTime + dt * 1000);
+      // hand the clock back to reality so a following real rAF gets a sane dt
+      lastTime = performance.now();
     },
     startBattle,
     shareVictory,
