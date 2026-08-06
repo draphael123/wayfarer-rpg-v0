@@ -43,6 +43,8 @@ export class Battle {
   pendingSpawns: { kind: EnemyKind; at: number }[] = [];
   /** How far the band has marched through the level, in world pixels — the scenery scrolls by this. */
   travel = 0;
+  /** One-off roadside sights that drift past during marches and park where the band stops. */
+  landmarks: { type: number; x: number; y: number }[] = [];
   /** True while the band is walking to the next encounter (the old wavebreak). */
   get marching(): boolean {
     return this.state === "wavebreak" && this.waveIndex >= 0;
@@ -258,6 +260,7 @@ export class Battle {
         hero.healTarget = null;
       }
       audio.play("victory");
+      if (this.heroDeaths === 0) audio.play("flawless");
       return;
     }
     const bossWave = this.stage.waves[this.waveIndex].some((e) => BOSS_KINDS.includes(e.kind));
@@ -284,7 +287,7 @@ export class Battle {
       if (this.bossRef) {
         this.cinematic = 2.6;
         this.waveBanner = 0;
-        audio.play("roar");
+        audio.play(this.bossRef.enemyKind === "warlord" ? "warhorn" : this.bossRef.enemyKind === "alpha" ? "howl" : "roar");
       }
     }
     // Wind Step: dodge-ready again at the start of every wave
@@ -1530,6 +1533,16 @@ export class Battle {
 
     if (this.state === "victory" || this.state === "defeat") {
       this.resultDelay = Math.max(0, this.resultDelay - dt);
+      // the band walks off down the road as the victory settles
+      if (this.state === "victory" && this.resultDelay < 0.7) {
+        const band = this.livingHeroes();
+        band.forEach((hero, rank) => {
+          hero.celebrate = false;
+          hero.facing = 1;
+          hero.moveTarget = { x: this.field.right + 220, y: this.field.top + 50 + rank * 38 };
+          this.moveToward(hero, hero.moveTarget, dt, 4);
+        });
+      }
       this.updatePresentation(dt);
       this.updateProjectiles(dt);
       return;
@@ -1569,6 +1582,8 @@ export class Battle {
           // the band marches on: the world slides past while they walk
           this.travel += dt * 150;
           // what the fight left behind stays behind
+          for (const lm of this.landmarks) lm.x -= dt * 150;
+          this.landmarks = this.landmarks.filter((lm) => lm.x > -120);
           for (const u of this.units) if (!u.alive) u.x -= dt * 150;
           for (const d of this.decals) d.x -= dt * 150;
           for (const z of this.zones) z.x -= dt * 150;
@@ -1588,6 +1603,13 @@ export class Battle {
         } else {
           this.state = "wavebreak";
           this.breakTimer = 4.2;
+          // something worth passing on this stretch of road
+          const seed = this.stage.id * 7.3 + this.waveIndex * 3.1;
+          this.landmarks.push({
+            type: Math.floor((Math.sin(seed * 127.1) * 43758.5453 % 1 + 1) % 1 * 5),
+            x: this.field.right + 160,
+            y: this.field.top + 4 + ((Math.sin(seed * 311.7) * 12345.678 % 1 + 1) % 1) * 26,
+          });
         }
       }
 
@@ -2017,7 +2039,7 @@ export class Battle {
       alpha.phase = 2;
       this.fx.ring(alpha.x, alpha.y, 220, "#c9c2e8", { width: 5, life: 0.8 });
       this.fx.addShake(8);
-      audio.play("roar");
+      audio.play("howl");
       this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "AWOOOO!", "#c9c2e8", 20);
       for (let i = 0; i < 3; i++) this.spawnEnemy("wolf");
       alpha.supportTimer = 2.5;
@@ -2028,7 +2050,7 @@ export class Battle {
       alpha.supportTimer = Math.min(alpha.supportTimer, 1.2);
       // the last of the pack answers the frenzy
       this.fx.ring(alpha.x, alpha.y, 200, "#ff8a70", { width: 4, life: 0.7 });
-      audio.play("roar");
+      audio.play("howl");
       for (let i = 0; i < 2; i++) this.spawnEnemy("wolf");
     }
     if (alpha.phase === 0) alpha.phase = 1;

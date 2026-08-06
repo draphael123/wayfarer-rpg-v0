@@ -403,15 +403,17 @@ export function drawBackground(
     outlined(ctx, "rgba(255,255,255,0.18)", 1.6);
   }
 
-  // lightning over Gloaming Pass: periodic flashes with a jagged bolt
+  // lightning over Gloaming Pass: periodic flashes — the storm answers the Alpha's howl
   if (stage.id === 4) {
-    const cycle = time % 6.5;
-    if (cycle > 5.9 && cycle < 6.25) {
-      const k = 1 - Math.abs((cycle - 6.05) / 0.18);
+    const alphaUnit = opts.units?.find((u) => u.enemyKind === "alpha" && u.alive);
+    const period = alphaUnit && alphaUnit.phase >= 3 ? 2.6 : alphaUnit && alphaUnit.phase >= 2 ? 4 : 6.5;
+    const cycle = time % period;
+    if (cycle > period - 0.6 && cycle < period - 0.25) {
+      const k = 1 - Math.abs((cycle - (period - 0.45)) / 0.18);
       ctx.fillStyle = `rgba(230, 230, 255, ${Math.max(0, k) * 0.32})`;
       ctx.fillRect(0, 0, w, h);
-      if (cycle > 6.0 && cycle < 6.12) {
-        const bx = w * (0.25 + hash01(Math.floor(time / 6.5)) * 0.5);
+      if (cycle > period - 0.5 && cycle < period - 0.38) {
+        const bx = w * (0.25 + hash01(Math.floor(time / period)) * 0.5);
         ctx.strokeStyle = "rgba(240, 240, 255, 0.9)";
         ctx.lineWidth = 2.6;
         ctx.beginPath();
@@ -1664,6 +1666,41 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.moveTo(cx - bodyW * 0.4, shoulderY + 2);
     ctx.lineTo(cx + bodyW * 0.42, hipY - 2);
     ctx.stroke();
+  }
+  // some pieces wear their story on the outside
+  const pieceId = wornPiece?.id;
+  if (pieceId === "wolfpelt" || pieceId === "alphasPelt") {
+    // a fur ruff at the collar (the Alpha's is moon-pale)
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const mx = cx - bodyW * 0.42 + i * bodyW * 0.21;
+      ctx.moveTo(mx, shoulderY - 1);
+      ctx.lineTo(mx + bodyW * 0.09, shoulderY - 6 - (i % 2) * 2);
+      ctx.lineTo(mx + bodyW * 0.2, shoulderY - 1);
+    }
+    ctx.closePath();
+    outlined(ctx, pieceId === "alphasPelt" ? "#b8b0d4" : "#7a6a52", 1.8);
+  } else if (pieceId === "emberweave" || (robed && pieceId === "emberweave")) {
+    ctx.strokeStyle = `rgba(255, 150, 70, ${0.5 + Math.abs(Math.sin(time * 2.4)) * 0.5})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - bodyW * 0.42, hipY + 3);
+    ctx.lineTo(cx + bodyW * 0.42, hipY + 3);
+    ctx.stroke();
+  } else if (pieceId === "gorehulkWall") {
+    // the warlord's cracked pauldron, worn like a trophy
+    ctx.strokeStyle = "#2f1a12";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(cx + f * bodyW * 0.24, shoulderY - 4);
+    ctx.lineTo(cx + f * bodyW * 0.38, shoulderY + 1);
+    ctx.lineTo(cx + f * bodyW * 0.3, shoulderY + 5);
+    ctx.stroke();
+  } else if (pieceId === "mosstoothHide") {
+    ctx.fillStyle = "rgba(110, 140, 80, 0.65)";
+    ctx.beginPath();
+    ctx.ellipse(cx - f * bodyW * 0.3, shoulderY + 2, bodyW * 0.16, bodyW * 0.1, 0.4, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // head (big, chibi)
@@ -3046,7 +3083,132 @@ export function drawDecals(ctx: CanvasRenderingContext2D, battle: Battle): void 
       ctx.fill();
     }
   }
+  for (const lm of battle.landmarks) {
+    drawLandmark(ctx, lm.type, lm.x, lm.y, battle.time);
+  }
   drawBossDressing(ctx, battle);
+}
+
+/** One-off roadside sights: a shrine, a signpost, a cart, old stones, a stump. */
+function drawLandmark(ctx: CanvasRenderingContext2D, type: number, x: number, y: number, time: number): void {
+  ctx.save();
+  // grounding shadow
+  ctx.fillStyle = "rgba(20, 14, 30, 0.2)";
+  ctx.beginPath();
+  ctx.ellipse(x, y + 16, 20, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (type === 0) {
+    // moss-eaten wayshrine with a guttering candle
+    ctx.fillStyle = "#6e6478";
+    ctx.fillRect(x - 8, y - 14, 16, 30);
+    ctx.strokeStyle = "#241d2e";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x - 8, y - 14, 16, 30);
+    ctx.beginPath();
+    ctx.moveTo(x - 11, y - 14);
+    ctx.lineTo(x, y - 24);
+    ctx.lineTo(x + 11, y - 14);
+    ctx.closePath();
+    ctx.fillStyle = "#584e70";
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = `rgba(255, 210, 120, ${0.6 + Math.sin(time * 7) * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(x, y - 2, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(110, 140, 80, 0.6)";
+    ctx.beginPath();
+    ctx.ellipse(x - 6, y + 10, 5, 3, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (type === 1) {
+    // leaning signpost, letters long since weathered away
+    ctx.strokeStyle = "#4a3826";
+    ctx.lineWidth = 3.4;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x, y + 16);
+    ctx.lineTo(x + 4, y - 22);
+    ctx.stroke();
+    ctx.lineCap = "butt";
+    ctx.fillStyle = "#6b4a2a";
+    ctx.save();
+    ctx.translate(x + 3, y - 16);
+    ctx.rotate(-0.12);
+    ctx.fillRect(-2, -5, 26, 9);
+    ctx.strokeStyle = "#241d2e";
+    ctx.lineWidth = 1.8;
+    ctx.strokeRect(-2, -5, 26, 9);
+    ctx.strokeStyle = "#4a3826";
+    ctx.beginPath();
+    ctx.moveTo(2, -0.5);
+    ctx.lineTo(20, -0.5);
+    ctx.stroke();
+    ctx.restore();
+  } else if (type === 2) {
+    // an abandoned handcart, one wheel gone
+    ctx.fillStyle = "#5e4a30";
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(0.1);
+    ctx.fillRect(-16, -8, 32, 10);
+    ctx.strokeStyle = "#241d2e";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-16, -8, 32, 10);
+    ctx.beginPath();
+    ctx.arc(-8, 6, 7, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let sp = 0; sp < 3; sp++) {
+      const a = sp * 1.05;
+      ctx.beginPath();
+      ctx.moveTo(-8, 6);
+      ctx.lineTo(-8 + Math.cos(a) * 6, 6 + Math.sin(a) * 6);
+      ctx.stroke();
+    }
+    ctx.restore();
+  } else if (type === 3) {
+    // a ring of old standing stones, waist-high
+    for (const [ox, oh] of [[-14, 14], [-2, 20], [10, 12]] as number[][]) {
+      ctx.fillStyle = "#6e6880";
+      ctx.beginPath();
+      ctx.moveTo(x + ox - 4, y + 14);
+      ctx.lineTo(x + ox - 3, y + 14 - oh);
+      ctx.lineTo(x + ox + 4, y + 12 - oh);
+      ctx.lineTo(x + ox + 5, y + 14);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#241d2e";
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+    }
+  } else {
+    // a stump with a forgotten axe
+    ctx.fillStyle = "#6b4a2a";
+    ctx.beginPath();
+    ctx.ellipse(x, y + 6, 11, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#241d2e";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#8a6a48";
+    ctx.beginPath();
+    ctx.ellipse(x, y + 3, 10, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = "#4a3826";
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(x + 4, y + 1);
+    ctx.lineTo(x + 13, y - 12);
+    ctx.stroke();
+    ctx.fillStyle = "#9aa3ad";
+    ctx.beginPath();
+    ctx.moveTo(x + 10, y - 14);
+    ctx.lineTo(x + 17, y - 10);
+    ctx.lineTo(x + 12, y - 6);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 /** The arena dresses for its boss: banners for the Warlord, old bones for the

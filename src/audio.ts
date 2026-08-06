@@ -38,6 +38,12 @@ type SfxName =
   | "ultNova"
   | "ultShadows"
   | "relic"
+  | "howl"
+  | "warhorn"
+  | "flawless"
+  | "clink"
+  | "page"
+  | "tankard"
   | "hitHeavy"
   | "spSunder"
   | "spOverpower"
@@ -488,6 +494,36 @@ class AudioKit {
         for (let i = 0; i < 5; i++) this.noise(0.12, 0.1, 2400 - i * 300, i * 0.07);
         this.tone(392, 0.4, "sine", 0.1, -120, 0.3);
         break;
+      case "howl":
+        // the pack's one voice, rising and falling on the night
+        this.tone(340, 1.3, "sine", 0.16, 420);
+        this.tone(346, 1.3, "sine", 0.1, 415, 0.03);
+        this.tone(760, 0.7, "sine", 0.09, -260, 0.9);
+        break;
+      case "warhorn":
+        // a horn that means the hollow itself is coming
+        this.tone(147, 1.1, "sawtooth", 0.16, 12);
+        this.tone(220, 1.0, "sawtooth", 0.1, 10, 0.1);
+        this.noise(0.9, 0.05, 500, 0.05);
+        break;
+      case "flawless":
+        // not a scratch on them
+        for (let i = 0; i < 5; i++) this.tone(523 * Math.pow(1.1892, i), 0.14, "triangle", 0.11, 0, 0.5 + i * 0.09);
+        this.tone(1568, 0.5, "sine", 0.09, 0, 0.98);
+        break;
+      case "clink":
+        this.tone(1180, 0.05, "square", 0.09, -60);
+        this.tone(1560, 0.09, "triangle", 0.08, -120, 0.03);
+        break;
+      case "page":
+        this.noise(0.1, 0.08, 3200);
+        this.noise(0.08, 0.06, 2200, 0.07);
+        break;
+      case "tankard":
+        this.tone(220, 0.08, "square", 0.1, -40);
+        this.noise(0.12, 0.06, 900, 0.05);
+        this.tone(330, 0.1, "sine", 0.06, 20, 0.1);
+        break;
       case "relic":
         // something old changes hands
         this.tone(523, 0.16, "triangle", 0.16);
@@ -749,9 +785,13 @@ class AudioKit {
   /** Soft footfalls while the band marches between fights. */
   setMarching(on: boolean): void {
     if (on && this.marchTimer === null && this.soundOn) {
+      const LILT = [392, 440, 523, 440, 587, 523];
       this.marchTimer = window.setInterval(() => {
         if (!this.soundOnContextAlive()) return;
         this.noise(0.05, 0.05, this.marchStep % 2 ? 500 : 380);
+        if (this.musicOn && this.musicGain && this.marchStep % 2 === 0) {
+          this.tone(LILT[(this.marchStep / 2) % LILT.length], 0.34, "sine", 0.5, 0, 0, this.musicGain);
+        }
         this.marchStep++;
       }, 300);
     } else if (!on && this.marchTimer !== null) {

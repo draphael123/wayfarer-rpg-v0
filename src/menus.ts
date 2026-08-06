@@ -156,6 +156,27 @@ export function drawHeroPortrait(canvas: HTMLCanvasElement, index: number, save:
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.scale(canvas.width / 64, canvas.height / 64);
+  // a sworn oath glows faintly behind the bust
+  if (portraitOath && portraitHolds) {
+    const halo = ctx.createRadialGradient(32, 30, 6, 32, 30, 30);
+    halo.addColorStop(0, portraitOath.color + "55");
+    halo.addColorStop(1, portraitOath.color + "00");
+    ctx.fillStyle = halo;
+    ctx.fillRect(0, 0, 64, 64);
+  }
+  // the armor family frames the portrait's corners
+  if (bustPiece) {
+    const famColor = { cloth: "#c9b896", leather: "#a8845a", mail: "#9aa3ad", plate: "#e0c896" }[bustPiece.family];
+    ctx.strokeStyle = famColor;
+    ctx.lineWidth = 2.4;
+    for (const [gx, gy, dx, dy] of [[3, 3, 1, 1], [61, 3, -1, 1], [3, 61, 1, -1], [61, 61, -1, -1]] as number[][]) {
+      ctx.beginPath();
+      ctx.moveTo(gx, gy + dy * 9);
+      ctx.lineTo(gx, gy);
+      ctx.lineTo(gx + dx * 9, gy);
+      ctx.stroke();
+    }
+  }
   // bust
   ctx.beginPath();
   ctx.moveTo(9, 66);
@@ -454,14 +475,22 @@ export class Menus {
           <svg viewBox="0 0 360 120">
             <ellipse cx="180" cy="112" rx="150" ry="10" fill="rgba(240,180,90,0.12)"/>
             <ellipse cx="180" cy="110" rx="90" ry="7" fill="rgba(240,180,90,0.16)"/>
-            <!-- the band, silhouetted -->
-            <g fill="#141a10">
-              <circle cx="96" cy="84" r="9"/><rect x="88" y="90" width="16" height="22" rx="6"/>
-              <circle cx="140" cy="78" r="10"/><rect x="130" y="85" width="20" height="27" rx="7"/>
-              <circle cx="224" cy="80" r="10"/><rect x="214" y="87" width="20" height="25" rx="7"/>
-              <circle cx="266" cy="86" r="9"/><rect x="258" y="92" width="16" height="20" rx="6"/>
-              <rect x="272" y="58" width="3" height="36" rx="1.5"/>
-            </g>
+            <!-- the band, silhouetted: everyone you've actually recruited -->
+            ${(() => {
+              const seats = [
+                [96, 84, 9], [140, 78, 10], [224, 80, 10], [266, 86, 9], [62, 88, 8.5], [304, 84, 8.5],
+              ];
+              return this.save.heroes
+                .map((h, i) => ({ h, i }))
+                .filter(({ h }) => h.recruited)
+                .map(({ i }, at) => {
+                  const [sx, sy, sr] = seats[at % seats.length];
+                  const tint = HEROES[i].accent;
+                  return `<g fill="#141a10"><circle cx="${sx}" cy="${sy}" r="${sr}"/><rect x="${sx - sr + 1}" y="${sy + 6}" width="${sr * 2 - 2}" height="${sr * 2.4}" rx="6"/><rect x="${sx - sr + 1}" y="${sy + 8}" width="${sr * 2 - 2}" height="4" rx="2" fill="${tint}" opacity="0.5"/></g>`;
+                })
+                .join("");
+            })()}
+            <g fill="#141a10"><rect x="272" y="58" width="3" height="36" rx="1.5"/></g>
             <circle cx="273.5" cy="55" r="5" fill="#f2d16b" opacity="0.9" class="cf-orb"/>
             <!-- logs -->
             <rect x="164" y="102" width="34" height="6" rx="3" fill="#241a10" transform="rotate(14 181 105)"/>
@@ -910,6 +939,20 @@ export class Menus {
               : `<g transform="translate(${n.x},${n.y})"><rect x="-5" y="-3" width="10" height="9" rx="2" fill="#8d84a3"/><path d="M -3 -3 v -2.5 a 3 3 0 0 1 6 0 V -3" fill="none" stroke="#8d84a3" stroke-width="2"/></g>`
           }
           ${done ? `<g transform="translate(${n.x + 12},${n.y - 26})"><line x1="0" y1="0" x2="0" y2="14" stroke="#6b4a2a" stroke-width="2"/><path d="M 0 0 L 11 3.5 L 0 7 Z" fill="#8ee88b"/></g>` : ""}
+          ${
+            unlocked
+              ? `<g transform="translate(${n.x - 15},${n.y - 24})" opacity="0.9">${
+                  [
+                    '<path d="M 0 4 L -4 10 L 4 10 Z M 0 0 L -3 6 L 3 6 Z" fill="#2e5038"/>',
+                    '<path d="M 0 4 L -4 10 L 4 10 Z M 0 0 L -3 6 L 3 6 Z" fill="#1f4030"/>',
+                    '<path d="M 0 0 C -3 5 -3 8 0 10 C 3 8 3 5 0 0 Z" fill="#5e8a7a"/>',
+                    '<path d="M 0 10 C -4 6 -2 2 0 0 C 1 3 4 5 0 10 Z" fill="#e0904b"/>',
+                    '<path d="M 2 0 A 5 5 0 1 0 2 10 A 4.2 4.2 0 1 1 2 0 Z" fill="#8d7ba8"/>',
+                    '<circle r="4" cy="5" fill="#c9c2b8"/><circle cx="-1.5" cy="4" r="1" fill="#40201a"/><circle cx="1.5" cy="4" r="1" fill="#40201a"/>',
+                  ][i] ?? ""
+                }</g>`
+              : ""
+          }
           ${
             unlocked
               ? `<g><rect x="${n.x - nameW / 2}" y="${n.y + 24}" width="${nameW}" height="15" rx="7" fill="rgba(16,26,18,0.75)" stroke="${isCurrent ? "#ffe9a3" : "rgba(255,255,255,0.15)"}" stroke-width="1"/><text x="${n.x}" y="${n.y + 35}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#f2ecd8">${stage.name}</text></g>`
@@ -1674,6 +1717,7 @@ export class Menus {
       const i = Number(btn.getAttribute("data-recruit"));
       const cost = RECRUIT_COST[i] ?? 0;
       if (!this.spend(cost)) return;
+      audio.play("tankard");
       this.save.heroes[i].recruited = true;
       this.save.heroes[i].active = partyRoster(this.save).length < PARTY_CAP;
       persist(this.save);
@@ -1786,6 +1830,7 @@ export class Menus {
         const id = buyBtn.getAttribute("data-armorbuy")!;
         const piece = armorById(id)!;
         if (!this.spend(piece.cost)) return;
+        audio.play("clink");
         save.armory.push(id);
         persist(save);
         this.showToast(`${piece.name} joins the armory — dress a hero on their Equip screen`);
@@ -1898,6 +1943,7 @@ export class Menus {
       if (!btn) return;
       const id = btn.getAttribute("data-spell")!;
       if (!this.spend(SPELL_COSTS[id] ?? 100)) return;
+      audio.play("page");
       save.unlockedSpells.push(id);
       persist(save);
       this.showToast(`${ABILITIES.find((a) => a.id === id)?.name} unlocked — assign it on the Party screen`);
@@ -2679,7 +2725,7 @@ export class Menus {
         const id = armorBtn.getAttribute("data-armor")!;
         hero.armor = id === "none" ? null : id;
         persist(save);
-        audio.play("click");
+        audio.play("clink");
         this.showToast(id === "none" ? `${def.name} travels light` : `${def.name} dons the ${armorById(id)!.name}`);
         this.renderEquipment(index);
         return;
