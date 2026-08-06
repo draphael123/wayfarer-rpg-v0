@@ -112,6 +112,7 @@ export interface Unit {
   idleTimer: number; // countdown to next idle flourish
   idleAnim: number; // active idle flourish time
   leap: { t: number; dur: number; fromX: number; fromY: number; toX: number; toY: number; radius: number } | null; // airborne pounce in flight
+  marching?: boolean; // held in the between-fights walk — render keeps the legs moving
 }
 
 export interface Projectile {

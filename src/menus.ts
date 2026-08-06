@@ -438,6 +438,7 @@ export class Menus {
   pendingFinale = false; // set when the Winterreach's king falls
   private shopAttr: AttrKey | "all" = "all"; // spell-shop filter
   private shopHideOwned = false;
+  private partySel = 0;
   private lastGold: number | null = null; // for the counting-up gold chip
 
   /** Animate the header gold chip counting from its last shown value. */
@@ -514,6 +515,48 @@ export class Menus {
     this.toast = toast;
     setTimeout(() => toast.classList.add("fade"), 2600);
     setTimeout(() => toast.remove(), 3300);
+  }
+
+  /** Battleheart-style bottom tab bar: five doors, every screen one tap apart. */
+  private sectionBar(current: "battle" | "party" | "shop" | "tavern" | "records"): HTMLElement {
+    const save = this.save;
+    const unspent = save.heroes.reduce((sum, h, i) => sum + (h.recruited ? save.unspent[i] : 0), 0);
+    const shopDeal =
+      save.heroes.some((h) => h.recruited && h.weaponTier + 1 < WEAPON_TIERS.length && WEAPON_TIERS[h.weaponTier + 1].cost <= save.gold) ||
+      ARMORS.some((a) => a.cost > 0 && !save.armory.includes(a.id) && a.cost <= save.gold) ||
+      ABILITIES.some((a) => !save.unlockedSpells.includes(a.id) && (SPELL_COSTS[a.id] ?? 100) <= save.gold);
+    const recruitReady = save.heroes.some((h, i) => !h.recruited && heroArrived(save, i) && (RECRUIT_COST[i] ?? Infinity) <= save.gold);
+    const btn = (id: string, icon: string, label: string, extra = "") =>
+      `<button class="nav-btn ${current === id ? "on" : ""}" data-nav="${id}">${ico(icon)}<span>${label}</span>${extra}</button>`;
+    const bar = el(`
+      <nav class="nav-bar">
+        ${btn("battle", "sword", "Battle")}
+        ${btn("party", "shield", "Party", unspent > 0 ? `<span class="badge">${unspent}</span>` : "")}
+        ${btn("shop", "bag", "Shop", shopDeal ? '<span class="shop-dot"></span>' : "")}
+        ${btn("tavern", "home", "Tavern", recruitReady ? '<span class="shop-dot"></span>' : "")}
+        ${btn("records", "book", "Records")}
+        <span class="nav-gold">${ico("coin")} ${save.gold}</span>
+      </nav>
+    `);
+    bar.addEventListener("click", (event) => {
+      const target = (event.target as HTMLElement).closest("[data-nav]");
+      if (!target) return;
+      const to = target.getAttribute("data-nav");
+      if (to === current) return;
+      audio.play("page");
+      if (to === "battle") this.renderMap();
+      else if (to === "party") this.renderParty();
+      else if (to === "shop") this.renderShop("armory");
+      else if (to === "tavern") this.renderShop("tavern");
+      else this.renderChronicle();
+    });
+    return bar;
+  }
+
+  /** Append the page with the tab bar riding along. */
+  private mount(page: HTMLElement, section: "battle" | "party" | "shop" | "tavern" | "records" | null): void {
+    if (section) page.appendChild(this.sectionBar(section));
+    this.root.appendChild(page);
   }
 
   // ------------------------------------------------------------------ title
@@ -751,8 +794,6 @@ export class Menus {
     const save = this.save;
     const need = xpForLevel(save.level);
     const xpPct = Math.min(100, Math.round((save.xp / need) * 100));
-    const roster = partyRoster(save);
-    const unspentTotal = roster.reduce((sum: number, i: number) => sum + save.unspent[i], 0);
     const page = el(`
       <div class="page">
         <div class="map-header">
@@ -761,23 +802,11 @@ export class Menus {
             <div class="map-level">Band level ${save.level}/${MAX_LEVEL} · ${save.xp}/${need} xp · <span class="gold-chip">${ico("coin")} <span class="gold-num">${save.gold}</span></span></div>
             <div class="xp-bar"><div class="xp-fill" style="width:${xpPct}%"></div></div>
           </div>
-          <button class="big-btn party-btn" data-act="party">
-            Party${unspentTotal > 0 ? ` <span class="badge">${unspentTotal}</span>` : ""}
-          </button>
         </div>
         <div class="world-map"></div>
         <div class="stage-caption"></div>
         <div class="map-footer">
           <button class="toggle-btn" data-act="difficulty" style="border-color:${DIFFICULTIES[save.difficulty].color};color:${DIFFICULTIES[save.difficulty].color}">${ico("skull")} ${DIFFICULTIES[save.difficulty].name}</button>
-          <button class="toggle-btn" data-act="shop">${ico("home")} Village${
-            save.heroes.some((h) => h.recruited && h.weaponTier + 1 < WEAPON_TIERS.length && WEAPON_TIERS[h.weaponTier + 1].cost <= save.gold) ||
-            ARMORS.some((a) => a.cost > 0 && !save.armory.includes(a.id) && a.cost <= save.gold) ||
-            ABILITIES.some((a) => !save.unlockedSpells.includes(a.id) && (SPELL_COSTS[a.id] ?? 100) <= save.gold) ||
-            save.heroes.some((h, i) => !h.recruited && heroArrived(save, i) && (RECRUIT_COST[i] ?? Infinity) <= save.gold)
-              ? ' <span class="shop-dot"></span>'
-              : ""
-          }</button>
-          <button class="toggle-btn" data-act="chronicle">${ico("book")} Records</button>
           <button class="toggle-btn" data-act="home">Title</button>
         </div>
       </div>
@@ -840,7 +869,7 @@ export class Menus {
         this.renderTitle();
       }
     });
-    this.root.appendChild(page);
+    this.mount(page, "battle");
     this.tickGold(page);
     if (this.pendingLevelUp) {
       const info = this.pendingLevelUp;
@@ -1313,7 +1342,7 @@ export class Menus {
             <div class="map-title">Records</div>
             <div class="map-level">${discovered}/${kinds.length} foes catalogued — defeat a creature to learn its ways</div>
           </div>
-          <button class="big-btn party-btn" data-act="back">Map</button>
+          
         </div>
         <div class="shop-tabs"><button class="shop-tab" data-rec="chronicle">${ico("chart")} Chronicle</button><button class="shop-tab on" data-rec="bestiary">${ico("book")} Bestiary</button></div>
         <div class="beast-list"></div>
@@ -1371,7 +1400,7 @@ export class Menus {
         this.renderMap();
       }
     });
-    this.root.appendChild(page);
+    this.mount(page, "records");
   }
 
   // ------------------------------------------------------------------ hotkeys
@@ -1606,7 +1635,6 @@ export class Menus {
             <div class="map-title">Records</div>
             <div class="map-level">Deeds done: ${done}/${DEEDS.length} — the road remembers everything</div>
           </div>
-          <button class="big-btn party-btn" data-act="back">Map</button>
         </div>
         <div class="shop-tabs"><button class="shop-tab on" data-rec="chronicle">${ico("chart")} Chronicle</button><button class="shop-tab" data-rec="bestiary">${ico("book")} Bestiary</button></div>
         <div class="chron-grid">
@@ -1637,7 +1665,7 @@ export class Menus {
         this.renderMap();
       }
     });
-    this.root.appendChild(page);
+    this.mount(page, "records");
   }
 
   // ------------------------------------------------------------------ tutorials
@@ -1781,7 +1809,6 @@ export class Menus {
               <div class="map-level">${free} point${free === 1 ? "" : "s"} to spend · earn 1 per 2 band levels (cap ${MAX_LEVEL})</div>
             </div>
           </div>
-          <button class="big-btn party-btn" data-act="back">Party</button>
         </div>
         <div class="shop-note">◆ marks <strong>keystones</strong> — one point, one new way to fight. Deeper tiers open at ${TIER_UNLOCK[1]} and ${TIER_UNLOCK[2]} points in a tree.</div>
         <div class="talent-trees"></div>
@@ -1888,7 +1915,7 @@ export class Menus {
         this.renderParty();
       }
     });
-    this.root.appendChild(page);
+    this.mount(page, "party");
   }
 
   // ------------------------------------------------------------------ village shops
@@ -1905,7 +1932,6 @@ export class Menus {
             <div class="map-title">The Village</div>
             <div class="map-level"><span class="gold-chip">${ico("coin")} <span class="gold-num">${save.gold}</span> gold</span></div>
           </div>
-          <button class="big-btn party-btn" data-act="back">Map</button>
         </div>
         <div class="shop-tabs">
           <button class="shop-tab ${tab === "tavern" ? "on" : ""}" data-tab="tavern">🍺 Tavern</button>
@@ -1934,7 +1960,7 @@ export class Menus {
         this.renderMap();
       }
     });
-    this.root.appendChild(page);
+    this.mount(page, tab === "tavern" ? "tavern" : "shop");
     this.tickGold(page);
   }
 
@@ -2354,7 +2380,6 @@ export class Menus {
               <div class="map-level"><span class="gold-chip">${ico("coin")} ${this.save.gold}</span></div>
             </div>
           </div>
-          <button class="big-btn party-btn" data-act="back">Party</button>
         </div>
         <div class="hero-list single"></div>
       </div>
@@ -2368,7 +2393,7 @@ export class Menus {
         this.renderParty();
       }
     });
-    this.root.appendChild(page);
+    this.mount(page, "party");
   }
 
   // ------------------------------------------------------------------ party
@@ -2382,9 +2407,8 @@ export class Menus {
         <div class="map-header">
           <div>
             <div class="map-title">The Band</div>
-            <div class="map-level">Spend points to unlock abilities · your weapon follows your strongest art</div>
+            <div class="map-level">Tap a portrait to manage a hero · four take the field</div>
           </div>
-          <button class="big-btn party-btn" data-act="back">Map</button>
         </div>
         <div class="preset-row">
           <span class="preset-label">${ico("banner")} Band presets</span>
@@ -2402,33 +2426,38 @@ export class Menus {
       </div>
     `);
     const list = page.querySelector(".hero-list")!;
-    for (let i = 0; i < HEROES.length; i++) {
-      if (this.save.heroes[i].recruited) list.appendChild(this.heroCard(i));
+    const strip = el(`<div class="portrait-strip"></div>`);
+    const recruited: number[] = [];
+    for (let i = 0; i < HEROES.length; i++) if (this.save.heroes[i].recruited) recruited.push(i);
+    if (!recruited.includes(this.partySel)) this.partySel = recruited[0] ?? 0;
+    for (const i of recruited) {
+      const h = this.save.heroes[i];
+      const chip = el(`
+        <button class="p-chip ${i === this.partySel ? "sel" : ""} ${h.active ? "in" : ""}" data-psel="${i}" style="--accent:${HEROES[i].accent}">
+          <canvas width="64" height="64"></canvas>
+          <span class="p-name">${HEROES[i].name}</span>
+          ${h.active ? `<span class="p-flag">${ico("banner")}</span>` : ""}
+          ${this.save.unspent[i] > 0 ? `<span class="badge">${this.save.unspent[i]}</span>` : ""}
+        </button>
+      `);
+      drawHeroPortrait(chip.querySelector("canvas") as HTMLCanvasElement, i, this.save);
+      strip.appendChild(chip);
     }
     for (let i = 0; i < HEROES.length; i++) {
       if (this.save.heroes[i].recruited) continue;
       const arrived = heroArrived(this.save, i);
-      const lockedCard = el(`
-          <div class="hero-card locked-hero" style="--accent:${HEROES[i].accent}">
-            <div class="hero-head">
-              <div class="hero-avatar portrait" style="background:${HEROES[i].accent};opacity:.45">
-                <canvas width="64" height="64"></canvas>
-              </div>
-              <div>
-                <div class="hero-name">${arrived ? `${HEROES[i].name} <em>${HEROES[i].title}</em>` : "A distant wanderer"}</div>
-                <div class="hero-meta">${
-                  arrived
-                    ? `For hire at the <strong>Village Tavern</strong> — ${ico("coin")} ${RECRUIT_COST[i] ?? "?"}`
-                    : i <= 5 ? "Word of the band must spread — fell the Thornwood ogre first." : "They winter in the north — the road must reach the Winterreach first."
-                }</div>
-              </div>
-              <div class="hero-points">🔒</div>
-            </div>
-          </div>
-        `);
-      if (arrived) drawHeroPortrait(lockedCard.querySelector(".hero-avatar canvas") as HTMLCanvasElement, i, this.save);
-      list.appendChild(lockedCard);
+      const chip = el(`
+        <button class="p-chip locked" data-lockedhero="${i}" style="--accent:${HEROES[i].accent}">
+          <canvas width="64" height="64"></canvas>
+          <span class="p-name">${arrived ? HEROES[i].name : "···"}</span>
+          <span class="p-lock">🔒</span>
+        </button>
+      `);
+      if (arrived) drawHeroPortrait(chip.querySelector("canvas") as HTMLCanvasElement, i, this.save);
+      strip.appendChild(chip);
     }
+    page.querySelector(".preset-row")!.before(strip);
+    list.appendChild(this.heroCard(this.partySel, true));
     page.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
       const saveBtn = target.closest("[data-preset-save]");
@@ -2471,13 +2500,32 @@ export class Menus {
         this.renderParty();
         return;
       }
+      const psel = target.closest("[data-psel]");
+      if (psel) {
+        audio.play("click");
+        this.partySel = Number(psel.getAttribute("data-psel"));
+        this.renderParty();
+        return;
+      }
+      const lockedHero = target.closest("[data-lockedhero]");
+      if (lockedHero) {
+        const li = Number(lockedHero.getAttribute("data-lockedhero"));
+        this.showToast(
+          heroArrived(this.save, li)
+            ? `${HEROES[li].name} waits in the Tavern — ${RECRUIT_COST[li] ?? "?"} gold to hire`
+            : li <= 5
+              ? "Word of the band must spread — fell the Thornwood ogre first"
+              : "They winter in the north — the road must reach the Winterreach first",
+        );
+        return;
+      }
       const act = target.closest("[data-act]")?.getAttribute("data-act");
       if (act === "back") {
         audio.play("click");
         this.renderMap();
       }
     });
-    this.root.appendChild(page);
+    this.mount(page, "party");
   }
 
   private heroCard(index: number, full = false): HTMLElement {
@@ -2731,7 +2779,6 @@ export class Menus {
                 : "Swear one oath — your first is free, and stats never lock"
             } · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div>
           </div>
-          <button class="big-btn party-btn" data-act="back">Party</button>
         </div>
         <div class="calling-grid"></div>
       </div>
@@ -2850,7 +2897,7 @@ export class Menus {
         this.renderParty();
       }
     });
-    this.root.appendChild(page);
+    this.mount(page, "party");
   }
 
   // ------------------------------------------------------------------ equipment
@@ -2886,7 +2933,6 @@ export class Menus {
               <div class="map-level">${WEAPON_LABEL[weapon]} · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div>
             </div>
           </div>
-          <button class="big-btn party-btn" data-act="back">Party</button>
         </div>
         <div class="sheet-cols">
           <div class="sheet-left">
@@ -3161,7 +3207,7 @@ export class Menus {
         this.renderParty();
       }
     });
-    this.root.appendChild(page);
+    this.mount(page, "party");
   }
 
   private refreshCard(card: HTMLElement, index: number): HTMLElement {

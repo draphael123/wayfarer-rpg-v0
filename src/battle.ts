@@ -297,6 +297,7 @@ export class Battle {
     }
     // Wind Step: dodge-ready again at the start of every wave
     for (const hero of this.livingHeroes()) {
+      hero.marching = false;
       if (this.heroTalentRank(hero, "windStep") > 0) this.windstepReady.add(hero.id);
       // Second Breath: a gulp of air between fights
       if (this.heroTalentRank(hero, "secondBreath") > 0 && hero.hp < hero.stats.maxHp) {
@@ -1765,6 +1766,7 @@ export class Battle {
             const fy = this.field.top + 40 + rank * ((this.field.bottom - this.field.top - 80) / 4);
             hero.moveTarget = { x: fx + 26, y: fy };
             hero.facing = 1;
+            hero.marching = true;
             if (this.moveToward(hero, { x: fx, y: fy }, dt, 8)) hero.bobPhase += dt * 10;
           }
         }

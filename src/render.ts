@@ -1319,6 +1319,7 @@ interface Pose {
 function poseOf(unit: Unit, time: number): Pose {
   const moving =
     unit.moveTarget !== null ||
+    unit.marching === true ||
     (unit.team === "enemy" && unit.lunge <= 0) ||
     (unit.attackTarget !== null && unit.lunge <= 0);
   const walk = moving ? Math.sin(unit.bobPhase) : 0;
@@ -3196,7 +3197,7 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
     // squash on hit, stretch on lunge, lean into movement — anchored at the feet
     const squash = Math.min(0.22, unit.hitFlash * 1.4);
     const stretch = unit.lunge * 0.1;
-    const moving = unit.moveTarget !== null || (unit.team === "enemy" && unit.lunge <= 0.01 && !unit.attackTarget);
+    const moving = unit.moveTarget !== null || unit.marching === true || (unit.team === "enemy" && unit.lunge <= 0.01 && !unit.attackTarget);
     // footfall dust: a small puff each time the stride plants
     const stride = Math.sin(unit.bobPhase);
     const prevStride = stepPhases.get(unit) ?? stride;

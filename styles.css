@@ -2626,3 +2626,48 @@ button.hero-points { font: inherit; cursor: pointer; }
   .talent-col.wide .talent-node { width: 100%; }
 }
 .big-text .tree-chip { font-size: 15px; }
+
+/* ---- Battleheart-style bottom tab bar + portrait strip ---- */
+#ui .page { padding-bottom: 100px; }
+.nav-bar {
+  position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 4px;
+  padding: 7px 12px; border-radius: 20px; z-index: 40;
+  background: linear-gradient(180deg, rgba(40, 48, 33, 0.97), rgba(29, 35, 24, 0.97));
+  border: 1px solid #4b563e; box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  max-width: calc(100vw - 16px);
+}
+.nav-btn {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em;
+  color: #b4ac9c; background: none; border: none; cursor: pointer;
+  padding: 5px 11px; border-radius: 14px;
+}
+.nav-btn svg { width: 21px; height: 21px; }
+.nav-btn.on { color: #ffd76b; background: rgba(255, 215, 107, 0.13); }
+.nav-btn .badge { position: absolute; top: -3px; right: 3px; }
+.nav-btn .shop-dot { position: absolute; top: 2px; right: 8px; }
+.nav-gold {
+  display: flex; align-items: center; gap: 5px; margin-left: 6px; padding: 5px 10px;
+  font-weight: 800; font-size: 13px; color: #ffd76b;
+  background: rgba(0, 0, 0, 0.3); border-radius: 999px;
+}
+.nav-gold svg { width: 15px; height: 15px; }
+.big-text .nav-btn { font-size: 13.5px; }
+.portrait-strip { display: flex; gap: 8px; overflow-x: auto; padding: 8px 2px 10px; }
+.p-chip {
+  position: relative; flex: 0 0 auto; width: 86px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  font: inherit; color: #ded7c9; cursor: pointer;
+  background: rgba(255, 255, 255, 0.04); border: 2px solid #45503a; border-radius: 14px;
+  padding: 9px 4px 7px;
+}
+.p-chip canvas { width: 54px; height: 54px; border-radius: 50%; background: var(--accent, #333); }
+.p-chip.sel { border-color: #ffd76b; box-shadow: 0 0 0 1px #ffd76b inset; background: rgba(255, 215, 107, 0.07); }
+.p-chip.in canvas { outline: 2px solid #8fd0a8; outline-offset: 2px; }
+.p-chip .p-flag { position: absolute; top: 4px; left: 6px; color: #8fd0a8; }
+.p-chip .p-flag svg { width: 13px; height: 13px; }
+.p-chip .badge { position: absolute; top: -5px; right: -5px; }
+.p-chip .p-lock { position: absolute; top: 4px; right: 7px; font-size: 12px; }
+.p-chip.locked { opacity: 0.55; }
+.p-name { font-size: 12px; font-weight: 700; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
