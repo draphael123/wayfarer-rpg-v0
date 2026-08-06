@@ -119,6 +119,16 @@ export const ABILITIES: AbilityDef[] = [
     blurb: "Taunt nearby foes and harden against their blows.",
   },
   {
+    id: "overpower",
+    name: "Overpower",
+    gate: { attr: "str", value: 9 },
+    targeting: "instant",
+    cooldown: 9,
+    color: "#e0714b",
+    icon: "overpower",
+    blurb: "A single crushing blow against the nearest foe.",
+  },
+  {
     id: "pierce",
     name: "Piercing Shot",
     gate: { attr: "dex", value: 6 },
@@ -137,6 +147,16 @@ export const ABILITIES: AbilityDef[] = [
     color: "#8ed081",
     icon: "flurry",
     blurb: "Attack far faster for a few seconds.",
+  },
+  {
+    id: "caltrops",
+    name: "Caltrops",
+    gate: { attr: "dex", value: 9 },
+    targeting: "point",
+    cooldown: 13,
+    color: "#9db36b",
+    icon: "caltrops",
+    blurb: "Drag to scatter spikes that slow and nick foes crossing them.",
   },
   {
     id: "fireball",
@@ -159,6 +179,16 @@ export const ABILITIES: AbilityDef[] = [
     blurb: "Drag to lay a freezing trail that chills foes crossing it.",
   },
   {
+    id: "chainspark",
+    name: "Chain Spark",
+    gate: { attr: "int", value: 9 },
+    targeting: "instant",
+    cooldown: 11,
+    color: "#8fc7e8",
+    icon: "chainspark",
+    blurb: "Lightning leaps to the three nearest foes.",
+  },
+  {
     id: "mend",
     name: "Mend",
     gate: { attr: "spi", value: 6 },
@@ -167,6 +197,16 @@ export const ABILITIES: AbilityDef[] = [
     color: "#f2d16b",
     icon: "mend",
     blurb: "Drag onto an ally for a strong burst of healing.",
+  },
+  {
+    id: "sunlance",
+    name: "Sunlance",
+    gate: { attr: "spi", value: 9 },
+    targeting: "point",
+    cooldown: 12,
+    color: "#ffd76b",
+    icon: "sunlance",
+    blurb: "Drag to call down a pillar of light: sears foes, soothes allies.",
   },
   {
     id: "radiance",
@@ -179,6 +219,16 @@ export const ABILITIES: AbilityDef[] = [
     blurb: "Mend every ally near you in a flash of light.",
   },
   {
+    id: "shieldslam",
+    name: "Shield Slam",
+    gate: { attr: "vit", value: 6 },
+    targeting: "instant",
+    cooldown: 10,
+    color: "#c9b38a",
+    icon: "shieldslam",
+    blurb: "Bash the nearest foe senseless and shove them back.",
+  },
+  {
     id: "bulwark",
     name: "Bulwark",
     gate: { attr: "vit", value: 10 },
@@ -187,6 +237,16 @@ export const ABILITIES: AbilityDef[] = [
     color: "#9aa7b8",
     icon: "bulwark",
     blurb: "Raise a shield that absorbs a burst of damage.",
+  },
+  {
+    id: "stoneskin",
+    name: "Stoneskin",
+    gate: { attr: "vit", value: 14 },
+    targeting: "ally",
+    cooldown: 14,
+    color: "#a8a29a",
+    icon: "stoneskin",
+    blurb: "Drag onto an ally to harden their skin against harm.",
   },
 ];
 
@@ -237,21 +297,45 @@ export const SPELL_COSTS: Record<string, number> = {
   pierce: 80,
   fireball: 80,
   mend: 80,
+  shieldslam: 80,
+  overpower: 150,
+  caltrops: 150,
+  chainspark: 150,
+  sunlance: 150,
   bulwark: 150,
   warcry: 220,
   flurry: 220,
   frostwake: 220,
   radiance: 220,
+  stoneskin: 220,
 };
 
 export function unlockedAbilities(attrs: Attributes): AbilityDef[] {
   return ABILITIES.filter((a) => attrs[a.gate.attr] >= a.gate.value);
 }
 
-export function dominantWeapon(attrs: Attributes): WeaponKind {
-  if (attrs.spi > attrs.str && attrs.spi > attrs.dex && attrs.spi > attrs.int) return "stave";
-  if (attrs.int > attrs.str && attrs.int >= attrs.dex) return "staff";
-  if (attrs.dex > attrs.str) return "bow";
+/** Each calling favors an art; swearing its oath steadies the hand that way. */
+const CALLING_WEAPON_AFFINITY: Record<string, AttrKey> = {
+  vanguard: "str",
+  reaver: "str",
+  ranger: "dex",
+  arcanist: "int",
+  chaplain: "spi",
+  trickster: "dex",
+};
+
+/**
+ * The weapon morphs with the dominant stat — but an active oath adds a +2
+ * thumb on the scale toward its favored art (weapon choice only, never the
+ * stats themselves), so a sworn Reaver at STR 8 / INT 9 still draws a blade.
+ */
+export function dominantWeapon(attrs: Attributes, calling?: string | null): WeaponKind {
+  const a: Attributes = { ...attrs };
+  const fav = calling ? CALLING_WEAPON_AFFINITY[calling] : undefined;
+  if (fav) a[fav] += 2;
+  if (a.spi > a.str && a.spi > a.dex && a.spi > a.int) return "stave";
+  if (a.int > a.str && a.int >= a.dex) return "staff";
+  if (a.dex > a.str) return "bow";
   return "sword";
 }
 
@@ -561,7 +645,7 @@ export function deriveStats(
     healPower: t.healPower + k.healPower + c.healPower,
     startShield: t.startShield + k.startShield + c.startShield,
   };
-  const weapon = dominantWeapon(attrs);
+  const weapon = dominantWeapon(attrs, calling);
   const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + ARMOR_HP_BONUS[armorTier]);
   const armor = Math.min(0.65, attrs.vit * 0.02 + attrs.str * 0.01 + ARMOR_BONUS[armorTier]);
   const speed = 95 + Math.min(45, attrs.dex * 3);

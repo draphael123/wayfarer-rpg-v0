@@ -93,6 +93,77 @@ export function drawAbilityGlyph(
       ctx.closePath();
       ctx.stroke();
       break;
+    case "overpower":
+      // heavy blow driving down
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx, cy + r * 0.35);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.7, cy + r * 0.1);
+      ctx.lineTo(cx, cy + r);
+      ctx.lineTo(cx + r * 0.7, cy + r * 0.1);
+      ctx.stroke();
+      break;
+    case "caltrops":
+      for (const [ox, oy] of [[-0.55, 0.45], [0.5, 0.35], [0, -0.35]] as [number, number][]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + ox * r - r * 0.28, cy + oy * r + r * 0.28);
+        ctx.lineTo(cx + ox * r, cy + oy * r - r * 0.34);
+        ctx.lineTo(cx + ox * r + r * 0.28, cy + oy * r + r * 0.28);
+        ctx.closePath();
+        ctx.fill();
+      }
+      break;
+    case "chainspark":
+      ctx.moveTo(cx - r, cy - r * 0.8);
+      ctx.lineTo(cx - r * 0.15, cy - r * 0.15);
+      ctx.lineTo(cx - r * 0.45, cy + r * 0.1);
+      ctx.lineTo(cx + r, cy + r * 0.85);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx + r, cy + r * 0.85, r * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case "sunlance":
+      ctx.arc(cx, cy - r * 0.65, r * 0.32, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.22, cy - r * 0.25);
+      ctx.lineTo(cx - r * 0.1, cy + r);
+      ctx.lineTo(cx + r * 0.1, cy + r);
+      ctx.lineTo(cx + r * 0.22, cy - r * 0.25);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    case "shieldslam":
+      ctx.moveTo(cx + r * 0.2, cy - r * 0.9);
+      ctx.quadraticCurveTo(cx + r * 0.95, cy - r * 0.5, cx + r * 0.8, cy + r * 0.1);
+      ctx.quadraticCurveTo(cx + r * 0.55, cy + r * 0.75, cx + r * 0.2, cy + r * 0.9);
+      ctx.quadraticCurveTo(cx - r * 0.15, cy + r * 0.75, cx - r * 0.35, cy + r * 0.1);
+      ctx.quadraticCurveTo(cx - r * 0.5, cy - r * 0.5, cx + r * 0.2, cy - r * 0.9);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - r, cy - r * 0.35);
+      ctx.lineTo(cx - r * 0.65, cy - r * 0.35);
+      ctx.moveTo(cx - r, cy + r * 0.15);
+      ctx.lineTo(cx - r * 0.65, cy + r * 0.15);
+      ctx.stroke();
+      break;
+    case "stoneskin":
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+        const px2 = cx + Math.cos(a) * r * 0.85;
+        const py2 = cy + Math.sin(a) * r * 0.85;
+        if (i === 0) ctx.moveTo(px2, py2);
+        else ctx.lineTo(px2, py2);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      break;
     case "challenge":
       // planted banner
       ctx.moveTo(cx - r * 0.3, cy + r);

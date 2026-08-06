@@ -139,7 +139,9 @@ export function drawHeroPortrait(canvas: HTMLCanvasElement, index: number, save:
   const ctx = canvas.getContext("2d")!;
   const def = HEROES[index];
   const hero = save.heroes[index];
-  const robed = dominantWeapon(hero.attrs) === "stave";
+  const portraitOath = callingById(hero.calling);
+  const portraitHolds = portraitOath ? callingEligible(portraitOath, hero.attrs) : false;
+  const robed = dominantWeapon(hero.attrs, portraitHolds ? hero.calling : null) === "stave";
   const aTier = hero.armorTier;
   const outline = "#221a30";
   const line = (w: number) => {
@@ -1483,7 +1485,7 @@ export class Menus {
       oathHolds ? hero.calling : null,
       oathHolds ? hero.advCalling : null,
     );
-    const weapon = dominantWeapon(hero.attrs);
+    const weapon = dominantWeapon(hero.attrs, oathHolds ? hero.calling : null);
     const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
     const inParty = hero.active;
     const partySize = partyRoster(save).length;
@@ -1796,7 +1798,10 @@ export class Menus {
     const save = this.save;
     const def = HEROES[index];
     const hero = save.heroes[index];
-    const weapon = dominantWeapon(hero.attrs);
+    const sheetSworn = callingById(hero.calling);
+    const sheetHolds = sheetSworn ? callingEligible(sheetSworn, hero.attrs) : false;
+    const weapon = dominantWeapon(hero.attrs, sheetHolds ? hero.calling : null);
+    const oathGuided = sheetHolds && weapon !== dominantWeapon(hero.attrs);
     const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
     const nextW = hero.weaponTier + 1 < WEAPON_TIERS.length ? WEAPON_TIERS[hero.weaponTier + 1] : null;
     const nextA = hero.armorTier + 1 < ARMOR_TIERS.length ? ARMOR_TIERS[hero.armorTier + 1] : null;
@@ -1817,7 +1822,11 @@ export class Menus {
           <div class="sheet-left">
             <div class="figure-frame" style="--accent:${def.accent}">
               <canvas class="figure-canvas" width="360" height="440"></canvas>
-              <div class="figure-caption">${WEAPON_LABEL[weapon]} — shaped by ${ATTR_NAMES[dominant]} ${hero.attrs[dominant]}</div>
+              <div class="figure-caption">${
+                oathGuided
+                  ? `${WEAPON_LABEL[weapon]} — the ${sheetSworn!.name}'s oath guides the hand`
+                  : `${WEAPON_LABEL[weapon]} — shaped by ${ATTR_NAMES[dominant]} ${hero.attrs[dominant]}`
+              }</div>
             </div>
             <div class="equip-slot">
               <div class="equip-slot-head">${ico("sword")} Weapon — <strong>${WEAPON_TIERS[hero.weaponTier].name}</strong> <span>+${WEAPON_DAMAGE_BONUS[hero.weaponTier]} dmg</span></div>

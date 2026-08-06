@@ -702,6 +702,121 @@ export class Battle {
         audio.play("shield");
         break;
       }
+      case "overpower": {
+        const victim = this.nearestEnemyWithin(hero, 75);
+        if (!victim) {
+          cast = false;
+          break;
+        }
+        const dmg = 16 + attrs.str * 3.4;
+        hero.lungeDir = this.normalize({ x: victim.x - hero.x, y: victim.y - hero.y });
+        hero.lunge = 1;
+        this.damage(victim, dmg, hero, { spell: true, color: "#ffb46b" });
+        this.fx.slash(victim.x, victim.y - 14, Math.atan2(hero.lungeDir.y, hero.lungeDir.x), 40, "#ffb46b", Math.PI * 0.8);
+        this.fx.addShake(6);
+        this.hitstop = Math.max(this.hitstop, 0.06);
+        audio.play("slash");
+        break;
+      }
+      case "caltrops": {
+        if (!aim) {
+          cast = false;
+          break;
+        }
+        const at = this.clampToField(aim, 0);
+        this.zones.push({ x: at.x, y: at.y, radius: 70, time: 0, duration: 6, kind: "frost", power: 0.3, dps: 1 + attrs.dex * 0.5, from: hero });
+        this.fx.burst(at.x, at.y - 4, "#9db36b", 10, 90, { gravity: 200, size: 2.6 });
+        this.fx.ring(at.x, at.y, 74, "#9db36b", { width: 3, life: 0.4 });
+        audio.play("shoot");
+        break;
+      }
+      case "chainspark": {
+        const struck = this.livingEnemies()
+          .map((e) => ({ e, d: Math.hypot(e.x - hero.x, e.y - hero.y) }))
+          .filter((t) => t.d < 240)
+          .sort((a, b) => a.d - b.d)
+          .slice(0, 3);
+        if (!struck.length) {
+          cast = false;
+          break;
+        }
+        const dmg = (6 + attrs.int * 1.8) * (0.6 + hero.stats.spellPower * 0.4);
+        let prev: Unit = hero;
+        for (const { e } of struck) {
+          this.damage(e, dmg, hero, { spell: true, color: "#8fc7e8" });
+          // jagged arc from the last link in the chain
+          const steps2 = 5;
+          for (let s = 1; s < steps2; s++) {
+            const t = s / steps2;
+            const jx = prev.x + (e.x - prev.x) * t + (Math.random() - 0.5) * 10;
+            const jy = prev.y - 16 + (e.y - prev.y) * t + (Math.random() - 0.5) * 10;
+            this.fx.burst(jx, jy, "#c6e6ff", 1, 24, { glow: true, life: 0.2 });
+          }
+          prev = e;
+        }
+        audio.play("bolt");
+        break;
+      }
+      case "sunlance": {
+        if (!aim) {
+          cast = false;
+          break;
+        }
+        const at = this.clampToField(aim, 0);
+        const dmg = 10 + attrs.spi * 2.6;
+        for (const enemy of this.livingEnemies()) {
+          if (Math.hypot(enemy.x - at.x, enemy.y - at.y) < 62 + enemy.radius) {
+            this.damage(enemy, dmg, hero, { spell: true, color: "#ffd76b" });
+          }
+        }
+        for (const ally of this.livingHeroes()) {
+          if (Math.hypot(ally.x - at.x, ally.y - at.y) < 62 + ally.radius) {
+            this.heal(ally, 8 + attrs.spi * 1.6, true, hero);
+          }
+        }
+        // the pillar itself
+        for (let i = 0; i < 4; i++) {
+          this.fx.burst(at.x + (Math.random() - 0.5) * 20, at.y - 10 - i * 14, "#ffe9a3", 4, 50, { glow: true, gravity: -80 });
+        }
+        this.fx.ring(at.x, at.y, 66, "#ffd76b", { width: 4, life: 0.5 });
+        this.fx.pool(at.x, at.y, 80, "255,215,107", 0.8);
+        audio.play("heal");
+        break;
+      }
+      case "shieldslam": {
+        const victim = this.nearestEnemyWithin(hero, 65);
+        if (!victim) {
+          cast = false;
+          break;
+        }
+        const dmg = 8 + attrs.vit * 2.2;
+        hero.lungeDir = this.normalize({ x: victim.x - hero.x, y: victim.y - hero.y });
+        hero.lunge = 1;
+        this.damage(victim, dmg, hero, { spell: true, color: "#c9b38a" });
+        if (victim.alive) {
+          victim.effects.push(makeEffect("stun", 0.6, 1, hero));
+          const shoved = this.clampToField(
+            { x: victim.x + hero.lungeDir.x * 32, y: victim.y + hero.lungeDir.y * 32 },
+            victim.radius,
+          );
+          victim.x = shoved.x;
+          victim.y = shoved.y;
+        }
+        this.fx.burst(victim.x, victim.y - 10, "#c9b38a", 8, 100, { glow: true });
+        this.fx.addShake(5);
+        audio.play("thud");
+        break;
+      }
+      case "stoneskin": {
+        const target = allyTarget ?? this.mostWoundedAlly() ?? hero;
+        target.effects = target.effects.filter((e) => e.kind !== "guard");
+        target.effects.push(makeEffect("guard", 6, 0.3, hero));
+        target.effects.push(makeEffect("shield", 6, 10 + attrs.vit * 2, hero));
+        this.fx.ring(target.x, target.y - 14, target.radius * 2.4, "#a8a29a", { width: 4, life: 0.5, squash: 1 });
+        this.fx.burst(target.x, target.y - 14, "#c9c2b8", 10, 80, { gravity: 120 });
+        audio.play("shield");
+        break;
+      }
       // ----- calling signatures -----
       case "challenge": {
         for (const enemy of this.livingEnemies()) {
