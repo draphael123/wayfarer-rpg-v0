@@ -45,6 +45,9 @@ type SfxName =
   | "page"
   | "tankard"
   | "staggerBreak"
+  | "glacialGroan"
+  | "wispShatter"
+  | "hagChant"
   | "hitHeavy"
   | "spSunder"
   | "spOverpower"
@@ -280,9 +283,8 @@ class AudioKit {
   private desiredTrack(): string {
     if (this.mood === "menu") return "music-menu";
     if (this.bossActive) return "music-boss";
-    const act2Music: Record<number, number> = { 6: 0, 7: 1, 8: 2, 9: 4, 10: 3, 11: 5 };
-    const mapped = this.stageId >= 6 ? (act2Music[this.stageId] ?? 5) : this.stageId;
-    return `music-stage${Math.max(0, Math.min(5, mapped))}`;
+    if (this.stageId >= 6) return "music-winter"; // no sample bears this name: the synth winter theme owns Act 2
+    return `music-stage${Math.max(0, Math.min(5, this.stageId))}`;
   }
 
   private ensure(): AudioContext | null {
@@ -533,6 +535,24 @@ class AudioKit {
         this.noise(0.12, 0.06, 900, 0.05);
         this.tone(330, 0.1, "sine", 0.06, 20, 0.1);
         break;
+      case "glacialGroan":
+        // a voice like a glacier turning in its sleep
+        this.tone(65, 1.6, "sawtooth", 0.18, 8);
+        this.tone(98, 1.4, "sawtooth", 0.12, 6, 0.1);
+        this.noise(1.2, 0.06, 240, 0.2);
+        this.tone(49, 1.2, "sine", 0.16, -6, 0.5);
+        break;
+      case "wispShatter":
+        // winter glass breaking into light
+        this.noise(0.12, 0.1, 4200);
+        for (let i = 0; i < 4; i++) this.tone(1400 + i * 380, 0.12, "triangle", 0.07, -200, i * 0.03);
+        break;
+      case "hagChant":
+        // three cold notes, sung low
+        this.tone(233, 0.3, "sine", 0.1, 8);
+        this.tone(196, 0.3, "sine", 0.1, 6, 0.24);
+        this.tone(261, 0.44, "sine", 0.11, -10, 0.48);
+        break;
       case "staggerBreak":
         // poise shattering like river ice
         this.noise(0.3, 0.18, 1600);
@@ -764,6 +784,16 @@ class AudioKit {
         if (this.musicStep % 8 === 0) this.tone(chord[0] / 2, 3.2, "triangle", 0.35, 0, 0, g);
         if (this.musicStep % 4 === 0) this.tone(58, 0.14, "sine", 0.4, -12, 0, g);
         if (this.musicStep % 16 === 10) this.tone(chord[2] * 4, 1.6, "sine", 0.13, 0, 0.2, g);
+      } else if (this.mood === "battle" && this.stageId >= 6) {
+        // the winter theme: sparse bells over a low drone, snow in the spaces
+        const scale = [220, 261.6, 293.7, 349.2, 392, 440];
+        if (this.musicStep % 8 === 0) this.tone(55, 3.4, "sine", 0.4, 0, 0, g);
+        if (this.musicStep % 2 === 0) {
+          const n = scale[Math.floor(Math.abs(Math.sin(this.musicStep * 1.7)) * scale.length) % scale.length];
+          this.tone(n * 2, 1.1, "sine", 0.34, 0, 0, g);
+          this.tone(n * 2 + 2, 1.1, "sine", 0.12, 0, 0, g);
+        }
+        if (this.musicStep % 16 === 12) this.tone(scale[2] * 4, 1.8, "sine", 0.1, 0, 0.2, g);
       } else {
         if (this.musicStep % 2 === 0) this.tone(chord[0] / 2, 0.32, "triangle", 0.5, 0, 0, g);
         this.tone(58, 0.1, "sine", this.musicStep % 4 === 0 ? 0.6 : 0.3, -14, 0, g);

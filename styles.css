@@ -2566,3 +2566,17 @@ body.big-text .page { zoom: 1.1; }
 .act-tabs .shop-tab { flex: 1; }
 
 .finale-page .chron-grid { grid-template-columns: repeat(2, 1fr); }
+
+/* ---------------------------------------------------------- ux overhaul */
+
+.wear-row { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin: 10px 0; }
+
+.delta-chips { display: inline-flex; gap: 4px; margin-left: 5px; }
+
+.delta-chips i { font-style: normal; font-size: 9.5px; font-weight: 800; border-radius: 5px; padding: 1px 4px; }
+
+.delta-chips i.up { color: #8ee88b; background: rgba(120, 200, 120, 0.12); }
+
+.delta-chips i.dn { color: #ff9a85; background: rgba(220, 90, 70, 0.12); }
+
+button.hero-points { font: inherit; cursor: pointer; }

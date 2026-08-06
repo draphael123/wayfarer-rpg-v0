@@ -1972,6 +1972,19 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
       ctx.stroke();
     }
   }
+  // the Winterreach shows every breath
+  if (regionStage >= 6) {
+    const puffW = ((time * 0.5 + unit.id * 0.41) % 1);
+    if (puffW < 0.35) {
+      const pk = puffW / 0.35;
+      ctx.globalAlpha = (1 - pk) * 0.35;
+      ctx.fillStyle = "#e8f2f8";
+      ctx.beginPath();
+      ctx.ellipse(cx + f * (headR * 0.9 + pk * 7), headY + headR * 0.25 - pk * 4, 2.5 + pk * 4, 1.8 + pk * 2.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
   // chibi face: two eyes toward facing (they blink!), brows, a living mouth, blush
   // — with per-hero character: sharp, gentle, lashed, or glowering
   const face = { eyeRy: 0.26, browW: 1.5, browTilt: 0, uniBrow: false, lashes: false, softLids: false };
@@ -3189,7 +3202,11 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
     const prevStride = stepPhases.get(unit) ?? stride;
     stepPhases.set(unit, stride);
     if (moving && (prevStride >= 0) !== (stride >= 0)) {
-      battle.fx.burst(unit.x - unit.facing * 3, unit.y + 1, "rgba(185,170,145,0.6)", 2, 24, { gravity: -26, size: 2.4, life: 0.3 });
+      battle.fx.burst(unit.x - unit.facing * 3, unit.y + 1, battle.stage.id >= 6 ? "rgba(238,246,250,0.7)" : "rgba(185,170,145,0.6)", 2, 24, { gravity: -26, size: 2.4, life: 0.3 });
+      if (battle.stage.id >= 6 && unit.alive) {
+        battle.decals.push({ x: unit.x - unit.facing * 4, y: unit.y + 2, kind: "print", age: 0, size: unit.radius * 0.34, angle: unit.facing * 0.3 });
+        if (battle.decals.length > 90) battle.decals.shift();
+      }
     }
     // idle flourishes: fire once as each flourish begins
     if (unit.team === "hero" && unit.idleAnim > 0.6 && (idlePrev.get(unit) ?? 0) <= 0.6) {
@@ -3404,13 +3421,138 @@ export function drawDecals(ctx: CanvasRenderingContext2D, battle: Battle): void 
     }
   }
   for (const lm of battle.landmarks) {
-    drawLandmark(ctx, lm.type, lm.x, lm.y, battle.time);
+    drawLandmark(ctx, lm.type, lm.x, lm.y, battle.time, battle.stage.id >= 6);
   }
   drawBossDressing(ctx, battle);
 }
 
+/** Winter's roadside sights: a frozen well, an ice-bound statue, a cairn, a dead tree, a buried sled. */
+function drawWinterLandmark(ctx: CanvasRenderingContext2D, type: number, x: number, y: number, time: number): void {
+  ctx.save();
+  ctx.fillStyle = "rgba(20, 24, 38, 0.2)";
+  ctx.beginPath();
+  ctx.ellipse(x, y + 16, 20, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (type === 0) {
+    // a well, iced over
+    ctx.fillStyle = "#7a94a8";
+    ctx.beginPath();
+    ctx.ellipse(x, y + 8, 14, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#243244";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#b8e0f0";
+    ctx.beginPath();
+    ctx.ellipse(x, y + 7, 9, 3.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#5a7488";
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(x - 11, y + 6);
+    ctx.lineTo(x - 11, y - 14);
+    ctx.moveTo(x + 11, y + 6);
+    ctx.lineTo(x + 11, y - 14);
+    ctx.stroke();
+    ctx.fillStyle = "#e8f2f8";
+    ctx.beginPath();
+    ctx.moveTo(x - 15, y - 12);
+    ctx.lineTo(x, y - 22);
+    ctx.lineTo(x + 15, y - 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#243244";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+  } else if (type === 1) {
+    // an old statue sheathed in ice
+    ctx.fillStyle = "#8aa0b4";
+    ctx.fillRect(x - 8, y + 8, 16, 8);
+    ctx.strokeStyle = "#243244";
+    ctx.lineWidth = 1.8;
+    ctx.strokeRect(x - 8, y + 8, 16, 8);
+    ctx.beginPath();
+    ctx.ellipse(x, y - 4, 6, 11, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#9ab4c6";
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y - 18, 4.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = "#d8f0f8";
+    ctx.beginPath();
+    ctx.ellipse(x, y - 8, 9, 18, 0.08, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  } else if (type === 2) {
+    // a wayfarer's cairn, capped with snow
+    for (const [ox, oy, rr] of [[0, 10, 9], [0, 1, 7], [0, -6, 5], [0, -11.5, 3.4]] as number[][]) {
+      ctx.beginPath();
+      ctx.ellipse(x + ox, y + oy, rr, rr * 0.7, 0, 0, Math.PI * 2);
+      ctx.fillStyle = "#6e8496";
+      ctx.fill();
+      ctx.strokeStyle = "#243244";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#eef6fa";
+    ctx.beginPath();
+    ctx.ellipse(x, y - 13, 3.6, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (type === 3) {
+    // a dead tree, black against the snow
+    ctx.strokeStyle = "#2c3a4a";
+    ctx.lineWidth = 3.4;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x, y + 14);
+    ctx.lineTo(x + 2, y - 20);
+    ctx.moveTo(x + 1, y - 8);
+    ctx.lineTo(x + 12, y - 18);
+    ctx.moveTo(x + 1.5, y - 14);
+    ctx.lineTo(x - 9, y - 24);
+    ctx.stroke();
+    ctx.lineCap = "butt";
+    ctx.fillStyle = "rgba(238, 246, 250, 0.9)";
+    ctx.beginPath();
+    ctx.ellipse(x + 12, y - 19, 3, 1.4, 0.4, 0, Math.PI * 2);
+    ctx.ellipse(x - 9, y - 25, 3, 1.4, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // a sled the snow is slowly keeping
+    ctx.save();
+    ctx.translate(x, y + 4);
+    ctx.rotate(-0.08);
+    ctx.fillStyle = "#5e7488";
+    ctx.fillRect(-16, -6, 32, 8);
+    ctx.strokeStyle = "#243244";
+    ctx.lineWidth = 1.8;
+    ctx.strokeRect(-16, -6, 32, 8);
+    ctx.strokeStyle = "#46596b";
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(-18, 6);
+    ctx.quadraticCurveTo(-22, 2, -18, -2);
+    ctx.moveTo(-18, 6);
+    ctx.lineTo(18, 6);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(238, 246, 250, 0.92)";
+    ctx.beginPath();
+    ctx.ellipse(2, -7, 14, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 /** One-off roadside sights: a shrine, a signpost, a cart, old stones, a stump. */
-function drawLandmark(ctx: CanvasRenderingContext2D, type: number, x: number, y: number, time: number): void {
+function drawLandmark(ctx: CanvasRenderingContext2D, type: number, x: number, y: number, time: number, winter = false): void {
+  if (winter) {
+    drawWinterLandmark(ctx, type, x, y, time);
+    return;
+  }
   ctx.save();
   // grounding shadow
   ctx.fillStyle = "rgba(20, 14, 30, 0.2)";

@@ -292,7 +292,7 @@ export class Battle {
         this.bossStaggerMax = this.bossRef.enemyKind === "rimeheart" ? 400 : this.bossRef.enemyKind === "warlord" ? 340 : this.bossRef.enemyKind === "alpha" ? 280 : 240;
         this.cinematic = 2.6;
         this.waveBanner = 0;
-        audio.play(this.bossRef.enemyKind === "warlord" ? "warhorn" : this.bossRef.enemyKind === "alpha" ? "howl" : "roar");
+        audio.play(this.bossRef.enemyKind === "warlord" ? "warhorn" : this.bossRef.enemyKind === "alpha" ? "howl" : this.bossRef.enemyKind === "rimeheart" ? "glacialGroan" : "roar");
       }
     }
     // Wind Step: dodge-ready again at the start of every wave
@@ -607,7 +607,17 @@ export class Battle {
     this.hitstop = Math.max(this.hitstop, unit.radius > 20 ? 0.1 : 0.06);
     if (unit.radius > 20) this.zoomPunch = Math.max(this.zoomPunch, 0.8);
     // a boss falls like a felled tower: slow motion, soul geyser, the works
-    if (unit.team === "enemy" && ["alpha", "warlord", "ogre"].includes(unit.enemyKind ?? "")) {
+    if (unit.enemyKind === "icewisp") {
+      this.fx.burst(unit.x, unit.y - 18, "#d8f0f8", 12, 130, { glow: true, size: 3 });
+      audio.play("wispShatter");
+    }
+    if (unit.enemyKind === "rimeheart") {
+      this.fx.burst(unit.x, unit.y - 24, "#d8f0f8", 40, 260, { glow: true, gravity: 120, size: 5 });
+      this.fx.burst(unit.x, unit.y - 24, "#8fb8cc", 24, 180, { gravity: 200, size: 4 });
+      this.fx.ring(unit.x, unit.y, 220, "#b8e0f0", { width: 7, life: 0.9 });
+      audio.play("staggerBreak");
+    }
+    if (unit.team === "enemy" && ["alpha", "warlord", "ogre", "rimeheart"].includes(unit.enemyKind ?? "")) {
       this.slowmo = Math.max(this.slowmo, 1.6);
       this.zoomPunch = Math.max(this.zoomPunch, 1.2);
       this.fx.beam(unit.x, unit.y, 200, 22, "rgba(215, 240, 230, 0.85)", 1.4);
@@ -2161,7 +2171,7 @@ export class Battle {
         heals: true,
         life: 3,
       });
-      audio.play("bolt");
+      audio.play(shaman.enemyKind === "snowhag" ? "hagChant" : "bolt");
     } else if (shaman.enemyKind === "snowhag" && nearest && Math.random() < 0.5) {
       // the hag sings the ground to ice beneath your feet
       shaman.supportTimer = 3.2;
