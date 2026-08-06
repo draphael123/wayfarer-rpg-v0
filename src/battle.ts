@@ -88,7 +88,7 @@ export class Battle {
       const sworn = callingById(heroSave.calling);
       const oath = sworn && callingEligible(sworn, heroSave.attrs) ? sworn : null;
       const advanced = oath ? heroSave.advCalling : null;
-      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier, heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced);
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier, heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced, heroSave.armorVariant);
       const abilities: AbilityState[] = heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d)

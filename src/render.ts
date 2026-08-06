@@ -1,5 +1,5 @@
 import type { Battle } from "./battle";
-import { callingById, callingEligible, deriveStats, HEROES } from "./data";
+import { armorVariantById, callingById, callingEligible, deriveStats, HEROES } from "./data";
 import type { SaveData, StageDef, Unit } from "./types";
 
 const OUTLINE = "#241b2e";
@@ -1279,7 +1279,7 @@ export function drawTitleDiorama(ctx: CanvasRenderingContext2D, save: SaveData, 
       x: ux,
       y: uy,
       radius: 13,
-      stats: deriveStats(hs.attrs, hs.weaponTier, hs.armorTier, hs.talents, hs.trinket, active, active ? hs.advCalling : null),
+      stats: deriveStats(hs.attrs, hs.weaponTier, hs.armorTier, hs.talents, hs.trinket, active, active ? hs.advCalling : null, hs.armorVariant),
       hp: 1,
       attackTimer: 0,
       moveTarget: null,
@@ -1339,7 +1339,7 @@ export function drawHeroFigure(
   const hero = save.heroes[heroIndex];
   const oathDef = callingById(hero.calling);
   const activeOath = oathDef && callingEligible(oathDef, hero.attrs) ? hero.calling : null;
-  const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null);
+  const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null, hero.armorVariant);
   const radius = 13;
   const scale = canvas.height / (radius * 3.7 * 1.55);
   const unit = {
@@ -1413,6 +1413,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   const gear = save.heroes[unit.heroIndex];
   const wTier = gear?.weaponTier ?? 0;
   const aTier = gear?.armorTier ?? 0;
+  const plateTint = armorVariantById(gear?.armorVariant ?? null)?.tint ?? "#aab4c2";
 
   // back leg, back arm behind body
   if (!robed) {
@@ -1507,11 +1508,11 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     // leather shoulder pad
     ctx.beginPath();
     ctx.ellipse(cx + f * bodyW * 0.34, shoulderY, bodyW * 0.26, bodyW * 0.18, f * 0.3, 0, Math.PI * 2);
-    outlined(ctx, aTier >= 3 ? "#aab4c2" : "#7a5a3a", 2);
+    outlined(ctx, aTier >= 3 ? plateTint : "#7a5a3a", 2);
   }
   if (!robed && aTier >= 2) {
     // chain band across the chest
-    ctx.strokeStyle = aTier >= 3 ? "#c2ccda" : "#9aa3ad";
+    ctx.strokeStyle = aTier >= 3 ? plateTint : "#9aa3ad";
     ctx.lineWidth = 3.4;
     ctx.beginPath();
     ctx.moveTo(cx - bodyW * 0.4, shoulderY + 2);
@@ -1525,12 +1526,12 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   head.arc(faceX, headY, headR, 0, Math.PI * 2);
   shaded(ctx, head, def.skin, f, faceX, headY, headR);
   if (!robed && aTier >= 3) {
-    // plate helm with a nose guard
+    // plate helm with a nose guard (tinted by the plate's making)
     ctx.beginPath();
     ctx.arc(cx + f * 0.5, headY - headR * 0.1, headR * 1.04, Math.PI * 0.9, Math.PI * 2.1);
     ctx.closePath();
-    outlined(ctx, "#aab4c2", 2.2);
-    ctx.fillStyle = "#aab4c2";
+    outlined(ctx, plateTint, 2.2);
+    ctx.fillStyle = plateTint;
     ctx.fillRect(cx + f * headR * 0.3 - 1.6, headY - headR * 0.35, 3.2, headR * 0.75);
     ctx.strokeStyle = OUTLINE;
     ctx.lineWidth = 1.4;

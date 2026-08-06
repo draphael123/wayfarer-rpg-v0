@@ -169,6 +169,7 @@ export interface HeroSave {
   trinket: string | null;
   calling: string | null; // sworn calling id (band level 5+), null = unsworn
   advCalling: string | null; // advanced branch id (band level 20+), null = not yet advanced
+  armorVariant: string | null; // plate-tier variant choice (armorTier 3 only)
 }
 
 export interface SaveData {

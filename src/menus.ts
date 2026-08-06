@@ -1,6 +1,9 @@
 import { audio } from "./audio";
 import {
   ABILITIES,
+  ARMOR_VARIANTS,
+  ARMOR_VARIANT_SWITCH_COST,
+  armorVariantById,
   ADV_CALLING_LEVEL,
   ADV_SWITCH_COST,
   advCallingById,
@@ -142,6 +145,7 @@ export function drawHeroPortrait(canvas: HTMLCanvasElement, index: number, save:
   const portraitOath = callingById(hero.calling);
   const portraitHolds = portraitOath ? callingEligible(portraitOath, hero.attrs) : false;
   const robed = dominantWeapon(hero.attrs, portraitHolds ? hero.calling : null) === "stave";
+  const plateTint = armorVariantById(hero.armorVariant)?.tint ?? "#aab4c2";
   const aTier = hero.armorTier;
   const outline = "#221a30";
   const line = (w: number) => {
@@ -174,13 +178,13 @@ export function drawHeroPortrait(canvas: HTMLCanvasElement, index: number, save:
     for (const dir of [-1, 1]) {
       ctx.beginPath();
       ctx.ellipse(32 + dir * 15, 46, 8, 5.5, dir * 0.25, 0, Math.PI * 2);
-      ctx.fillStyle = aTier >= 3 ? "#aab4c2" : "#7a5a3a";
+      ctx.fillStyle = aTier >= 3 ? plateTint : "#7a5a3a";
       ctx.fill();
       line(2.4);
     }
   }
   if (!robed && aTier >= 2) {
-    ctx.strokeStyle = aTier >= 3 ? "#c2ccda" : "#9aa3ad";
+    ctx.strokeStyle = aTier >= 3 ? plateTint : "#9aa3ad";
     ctx.lineWidth = 3.2;
     ctx.beginPath();
     ctx.moveTo(21, 47);
@@ -206,10 +210,10 @@ export function drawHeroPortrait(canvas: HTMLCanvasElement, index: number, save:
     ctx.beginPath();
     ctx.arc(32, 25.5, 14.6, Math.PI * 0.95, Math.PI * 2.05);
     ctx.closePath();
-    ctx.fillStyle = "#aab4c2";
+    ctx.fillStyle = plateTint;
     ctx.fill();
     line(2.6);
-    ctx.fillStyle = "#aab4c2";
+    ctx.fillStyle = plateTint;
     ctx.fillRect(30.4, 22, 3.2, 10);
     ctx.strokeStyle = outline;
     ctx.lineWidth = 1.6;
@@ -1282,13 +1286,37 @@ export class Menus {
       const def = HEROES[i];
       const nextW = hero.weaponTier + 1 < WEAPON_TIERS.length ? WEAPON_TIERS[hero.weaponTier + 1] : null;
       const nextA = hero.armorTier + 1 < ARMOR_TIERS.length ? ARMOR_TIERS[hero.armorTier + 1] : null;
+      // plate is a choice, not a rung: three makings with real tradeoffs
+      let armorBlock: string;
+      if (nextA && hero.armorTier + 1 === 3) {
+        armorBlock =
+          `<div class="plate-choice"><div class="plate-choice-head">${ico("shield")} Plate awaits — choose its making (${nextA.cost}g)</div>` +
+          ARMOR_VARIANTS.map(
+            (vd) =>
+              `<button class="big-btn buy-btn plate-btn" data-plate="${i}:${vd.id}" ${save.gold < nextA.cost ? 'data-cant="1"' : ""}>${ico(vd.icon)} <span class="plate-text"><strong>${vd.name}</strong><em>${vd.blurb}</em></span></button>`,
+          ).join("") +
+          `</div>`;
+      } else if (nextA) {
+        armorBlock = `<button class="big-btn buy-btn" data-gear="a:${i}" ${save.gold < nextA.cost ? 'data-cant="1"' : ""}>${ico("shield")} ${nextA.name} (+${Math.round((ARMOR_BONUS[hero.armorTier + 1] - ARMOR_BONUS[hero.armorTier]) * 100)}% armor, +${ARMOR_HP_BONUS[hero.armorTier + 1] - ARMOR_HP_BONUS[hero.armorTier]} hp) — ${nextA.cost}g</button>`;
+      } else {
+        const worn = armorVariantById(hero.armorVariant);
+        armorBlock =
+          `<div class="gear-max">${ico("shield")} ${worn ? worn.name : "Best armor owned"}</div>` +
+          `<div class="plate-choice">` +
+          ARMOR_VARIANTS.filter((vd) => vd.id !== hero.armorVariant)
+            .map(
+              (vd) =>
+                `<button class="big-btn plate-btn" data-platevar="${i}:${vd.id}" ${save.gold < ARMOR_VARIANT_SWITCH_COST ? 'data-cant="1"' : ""}>${ico(vd.icon)} <span class="plate-text"><strong>Rework → ${vd.name} — ${ARMOR_VARIANT_SWITCH_COST}g</strong><em>${vd.blurb}</em></span></button>`,
+            ).join("") +
+          `</div>`;
+      }
       const card = el(`
         <div class="hero-card" style="--accent:${def.accent}">
           <div class="hero-head">
             <div class="hero-avatar portrait" style="background:${def.accent}"><canvas width="64" height="64"></canvas></div>
             <div>
               <div class="hero-name">${def.name}</div>
-              <div class="hero-meta">${WEAPON_TIERS[hero.weaponTier].name} weapon · ${ARMOR_TIERS[hero.armorTier].name} armor</div>
+              <div class="hero-meta">${WEAPON_TIERS[hero.weaponTier].name} weapon · ${hero.armorTier >= 3 && armorVariantById(hero.armorVariant) ? armorVariantById(hero.armorVariant)!.name : `${ARMOR_TIERS[hero.armorTier].name} armor`}</div>
             </div>
           </div>
           <div class="gear-row">
@@ -1297,11 +1325,7 @@ export class Menus {
                 ? `<button class="big-btn buy-btn" data-gear="w:${i}" ${save.gold < nextW.cost ? 'data-cant="1"' : ""}>${ico("sword")} ${nextW.name} (+${WEAPON_DAMAGE_BONUS[hero.weaponTier + 1] - WEAPON_DAMAGE_BONUS[hero.weaponTier]} dmg) — ${nextW.cost}g</button>`
                 : `<div class="gear-max">${ico("sword")} Best weapon owned</div>`
             }
-            ${
-              nextA
-                ? `<button class="big-btn buy-btn" data-gear="a:${i}" ${save.gold < nextA.cost ? 'data-cant="1"' : ""}>${ico("shield")} ${nextA.name} (+${Math.round((ARMOR_BONUS[hero.armorTier + 1] - ARMOR_BONUS[hero.armorTier]) * 100)}% armor, +${ARMOR_HP_BONUS[hero.armorTier + 1] - ARMOR_HP_BONUS[hero.armorTier]} hp) — ${nextA.cost}g</button>`
-                : `<div class="gear-max">${ico("shield")} Best armor owned</div>`
-            }
+            ${armorBlock}
           </div>
         </div>
       `);
@@ -1340,6 +1364,29 @@ export class Menus {
     }
 
     body.addEventListener("click", (event) => {
+      const plateBtn = (event.target as HTMLElement).closest("[data-plate]");
+      if (plateBtn) {
+        const [idx, vid] = plateBtn.getAttribute("data-plate")!.split(":");
+        const wearer = save.heroes[Number(idx)];
+        if (!this.spend(ARMOR_TIERS[3].cost)) return;
+        wearer.armorTier = 3;
+        wearer.armorVariant = vid;
+        persist(save);
+        this.showToast(`${HEROES[Number(idx)].name} dons the ${armorVariantById(vid)!.name}!`);
+        this.renderShop("armory");
+        return;
+      }
+      const varBtn = (event.target as HTMLElement).closest("[data-platevar]");
+      if (varBtn) {
+        const [idx, vid] = varBtn.getAttribute("data-platevar")!.split(":");
+        const wearer = save.heroes[Number(idx)];
+        if (!this.spend(ARMOR_VARIANT_SWITCH_COST)) return;
+        wearer.armorVariant = vid;
+        persist(save);
+        this.showToast(`The smith reworks it into the ${armorVariantById(vid)!.name}`);
+        this.renderShop("armory");
+        return;
+      }
       const fuseBtn = (event.target as HTMLElement).closest("[data-fuse]");
       if (fuseBtn) {
         const id = fuseBtn.getAttribute("data-fuse")!;
@@ -1499,6 +1546,7 @@ export class Menus {
       hero.trinket,
       oathHolds ? hero.calling : null,
       oathHolds ? hero.advCalling : null,
+      hero.armorVariant,
     );
     const weapon = dominantWeapon(hero.attrs, oathHolds ? hero.calling : null);
     const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
@@ -1619,7 +1667,7 @@ export class Menus {
         return c && callingEligible(c, hero.attrs) ? hero.calling : null;
       };
       const effAdv = () => (effCalling() ? hero.advCalling : null);
-      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, effCalling(), effAdv());
+      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, effCalling(), effAdv(), hero.armorVariant);
       hero.attrs[key] += 1;
       save.unspent[index] -= 1;
       const before = unlocked.length;
@@ -1640,7 +1688,7 @@ export class Menus {
         audio.play("click");
       }
       persist(save);
-      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, effCalling(), effAdv());
+      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, effCalling(), effAdv(), hero.armorVariant);
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, statsBefore, statsAfter);
     });
@@ -1852,7 +1900,9 @@ export class Menus {
               }
             </div>
             <div class="equip-slot">
-              <div class="equip-slot-head">${ico("shield")} Armor — <strong>${ARMOR_TIERS[hero.armorTier].name}</strong> <span>+${Math.round(ARMOR_BONUS[hero.armorTier] * 100)}% armor · +${ARMOR_HP_BONUS[hero.armorTier]} hp</span></div>
+              <div class="equip-slot-head">${ico("shield")} Armor — <strong>${
+                hero.armorTier >= 3 && armorVariantById(hero.armorVariant) ? armorVariantById(hero.armorVariant)!.name : ARMOR_TIERS[hero.armorTier].name
+              }</strong> <span>+${Math.round(ARMOR_BONUS[hero.armorTier] * 100)}% armor · +${ARMOR_HP_BONUS[hero.armorTier]} hp</span></div>
               ${
                 nextA
                   ? `<button class="big-btn buy-btn ${save.gold < nextA.cost ? "cant" : ""}" data-gear="a">Upgrade to ${nextA.name} — ${nextA.cost}g</button>`

@@ -441,6 +441,68 @@ export const ARMOR_TIERS: GearTier[] = [
 export const ARMOR_BONUS = [0, 0.04, 0.08, 0.14];
 export const ARMOR_HP_BONUS = [0, 15, 35, 65];
 
+// --- plate-tier variants: the top of the armor ladder becomes a choice ---
+
+export interface ArmorVariantDef {
+  id: string;
+  name: string;
+  blurb: string;
+  icon: string; // ico() name
+  tint: string; // plate metal color on the sprite
+}
+
+export const ARMOR_VARIANTS: ArmorVariantDef[] = [
+  {
+    id: "juggernaut",
+    name: "Juggernaut Plate",
+    blurb: "+5% armor and +10% health, but 10% slower.",
+    icon: "shield",
+    tint: "#aab4c2",
+  },
+  {
+    id: "skirmisher",
+    name: "Skirmisher Harness",
+    blurb: "+10% move and +8% attack speed — thinner plating (−3% armor).",
+    icon: "arrow",
+    tint: "#c9a06b",
+  },
+  {
+    id: "runeweave",
+    name: "Runeweave Vestment",
+    blurb: "+10% spell power and +10% healing — soft weave (−5% armor).",
+    icon: "spark",
+    tint: "#9a8ac9",
+  },
+];
+
+export const ARMOR_VARIANT_SWITCH_COST = 250;
+
+export function armorVariantById(id: string | null | undefined): ArmorVariantDef | null {
+  return ARMOR_VARIANTS.find((v) => v.id === id) ?? null;
+}
+
+function armorVariantMods(variant: string | null | undefined) {
+  const m = { meleeDmg: 0, rangedDmg: 0, hpPct: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, startShield: 0 };
+  switch (variant) {
+    case "juggernaut":
+      m.armorFlat = 0.05;
+      m.hpPct = 0.1;
+      m.moveSpeed = -0.1;
+      break;
+    case "skirmisher":
+      m.moveSpeed = 0.1;
+      m.atkSpeed = 0.08;
+      m.armorFlat = -0.03;
+      break;
+    case "runeweave":
+      m.spellPower = 0.1;
+      m.healPower = 0.1;
+      m.armorFlat = -0.05;
+      break;
+  }
+  return m;
+}
+
 /** Gold cost of each ability in the spell shop. */
 export const SPELL_COSTS: Record<string, number> = {
   cleave: 80,
@@ -793,22 +855,24 @@ export function deriveStats(
   trinket?: string | null,
   calling?: string | null,
   advCalling?: string | null,
+  armorVariant?: string | null,
 ): DerivedStats {
   const t = talentMods(talents);
   const k = trinketMods(trinket);
   const c = callingStatMods(calling, advCalling);
+  const v = armorVariantMods(armorTier >= 3 ? armorVariant : null);
   const mods = {
-    meleeDmg: t.meleeDmg + k.meleeDmg + c.meleeDmg,
-    rangedDmg: t.rangedDmg + k.rangedDmg + c.rangedDmg,
-    hpPct: t.hpPct + k.hpPct + c.hpPct,
-    armorFlat: t.armorFlat + k.armorFlat + c.armorFlat,
-    cdr: Math.min(0.5, t.cdr + k.cdr + c.cdr),
-    atkSpeed: t.atkSpeed + k.atkSpeed + c.atkSpeed,
-    moveSpeed: t.moveSpeed + k.moveSpeed + c.moveSpeed,
-    crit: t.crit + k.crit + c.crit,
-    spellPower: t.spellPower + k.spellPower + c.spellPower,
-    healPower: t.healPower + k.healPower + c.healPower,
-    startShield: t.startShield + k.startShield + c.startShield,
+    meleeDmg: t.meleeDmg + k.meleeDmg + c.meleeDmg + v.meleeDmg,
+    rangedDmg: t.rangedDmg + k.rangedDmg + c.rangedDmg + v.rangedDmg,
+    hpPct: t.hpPct + k.hpPct + c.hpPct + v.hpPct,
+    armorFlat: t.armorFlat + k.armorFlat + c.armorFlat + v.armorFlat,
+    cdr: Math.min(0.5, t.cdr + k.cdr + c.cdr + v.cdr),
+    atkSpeed: t.atkSpeed + k.atkSpeed + c.atkSpeed + v.atkSpeed,
+    moveSpeed: t.moveSpeed + k.moveSpeed + c.moveSpeed + v.moveSpeed,
+    crit: t.crit + k.crit + c.crit + v.crit,
+    spellPower: t.spellPower + k.spellPower + c.spellPower + v.spellPower,
+    healPower: t.healPower + k.healPower + c.healPower + v.healPower,
+    startShield: t.startShield + k.startShield + c.startShield + v.startShield,
   };
   const weapon = dominantWeapon(attrs, calling);
   const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + ARMOR_HP_BONUS[armorTier]);
@@ -1261,10 +1325,20 @@ export const TRINKETS: TrinketDef[] = [
   { id: "hawkFeather", name: "Hawk Feather", blurb: "+6% ranged damage", rarity: "common", icon: "🪶" },
   { id: "emberBead", name: "Ember Bead", blurb: "+7% spell power", rarity: "common", icon: "🔥" },
   { id: "vervain", name: "Sprig of Vervain", blurb: "+7% healing power", rarity: "common", icon: "🌿" },
+  { id: "boarBristle", name: "Boar-Bristle Charm", blurb: "+6% melee damage", rarity: "common", icon: "🐗" },
+  { id: "waxCandle", name: "Waxen Candle", blurb: "-6% ability cooldowns", rarity: "common", icon: "🕯️" },
+  { id: "cloverSprig", name: "Clover Sprig", blurb: "+4% critical chance", rarity: "common", icon: "🍀" },
+  { id: "wayfarerBoots", name: "Wayfarer's Boots", blurb: "+8% move speed", rarity: "common", icon: "🥾" },
+  { id: "dentedBuckler", name: "Dented Buckler", blurb: "battles start with a 12 hp ward", rarity: "common", icon: "🛡️" },
+  { id: "owlTalon", name: "Owl Talon", blurb: "+4% attack speed, +4% move speed", rarity: "common", icon: "🦉" },
   { id: "alphaFang", name: "Alpha's Fang", blurb: "+8% attack speed, +6% melee damage", rarity: "rare", icon: "🐺" },
   { id: "gorehornShard", name: "Gorehulk Horn Shard", blurb: "+10% melee damage, +30 health", rarity: "rare", icon: "🐮" },
   { id: "witchLocket", name: "Witchlight Locket", blurb: "+10% spell power, -5% cooldowns", rarity: "rare", icon: "🔮" },
   { id: "saintRelic", name: "Saint's Relic", blurb: "+10% healing, battles start with a 20 hp ward", rarity: "rare", icon: "✨" },
+  { id: "moonPendant", name: "Moonlit Pendant", blurb: "-8% cooldowns, +6% spell power", rarity: "rare", icon: "🌙" },
+  { id: "gravewardenSeal", name: "Gravewarden's Seal", blurb: "+6% armor, battles start with a 25 hp ward", rarity: "rare", icon: "🗿" },
+  { id: "marksmanEye", name: "Marksman's Eye", blurb: "+10% ranged damage, +5% critical chance", rarity: "rare", icon: "🎯" },
+  { id: "harvestIdol", name: "Harvest Idol", blurb: "+12% healing, +20 health", rarity: "rare", icon: "🌾" },
 ];
 
 export function trinketById(id: string | null | undefined): TrinketDef | undefined {
@@ -1280,10 +1354,20 @@ export function trinketMods(id: string | null | undefined): TalentMods {
     case "hawkFeather": return { ...none, rangedDmg: 0.06 };
     case "emberBead": return { ...none, spellPower: 0.07 };
     case "vervain": return { ...none, healPower: 0.07 };
+    case "boarBristle": return { ...none, meleeDmg: 0.06 };
+    case "waxCandle": return { ...none, cdr: 0.06 };
+    case "cloverSprig": return { ...none, crit: 0.04 };
+    case "wayfarerBoots": return { ...none, moveSpeed: 0.08 };
+    case "dentedBuckler": return { ...none, startShield: 12 };
+    case "owlTalon": return { ...none, atkSpeed: 0.04, moveSpeed: 0.04 };
     case "alphaFang": return { ...none, atkSpeed: 0.08, meleeDmg: 0.06 };
     case "gorehornShard": return { ...none, meleeDmg: 0.1 };
     case "witchLocket": return { ...none, spellPower: 0.1, cdr: 0.05 };
     case "saintRelic": return { ...none, healPower: 0.1, startShield: 20 };
+    case "moonPendant": return { ...none, cdr: 0.08, spellPower: 0.06 };
+    case "gravewardenSeal": return { ...none, armorFlat: 0.06, startShield: 25 };
+    case "marksmanEye": return { ...none, rangedDmg: 0.1, crit: 0.05 };
+    case "harvestIdol": return { ...none, healPower: 0.12 };
     default: return none;
   }
 }
@@ -1292,6 +1376,7 @@ export function trinketMods(id: string | null | undefined): TalentMods {
 export function trinketFlatHp(id: string | null | undefined): number {
   if (id === "oakCharm") return 22;
   if (id === "gorehornShard") return 30;
+  if (id === "harvestIdol") return 20;
   return 0;
 }
 

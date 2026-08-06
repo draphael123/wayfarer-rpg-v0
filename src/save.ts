@@ -14,7 +14,7 @@ function defaultHero(index: number): HeroSave {
     .filter((a) => STARTING_SPELLS.includes(a.id))
     .slice(0, MAX_EQUIPPED)
     .map((a) => a.id);
-  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armorTier: 0, talents: {}, trinket: null, calling: null, advCalling: null };
+  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armorTier: 0, talents: {}, trinket: null, calling: null, advCalling: null, armorVariant: null };
 }
 
 export function defaultSave(): SaveData {
@@ -81,6 +81,8 @@ export function loadSave(): SaveData {
       if (hero.trinket === undefined) hero.trinket = null;
       if (hero.calling === undefined) hero.calling = null;
       if (hero.advCalling === undefined) hero.advCalling = null;
+      // pre-variant saves at plate tier default to the classic juggernaut look
+      if (hero.armorVariant === undefined) hero.armorVariant = hero.armorTier >= 3 ? "juggernaut" : null;
     });
     if (typeof parsed.speed !== "number" || parsed.speed < 0.25 || parsed.speed > 2) parsed.speed = 0.5;
     if (!parsed.bestiary || typeof parsed.bestiary !== "object") parsed.bestiary = {};
