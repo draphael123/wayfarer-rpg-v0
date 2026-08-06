@@ -1,5 +1,5 @@
 import type { Battle } from "./battle";
-import { HEROES } from "./data";
+import { deriveStats, HEROES } from "./data";
 import type { SaveData, StageDef, Unit } from "./types";
 
 const OUTLINE = "#241b2e";
@@ -48,6 +48,43 @@ function limb(
   ctx.lineCap = "butt";
 }
 
+/**
+ * Fill + outline a Path2D, painting a back-side shade and a top-front
+ * highlight clipped inside it — the two-tone pass that keeps flat vector
+ * shapes from reading as stickers. (cx, cy, r) describe the shape's core so
+ * the shade crescent lands on the side away from facing `f`.
+ */
+function shaded(
+  ctx: CanvasRenderingContext2D,
+  path: Path2D,
+  fill: string,
+  f: number,
+  cx: number,
+  cy: number,
+  r: number,
+  lineWidth = 2.4,
+): void {
+  ctx.fillStyle = fill;
+  ctx.fill(path);
+  ctx.save();
+  ctx.clip(path);
+  ctx.globalAlpha = 0.16;
+  ctx.fillStyle = OUTLINE;
+  ctx.beginPath();
+  ctx.ellipse(cx - f * r * 0.7, cy + r * 0.25, r * 1.05, r * 1.15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.ellipse(cx + f * r * 0.4, cy - r * 0.55, r * 0.85, r * 0.7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = lineWidth;
+  ctx.stroke(path);
+}
+
 // ------------------------------------------------------------------ background
 
 function hash01(n: number): number {
@@ -60,6 +97,103 @@ export interface BgOpts {
   camY?: number;
   dusk?: number; // 0..1 wave progression toward sundown
   units?: Unit[]; // for reactive vegetation
+}
+
+/** Parallax layers overdraw this many logical px past each edge so camera
+ *  drift never exposes stale canvas. */
+const OVERSCAN = 64;
+
+let groundCache: HTMLCanvasElement | null = null;
+let groundKey = "";
+
+/**
+ * Static ground layer, cached per stage/size: base gradient, soft mottled
+ * patches, a worn path, and a grass fringe that breaks the razor horizon
+ * line. Rendered once at 2x then stamped every frame.
+ */
+function groundLayer(stage: StageDef, w: number, h: number, horizon: number): HTMLCanvasElement {
+  const key = `${stage.id}|${Math.round(w)}|${Math.round(h)}|${Math.round(horizon)}`;
+  if (groundCache && groundKey === key) return groundCache;
+  const p = stage.palette;
+  const M = OVERSCAN;
+  const fringeTop = horizon - 12;
+  const cw = w + M * 2;
+  const ch = h - fringeTop + M;
+  const cv = document.createElement("canvas");
+  cv.width = Math.ceil(cw * 2);
+  cv.height = Math.ceil(ch * 2);
+  const g = cv.getContext("2d")!;
+  g.scale(2, 2);
+  g.translate(M, -fringeTop);
+
+  // grass fringe: irregular scallops of ground color biting into the hills
+  g.fillStyle = p.ground;
+  g.beginPath();
+  g.moveTo(-M, horizon + 4);
+  for (let x = -M; x <= w + M; x += 7) {
+    const n = hash01(x * 0.71 + stage.id * 13);
+    g.lineTo(x, horizon - 1.5 - n * 4.5 - Math.sin(x * 0.05) * 1.5);
+  }
+  g.lineTo(w + M, horizon + 4);
+  g.closePath();
+  g.fill();
+
+  // base gradient
+  const grad = g.createLinearGradient(0, horizon, 0, h);
+  grad.addColorStop(0, p.ground);
+  grad.addColorStop(1, p.groundDark);
+  g.fillStyle = grad;
+  g.fillRect(-M, horizon + 2, w + M * 2, h - horizon + M);
+
+  // soft mottled patches — dark and light, radial falloff, no hard edges
+  for (let i = 0; i < 16; i++) {
+    const px = (hash01(i * 17 + stage.id * 31) * (w + M * 2)) - M;
+    const py = horizon + 14 + hash01(i * 23 + 5) * (h - horizon - 22);
+    const pr = 34 + hash01(i * 7) * 55;
+    const dark = i % 2 === 0;
+    const rad = g.createRadialGradient(px, py, 2, px, py, pr);
+    rad.addColorStop(0, dark ? "rgba(20,14,30,0.10)" : "rgba(255,255,240,0.07)");
+    rad.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = rad;
+    g.save();
+    g.translate(px, py);
+    g.scale(1, 0.34);
+    g.beginPath();
+    g.arc(0, 0, pr, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+  }
+
+  // worn path meandering across the field
+  const pathY = horizon + (h - horizon) * (0.42 + hash01(stage.id * 7.7) * 0.2);
+  const wave = (x: number) => pathY + Math.sin(x * 0.006 + stage.id * 2) * 16 + Math.sin(x * 0.017 + 1) * 7;
+  g.lineCap = "round";
+  for (const [lw, style] of [
+    [30, "rgba(20,14,30,0.05)"],
+    [20, "rgba(120,90,60,0.08)"],
+    [9, "rgba(255,240,210,0.06)"],
+  ] as [number, string][]) {
+    g.strokeStyle = style;
+    g.lineWidth = lw;
+    g.beginPath();
+    g.moveTo(-M, wave(-M));
+    for (let x = -M; x <= w + M; x += 18) g.lineTo(x, wave(x));
+    g.stroke();
+  }
+  g.lineCap = "butt";
+  // scattered stones along the path's shoulders
+  g.fillStyle = "rgba(20,14,30,0.16)";
+  for (let i = 0; i < 10; i++) {
+    const sx = hash01(i * 41 + stage.id) * w;
+    const sy = wave(sx) + (hash01(i * 13) - 0.5) * 34;
+    g.beginPath();
+    g.ellipse(sx, sy, 1.8 + hash01(i * 3) * 2.4, 1.2 + hash01(i * 5) * 1.4, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  groundCache = cv;
+  groundKey = key;
+  return cv;
 }
 
 export function drawBackground(
@@ -79,11 +213,12 @@ export function drawBackground(
   // far layer barely moves with the camera (parallax)
   ctx.save();
   ctx.translate(camX * 0.72, camY * 0.72);
+  const M = OVERSCAN;
   const sky = ctx.createLinearGradient(0, 0, 0, horizon);
   sky.addColorStop(0, p.skyTop);
   sky.addColorStop(1, p.skyBottom);
   ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, w, horizon);
+  ctx.fillRect(-M, -M, w + M * 2, horizon + M);
   if (dusk > 0) {
     // the sun sinks as the waves wear on
     const g = ctx.createLinearGradient(0, 0, 0, horizon);
@@ -91,7 +226,7 @@ export function drawBackground(
     g.addColorStop(0.7, `rgba(255, 120, 60, ${dusk * 0.16})`);
     g.addColorStop(1, `rgba(255, 160, 80, ${dusk * 0.1})`);
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, horizon);
+    ctx.fillRect(-M, -M, w + M * 2, horizon + M);
   }
 
   // sun / moon with soft halo
@@ -139,21 +274,21 @@ export function drawBackground(
   ctx.globalAlpha = 0.55;
   ctx.fillStyle = p.hills;
   ctx.beginPath();
-  ctx.moveTo(0, horizon);
-  for (let x = 0; x <= w; x += 10) {
+  ctx.moveTo(-M, horizon + 2);
+  for (let x = -M; x <= w + M; x += 10) {
     ctx.lineTo(x, horizon - 48 - Math.sin(x * 0.005 + 4.2) * 26 - Math.sin(x * 0.013 + 1) * 12);
   }
-  ctx.lineTo(w, horizon);
+  ctx.lineTo(w + M, horizon + 2);
   ctx.closePath();
   ctx.fill();
   ctx.globalAlpha = 1;
   ctx.fillStyle = p.hills;
   ctx.beginPath();
-  ctx.moveTo(0, horizon);
-  for (let x = 0; x <= w; x += 8) {
+  ctx.moveTo(-M, horizon + 2);
+  for (let x = -M; x <= w + M; x += 8) {
     ctx.lineTo(x, horizon - 22 - Math.sin(x * 0.008 + 1.7) * 18 - Math.sin(x * 0.021) * 9);
   }
-  ctx.lineTo(w, horizon);
+  ctx.lineTo(w + M, horizon + 2);
   ctx.closePath();
   ctx.fill();
 
@@ -178,11 +313,11 @@ export function drawBackground(
       ctx.closePath();
       ctx.fill();
     } else {
-      // round tree / boulder
+      // low boulder hunkered on the ridge (no floating heads)
       ctx.beginPath();
-      ctx.arc(tx, ridgeY - th * 0.4, th * 0.42, 0, Math.PI * 2);
+      ctx.ellipse(tx, ridgeY - th * 0.16, th * 0.42, th * 0.3, 0, Math.PI, Math.PI * 2);
+      ctx.closePath();
       ctx.fill();
-      ctx.fillRect(tx - 1.6, ridgeY - th * 0.35, 3.2, th * 0.4);
     }
   }
 
@@ -192,29 +327,15 @@ export function drawBackground(
   ctx.translate(camX * 0.35, camY * 0.35);
   ctx.restore();
 
-  // ground
-  const ground = ctx.createLinearGradient(0, horizon, 0, h);
-  ground.addColorStop(0, p.ground);
-  ground.addColorStop(1, p.groundDark);
-  ctx.fillStyle = ground;
-  ctx.fillRect(0, horizon, w, h - horizon);
+  // ground: cached static layer (gradient, mottling, worn path, fringe)
+  const gl = groundLayer(stage, w, h, horizon);
+  ctx.drawImage(gl, -M, horizon - 12, w + M * 2, h - (horizon - 12) + M);
   if (dusk > 0) {
     ctx.fillStyle = `rgba(30, 18, 50, ${dusk * 0.14})`;
-    ctx.fillRect(0, horizon, w, h - horizon);
+    ctx.fillRect(-M, horizon, w + M * 2, h - horizon + M);
   }
-  // ground edge highlight
-  ctx.fillStyle = "rgba(255,255,255,0.14)";
-  ctx.fillRect(0, horizon, w, 2.5);
 
-  // texture: mottled patches + tufts + stones
-  for (let i = 0; i < 14; i++) {
-    const gx = hash01(i * 17 + stage.id * 31) * w;
-    const gy = horizon + 12 + hash01(i * 23 + 5) * (h - horizon - 26);
-    ctx.fillStyle = "rgba(0,0,0,0.06)";
-    ctx.beginPath();
-    ctx.ellipse(gx, gy, 30 + hash01(i) * 46, 8 + hash01(i * 3) * 7, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  // texture: swaying tufts + stones
   for (let i = 0; i < 22; i++) {
     const gx = hash01(i * 127 + stage.id * 3) * w;
     const gy = horizon + 10 + hash01(i * 311 + stage.id) * (h - horizon - 26);
@@ -347,16 +468,11 @@ function drawSetDressing(
   time: number,
 ): void {
   const groundAt = (t: number, band: number) => horizon + 14 + hash01(t) * (h - horizon - 30) * band;
-  // ground variation shared by every field: pebbles, worn patches, stray tufts
+  // ground variation shared by every field: scattered pebbles
   for (let i = 0; i < 9; i++) {
     const px = hash01(i * 17 + stage.id * 91) * w;
     const py = horizon + 20 + hash01(i * 29 + stage.id * 7) * (h - horizon - 40);
-    if (i % 3 === 0) {
-      ctx.fillStyle = "rgba(20, 14, 30, 0.08)";
-      ctx.beginPath();
-      ctx.ellipse(px, py, 26 + hash01(i) * 30, 7 + hash01(i * 3) * 4, 0, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
+    if (i % 3 !== 0) {
       ctx.fillStyle = "rgba(20, 14, 30, 0.18)";
       ctx.beginPath();
       ctx.arc(px, py, 1.6 + hash01(i * 5) * 1.8, 0, Math.PI * 2);
@@ -365,10 +481,11 @@ function drawSetDressing(
     }
   }
   if (stage.id === 0) {
-    // meadow flowers nodding in the breeze
-    for (let i = 0; i < 6; i++) {
-      const fx2 = hash01(i * 41) * w;
-      const fy2 = horizon + 30 + hash01(i * 23) * (h - horizon - 50);
+    // meadow flowers nodding in the breeze, loosely clustered
+    for (let i = 0; i < 12; i++) {
+      const cluster = Math.floor(i / 3);
+      const fx2 = hash01(cluster * 41) * w + (hash01(i * 7) - 0.5) * 46;
+      const fy2 = horizon + 30 + hash01(cluster * 23) * (h - horizon - 50) + (hash01(i * 11) - 0.5) * 20;
       const sway = Math.sin(time * 1.8 + i * 2) * 1.5;
       ctx.strokeStyle = "#5c7a3e";
       ctx.lineWidth = 1.6;
@@ -535,16 +652,33 @@ function drawSetDressing(
       ctx.stroke();
     }
   } else if (stage.id === 1) {
-    // deep pines: two big flanking trunks with canopy shadows
-    for (const [tx, s] of [[w * 0.08, 1.2], [w * 0.93, 1]] as [number, number][]) {
-      ctx.fillStyle = "#243a2c";
-      ctx.fillRect(tx - 7 * s, horizon + 8, 14 * s, h - horizon - 14);
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(tx - 7 * s, horizon + 8, 14 * s, h - horizon - 14);
-      ctx.fillStyle = "rgba(20, 40, 28, 0.5)";
+    // deep pines: tapered flanking trunks with bark and a root flare
+    for (const [tx, s] of [[w * 0.05, 1.15], [w * 0.96, 0.95]] as [number, number][]) {
+      const tw = 10 * s;
+      const topY = horizon + 6;
       ctx.beginPath();
-      ctx.ellipse(tx, horizon + 10, 48 * s, 14, 0, 0, Math.PI * 2);
+      ctx.moveTo(tx - tw * 1.5, h - 2);
+      ctx.quadraticCurveTo(tx - tw * 0.7, h - 16, tx - tw * 0.6, horizon + 44);
+      ctx.lineTo(tx - tw * 0.52, topY);
+      ctx.lineTo(tx + tw * 0.52, topY);
+      ctx.lineTo(tx + tw * 0.6, horizon + 44);
+      ctx.quadraticCurveTo(tx + tw * 0.7, h - 16, tx + tw * 1.5, h - 2);
+      ctx.closePath();
+      outlined(ctx, "#31473a", 2.2);
+      // bark streaks
+      ctx.strokeStyle = "rgba(20, 30, 22, 0.55)";
+      ctx.lineWidth = 1.6;
+      for (let bkI = 0; bkI < 3; bkI++) {
+        const bx = tx - tw * 0.3 + bkI * tw * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(bx, topY + 14 + bkI * 9);
+        ctx.quadraticCurveTo(bx + 2, (topY + h) / 2, bx - 1, h - 22 - bkI * 8);
+        ctx.stroke();
+      }
+      // canopy shade pooling at the base
+      ctx.fillStyle = "rgba(20, 40, 28, 0.4)";
+      ctx.beginPath();
+      ctx.ellipse(tx, topY + 4, 46 * s, 12, 0, 0, Math.PI * 2);
       ctx.fill();
     }
   } else if (stage.id === 2) {
@@ -742,20 +876,31 @@ export function drawZones(ctx: CanvasRenderingContext2D, battle: Battle): void {
 
 // ------------------------------------------------------------------ shared unit bits
 
+const hpGhosts = new WeakMap<Unit, number>();
+
 function drawHealthBar(ctx: CanvasRenderingContext2D, unit: Unit, top: number): void {
-  const w = Math.max(30, unit.radius * 2.4);
+  const w = Math.max(28, unit.radius * 2.2);
   const x = unit.x - w / 2;
   const y = top;
   const frac = Math.max(0, unit.hp / unit.stats.maxHp);
-  roundRect(ctx, x - 1, y - 1, w + 2, 7, 3.5);
+  // ghost trails the real bar so damage reads as a draining chunk
+  let ghost = hpGhosts.get(unit) ?? frac;
+  ghost = ghost < frac ? frac : Math.max(frac, ghost - Math.max(0.008, (ghost - frac) * 0.09));
+  hpGhosts.set(unit, ghost);
+  roundRect(ctx, x - 1, y - 1, w + 2, 6, 3);
   ctx.fillStyle = "rgba(18, 12, 24, 0.78)";
   ctx.fill();
+  if (ghost > frac + 0.004) {
+    roundRect(ctx, x, y, w * ghost, 4, 2);
+    ctx.fillStyle = "rgba(255, 235, 210, 0.8)";
+    ctx.fill();
+  }
   if (frac > 0) {
-    roundRect(ctx, x, y, w * frac, 5, 2.5);
+    roundRect(ctx, x, y, w * frac, 4, 2);
     ctx.fillStyle = unit.team === "hero" ? (frac > 0.35 ? "#6fce65" : "#e0b23e") : "#d1543f";
     ctx.fill();
     ctx.fillStyle = "rgba(255,255,255,0.35)";
-    roundRect(ctx, x, y, w * frac, 2, 1);
+    roundRect(ctx, x, y, w * frac, 1.6, 0.8);
     ctx.fill();
   }
   const shield = unit.effects.find((e) => e.kind === "shield");
@@ -843,10 +988,15 @@ function drawSelection(ctx: CanvasRenderingContext2D, unit: Unit, time: number):
 
 function flashOverlay(ctx: CanvasRenderingContext2D, unit: Unit, cx: number, cy: number, r: number): void {
   if (unit.hitFlash > 0) {
-    ctx.globalAlpha = Math.min(0.75, unit.hitFlash * 4.5);
-    ctx.fillStyle = "#ffffff";
+    // soft radial pop, not a hard white disc
+    const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, r * 0.9);
+    g.addColorStop(0, "rgba(255,255,255,0.85)");
+    g.addColorStop(0.65, "rgba(255,255,255,0.4)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.globalAlpha = Math.min(0.55, unit.hitFlash * 3.4);
+    ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.arc(cx, cy, r * 0.9, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
   }
@@ -854,10 +1004,75 @@ function flashOverlay(ctx: CanvasRenderingContext2D, unit: Unit, cx: number, cy:
 
 // ------------------------------------------------------------------ heroes
 
+/** When true, unit renderers skip battle chrome (health bars, status pips). */
+let figureMode = false;
+
+/**
+ * Full-body hero render for menu screens — the real in-battle drawing with
+ * live weapon morph and armor tier, minus combat chrome. `t` animates idle.
+ */
+export function drawHeroFigure(
+  canvas: HTMLCanvasElement,
+  heroIndex: number,
+  save: SaveData,
+  t: number,
+): void {
+  const ctx = canvas.getContext("2d")!;
+  const hero = save.heroes[heroIndex];
+  const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket);
+  const radius = 13;
+  const scale = canvas.height / (radius * 3.7 * 1.55);
+  const unit = {
+    id: heroIndex,
+    name: HEROES[heroIndex].name,
+    team: "hero",
+    heroIndex,
+    enemyKind: null,
+    x: canvas.width / 2 / scale,
+    y: canvas.height / scale - radius * 0.9,
+    radius,
+    stats,
+    hp: stats.maxHp,
+    attackTimer: 0,
+    moveTarget: null,
+    attackTarget: null,
+    healTarget: null,
+    stance: "attack",
+    autoOrder: false,
+    abilities: [],
+    effects: [],
+    facing: 1,
+    bobPhase: 0,
+    lunge: 0,
+    lungeDir: { x: 0, y: 0 },
+    hitFlash: 0,
+    castGlow: 0,
+    channelBeam: 0,
+    deathTime: 0,
+    alive: true,
+    aggro: null,
+    supportTimer: 0,
+    phase: 0,
+    windup: 0,
+    pendingTarget: null,
+    alert: 0,
+    celebrate: false,
+    idleTimer: 0,
+    idleAnim: 0,
+  } as unknown as Unit;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.scale(scale, scale);
+  figureMode = true;
+  drawHero(ctx, unit, save, false, t);
+  figureMode = false;
+  ctx.restore();
+}
+
 function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, selected: boolean, time: number): void {
   const def = HEROES[unit.heroIndex];
   const pose = poseOf(unit, time);
-  const H = unit.radius * 3.4;
+  const H = unit.radius * 3.7;
   const { cx, f } = pose;
   const gy = pose.groundY - pose.bounce;
 
@@ -866,7 +1081,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
 
   const hipY = gy - H * 0.30;
   const shoulderY = gy - H * 0.52 + pose.breathe * 0.4;
-  const headR = H * 0.26;
+  const headR = H * 0.29;
   const headY = shoulderY - headR * 0.85;
   const bodyW = H * 0.34;
   const legW = H * 0.10;
@@ -892,14 +1107,22 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   if (robed) {
     // full healer's robe: cream cloth to the ground, accent stole, swaying hem
     const hem = Math.sin(unit.bobPhase * 0.9) * 2;
-    ctx.beginPath();
-    ctx.moveTo(cx - bodyW * 0.72 + hem * 0.4, gy);
-    ctx.quadraticCurveTo(cx - bodyW * 0.6, hipY - H * 0.06, cx - bodyW * 0.34 + f * 1.5, shoulderY - 2);
-    ctx.lineTo(cx + bodyW * 0.34 + f * 1.5, shoulderY - 2);
-    ctx.quadraticCurveTo(cx + bodyW * 0.6, hipY - H * 0.06, cx + bodyW * 0.72 - hem * 0.4, gy);
-    ctx.quadraticCurveTo(cx + hem, gy + 2.5, cx - bodyW * 0.72 + hem * 0.4, gy);
-    ctx.closePath();
-    outlined(ctx, "#efe6d0");
+    const robe = new Path2D();
+    robe.moveTo(cx - bodyW * 0.72 + hem * 0.4, gy);
+    robe.quadraticCurveTo(cx - bodyW * 0.6, hipY - H * 0.06, cx - bodyW * 0.34 + f * 1.5, shoulderY - 2);
+    robe.lineTo(cx + bodyW * 0.34 + f * 1.5, shoulderY - 2);
+    robe.quadraticCurveTo(cx + bodyW * 0.6, hipY - H * 0.06, cx + bodyW * 0.72 - hem * 0.4, gy);
+    robe.quadraticCurveTo(cx + hem, gy + 2.5, cx - bodyW * 0.72 + hem * 0.4, gy);
+    robe.closePath();
+    shaded(ctx, robe, "#efe6d0", f, cx, (shoulderY + gy) / 2, H * 0.32);
+    // accent stole draped down the front — breaks up the snowman silhouette
+    ctx.save();
+    ctx.clip(robe);
+    ctx.fillStyle = def.accent;
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(cx + f * bodyW * 0.16 - 2.2, shoulderY - 2, 4.4, gy - shoulderY);
+    ctx.globalAlpha = 1;
+    ctx.restore();
     // rope belt
     ctx.strokeStyle = "#c9a95c";
     ctx.lineWidth = 2.2;
@@ -912,17 +1135,19 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     limb(ctx, cx + f * 2, hipY, cx + f * 2 + f * pose.walk * stride, gy - 1, legW, "#4a3d5c");
 
     // tunic body (trapezoid, slightly leaning into facing)
-    ctx.beginPath();
-    ctx.moveTo(cx - bodyW * 0.52, hipY + 3);
-    ctx.quadraticCurveTo(cx - bodyW * 0.62, shoulderY, cx - bodyW * 0.34 + f * 1.5, shoulderY - 2);
-    ctx.lineTo(cx + bodyW * 0.34 + f * 1.5, shoulderY - 2);
-    ctx.quadraticCurveTo(cx + bodyW * 0.62, shoulderY, cx + bodyW * 0.52, hipY + 3);
-    ctx.quadraticCurveTo(cx, hipY + H * 0.07, cx - bodyW * 0.52, hipY + 3);
-    ctx.closePath();
-    outlined(ctx, def.accent);
+    const tunic = new Path2D();
+    tunic.moveTo(cx - bodyW * 0.52, hipY + 3);
+    tunic.quadraticCurveTo(cx - bodyW * 0.62, shoulderY, cx - bodyW * 0.34 + f * 1.5, shoulderY - 2);
+    tunic.lineTo(cx + bodyW * 0.34 + f * 1.5, shoulderY - 2);
+    tunic.quadraticCurveTo(cx + bodyW * 0.62, shoulderY, cx + bodyW * 0.52, hipY + 3);
+    tunic.quadraticCurveTo(cx, hipY + H * 0.07, cx - bodyW * 0.52, hipY + 3);
+    tunic.closePath();
+    shaded(ctx, tunic, def.accent, f, cx, (shoulderY + hipY) / 2, bodyW * 0.55);
     // belt
     ctx.fillStyle = "rgba(20,14,30,0.5)";
     ctx.fillRect(cx - bodyW * 0.5, hipY - 1, bodyW, 3);
+    ctx.fillStyle = "#c9a95c";
+    ctx.fillRect(cx + f * 1.5 - 1.6, hipY - 0.5, 3.2, 2.2);
   }
 
   // armor flair grows with tier
@@ -943,9 +1168,10 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   }
 
   // head (big, chibi)
-  ctx.beginPath();
-  ctx.arc(cx + f * 1.5, headY, headR, 0, Math.PI * 2);
-  outlined(ctx, def.skin);
+  const faceX = cx + f * 1.5;
+  const head = new Path2D();
+  head.arc(faceX, headY, headR, 0, Math.PI * 2);
+  shaded(ctx, head, def.skin, f, faceX, headY, headR);
   if (!robed && aTier >= 3) {
     // plate helm with a nose guard
     ctx.beginPath();
@@ -965,31 +1191,92 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.closePath();
     outlined(ctx, def.accent, 1.8);
   } else if (robed) {
-    // deep cream hood framing the face
+    // deep cream hood framing the face, with an inner shadow so the face pops
     ctx.beginPath();
     ctx.arc(cx + f * 0.5, headY - 1, headR * 1.12, Math.PI * 0.72, Math.PI * 2.28);
     ctx.quadraticCurveTo(cx - f * headR * 0.2, headY + headR * 0.9, cx - f * headR * 1.05, headY + headR * 0.5);
     ctx.closePath();
     outlined(ctx, "#efe6d0", 2);
-
-  } else {
-    // hair cap
+    ctx.strokeStyle = "rgba(20,14,30,0.28)";
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(cx + f * 0.5, headY - headR * 0.12, headR * 0.98, Math.PI * 0.98, Math.PI * 2.02);
+    ctx.arc(cx + f * 0.5, headY - 1, headR * 0.98, Math.PI * 0.8, Math.PI * 2.2);
+    ctx.stroke();
+  } else if (unit.heroIndex === 1) {
+    // Wren: forest hood with a fletcher's feather
+    ctx.beginPath();
+    ctx.arc(faceX - f * 0.5, headY - 1, headR * 1.08, Math.PI * 0.76, Math.PI * 2.24);
+    ctx.quadraticCurveTo(faceX - f * headR * 0.3, headY + headR * 0.8, faceX - f * headR * 1.1, headY + headR * 0.4);
+    ctx.closePath();
+    outlined(ctx, def.accent, 2);
+    ctx.beginPath();
+    ctx.moveTo(faceX - f * headR * 0.5, headY - headR * 0.9);
+    ctx.quadraticCurveTo(faceX - f * headR * 1.2, headY - headR * 1.7, faceX - f * headR * 1.5, headY - headR * 1.1);
+    ctx.quadraticCurveTo(faceX - f * headR * 1.0, headY - headR * 1.05, faceX - f * headR * 0.5, headY - headR * 0.7);
+    ctx.closePath();
+    outlined(ctx, "#d9534f", 1.6);
+  } else if (unit.heroIndex === 2) {
+    // Ezri: long ember hair swept back + a thin circlet
+    ctx.beginPath();
+    ctx.arc(faceX - f * 0.5, headY - headR * 0.1, headR * 1.0, Math.PI * 0.95, Math.PI * 2.05);
+    ctx.quadraticCurveTo(faceX - f * headR * 1.5, headY + headR * 0.4, faceX - f * headR * 1.15, headY + headR * 1.05);
+    ctx.quadraticCurveTo(faceX - f * headR * 0.75, headY + headR * 0.65, faceX - f * headR * 0.55, headY + headR * 0.35);
     ctx.closePath();
     outlined(ctx, def.hair, 2);
+    ctx.strokeStyle = "#d8b25a";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(faceX, headY - headR * 0.05, headR * 0.99, Math.PI * 1.15, Math.PI * 1.85);
+    ctx.stroke();
+  } else {
+    // hair cap (Bram gets a leather headband)
+    ctx.beginPath();
+    ctx.arc(faceX - f * 1, headY - headR * 0.12, headR * 0.98, Math.PI * 0.98, Math.PI * 2.02);
+    ctx.closePath();
+    outlined(ctx, def.hair, 2);
+    if (unit.heroIndex === 0) {
+      ctx.strokeStyle = "#8a4a2a";
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.arc(faceX, headY - headR * 0.1, headR * 0.96, Math.PI * 1.05, Math.PI * 1.95);
+      ctx.stroke();
+    }
   }
-  // eye + brow
-  ctx.fillStyle = OUTLINE;
-  ctx.beginPath();
-  ctx.arc(cx + f * headR * 0.52, headY + headR * 0.05, 2.1, 0, Math.PI * 2);
-  ctx.fill();
+  // chibi face: two eyes toward facing, brows, a mouth, blush
+  const eyeY = headY + headR * 0.1;
+  const eyeXs = [faceX + f * headR * 0.62, faceX + f * headR * 0.06];
+  for (const ex of eyeXs) {
+    ctx.beginPath();
+    ctx.ellipse(ex, eyeY, headR * 0.2, headR * 0.26, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#fdf8ee";
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+    ctx.fillStyle = OUTLINE;
+    ctx.beginPath();
+    ctx.arc(ex + f * headR * 0.07, eyeY + headR * 0.04, headR * 0.115, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 1.5;
+  for (const ex of eyeXs) {
+    ctx.beginPath();
+    ctx.moveTo(ex - f * headR * 0.18, eyeY - headR * 0.42);
+    ctx.lineTo(ex + f * headR * 0.2, eyeY - headR * 0.36);
+    ctx.stroke();
+  }
+  ctx.lineWidth = 1.3;
   ctx.beginPath();
-  ctx.moveTo(cx + f * headR * 0.3, headY - headR * 0.28);
-  ctx.lineTo(cx + f * headR * 0.72, headY - headR * 0.22);
+  ctx.arc(faceX + f * headR * 0.34, headY + headR * 0.5, headR * 0.14, Math.PI * 0.15, Math.PI * 0.85);
   ctx.stroke();
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = "#d96a4a";
+  ctx.beginPath();
+  ctx.ellipse(faceX + f * headR * 0.78, headY + headR * 0.42, headR * 0.16, headR * 0.1, 0, 0, Math.PI * 2);
+  ctx.ellipse(faceX - f * headR * 0.18, headY + headR * 0.46, headR * 0.16, headR * 0.1, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
 
   // weapon arm + weapon (front)
   const shX = cx + f * bodyW * 0.36;
@@ -1006,8 +1293,10 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
-  drawEffectPips(ctx, unit, cx, gy - H - 16);
-  drawHealthBar(ctx, unit, gy - H - 12);
+  if (!figureMode) {
+    drawEffectPips(ctx, unit, cx, gy - H - 16);
+    drawHealthBar(ctx, unit, gy - H - 12);
+  }
 }
 
 function drawHeroWeapon(
@@ -1029,15 +1318,15 @@ function drawHeroWeapon(
   const metal = ["#c9ccd2", "#d8dee8", "#e8eef8", "#cfe8ff"][wTier] ?? "#d8dee8";
   const glow = wTier >= 3;
   if (unit.stats.weapon === "sword") {
-    // arm rotates from rest (-0.5) through a big arc on swing
-    const angle = f * (-0.85 + swing * 2.1);
+    // arm rotates from rest through a big arc on swing
+    const angle = f * (-0.6 + swing * 1.85);
     const handX = shX + Math.cos(angle) * H * 0.22;
     const handY = shY + Math.sin(angle) * H * 0.22 + H * 0.06;
     limb(ctx, shX, shY, handX, handY, armW * 0.9, skin);
     // ghost trail of the blade sweeping through its arc
     if (swing > 0.15) {
       for (let g = 1; g <= 3; g++) {
-        const gAngle = f * (-0.85 + Math.max(0, swing - g * 0.22) * 2.1);
+        const gAngle = f * (-0.6 + Math.max(0, swing - g * 0.22) * 1.85);
         const gx = shX + Math.cos(gAngle) * H * 0.22;
         const gy = shY + Math.sin(gAngle) * H * 0.22 + H * 0.06;
         ctx.save();
@@ -1204,9 +1493,9 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
     limb(ctx, leg.x + f * 3, bodyY, leg.x + f * 3 - f * leg.phase * r * 0.5, gy - 1, r * 0.24, colors.body);
   }
   // body
-  ctx.beginPath();
-  ctx.ellipse(cx, bodyY, r * 1.3 * stretchB, r * 0.62, -f * 0.08, 0, Math.PI * 2);
-  outlined(ctx, colors.body);
+  const wolfBody = new Path2D();
+  wolfBody.ellipse(cx, bodyY, r * 1.3 * stretchB, r * 0.62, -f * 0.08, 0, Math.PI * 2);
+  shaded(ctx, wolfBody, colors.body, f, cx, bodyY, r * 0.9);
   if (isAlpha) {
     // bristling mane along the neck and shoulders
     ctx.beginPath();
@@ -1278,7 +1567,9 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   }
   const pose = poseOf(unit, time);
   const big = kind === "brute" || kind === "warlord" || kind === "ogre";
-  const H = unit.radius * (big ? 2.9 : 3.3);
+  // slight per-unit size wobble keeps a wave from reading as stamped clones
+  const wobble = big ? 1 : 0.94 + hash01(unit.id * 1.3) * 0.12;
+  const H = unit.radius * (big ? 2.9 : 3.5) * wobble;
   const { cx, f } = pose;
   const gy = pose.groundY - pose.bounce;
   const colors = ENEMY_COLORS[kind];
@@ -1286,7 +1577,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
 
   const hipY = gy - H * (big ? 0.26 : 0.30);
   const shoulderY = gy - H * (big ? 0.6 : 0.52) + pose.breathe * 0.5;
-  const headR = H * (big ? 0.17 : 0.24);
+  const headR = H * (big ? 0.17 : 0.27);
   const headY = shoulderY - headR * (big ? 0.5 : 0.85);
   const bodyW = H * (big ? 0.52 : 0.34);
   const legW = H * (big ? 0.13 : 0.10);
@@ -1299,22 +1590,22 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   limb(ctx, cx - f * bodyW * 0.3, shoulderY + 3, cx - f * bodyW * 0.6, shoulderY + H * 0.16, legW * 0.85, colors.body);
 
   // torso — hulking for brutes
-  ctx.beginPath();
+  const torso = new Path2D();
   if (big) {
-    ctx.moveTo(cx - bodyW * 0.5, hipY + 3);
-    ctx.quadraticCurveTo(cx - bodyW * 0.85, shoulderY + H * 0.05, cx - bodyW * 0.5, shoulderY - H * 0.03);
-    ctx.quadraticCurveTo(cx, shoulderY - H * 0.1, cx + bodyW * 0.55, shoulderY - H * 0.01);
-    ctx.quadraticCurveTo(cx + bodyW * 0.7, hipY, cx + bodyW * 0.42, hipY + 4);
-    ctx.quadraticCurveTo(cx, hipY + H * 0.08, cx - bodyW * 0.5, hipY + 3);
+    torso.moveTo(cx - bodyW * 0.5, hipY + 3);
+    torso.quadraticCurveTo(cx - bodyW * 0.85, shoulderY + H * 0.05, cx - bodyW * 0.5, shoulderY - H * 0.03);
+    torso.quadraticCurveTo(cx, shoulderY - H * 0.1, cx + bodyW * 0.55, shoulderY - H * 0.01);
+    torso.quadraticCurveTo(cx + bodyW * 0.7, hipY, cx + bodyW * 0.42, hipY + 4);
+    torso.quadraticCurveTo(cx, hipY + H * 0.08, cx - bodyW * 0.5, hipY + 3);
   } else {
-    ctx.moveTo(cx - bodyW * 0.52, hipY + 3);
-    ctx.quadraticCurveTo(cx - bodyW * 0.62, shoulderY, cx - bodyW * 0.34, shoulderY - 2);
-    ctx.lineTo(cx + bodyW * 0.34, shoulderY - 2);
-    ctx.quadraticCurveTo(cx + bodyW * 0.62, shoulderY, cx + bodyW * 0.52, hipY + 3);
-    ctx.quadraticCurveTo(cx, hipY + H * 0.07, cx - bodyW * 0.52, hipY + 3);
+    torso.moveTo(cx - bodyW * 0.52, hipY + 3);
+    torso.quadraticCurveTo(cx - bodyW * 0.62, shoulderY, cx - bodyW * 0.34, shoulderY - 2);
+    torso.lineTo(cx + bodyW * 0.34, shoulderY - 2);
+    torso.quadraticCurveTo(cx + bodyW * 0.62, shoulderY, cx + bodyW * 0.52, hipY + 3);
+    torso.quadraticCurveTo(cx, hipY + H * 0.07, cx - bodyW * 0.52, hipY + 3);
   }
-  ctx.closePath();
-  outlined(ctx, colors.body);
+  torso.closePath();
+  shaded(ctx, torso, colors.body, f, cx, (shoulderY + hipY) / 2, bodyW * (big ? 0.7 : 0.55));
   if (kind === "warlord") {
     // armor plate
     ctx.beginPath();
@@ -1344,15 +1635,23 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   ctx.fillRect(cx - bodyW * 0.32, hipY - 1, bodyW * 0.64, 4);
 
   // head
-  ctx.beginPath();
-  ctx.arc(cx + f * 2, headY, headR, 0, Math.PI * 2);
-  outlined(ctx, colors.body);
-  // goblinoid ears
+  const hx0 = cx + f * 2;
+  const head = new Path2D();
+  head.arc(hx0, headY, headR, 0, Math.PI * 2);
+  shaded(ctx, head, colors.body, f, hx0, headY, headR);
+  // goblinoid ears — per-goblin tilt so a mob doesn't read as clones
   if (kind === "goblin" || kind === "archer" || kind === "shaman") {
+    const tilt = (hash01(unit.id * 3.7) - 0.5) * 8;
     ctx.beginPath();
     ctx.moveTo(cx - f * headR * 0.5, headY - 2);
-    ctx.lineTo(cx - f * headR * 1.75, headY - 6);
+    ctx.lineTo(cx - f * headR * 1.75, headY - 6 - tilt);
     ctx.lineTo(cx - f * headR * 0.45, headY + 4);
+    ctx.closePath();
+    outlined(ctx, colors.body, 2);
+    ctx.beginPath();
+    ctx.moveTo(cx + f * headR * 0.75, headY - headR * 0.5);
+    ctx.lineTo(cx + f * headR * 1.55, headY - headR * 0.9 + tilt * 0.5);
+    ctx.lineTo(cx + f * headR * 0.85, headY + 1);
     ctx.closePath();
     outlined(ctx, colors.body, 2);
   }
@@ -1391,11 +1690,71 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.closePath();
     outlined(ctx, colors.trim, 2);
   }
-  // eye
-  ctx.fillStyle = kind === "warlord" ? "#ffd76b" : OUTLINE;
-  ctx.beginPath();
-  ctx.arc(cx + f * headR * 0.5, headY + headR * 0.05, kind === "warlord" ? 2.4 : 1.9, 0, Math.PI * 2);
-  ctx.fill();
+  // face
+  if (kind === "goblin" || kind === "archer") {
+    // beady yellow eyes under a scowling brow, plus a jagged grin
+    const eyeY = headY + headR * 0.05;
+    const eyeXs = [hx0 + f * headR * 0.55, hx0 + f * headR * 0.02];
+    for (const ex of eyeXs) {
+      ctx.beginPath();
+      ctx.ellipse(ex, eyeY, headR * 0.19, headR * 0.22, 0, 0, Math.PI * 2);
+      ctx.fillStyle = "#f2d16b";
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+      ctx.fillStyle = OUTLINE;
+      ctx.beginPath();
+      ctx.arc(ex + f * headR * 0.06, eyeY + headR * 0.03, headR * 0.09, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.6;
+    for (const ex of eyeXs) {
+      ctx.beginPath();
+      ctx.moveTo(ex - f * headR * 0.2, eyeY - headR * 0.42);
+      ctx.lineTo(ex + f * headR * 0.2, eyeY - headR * 0.28);
+      ctx.stroke();
+    }
+    // grin with snaggle-teeth
+    const my = headY + headR * 0.48;
+    ctx.beginPath();
+    ctx.moveTo(hx0 - f * headR * 0.15, my);
+    ctx.quadraticCurveTo(hx0 + f * headR * 0.35, my + headR * 0.22, hx0 + f * headR * 0.78, my - headR * 0.08);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = "#efe8d4";
+    for (const tx of [0.14, 0.44]) {
+      ctx.beginPath();
+      ctx.moveTo(hx0 + f * headR * tx, my + headR * (0.1 + tx * 0.16));
+      ctx.lineTo(hx0 + f * headR * (tx + 0.09), my - headR * 0.12 + headR * tx * 0.16);
+      ctx.lineTo(hx0 + f * headR * (tx + 0.18), my + headR * (0.08 + tx * 0.16));
+      ctx.closePath();
+      ctx.fill();
+    }
+  } else if (kind !== "shaman") {
+    // brutes: deep-set glower under a single heavy brow
+    const glow = kind === "warlord";
+    const eyeY = headY + headR * 0.02;
+    for (const off of [0.62, 0.1]) {
+      ctx.fillStyle = glow ? "#ffd76b" : "#f2e6c9";
+      ctx.beginPath();
+      ctx.arc(hx0 + f * headR * off, eyeY, headR * 0.13, 0, Math.PI * 2);
+      ctx.fill();
+      if (!glow) {
+        ctx.fillStyle = OUTLINE;
+        ctx.beginPath();
+        ctx.arc(hx0 + f * headR * (off + 0.03), eyeY + headR * 0.02, headR * 0.07, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(hx0 - f * headR * 0.12, eyeY - headR * 0.34);
+    ctx.lineTo(hx0 + f * headR * 0.85, eyeY - headR * 0.18);
+    ctx.stroke();
+  }
 
   // weapon arm
   const shX = cx + f * bodyW * 0.4;
@@ -1687,8 +2046,8 @@ export function drawForeground(
   ctx.translate(-(opts.camX ?? 0) * 0.35, -(opts.camY ?? 0) * 0.35);
   ctx.fillStyle = stage.palette.prop;
   ctx.globalAlpha = 0.85;
-  for (let i = 0; i < 9; i++) {
-    const gx = hash01(i * 41 + stage.id * 5) * w;
+  for (let i = 0; i < 11; i++) {
+    const gx = hash01(i * 41 + stage.id * 5) * (w + OVERSCAN * 2) - OVERSCAN;
     const base = h - 2 + hash01(i * 7) * 6;
     const s = 14 + hash01(i * 13) * 16;
     let sway = Math.sin(time * 1.3 + i * 2.2) * 3;

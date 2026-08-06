@@ -1,6 +1,7 @@
 import { audio } from "./audio";
 import type { Battle } from "./battle";
 import { DIFFICULTIES, HEROES } from "./data";
+import { drawAbilityGlyph } from "./icons";
 import type { AbilityState, SaveData, Unit } from "./types";
 
 export const HUD_H = 100;
@@ -757,6 +758,12 @@ export class Hud {
 
   private drawBar(ctx: CanvasRenderingContext2D): void {
     const top = this.height - HUD_H;
+    // contact shadow: the field tucks under the bar
+    const drop = ctx.createLinearGradient(0, top - 12, 0, top);
+    drop.addColorStop(0, "rgba(10, 6, 18, 0)");
+    drop.addColorStop(1, "rgba(10, 6, 18, 0.3)");
+    ctx.fillStyle = drop;
+    ctx.fillRect(0, top - 12, this.width, 12);
     const grad = ctx.createLinearGradient(0, top, 0, this.height);
     grad.addColorStop(0, "#241d31");
     grad.addColorStop(1, "#171221");
@@ -781,15 +788,13 @@ export class Hud {
       const py = top + 12;
       const ps = 52;
 
-      // cluster divider
-      if (i > 0) {
-        ctx.strokeStyle = "rgba(255,235,180,0.10)";
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(rowX0 + i * clusterW, top + 10);
-        ctx.lineTo(rowX0 + i * clusterW, this.height - 10);
-        ctx.stroke();
-      }
+      // cluster card
+      roundRect(ctx, rowX0 + i * clusterW + 3, top + 7, clusterW - 6, HUD_H - 14, 10);
+      ctx.fillStyle = "rgba(255, 245, 225, 0.032)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255, 235, 180, 0.06)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
       // portrait
       const isSel = this.selected === hero;
@@ -896,6 +901,11 @@ export class Hud {
       ctx.font = "700 10px 'Trebuchet MS', Verdana, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(def.name, x0 + ps / 2, py + ps + 24);
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = def.accent;
+      roundRect(ctx, x0 + ps / 2 - 11, py + ps + 27, 22, 2, 1);
+      ctx.fill();
+      ctx.globalAlpha = 1;
       this.portraits.push({ x: x0, y: py, w: ps, h: ps + 14, hero });
 
       // stance chip for capable healers: tap to switch mend/fight mode
@@ -982,7 +992,7 @@ export class Hud {
 
     ctx.save();
     ctx.globalAlpha = ready ? 1 : 0.4;
-    this.drawAbilityGlyph(ctx, ability.def.icon, x + s / 2, y + s / 2, s * 0.3, ability.def.color);
+    drawAbilityGlyph(ctx, ability.def.icon, x + s / 2, y + s / 2, s * 0.3, ability.def.color);
     ctx.restore();
 
     if (ability.timer > 0) {
@@ -1020,105 +1030,6 @@ export class Hud {
     }
   }
 
-  private drawAbilityGlyph(
-    ctx: CanvasRenderingContext2D,
-    icon: string,
-    cx: number,
-    cy: number,
-    r: number,
-    color: string,
-  ): void {
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 2.6;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    switch (icon) {
-      case "cleave":
-        ctx.arc(cx, cy, r, -Math.PI * 0.85, Math.PI * 0.15);
-        ctx.moveTo(cx - r * 0.5, cy - r * 0.9);
-        ctx.lineTo(cx + r * 0.8, cy + r * 0.6);
-        ctx.stroke();
-        break;
-      case "warcry":
-        ctx.moveTo(cx - r, cy + r * 0.6);
-        ctx.lineTo(cx, cy - r * 0.8);
-        ctx.lineTo(cx + r, cy + r * 0.6);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(cx, cy + r * 0.15, r * 0.25, 0, Math.PI * 2);
-        ctx.fill();
-        break;
-      case "pierce":
-        ctx.moveTo(cx - r, cy + r * 0.7);
-        ctx.lineTo(cx + r * 0.7, cy - r * 0.7);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(cx + r, cy - r);
-        ctx.lineTo(cx + r * 0.15, cy - r * 0.65);
-        ctx.lineTo(cx + r * 0.65, cy - r * 0.15);
-        ctx.closePath();
-        ctx.fill();
-        break;
-      case "flurry":
-        ctx.moveTo(cx - r, cy - r * 0.5);
-        ctx.lineTo(cx, cy);
-        ctx.lineTo(cx - r, cy + r * 0.5);
-        ctx.moveTo(cx, cy - r * 0.5);
-        ctx.lineTo(cx + r, cy);
-        ctx.lineTo(cx, cy + r * 0.5);
-        ctx.stroke();
-        break;
-      case "fireball":
-        ctx.arc(cx + r * 0.25, cy + r * 0.2, r * 0.65, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(cx - r * 0.2, cy - r * 0.1);
-        ctx.quadraticCurveTo(cx - r * 1.1, cy - r * 0.9, cx - r * 0.6, cy - r * 1.05);
-        ctx.stroke();
-        break;
-      case "frostwake":
-        for (let i = 0; i < 3; i++) {
-          const a = (i / 3) * Math.PI;
-          ctx.moveTo(cx - Math.cos(a) * r, cy - Math.sin(a) * r);
-          ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-        }
-        ctx.stroke();
-        break;
-      case "mend":
-        ctx.moveTo(cx, cy - r);
-        ctx.lineTo(cx, cy + r);
-        ctx.moveTo(cx - r, cy);
-        ctx.lineTo(cx + r, cy);
-        ctx.stroke();
-        break;
-      case "radiance":
-        ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        for (let i = 0; i < 8; i++) {
-          const a = (i / 8) * Math.PI * 2;
-          ctx.moveTo(cx + Math.cos(a) * r * 0.7, cy + Math.sin(a) * r * 0.7);
-          ctx.lineTo(cx + Math.cos(a) * r * 1.05, cy + Math.sin(a) * r * 1.05);
-        }
-        ctx.stroke();
-        break;
-      case "bulwark":
-        ctx.moveTo(cx, cy - r);
-        ctx.quadraticCurveTo(cx + r, cy - r * 0.6, cx + r * 0.8, cy + r * 0.1);
-        ctx.quadraticCurveTo(cx + r * 0.5, cy + r * 0.8, cx, cy + r);
-        ctx.quadraticCurveTo(cx - r * 0.5, cy + r * 0.8, cx - r * 0.8, cy + r * 0.1);
-        ctx.quadraticCurveTo(cx - r, cy - r * 0.6, cx, cy - r);
-        ctx.closePath();
-        ctx.stroke();
-        break;
-      default:
-        ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    ctx.lineCap = "butt";
-  }
-
   private drawOverlayFrame(
     ctx: CanvasRenderingContext2D,
     title: string,
@@ -1130,17 +1041,47 @@ export class Hud {
     const w = 340;
     const x = this.width / 2 - w / 2;
     const y = this.height / 2 - h / 2 - 20;
-    ctx.fillStyle = "#251e36";
+    // paneled card with a soft top light
+    const g = ctx.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, "#2c2342");
+    g.addColorStop(0.2, "#251e36");
+    g.addColorStop(1, "#1d1730");
+    ctx.fillStyle = g;
     roundRect(ctx, x, y, w, h, 16);
     ctx.fill();
     ctx.strokeStyle = accent;
     ctx.lineWidth = 2;
     roundRect(ctx, x, y, w, h, 16);
     ctx.stroke();
+    ctx.strokeStyle = "rgba(255, 245, 225, 0.08)";
+    ctx.lineWidth = 1;
+    roundRect(ctx, x + 4, y + 4, w - 8, h - 8, 12);
+    ctx.stroke();
+    // corner diamonds
     ctx.fillStyle = accent;
-    ctx.font = "800 26px 'Trebuchet MS', Verdana, sans-serif";
+    for (const [dx, dy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]] as [number, number][]) {
+      ctx.save();
+      ctx.translate(dx, dy);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-3.4, -3.4, 6.8, 6.8);
+      ctx.restore();
+    }
+    ctx.fillStyle = accent;
+    ctx.font = "700 26px Cinzel, Palatino, Georgia, serif";
     ctx.textAlign = "center";
-    ctx.fillText(title, this.width / 2, y + 44);
+    ctx.fillText(title, this.width / 2, y + 42);
+    // divider with a center diamond
+    ctx.strokeStyle = "rgba(255, 245, 225, 0.18)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 46, y + 56);
+    ctx.lineTo(x + w - 46, y + 56);
+    ctx.stroke();
+    ctx.save();
+    ctx.translate(this.width / 2, y + 56);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillRect(-2.4, -2.4, 4.8, 4.8);
+    ctx.restore();
     return { x, y, w };
   }
 
@@ -1192,16 +1133,62 @@ export class Hud {
       ctx,
       victory ? "Victory!" : "The band falls...",
       victory ? "#8ee88b" : "#ff8a70",
+      victory ? 318 : 262,
     );
     ctx.fillStyle = "#cfc7de";
     ctx.font = "600 14px 'Trebuchet MS', Verdana, sans-serif";
     ctx.textAlign = "center";
+    const mins = Math.floor(this.battle.time / 60);
+    const secs = String(Math.floor(this.battle.time % 60)).padStart(2, "0");
     if (victory) {
       const mult = DIFFICULTIES[this.save.difficulty ?? 1]?.rewardMult ?? 1;
       const xp = Math.round((this.battle.xpEarned + this.battle.stage.xpReward) * mult);
       const gold = Math.round((this.battle.goldEarned + Math.round(this.battle.stage.xpReward * 0.8)) * mult);
-      const shown = Math.min(gold, Math.floor(this.overlayAge * gold * 1.6));
-      ctx.fillText(`+${xp} xp   ·   🪙 ${shown}`, this.width / 2, frame.y + 66);
+      const shownGold = Math.min(gold, Math.floor(this.overlayAge * gold * 1.6));
+      const shownXp = Math.min(xp, Math.floor(this.overlayAge * xp * 1.6));
+      // reward rows with drawn icons (no OS emoji)
+      const rowY = frame.y + 80;
+      const drawReward = (y: number, value: string, label: string, icon: "star" | "coin") => {
+        ctx.font = "800 16px 'Trebuchet MS', Verdana, sans-serif";
+        const text = `${value} ${label}`;
+        const tw = ctx.measureText(text).width;
+        const ix = this.width / 2 - tw / 2 - 14;
+        if (icon === "coin") {
+          ctx.fillStyle = "#e8c25a";
+          ctx.beginPath();
+          ctx.arc(ix, y - 5, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "#8a6a1e";
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.arc(ix, y - 5, 4.2, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = "#ffe9a3";
+          ctx.beginPath();
+          for (let i = 0; i < 4; i++) {
+            const a = (i / 4) * Math.PI * 2 - Math.PI / 2;
+            ctx.lineTo(ix + Math.cos(a) * 8, y - 5 + Math.sin(a) * 8);
+            ctx.lineTo(ix + Math.cos(a + Math.PI / 4) * 3, y - 5 + Math.sin(a + Math.PI / 4) * 3);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.fillStyle = "#f2ecd8";
+        ctx.textAlign = "left";
+        ctx.fillText(text, ix + 12, y);
+        ctx.textAlign = "center";
+      };
+      drawReward(rowY, `+${shownXp}`, "experience", "star");
+      drawReward(rowY + 26, `+${shownGold}`, "gold", "coin");
+      // battle summary
+      ctx.font = "600 12px 'Trebuchet MS', Verdana, sans-serif";
+      ctx.fillStyle = "#a89fc0";
+      ctx.fillText(
+        `Cleared in ${mins}:${secs} · ${this.battle.heroDeaths === 0 ? "no heroes fell" : `${this.battle.heroDeaths} hero${this.battle.heroDeaths === 1 ? "" : "es"} fell`}`,
+        this.width / 2,
+        rowY + 48,
+      );
       // loot reveal: card flips in after a beat
       if (this.pendingLoot) {
         const flip = Math.min(1, Math.max(0, (this.overlayAge - 0.5) / 0.45));
@@ -1210,7 +1197,7 @@ export class Hud {
         const cw = 216;
         const ch = 34;
         const cxm = this.width / 2;
-        const cy = frame.y + 78;
+        const cy = frame.y + 148;
         ctx.save();
         ctx.translate(cxm, cy + ch / 2);
         ctx.scale(Math.max(0.04, scaleX), 1);
@@ -1252,16 +1239,23 @@ export class Hud {
         "Tip: lower the difficulty on the map, no shame in it",
       ];
       const tip = TIPS[Math.floor(this.battle.time) % TIPS.length];
-      ctx.fillText(tip, this.width / 2, frame.y + 78);
+      ctx.fillText(
+        `Fell on wave ${this.battle.waveIndex + 1} of ${this.battle.stage.waves.length} · ${mins}:${secs}`,
+        this.width / 2,
+        frame.y + 78,
+      );
+      ctx.font = "600 12px 'Trebuchet MS', Verdana, sans-serif";
+      ctx.fillStyle = "#a89fc0";
+      ctx.fillText(tip, this.width / 2, frame.y + 100);
     }
     const bw = frame.w - 60;
     const bx = frame.x + 30;
     if (victory) {
-      this.addOverlayButton(ctx, "continue", "Continue", bx, frame.y + 124, bw, "#8ee88b");
-      this.addOverlayButton(ctx, "retry", "Replay Stage", bx, frame.y + 170, bw);
+      this.addOverlayButton(ctx, "continue", "Continue", bx, frame.y + 200, bw, "#8ee88b");
+      this.addOverlayButton(ctx, "retry", "Replay Stage", bx, frame.y + 248, bw);
     } else {
-      this.addOverlayButton(ctx, "retry", "Try Again", bx, frame.y + 104, bw, "#ff8a70");
-      this.addOverlayButton(ctx, "map", "Back to Map", bx, frame.y + 152, bw);
+      this.addOverlayButton(ctx, "retry", "Try Again", bx, frame.y + 126, bw, "#ff8a70");
+      this.addOverlayButton(ctx, "map", "Back to Map", bx, frame.y + 174, bw);
     }
   }
 }

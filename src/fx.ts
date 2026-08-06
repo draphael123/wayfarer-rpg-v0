@@ -14,6 +14,8 @@ export interface Particle {
 export interface Floater {
   x: number;
   y: number;
+  vx: number;
+  vy: number;
   text: string;
   color: string;
   life: number;
@@ -129,7 +131,18 @@ export class FxSystem {
   }
 
   floatText(x: number, y: number, text: string, color: string, size = 15): void {
-    this.floaters.push({ x, y, text, color, life: 1, maxLife: 1, size });
+    // jitter + drift so rapid hits fan out instead of stacking into a blob
+    this.floaters.push({
+      x: x + (Math.random() - 0.5) * 16,
+      y: y - Math.random() * 6,
+      vx: (Math.random() - 0.5) * 26,
+      vy: -64 - Math.random() * 18,
+      text,
+      color,
+      life: 1,
+      maxLife: 1,
+      size,
+    });
   }
 
   addShake(amount: number): void {
@@ -157,7 +170,11 @@ export class FxSystem {
         this.floaters.splice(i, 1);
         continue;
       }
-      f.y -= 34 * dt;
+      // rise fast, then hover as it fades
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+      f.vx *= 1 - 2.2 * dt;
+      f.vy *= 1 - 4.6 * dt;
     }
     for (let i = this.rings.length - 1; i >= 0; i--) {
       const ring = this.rings[i];
@@ -207,7 +224,7 @@ export class FxSystem {
       ctx.lineCap = "round";
       const sweepStart = arc.angle - arc.spread / 2 + arc.spread * t * 0.5;
       ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 7 * alpha + 1.5;
+      ctx.lineWidth = 5 * alpha + 1.2;
       ctx.beginPath();
       ctx.arc(arc.x, arc.y, arc.radius, sweepStart, sweepStart + arc.spread * 0.7);
       ctx.stroke();
@@ -241,8 +258,8 @@ export class FxSystem {
       ctx.globalAlpha = alpha;
       ctx.font = `800 ${Math.round(f.size * pop)}px "Trebuchet MS", Verdana, sans-serif`;
       ctx.textAlign = "center";
-      ctx.lineWidth = 3.4;
-      ctx.strokeStyle = "rgba(20, 16, 28, 0.8)";
+      ctx.lineWidth = 2.6;
+      ctx.strokeStyle = "rgba(20, 16, 28, 0.72)";
       ctx.strokeText(f.text, f.x, f.y);
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);

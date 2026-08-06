@@ -38,6 +38,8 @@ function bestAttr(index: number): AttrKey {
   const attrs = HEROES[index].baseAttrs;
   return ATTR_KEYS.reduce((best, k) => (attrs[k] > attrs[best] ? k : best), ATTR_KEYS[0]);
 }
+import { drawAbilityGlyph, ico } from "./icons";
+import { drawHeroFigure } from "./render";
 import { nextSpeed, persist, respecHero } from "./save";
 import { exportTelemetry, telemetrySummary } from "./telemetry";
 import type { SaveData } from "./types";
@@ -49,11 +51,67 @@ export interface MenuCallbacks {
 }
 
 const WEAPON_LABEL: Record<string, string> = {
-  sword: "⚔ Blade",
-  bow: "➳ Bow",
-  staff: "✦ Staff",
-  stave: "✚ Stave",
+  sword: "Blade",
+  bow: "Bow",
+  staff: "Staff",
+  stave: "Stave",
 };
+
+function abilityById(id: string) {
+  return ABILITIES.find((a) => a.id === id)!;
+}
+
+type Derived = ReturnType<typeof deriveStats>;
+
+/** After spending a point, flash the stat cells that actually moved (green up,
+ *  red down — a weapon morph can trade damage away) so cause→effect is visible. */
+function flashStatDeltas(card: HTMLElement, before: Derived, after: Derived): void {
+  const reads: [string, (s: Derived) => number, (d: number) => string][] = [
+    ["Health", (s) => s.maxHp, (d) => `${Math.round(d)}`],
+    ["Damage", (s) => s.damage, (d) => `${Math.abs(d) >= 10 ? Math.round(d) : d.toFixed(1)}`],
+    ["Atk speed", (s) => 1 / s.attackCooldown, (d) => `${d.toFixed(2)}/s`],
+    ["Armor", (s) => s.armor * 100, (d) => `${Math.round(d)}%`],
+    ["Move", (s) => s.speed, (d) => `${Math.round(d)}`],
+    ["Healing", (s) => s.healPower, (d) => `${d.toFixed(1)}/s`],
+    ["Spell power", (s) => s.spellPower, (d) => `${d.toFixed(2)}`],
+  ];
+  const show = (key: string, text: string, up: boolean) => {
+    const cell = card.querySelector(`[data-stat="${key}"]`);
+    if (!cell) return;
+    cell.classList.add(up ? "stat-up" : "stat-down");
+    const chip = el(`<span class="stat-delta ${up ? "" : "down"}">${text}</span>`);
+    cell.appendChild(chip);
+    setTimeout(() => {
+      chip.remove();
+      cell.classList.remove("stat-up", "stat-down");
+    }, 1700);
+  };
+  for (const [key, get, fmt] of reads) {
+    const d = get(after) - get(before);
+    if (Math.abs(d) < 0.005) continue;
+    show(key, `${d > 0 ? "+" : "−"}${fmt(Math.abs(d))}`, d > 0);
+  }
+  const wasRanged = before.range > 90;
+  const isRanged = after.range > 90;
+  if (wasRanged !== isRanged) show("Range", isRanged ? "now ranged" : "now melee", true);
+}
+
+/** Small canvas chip with an ability's glyph (or a dashed empty slot). */
+function spellSlotEl(id: string | null, size = 24): HTMLElement {
+  const span = el(`<span class="mini-slot ${id ? "filled" : ""}"></span>`);
+  if (id) {
+    const ability = abilityById(id);
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size * 2;
+    canvas.style.width = canvas.style.height = `${size}px`;
+    const ctx = canvas.getContext("2d")!;
+    ctx.scale(2, 2);
+    drawAbilityGlyph(ctx, ability.icon, size / 2, size / 2, size * 0.3, ability.color);
+    span.style.setProperty("--chip", ability.color);
+    span.appendChild(canvas);
+  }
+  return span;
+}
 
 const STAT_BLURBS: Record<string, string> = {
   Health: "How much punishment a hero takes before falling.",
@@ -300,6 +358,8 @@ export class Menus {
   toast: HTMLElement | null = null;
   travelFrom: number | null = null; // cleared stage to animate the road-march from
   pendingLevelUp: { level: number; gained: number } | null = null; // set on victory, shown once on the map
+  private pendingSpell: string | null = null; // spell waiting for a slot in replace mode
+  private figureTimer: number | null = null; // idle animation for the hero-sheet figure
 
   constructor(
     rootId: string,
@@ -377,10 +437,10 @@ export class Menus {
           </div>
           <button class="toggle-btn" data-act="speed"></button>
           <div class="settings-row">
-            <button class="toggle-btn" data-act="export-save">📤 Export save</button>
-            <button class="toggle-btn" data-act="import-save">📥 Import save</button>
+            <button class="toggle-btn" data-act="export-save">${ico("upload")} Export save</button>
+            <button class="toggle-btn" data-act="import-save">${ico("download")} Import save</button>
           </div>
-          <button class="toggle-btn" data-act="export-data">📊 Export playtest data</button>
+          <button class="toggle-btn" data-act="export-data">${ico("chart")} Export playtest data</button>
           <button class="toggle-btn danger" data-act="reset">Reset all progress</button>
         </div>
         <div class="credit">drag your heroes · draw your spells · shape your band</div>
@@ -480,7 +540,7 @@ export class Menus {
         <div class="map-header">
           <div>
             <div class="map-title">The Long Road</div>
-            <div class="map-level">Band level ${save.level}/${MAX_LEVEL} · ${save.xp}/${need} xp · <span class="gold-chip">🪙 ${save.gold}</span></div>
+            <div class="map-level">Band level ${save.level}/${MAX_LEVEL} · ${save.xp}/${need} xp · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div>
             <div class="xp-bar"><div class="xp-fill" style="width:${xpPct}%"></div></div>
           </div>
           <button class="big-btn party-btn" data-act="party">
@@ -490,19 +550,35 @@ export class Menus {
         <div class="world-map"></div>
         <div class="stage-caption"></div>
         <div class="map-footer">
-          <button class="toggle-btn" data-act="difficulty" style="border-color:${DIFFICULTIES[save.difficulty].color};color:${DIFFICULTIES[save.difficulty].color}">☠ ${DIFFICULTIES[save.difficulty].name}</button>
-          <button class="toggle-btn" data-act="shop">🏪 Village</button>
-          <button class="toggle-btn" data-act="bestiary">📖 Bestiary</button>
+          <button class="toggle-btn" data-act="difficulty" style="border-color:${DIFFICULTIES[save.difficulty].color};color:${DIFFICULTIES[save.difficulty].color}">${ico("skull")} ${DIFFICULTIES[save.difficulty].name}</button>
+          <button class="toggle-btn" data-act="shop">${ico("home")} Village</button>
+          <button class="toggle-btn" data-act="bestiary">${ico("book")} Bestiary</button>
           <button class="toggle-btn" data-act="home">Title</button>
         </div>
       </div>
     `);
     page.querySelector(".world-map")!.appendChild(this.buildWorldMap());
     const caption = page.querySelector(".stage-caption")!;
-    const current = STAGES[Math.min(save.unlockedStage, STAGES.length - 1)];
-    caption.innerHTML = `<strong>Next:</strong> ${current.name} — <em>${current.subtitle}</em>`;
+    const currentIdx = Math.min(save.unlockedStage, STAGES.length - 1);
+    const current = STAGES[currentIdx];
+    caption.appendChild(
+      el(`
+        <div class="embark-card">
+          <div class="embark-info">
+            <strong>${current.name}</strong>
+            <em>${current.subtitle} · ${current.waves.length} wave${current.waves.length === 1 ? "" : "s"}</em>
+          </div>
+          <button class="big-btn primary embark-btn" data-act="embark">${ico("play")} Set out</button>
+        </div>
+      `),
+    );
     page.addEventListener("click", (event) => {
       const act = (event.target as HTMLElement).closest("[data-act]")?.getAttribute("data-act");
+      if (act === "embark") {
+        audio.unlock();
+        audio.play("click");
+        this.callbacks.startStage(currentIdx);
+      }
       if (act === "party") {
         audio.play("click");
         this.renderParty();
@@ -520,7 +596,7 @@ export class Menus {
         persist(this.save);
         audio.play("click");
         const d = DIFFICULTIES[this.save.difficulty];
-        this.showToast(`☠ ${d.name}: enemies ×${d.enemyMult}, rewards ×${d.rewardMult}`);
+        this.showToast(`${d.name}: enemies ×${d.enemyMult}, rewards ×${d.rewardMult}`);
         this.renderMap();
       }
       if (act === "home") {
@@ -679,6 +755,10 @@ export class Menus {
               <stop offset="0" stop-color="rgba(200,60,50,0.42)"/>
               <stop offset="1" stop-color="rgba(200,60,50,0)"/>
             </radialGradient>
+            <radialGradient id="mapVin" cx="0.5" cy="0.46" r="0.72">
+              <stop offset="0.62" stop-color="rgba(12,16,10,0)"/>
+              <stop offset="1" stop-color="rgba(12,16,10,0.34)"/>
+            </radialGradient>
           </defs>
           <rect width="640" height="320" rx="18" fill="url(#mapsky)"/>
           <circle cx="560" cy="42" r="20" fill="#fff3c8" opacity="0.95"/>
@@ -719,8 +799,25 @@ export class Menus {
             <circle cx="3" cy="-1" r="2.4" fill="#40201a"/>
             <rect x="-4" y="4" width="8" height="3" fill="#c9c2b8"/>
           </g>
+          <!-- drifting cloud shadows -->
+          <g fill="rgba(14, 24, 14, 0.09)">
+            <ellipse cx="0" cy="170" rx="70" ry="18">
+              <animateTransform attributeName="transform" type="translate" values="-80 0; 720 24; -80 0" dur="52s" repeatCount="indefinite"/>
+            </ellipse>
+            <ellipse cx="0" cy="260" rx="52" ry="13">
+              <animateTransform attributeName="transform" type="translate" values="700 0; -90 -18; 700 0" dur="64s" repeatCount="indefinite"/>
+            </ellipse>
+          </g>
           ${markers}
           ${travel}
+          <!-- compass rose -->
+          <g transform="translate(606,286)" opacity="0.85">
+            <circle r="15" fill="rgba(16,26,18,0.55)" stroke="#e0c896" stroke-width="1.4"/>
+            <path d="M 0 -11 L 3 0 L 0 11 L -3 0 Z" fill="#e0c896"/>
+            <path d="M 0 -11 L 3 0 L -3 0 Z" fill="#f2ecd8"/>
+            <text y="-18.5" text-anchor="middle" font-size="9" font-weight="700" fill="#e0c896">N</text>
+          </g>
+          <rect width="640" height="320" rx="18" fill="url(#mapVin)" pointer-events="none"/>
         </svg>
       </div>
     `);
@@ -765,7 +862,7 @@ export class Menus {
             <div class="beast-info">
               <div class="beast-name">${def.name} <span class="beast-kills">×${kills} slain</span></div>
               <div class="beast-lore">${def.lore}</div>
-              <div class="beast-habit">⚔ ${def.habit}</div>
+              <div class="beast-habit">${ico("sword")} ${def.habit}</div>
               <div class="beast-stats">${def.maxHp} hp · ${def.damage} dmg · ${def.range > 100 ? "ranged" : "melee"}${def.armor ? " · armored" : ""}</div>
             </div>
           </div>
@@ -810,7 +907,7 @@ export class Menus {
         </div>
         <div class="title-buttons">
           <button class="big-btn primary" data-act="learn">🎓 Learn the ropes (recommended)</button>
-          <button class="big-btn" data-act="skip">⚔ Jump straight in</button>
+          <button class="big-btn" data-act="skip">${ico("play")} Jump straight in</button>
         </div>
         <div class="credit">the lessons stay on the title screen if you change your mind</div>
       </div>
@@ -893,11 +990,11 @@ export class Menus {
           <button class="big-btn party-btn" data-act="back">Back</button>
         </div>
         <div class="guide-list">
-          <div class="shop-note"><strong>🪙 Gold</strong> — every foe you slay and stage you clear pays gold. Even defeats salvage half the spoils.</div>
+          <div class="shop-note"><strong>${ico("coin")} Gold</strong> — every foe you slay and stage you clear pays gold. Even defeats salvage half the spoils.</div>
           <div class="shop-note"><strong>🍺 The Tavern</strong> — recruit new heroes to the band. Anyone hired can be rotated in or out of your fighting party of ${PARTY_CAP} on the Party screen.</div>
-          <div class="shop-note"><strong>🛡 The Armory</strong> — buy each hero better weapons (more damage) and armor (more health and protection). Three tiers of each.</div>
-          <div class="shop-note"><strong>✨ The Spell Shop</strong> — unlock a spell once for the whole band, then assign it to any hero whose attributes meet its bar. Each hero carries up to ${MAX_EQUIPPED} spells.</div>
-          <div class="shop-note"><strong>⭐ Talents</strong> — every 2 band levels, each hero earns a talent point for the Strength, Dexterity, and Magic trees. Find them on the Party screen.</div>
+          <div class="shop-note"><strong>${ico("shield")} The Armory</strong> — buy each hero better weapons (more damage) and armor (more health and protection). Three tiers of each.</div>
+          <div class="shop-note"><strong>${ico("spark")} The Spell Shop</strong> — unlock a spell once for the whole band, then assign it to any hero whose attributes meet its bar. Each hero carries up to ${MAX_EQUIPPED} spells.</div>
+          <div class="shop-note"><strong>${ico("star")} Talents</strong> — every 2 band levels, each hero earns a talent point for the Strength, Dexterity, and Magic trees. Find them on the Party screen.</div>
         </div>
       </div>
     `);
@@ -1030,14 +1127,14 @@ export class Menus {
         <div class="map-header">
           <div>
             <div class="map-title">The Village</div>
-            <div class="map-level"><span class="gold-chip">🪙 ${save.gold} gold</span></div>
+            <div class="map-level"><span class="gold-chip">${ico("coin")} ${save.gold} gold</span></div>
           </div>
           <button class="big-btn party-btn" data-act="back">Map</button>
         </div>
         <div class="shop-tabs">
           <button class="shop-tab ${tab === "tavern" ? "on" : ""}" data-tab="tavern">🍺 Tavern</button>
-          <button class="shop-tab ${tab === "armory" ? "on" : ""}" data-tab="armory">🛡 Armory</button>
-          <button class="shop-tab ${tab === "spells" ? "on" : ""}" data-tab="spells">✨ Spells</button>
+          <button class="shop-tab ${tab === "armory" ? "on" : ""}" data-tab="armory">${ico("shield")} Armory</button>
+          <button class="shop-tab ${tab === "spells" ? "on" : ""}" data-tab="spells">${ico("spark")} Spells</button>
         </div>
         <div class="shop-body"></div>
       </div>
@@ -1065,7 +1162,7 @@ export class Menus {
   private spend(cost: number): boolean {
     if (this.save.gold < cost) {
       audio.play("click");
-      this.showToast(`Not enough gold — need 🪙 ${cost}`);
+      this.showToast(`Not enough gold — need ${cost}`);
       return false;
     }
     this.save.gold -= cost;
@@ -1094,7 +1191,7 @@ export class Menus {
             ${
               hero.recruited
                 ? '<div class="hero-points">✓ hired</div>'
-                : `<button class="big-btn buy-btn ${save.gold < cost ? "cant" : ""}" data-recruit="${i}">🪙 ${cost}</button>`
+                : `<button class="big-btn buy-btn ${save.gold < cost ? "cant" : ""}" data-recruit="${i}">${ico("coin")} ${cost}</button>`
             }
           </div>
         </div>
@@ -1136,13 +1233,13 @@ export class Menus {
           <div class="gear-row">
             ${
               nextW
-                ? `<button class="big-btn buy-btn" data-gear="w:${i}" ${save.gold < nextW.cost ? 'data-cant="1"' : ""}>⚔ ${nextW.name} (+${WEAPON_DAMAGE_BONUS[hero.weaponTier + 1] - WEAPON_DAMAGE_BONUS[hero.weaponTier]} dmg) — 🪙 ${nextW.cost}</button>`
-                : `<div class="gear-max">⚔ Best weapon owned</div>`
+                ? `<button class="big-btn buy-btn" data-gear="w:${i}" ${save.gold < nextW.cost ? 'data-cant="1"' : ""}>${ico("sword")} ${nextW.name} (+${WEAPON_DAMAGE_BONUS[hero.weaponTier + 1] - WEAPON_DAMAGE_BONUS[hero.weaponTier]} dmg) — ${nextW.cost}g</button>`
+                : `<div class="gear-max">${ico("sword")} Best weapon owned</div>`
             }
             ${
               nextA
-                ? `<button class="big-btn buy-btn" data-gear="a:${i}" ${save.gold < nextA.cost ? 'data-cant="1"' : ""}>🛡 ${nextA.name} (+${Math.round((ARMOR_BONUS[hero.armorTier + 1] - ARMOR_BONUS[hero.armorTier]) * 100)}% armor, +${ARMOR_HP_BONUS[hero.armorTier + 1] - ARMOR_HP_BONUS[hero.armorTier]} hp) — 🪙 ${nextA.cost}</button>`
-                : `<div class="gear-max">🛡 Best armor owned</div>`
+                ? `<button class="big-btn buy-btn" data-gear="a:${i}" ${save.gold < nextA.cost ? 'data-cant="1"' : ""}>${ico("shield")} ${nextA.name} (+${Math.round((ARMOR_BONUS[hero.armorTier + 1] - ARMOR_BONUS[hero.armorTier]) * 100)}% armor, +${ARMOR_HP_BONUS[hero.armorTier + 1] - ARMOR_HP_BONUS[hero.armorTier]} hp) — ${nextA.cost}g</button>`
+                : `<div class="gear-max">${ico("shield")} Best armor owned</div>`
             }
           </div>
         </div>
@@ -1180,7 +1277,7 @@ export class Menus {
           <div class="chip-name">${ability.name}</div>
           <div class="chip-gate">${ability.blurb}</div>
           <div class="chip-req">Requires ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}</div>
-          ${owned ? '<div class="chip-owned">✓ unlocked</div>' : `<button class="big-btn buy-btn ${save.gold < cost ? "cant" : ""}" data-spell="${ability.id}">🪙 ${cost}</button>`}
+          ${owned ? '<div class="chip-owned">✓ unlocked</div>' : `<button class="big-btn buy-btn ${save.gold < cost ? "cant" : ""}" data-spell="${ability.id}">${ico("coin")} ${cost}</button>`}
         </div>
       `);
       body.appendChild(card);
@@ -1228,7 +1325,7 @@ export class Menus {
               </div>
               <div>
                 <div class="hero-name">${HEROES[i].name} <em>${HEROES[i].title}</em></div>
-                <div class="hero-meta">For hire at the <strong>Village Tavern</strong> — 🪙 ${RECRUIT_COST[i] ?? "?"}</div>
+                <div class="hero-meta">For hire at the <strong>Village Tavern</strong> — ${ico("coin")} ${RECRUIT_COST[i] ?? "?"}</div>
               </div>
               <div class="hero-points">🔒</div>
             </div>
@@ -1269,7 +1366,7 @@ export class Menus {
             <div class="hero-meta">${WEAPON_LABEL[weapon]} · ${WEAPON_TIERS[hero.weaponTier].name} / ${ARMOR_TIERS[hero.armorTier].name}</div>
           </div>
           <button class="toggle-btn party-toggle ${inParty ? "in" : ""}" data-act="toggle-party">
-            ${inParty ? "⚔ In party" : "💤 Benched"}
+            ${inParty ? `${ico("banner")} In party` : `${ico("moon")} Benched`}
           </button>
           <div class="hero-points ${save.unspent[index] > 0 ? "has" : ""}">${save.unspent[index]} pts</div>
         </div>
@@ -1284,17 +1381,21 @@ export class Menus {
           <div data-stat="Spell power"><span>Spell power</span><strong>×${stats.spellPower.toFixed(2)}</strong></div>
         </div>
         <div class="stat-hint">tap any stat to see what it does</div>
-        <button class="trinket-row equip-row" data-act="equip">
-          🎒 <strong>Equipment</strong> — ⚔ ${WEAPON_TIERS[hero.weaponTier].name} · 🛡 ${ARMOR_TIERS[hero.armorTier].name} · ${trinket ? `${trinket.icon} ${trinket.name}` : "◇ no trinket"} · ✨ ${hero.equipped.length}/${MAX_EQUIPPED} spells
+        <button class="trinket-row equip-row loadout-row" data-act="equip">
+          <span class="loadout-slots"></span>
+          <span class="loadout-text"><strong>Loadout</strong><em>${WEAPON_TIERS[hero.weaponTier].name} · ${ARMOR_TIERS[hero.armorTier].name}${trinket ? ` · ${trinket.name}` : ""}</em></span>
+          <span class="loadout-go">${ico("arrow")}</span>
         </button>
         <div class="attr-rows"></div>
         <div class="card-actions">
-          <button class="toggle-btn talents-btn" data-act="talents">⭐ Talents</button>
+          <button class="toggle-btn talents-btn" data-act="talents">${ico("star")} Talents</button>
           <button class="toggle-btn respec" data-act="respec">Respec (free)</button>
         </div>
       </div>
     `);
     drawHeroPortrait(card.querySelector(".hero-avatar canvas") as HTMLCanvasElement, index, save);
+    const slotStrip = card.querySelector(".loadout-slots")!;
+    for (let s = 0; s < MAX_EQUIPPED; s++) slotStrip.appendChild(spellSlotEl(hero.equipped[s] ?? null, 22));
     card.querySelector(".stat-grid")!.addEventListener("click", (event) => {
       const cell = (event.target as HTMLElement).closest("[data-stat]");
       if (!cell) return;
@@ -1324,9 +1425,16 @@ export class Menus {
 
     const attrRows = card.querySelector(".attr-rows")!;
     for (const key of ATTR_KEYS) {
+      // surface what the attribute does and the next spell it would unlock
+      const nextGate = ABILITIES.filter((a) => a.gate.attr === key && a.gate.value > hero.attrs[key]).sort(
+        (a, b) => a.gate.value - b.gate.value,
+      )[0];
       const row = el(`
         <div class="attr-row">
-          <div class="attr-name" title="${ATTR_BLURBS[key]}">${ATTR_NAMES[key]}</div>
+          <div class="attr-name">
+            ${ATTR_NAMES[key]}
+            <div class="attr-sub">${ATTR_BLURBS[key]}${nextGate ? ` · <b>${nextGate.name}</b> at ${nextGate.gate.value}` : ""}</div>
+          </div>
           <div class="attr-bar"><div style="width:${Math.min(100, hero.attrs[key] * 5)}%"></div></div>
           <div class="attr-val">${hero.attrs[key]}</div>
           <button class="attr-plus" ${save.unspent[index] > 0 ? "" : "disabled"} data-attr="${key}">+</button>
@@ -1338,6 +1446,7 @@ export class Menus {
       const btn = (event.target as HTMLElement).closest("[data-attr]") as HTMLElement | null;
       if (!btn || save.unspent[index] <= 0) return;
       const key = btn.getAttribute("data-attr") as (typeof ATTR_KEYS)[number];
+      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket);
       hero.attrs[key] += 1;
       save.unspent[index] -= 1;
       const before = unlocked.length;
@@ -1358,7 +1467,9 @@ export class Menus {
         audio.play("click");
       }
       persist(save);
-      this.refreshCard(card, index);
+      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket);
+      const freshCard = this.refreshCard(card, index);
+      flashStatDeltas(freshCard, statsBefore, statsAfter);
     });
 
     card.querySelector('[data-act="respec"]')!.addEventListener("click", () => {
@@ -1388,50 +1499,101 @@ export class Menus {
     const nextW = hero.weaponTier + 1 < WEAPON_TIERS.length ? WEAPON_TIERS[hero.weaponTier + 1] : null;
     const nextA = hero.armorTier + 1 < ARMOR_TIERS.length ? ARMOR_TIERS[hero.armorTier + 1] : null;
     const trinket = trinketById(hero.trinket);
+    const dominant = ATTR_KEYS.reduce((best, k) => (hero.attrs[k] > hero.attrs[best] ? k : best), ATTR_KEYS[0]);
     const page = el(`
-      <div class="page">
+      <div class="page hero-sheet">
         <div class="map-header">
           <div class="equip-title">
-            <div class="hero-avatar portrait portrait-lg" style="background:${def.accent}">
-              <canvas width="96" height="96"></canvas>
-            </div>
             <div>
-              <div class="map-title">${def.name}'s Pack</div>
-              <div class="map-level">${WEAPON_LABEL[weapon]} · <span class="gold-chip">🪙 ${save.gold}</span></div>
+              <div class="map-title">${def.name} <em class="sheet-title">${def.title}</em></div>
+              <div class="map-level">${WEAPON_LABEL[weapon]} · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div>
             </div>
           </div>
           <button class="big-btn party-btn" data-act="back">Party</button>
         </div>
-        <div class="equip-list">
-          <div class="equip-slot">
-            <div class="equip-slot-head">⚔ Weapon — <strong>${WEAPON_TIERS[hero.weaponTier].name}</strong> <span>+${WEAPON_DAMAGE_BONUS[hero.weaponTier]} dmg</span></div>
-            ${
-              nextW
-                ? `<button class="big-btn buy-btn ${save.gold < nextW.cost ? "cant" : ""}" data-gear="w">Upgrade to ${nextW.name} (+${WEAPON_DAMAGE_BONUS[hero.weaponTier + 1] - WEAPON_DAMAGE_BONUS[hero.weaponTier]} dmg) — 🪙 ${nextW.cost}</button>`
-                : `<div class="gear-max">Finest weapon in the realm</div>`
-            }
+        <div class="sheet-cols">
+          <div class="sheet-left">
+            <div class="figure-frame" style="--accent:${def.accent}">
+              <canvas class="figure-canvas" width="360" height="440"></canvas>
+              <div class="figure-caption">${WEAPON_LABEL[weapon]} — shaped by ${ATTR_NAMES[dominant]} ${hero.attrs[dominant]}</div>
+            </div>
+            <div class="equip-slot">
+              <div class="equip-slot-head">${ico("sword")} Weapon — <strong>${WEAPON_TIERS[hero.weaponTier].name}</strong> <span>+${WEAPON_DAMAGE_BONUS[hero.weaponTier]} dmg</span></div>
+              ${
+                nextW
+                  ? `<button class="big-btn buy-btn ${save.gold < nextW.cost ? "cant" : ""}" data-gear="w">Upgrade to ${nextW.name} — ${nextW.cost}g</button>`
+                  : `<div class="gear-max">Finest weapon in the realm</div>`
+              }
+            </div>
+            <div class="equip-slot">
+              <div class="equip-slot-head">${ico("shield")} Armor — <strong>${ARMOR_TIERS[hero.armorTier].name}</strong> <span>+${Math.round(ARMOR_BONUS[hero.armorTier] * 100)}% armor · +${ARMOR_HP_BONUS[hero.armorTier]} hp</span></div>
+              ${
+                nextA
+                  ? `<button class="big-btn buy-btn ${save.gold < nextA.cost ? "cant" : ""}" data-gear="a">Upgrade to ${nextA.name} — ${nextA.cost}g</button>`
+                  : `<div class="gear-max">Finest armor in the realm</div>`
+              }
+            </div>
+            <div class="equip-slot">
+              <div class="equip-slot-head">${ico("gem")} Trinket — <strong>${trinket ? `${trinket.icon} ${trinket.name}` : "none"}</strong></div>
+              ${trinket ? `<div class="equip-blurb">${trinket.blurb}${trinket.rarity === "rare" ? ' <span class="rare-tag">RARE</span>' : ""}</div>` : ""}
+              <div class="trinket-options"></div>
+            </div>
           </div>
-          <div class="equip-slot">
-            <div class="equip-slot-head">🛡 Armor — <strong>${ARMOR_TIERS[hero.armorTier].name}</strong> <span>+${Math.round(ARMOR_BONUS[hero.armorTier] * 100)}% armor · +${ARMOR_HP_BONUS[hero.armorTier]} hp</span></div>
-            ${
-              nextA
-                ? `<button class="big-btn buy-btn ${save.gold < nextA.cost ? "cant" : ""}" data-gear="a">Upgrade to ${nextA.name} (+${Math.round((ARMOR_BONUS[hero.armorTier + 1] - ARMOR_BONUS[hero.armorTier]) * 100)}% armor, +${ARMOR_HP_BONUS[hero.armorTier + 1] - ARMOR_HP_BONUS[hero.armorTier]} hp) — 🪙 ${nextA.cost}</button>`
-                : `<div class="gear-max">Finest armor in the realm</div>`
-            }
-          </div>
-          <div class="equip-slot">
-            <div class="equip-slot-head">◇ Trinket — <strong>${trinket ? `${trinket.icon} ${trinket.name}` : "none"}</strong></div>
-            ${trinket ? `<div class="equip-blurb">${trinket.blurb}${trinket.rarity === "rare" ? ' <span class="rare-tag">RARE</span>' : ""}</div>` : ""}
-            <div class="trinket-options"></div>
-          </div>
-          <div class="equip-slot">
-            <div class="equip-slot-head">✨ Spells — <strong>${hero.equipped.length}/${MAX_EQUIPPED} assigned</strong> <span>tap to assign or remove</span></div>
-            <div class="ability-chips"></div>
+          <div class="sheet-right">
+            <div class="equip-slot loadout-panel">
+              <div class="equip-slot-head">${ico("spark")} Spell loadout — <strong>${hero.equipped.length}/${MAX_EQUIPPED}</strong>
+                <span class="loadout-hint ${this.pendingSpell ? "urgent" : ""}">${
+                  this.pendingSpell ? "tap a slot to swap it in" : "these fire from the battle bar"
+                }</span>
+              </div>
+              <div class="slot-row"></div>
+            </div>
+            <div class="equip-slot">
+              <div class="equip-slot-head">${ico("book")} Spellbook <span>tap to equip · tap again to remove</span></div>
+              <div class="spell-grid"></div>
+            </div>
           </div>
         </div>
       </div>
     `);
-    drawHeroPortrait(page.querySelector(".hero-avatar canvas") as HTMLCanvasElement, index, save);
+    // live figure: the real battle render, idling
+    const fig = page.querySelector(".figure-canvas") as HTMLCanvasElement;
+    drawHeroFigure(fig, index, save, 0);
+    if (this.figureTimer) clearInterval(this.figureTimer);
+    let figT = 0;
+    this.figureTimer = window.setInterval(() => {
+      if (!document.body.contains(fig)) {
+        if (this.figureTimer) clearInterval(this.figureTimer);
+        this.figureTimer = null;
+        return;
+      }
+      figT += 0.09;
+      drawHeroFigure(fig, index, save, figT);
+    }, 90);
+
+    // loadout slots
+    const slotRow = page.querySelector(".slot-row")!;
+    for (let s = 0; s < MAX_EQUIPPED; s++) {
+      const id = hero.equipped[s] ?? null;
+      const slot = el(`
+        <button class="big-slot ${id ? "filled" : "empty"} ${this.pendingSpell ? "pulse" : ""}" data-slot="${s}" ${id ? `style="--chip:${abilityById(id).color}"` : ""}>
+          <span class="big-slot-ico"></span>
+          <span class="big-slot-name">${id ? abilityById(id).name : "Empty"}</span>
+          ${id && !this.pendingSpell ? '<span class="big-slot-x">×</span>' : ""}
+        </button>
+      `);
+      if (id) {
+        const holder = slot.querySelector(".big-slot-ico")!;
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 68;
+        canvas.style.width = canvas.style.height = "34px";
+        const cctx = canvas.getContext("2d")!;
+        cctx.scale(2, 2);
+        drawAbilityGlyph(cctx, abilityById(id).icon, 17, 17, 10, abilityById(id).color);
+        holder.appendChild(canvas);
+      }
+      slotRow.appendChild(slot);
+    }
 
     // trinket choices: none + every distinct loot piece not worn by someone else
     const options = page.querySelector(".trinket-options")!;
@@ -1453,26 +1615,40 @@ export class Menus {
       }
     }
 
-    const chips = page.querySelector(".ability-chips")!;
+    const grid = page.querySelector(".spell-grid")!;
     for (const ability of ABILITIES) {
       const gateOk = unlocked.includes(ability.id);
       const owned = save.unlockedSpells.includes(ability.id);
       const usable = gateOk && owned;
-      const isEquipped = hero.equipped.includes(ability.id);
-      const gateText = !owned
-        ? `🪙 Unlock at the Village spell shop`
-        : gateOk
-          ? ability.blurb
-          : `Needs ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}`;
-      chips.appendChild(
-        el(`
-          <button class="ability-chip ${usable ? "" : "locked"} ${isEquipped ? "equipped" : ""}"
-            style="--chip:${ability.color}" data-ability="${ability.id}">
-            <div class="chip-name">${ability.name}</div>
-            <div class="chip-gate">${gateText}</div>
-          </button>
-        `),
-      );
+      const slotAt = hero.equipped.indexOf(ability.id);
+      const isPending = this.pendingSpell === ability.id;
+      const tag = !owned
+        ? "Unlock at the Village"
+        : !gateOk
+          ? `Needs ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}`
+          : slotAt >= 0
+            ? `Equipped — slot ${slotAt + 1}`
+            : ability.blurb;
+      const chip = el(`
+        <button class="spell-chip ${usable ? "" : "locked"} ${slotAt >= 0 ? "equipped" : ""} ${isPending ? "pending" : ""}"
+          style="--chip:${ability.color}" data-ability="${ability.id}">
+          <span class="spell-ico"></span>
+          <span class="spell-info">
+            <strong>${ability.name}${isPending ? " — pick a slot" : ""}</strong>
+            <em>${tag}</em>
+          </span>
+          ${slotAt >= 0 ? `<span class="slot-badge">${slotAt + 1}</span>` : ""}
+        </button>
+      `);
+      const holder = chip.querySelector(".spell-ico")!;
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 60;
+      canvas.style.width = canvas.style.height = "30px";
+      const cctx = canvas.getContext("2d")!;
+      cctx.scale(2, 2);
+      drawAbilityGlyph(cctx, ability.icon, 15, 15, 9, usable ? ability.color : "#6b6478");
+      holder.appendChild(canvas);
+      grid.appendChild(chip);
     }
 
     page.addEventListener("click", (event) => {
@@ -1499,22 +1675,51 @@ export class Menus {
         this.renderEquipment(index);
         return;
       }
+      const slotBtn = target.closest("[data-slot]");
+      if (slotBtn) {
+        const at = Number(slotBtn.getAttribute("data-slot"));
+        if (this.pendingSpell) {
+          // swap the waiting spell into this slot
+          if (at < hero.equipped.length) hero.equipped[at] = this.pendingSpell;
+          else hero.equipped.push(this.pendingSpell);
+          this.pendingSpell = null;
+          audio.play("levelup");
+          persist(save);
+        } else if (hero.equipped[at]) {
+          hero.equipped.splice(at, 1);
+          audio.play("click");
+          persist(save);
+        }
+        this.renderEquipment(index);
+        return;
+      }
       const chip = target.closest("[data-ability]");
       if (chip) {
         const id = chip.getAttribute("data-ability")!;
+        if (this.pendingSpell === id) {
+          // tapping the waiting spell again cancels the swap
+          this.pendingSpell = null;
+          audio.play("click");
+          this.renderEquipment(index);
+          return;
+        }
         if (!save.unlockedSpells.includes(id)) {
           this.showToast("Buy this spell at the Village first");
           return;
         }
         if (!unlockedAbilities(hero.attrs).some((a) => a.id === id)) {
-          audio.play("click");
+          const gate = abilityById(id).gate;
+          this.showToast(`Needs ${ATTR_NAMES[gate.attr]} ${gate.value} — train up first`);
           return;
         }
         const at = hero.equipped.indexOf(id);
         if (at >= 0) hero.equipped.splice(at, 1);
         else if (hero.equipped.length < MAX_EQUIPPED) hero.equipped.push(id);
         else {
-          this.showToast(`Max ${MAX_EQUIPPED} assigned — remove one first`);
+          // slots full: arm replace mode instead of scolding
+          this.pendingSpell = id;
+          audio.play("click");
+          this.renderEquipment(index);
           return;
         }
         audio.play("click");
@@ -1523,6 +1728,7 @@ export class Menus {
         return;
       }
       if (target.closest('[data-act="back"]')) {
+        this.pendingSpell = null;
         audio.play("click");
         this.renderParty();
       }
@@ -1530,8 +1736,9 @@ export class Menus {
     this.root.appendChild(page);
   }
 
-  private refreshCard(card: HTMLElement, index: number): void {
+  private refreshCard(card: HTMLElement, index: number): HTMLElement {
     const fresh = this.heroCard(index);
     card.replaceWith(fresh);
+    return fresh;
   }
 }

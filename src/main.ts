@@ -365,6 +365,7 @@ document.addEventListener("visibilitychange", () => {
 const cam = { x: 0, y: 0, zoom: 1, punch: 0 };
 
 let lastTime = performance.now();
+let rafId = 0;
 
 function frame(now: number): void {
   let dt = Math.min(0.05, (now - lastTime) / 1000);
@@ -471,15 +472,24 @@ function frame(now: number): void {
     ctx.fillRect(0, 0, logicalW, logicalH);
   }
 
-  requestAnimationFrame(frame);
+  rafId = requestAnimationFrame(frame);
 }
 
 menus.renderTitle();
-requestAnimationFrame(frame);
+rafId = requestAnimationFrame(frame);
 
 // debug/testing hook
 Object.defineProperty(window, "__wayband", {
   value: {
+    // drive one frame manually (rAF is paused in hidden tabs/panes)
+    step(dt = 1 / 60) {
+      cancelAnimationFrame(rafId);
+      frame(lastTime + dt * 1000);
+    },
+    startBattle,
+    shot(q = 0.72) {
+      return canvas.toDataURL("image/jpeg", q);
+    },
     get battle() {
       return battle;
     },
