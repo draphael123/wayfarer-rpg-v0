@@ -1,5 +1,5 @@
 import type { Battle } from "./battle";
-import { armorVariantById, callingById, callingEligible, deriveStats, HEROES } from "./data";
+import { ARMOR_FAMILY_TIER, armorById, callingById, callingEligible, deriveStats, HEROES } from "./data";
 import type { SaveData, StageDef, Unit } from "./types";
 
 const OUTLINE = "#241b2e";
@@ -1401,7 +1401,7 @@ export function drawTitleDiorama(ctx: CanvasRenderingContext2D, save: SaveData, 
       x: ux,
       y: uy,
       radius: 13,
-      stats: deriveStats(hs.attrs, hs.weaponTier, hs.armorTier, hs.talents, hs.trinket, active, active ? hs.advCalling : null, hs.armorVariant),
+      stats: deriveStats(hs.attrs, hs.weaponTier, hs.armor, hs.talents, hs.trinket, active, active ? hs.advCalling : null),
       hp: 1,
       attackTimer: 0,
       moveTarget: null,
@@ -1462,7 +1462,7 @@ export function drawHeroFigure(
   const hero = save.heroes[heroIndex];
   const oathDef = callingById(hero.calling);
   const activeOath = oathDef && callingEligible(oathDef, hero.attrs) ? hero.calling : null;
-  const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null, hero.armorVariant);
+  const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armor, hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null);
   const radius = 13;
   const scale = canvas.height / (radius * 3.7 * 1.55);
   const unit = {
@@ -1537,8 +1537,9 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   const robed = unit.stats.weapon === "stave";
   const gear = save.heroes[unit.heroIndex];
   const wTier = gear?.weaponTier ?? 0;
-  const aTier = gear?.armorTier ?? 0;
-  const plateTint = armorVariantById(gear?.armorVariant ?? null)?.tint ?? "#aab4c2";
+  const wornPiece = armorById(gear?.armor ?? null);
+  const aTier = wornPiece ? ARMOR_FAMILY_TIER[wornPiece.family] : 0;
+  const plateTint = wornPiece?.tint ?? "#aab4c2";
 
   // back leg, back arm behind body
   if (!robed) {

@@ -165,12 +165,11 @@ export interface HeroSave {
   recruited: boolean;
   active: boolean; // in the fighting party (max 4)
   weaponTier: number; // 0-3
-  armorTier: number; // 0-3
+  armor: string | null; // equipped armor piece id (null = traveler's garb)
   talents: Record<string, number>; // talent id -> rank
   trinket: string | null;
   calling: string | null; // sworn calling id (band level 5+), null = unsworn
   advCalling: string | null; // advanced branch id (band level 20+), null = not yet advanced
-  armorVariant: string | null; // plate-tier variant choice (armorTier 3 only)
 }
 
 export interface SaveData {
@@ -189,6 +188,7 @@ export interface SaveData {
   gold: number;
   unlockedSpells: string[]; // ability ids bought in the spell shop (account-wide)
   inventory: string[]; // trinket ids collected as loot
+  armory: string[]; // armor piece ids owned (one copy dresses one hero)
   difficulty: number; // index into DIFFICULTIES
   seenIntro: boolean; // first-run tutorial prompt shown
   stageStats: Record<number, { bestTime: number; clears: number }>; // per-stage clear records

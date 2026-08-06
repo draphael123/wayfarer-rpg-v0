@@ -1,6 +1,6 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { BOSS_STAGES, DIFFICULTIES, HEROES, STAGES, TRINKETS } from "./data";
+import { ARMORS, BOSS_STAGES, DIFFICULTIES, HEROES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { drawHeroPortrait, Menus } from "./menus";
@@ -249,6 +249,13 @@ function settleVictory(): void {
   save.lifetime.gold += gold;
   if (battle.heroDeaths === 0) save.lifetime.flawless += 1;
   if (save.difficulty === 3) save.lifetime.brutalClears += 1;
+  // a great foe's first fall yields its relic armor
+  for (const relic of ARMORS) {
+    if (relic.boss && (battle.killCounts[relic.boss] ?? 0) > 0 && !save.armory.includes(relic.id)) {
+      save.armory.push(relic.id);
+      setTimeout(() => menus.showToast(`RELIC CLAIMED: ${relic.name} — dress a hero on their Equip screen`), 900);
+    }
+  }
   // loot was revealed on the victory card; bank it now
   rollLoot();
   const drop = rolledLoot!;

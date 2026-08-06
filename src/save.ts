@@ -69,7 +69,7 @@ function defaultHero(index: number): HeroSave {
     .filter((a) => STARTING_SPELLS.includes(a.id))
     .slice(0, MAX_EQUIPPED)
     .map((a) => a.id);
-  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armorTier: 0, talents: {}, trinket: null, calling: null, advCalling: null, armorVariant: null };
+  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, talents: {}, trinket: null, calling: null, advCalling: null };
 }
 
 /** Out of the box: 1-4 picks a hero, QWER casts their abilities (R = ultimate). */
@@ -105,6 +105,7 @@ export function defaultSave(): SaveData {
     gold: 0,
     unlockedSpells: [...STARTING_SPELLS],
     inventory: [],
+    armory: [],
     difficulty: 1,
     seenIntro: false,
     stageStats: {},
@@ -156,13 +157,30 @@ export function loadSave(): SaveData {
       }
       if (typeof hero.active !== "boolean") hero.active = hero.recruited;
       if (typeof hero.weaponTier !== "number") hero.weaponTier = 0;
-      if (typeof hero.armorTier !== "number") hero.armorTier = 0;
+      // armor became named pieces: old tiers map to equivalents, granted to the armory
+      if (hero.armor === undefined) {
+        const legacy = hero as unknown as { armorTier?: number; armorVariant?: string | null };
+        const tier = legacy.armorTier ?? 0;
+        hero.armor =
+          tier >= 3
+            ? legacy.armorVariant === "skirmisher"
+              ? "skirmisherHarness"
+              : legacy.armorVariant === "runeweave"
+                ? "runeweaveVestment"
+                : "juggernautPlate"
+            : tier === 2
+              ? "footmanMail"
+              : tier === 1
+                ? "scoutJerkin"
+                : null;
+        if (!Array.isArray(parsed.armory)) parsed.armory = [];
+        if (hero.armor) parsed.armory.push(hero.armor);
+      }
       if (!hero.talents || typeof hero.talents !== "object") hero.talents = {};
       if (hero.trinket === undefined) hero.trinket = null;
       if (hero.calling === undefined) hero.calling = null;
       if (hero.advCalling === undefined) hero.advCalling = null;
       // pre-variant saves at plate tier default to the classic juggernaut look
-      if (hero.armorVariant === undefined) hero.armorVariant = hero.armorTier >= 3 ? "juggernaut" : null;
     });
     if (typeof parsed.speed !== "number" || parsed.speed < 0.25 || parsed.speed > 2) parsed.speed = 0.5;
     if (!parsed.bestiary || typeof parsed.bestiary !== "object") parsed.bestiary = {};
@@ -174,6 +192,7 @@ export function loadSave(): SaveData {
       parsed.unlockedSpells = [...owned];
     }
     if (!Array.isArray(parsed.inventory)) parsed.inventory = [];
+    if (!Array.isArray(parsed.armory)) parsed.armory = [];
     if (typeof parsed.difficulty !== "number" || parsed.difficulty < 0 || parsed.difficulty > 3) parsed.difficulty = 1;
     if (typeof parsed.seenIntro !== "boolean") parsed.seenIntro = parsed.unlockedStage > 0;
     if (typeof parsed.soundVol !== "number" || parsed.soundVol < 0 || parsed.soundVol > 1) parsed.soundVol = 1;

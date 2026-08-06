@@ -441,74 +441,67 @@ export const WEAPON_TIERS: GearTier[] = [
 ];
 export const WEAPON_DAMAGE_BONUS = [0, 4, 9, 16];
 
-export const ARMOR_TIERS: GearTier[] = [
-  { name: "Cloth", cost: 0 },
-  { name: "Leather", cost: 100 },
-  { name: "Chain", cost: 300 },
-  { name: "Plate", cost: 800 },
-];
-export const ARMOR_BONUS = [0, 0.04, 0.08, 0.14];
-export const ARMOR_HP_BONUS = [0, 15, 35, 65];
+// --- armor: named pieces with identities, not a quality ladder ---
 
-// --- plate-tier variants: the top of the armor ladder becomes a choice ---
+export type ArmorFamily = "cloth" | "leather" | "mail" | "plate";
 
-export interface ArmorVariantDef {
+/** Family drives the sprite (0 = bare, 1 = leather pauldrons, 2 = chain, 3 = plate). */
+export const ARMOR_FAMILY_TIER: Record<ArmorFamily, number> = { cloth: 0, leather: 1, mail: 2, plate: 3 };
+
+export interface ArmorDef {
   id: string;
   name: string;
+  family: ArmorFamily;
+  cost: number; // 0 = not sold (boss unique or starter)
   blurb: string;
   icon: string; // ico() name
-  tint: string; // plate metal color on the sprite
+  tint?: string; // metal/cloth accent on the sprite (mail/plate families)
+  hook?: "dodgeFirstHit" | "burnOnSpell" | "allyAura" | "waveShield" | "regen" | "retaliate";
+  boss?: EnemyKind; // first kill of this boss awards it
+  mods: Partial<{ hpFlat: number; armorFlat: number; moveSpeed: number; atkSpeed: number; spellPower: number; healPower: number; rangedDmg: number; meleeDmg: number; cdr: number; crit: number }>;
 }
 
-export const ARMOR_VARIANTS: ArmorVariantDef[] = [
-  {
-    id: "juggernaut",
-    name: "Juggernaut Plate",
-    blurb: "+5% armor and +10% health, but 10% slower.",
-    icon: "shield",
-    tint: "#aab4c2",
-  },
-  {
-    id: "skirmisher",
-    name: "Skirmisher Harness",
-    blurb: "+10% move and +8% attack speed — thinner plating (−3% armor).",
-    icon: "arrow",
-    tint: "#c9a06b",
-  },
-  {
-    id: "runeweave",
-    name: "Runeweave Vestment",
-    blurb: "+10% spell power and +10% healing — soft weave (−5% armor).",
-    icon: "spark",
-    tint: "#9a8ac9",
-  },
+export const ARMORS: ArmorDef[] = [
+  // cloth — for those who trust distance
+  { id: "pilgrimRobe", name: "Pilgrim's Robe", family: "cloth", cost: 140, icon: "plus", blurb: "+18% healing, +8% spell power.", mods: { healPower: 0.18, spellPower: 0.08 } },
+  { id: "emberweave", name: "Emberweave Robe", family: "cloth", cost: 280, icon: "spark", blurb: "+12% spell power, and your damaging spells leave a burn.", hook: "burnOnSpell", mods: { spellPower: 0.12 } },
+  { id: "windcloak", name: "Windrunner's Cloak", family: "cloth", cost: 240, icon: "arrow", blurb: "+12% move speed, −6% cooldowns.", mods: { moveSpeed: 0.12, cdr: 0.06 } },
+  // leather — quick and clever
+  { id: "scoutJerkin", name: "Scout's Jerkin", family: "leather", cost: 110, icon: "bow", blurb: "+18 health, +6% move speed.", mods: { hpFlat: 18, moveSpeed: 0.06 } },
+  { id: "huntsmanHarness", name: "Huntsman's Harness", family: "leather", cost: 280, icon: "bow", blurb: "+12% ranged damage.", mods: { rangedDmg: 0.12, hpFlat: 10 } },
+  { id: "skirmisherHarness", name: "Skirmisher Harness", family: "leather", cost: 320, icon: "arrow", blurb: "+10% move and +8% attack speed.", mods: { moveSpeed: 0.1, atkSpeed: 0.08 } },
+  { id: "wolfpelt", name: "Wolfpelt Cloak", family: "leather", cost: 360, icon: "moon", blurb: "Shrug off the first hit of every wave. +5% move.", hook: "dodgeFirstHit", mods: { moveSpeed: 0.05 } },
+  // mail — the middle road
+  { id: "footmanMail", name: "Footman's Mail", family: "mail", cost: 190, icon: "shield", blurb: "+10% armor, +25 health.", mods: { armorFlat: 0.1, hpFlat: 25 } },
+  { id: "wardenHauberk", name: "Warden's Hauberk", family: "mail", cost: 340, icon: "banner", blurb: "+8% armor, and nearby allies take 6% less harm.", hook: "allyAura", mods: { armorFlat: 0.08, hpFlat: 15 } },
+  { id: "runeweaveVestment", name: "Runeweave Vestment", family: "mail", cost: 380, icon: "spark", tint: "#9a8ac9", blurb: "+10% spell power, +10% healing, +20 health.", mods: { spellPower: 0.1, healPower: 0.1, hpFlat: 20 } },
+  // plate — for those who plant their feet
+  { id: "ironholdPlate", name: "Ironhold Plate", family: "plate", cost: 420, icon: "shield", tint: "#aab4c2", blurb: "+16% armor, +45 health — but 8% slower.", mods: { armorFlat: 0.16, hpFlat: 45, moveSpeed: -0.08 } },
+  { id: "bulwarkPlate", name: "Bulwark Plate", family: "plate", cost: 460, icon: "shield", tint: "#8a99b8", blurb: "+12% armor, +35 health, and every wave begins with a 30-point shield.", hook: "waveShield", mods: { armorFlat: 0.12, hpFlat: 35 } },
+  { id: "juggernautPlate", name: "Juggernaut Plate", family: "plate", cost: 500, icon: "shield", tint: "#b8a68a", blurb: "+14% armor, +60 health — but 10% slower.", mods: { armorFlat: 0.14, hpFlat: 60, moveSpeed: -0.1 } },
+  // boss relics — a first kill yields them, and no shop ever will
+  { id: "mosstoothHide", name: "Mosstooth's Hide", family: "leather", cost: 0, icon: "skull", boss: "ogre", blurb: "+50 health, and wounds slowly knit themselves closed.", hook: "regen", mods: { hpFlat: 50 } },
+  { id: "alphasPelt", name: "The Alpha's Pelt", family: "leather", cost: 0, icon: "moon", boss: "alpha", blurb: "+14% move, and the first blow of every wave misses you.", hook: "dodgeFirstHit", mods: { moveSpeed: 0.14, hpFlat: 15 } },
+  { id: "gorehulkWall", name: "Gorehulk's Wall", family: "plate", cost: 0, icon: "skull", tint: "#8a5a4a", boss: "warlord", blurb: "+18% armor, +40 health, and melee blows are answered in kind.", hook: "retaliate", mods: { armorFlat: 0.18, hpFlat: 40 } },
 ];
 
-export const ARMOR_VARIANT_SWITCH_COST = 250;
-
-export function armorVariantById(id: string | null | undefined): ArmorVariantDef | null {
-  return ARMOR_VARIANTS.find((v) => v.id === id) ?? null;
+export function armorById(id: string | null | undefined): ArmorDef | null {
+  return ARMORS.find((a) => a.id === id) ?? null;
 }
 
-function armorVariantMods(variant: string | null | undefined) {
+function armorPieceMods(id: string | null | undefined) {
   const m = { meleeDmg: 0, rangedDmg: 0, hpPct: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, startShield: 0 };
-  switch (variant) {
-    case "juggernaut":
-      m.armorFlat = 0.05;
-      m.hpPct = 0.1;
-      m.moveSpeed = -0.1;
-      break;
-    case "skirmisher":
-      m.moveSpeed = 0.1;
-      m.atkSpeed = 0.08;
-      m.armorFlat = -0.03;
-      break;
-    case "runeweave":
-      m.spellPower = 0.1;
-      m.healPower = 0.1;
-      m.armorFlat = -0.05;
-      break;
-  }
+  const piece = armorById(id);
+  if (!piece) return m;
+  m.meleeDmg = piece.mods.meleeDmg ?? 0;
+  m.rangedDmg = piece.mods.rangedDmg ?? 0;
+  m.armorFlat = piece.mods.armorFlat ?? 0;
+  m.cdr = piece.mods.cdr ?? 0;
+  m.atkSpeed = piece.mods.atkSpeed ?? 0;
+  m.moveSpeed = piece.mods.moveSpeed ?? 0;
+  m.crit = piece.mods.crit ?? 0;
+  m.spellPower = piece.mods.spellPower ?? 0;
+  m.healPower = piece.mods.healPower ?? 0;
   return m;
 }
 
@@ -859,17 +852,16 @@ export function cooldownReduction(hero: HeroSave): number {
 export function deriveStats(
   attrs: Attributes,
   weaponTier = 0,
-  armorTier = 0,
+  armor: string | null = null,
   talents?: Record<string, number>,
   trinket?: string | null,
   calling?: string | null,
   advCalling?: string | null,
-  armorVariant?: string | null,
 ): DerivedStats {
   const t = talentMods(talents);
   const k = trinketMods(trinket);
   const c = callingStatMods(calling, advCalling);
-  const v = armorVariantMods(armorTier >= 3 ? armorVariant : null);
+  const v = armorPieceMods(armor);
   const mods = {
     meleeDmg: t.meleeDmg + k.meleeDmg + c.meleeDmg + v.meleeDmg,
     rangedDmg: t.rangedDmg + k.rangedDmg + c.rangedDmg + v.rangedDmg,
@@ -884,8 +876,8 @@ export function deriveStats(
     startShield: t.startShield + k.startShield + c.startShield + v.startShield,
   };
   const weapon = dominantWeapon(attrs, calling);
-  const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + ARMOR_HP_BONUS[armorTier]);
-  const armor = Math.min(0.65, attrs.vit * 0.02 + attrs.str * 0.01 + ARMOR_BONUS[armorTier]);
+  const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + (armorById(armor)?.mods.hpFlat ?? 0));
+  const armorFrac = Math.min(0.65, attrs.vit * 0.02 + attrs.str * 0.01);
   const speed = 95 + Math.min(45, attrs.dex * 3);
   const healPower = 2 + attrs.spi * 1.6;
   const spellPower = 1 + attrs.int * 0.055;
@@ -920,7 +912,7 @@ export function deriveStats(
     range,
     attackCooldown: attackCooldown / (1 + mods.atkSpeed),
     speed: speed * (1 + mods.moveSpeed),
-    armor: Math.min(0.7, armor + mods.armorFlat),
+    armor: Math.min(0.7, armorFrac + mods.armorFlat),
     healPower: healPower * (1 + mods.healPower),
     spellPower: spellPower * (1 + mods.spellPower),
     weapon,

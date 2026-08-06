@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { DIFFICULTIES, ENEMIES, HEROES, abilityById, callingById, callingEligible, cooldownReduction, deriveStats, partyRoster, talentMods, trinketMods } from "./data";
+import { DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, callingById, callingEligible, cooldownReduction, deriveStats, partyRoster, talentMods, trinketMods } from "./data";
 import type { FxSystem } from "./fx";
 import type {
   AbilityState,
@@ -99,7 +99,7 @@ export class Battle {
       const sworn = callingById(heroSave.calling);
       const oath = sworn && callingEligible(sworn, heroSave.attrs) ? sworn : null;
       const advanced = oath ? heroSave.advCalling : null;
-      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier, heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced, heroSave.armorVariant);
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armor, heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced);
       const abilities: AbilityState[] = heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d)
@@ -284,11 +284,24 @@ export class Battle {
     // Wind Step: dodge-ready again at the start of every wave
     for (const hero of this.livingHeroes()) {
       if (this.heroTalentRank(hero, "windStep") > 0) this.windstepReady.add(hero.id);
+      const armorHook = this.armorHookOf(hero);
+      if (armorHook === "dodgeFirstHit") this.armorDodgeReady.add(hero.id);
+      if (armorHook === "waveShield") {
+        hero.effects = hero.effects.filter((e) => e.kind !== "shield");
+        hero.effects.push(makeEffect("shield", 9999, 30, null));
+      }
     }
     audio.play("wave");
   }
 
   private windstepReady = new Set<number>();
+  private armorDodgeReady = new Set<number>();
+
+  /** The battle-relevant quirk of whatever this hero is wearing. */
+  private armorHookOf(unit: Unit): string | null {
+    if (unit.team !== "hero" || unit.heroIndex < 0 || !this.saveRef) return null;
+    return armorById(this.saveRef.heroes[unit.heroIndex]?.armor)?.hook ?? null;
+  }
 
   /** Rank of a talent on this unit's hero save (0 for enemies / no save). */
   heroTalentRank(unit: Unit, id: string): number {
@@ -341,6 +354,13 @@ export class Battle {
       this.fx.burst(target.x, target.y - 10, "#b6f0a8", 6, 80, { glow: true });
       return;
     }
+    // wolf-taught footwork: some cloaks slip the first blow of every wave
+    if (target.team === "hero" && this.armorDodgeReady.has(target.id)) {
+      this.armorDodgeReady.delete(target.id);
+      this.fx.floatText(target.x, target.y - target.radius - 16, "slipped!", "#c9c2e8", 13);
+      this.fx.burst(target.x, target.y - 10, "#c9c2e8", 6, 80, { glow: true });
+      return;
+    }
     let amount = rawAmount * (1 - target.stats.armor);
     const vulnerable = this.effect(target, "vulnerable");
     if (vulnerable) amount *= 1 + vulnerable.power;
@@ -362,6 +382,13 @@ export class Battle {
     ) {
       amount *= 0.92;
     }
+    // a Warden's Hauberk shelters everyone near its wearer
+    if (
+      target.team === "hero" &&
+      this.livingHeroes().some((h) => h !== target && this.armorHookOf(h) === "allyAura" && Math.hypot(h.x - target.x, h.y - target.y) < 90)
+    ) {
+      amount *= 0.94;
+    }
     // Warbreaker: melee blows are answered in kind
     if (
       target.advCalling === "warbreaker" &&
@@ -372,6 +399,18 @@ export class Battle {
       !opts.spell
     ) {
       this.damage(source, rawAmount * 0.25, target, { spell: true, color: "#e0a34b" });
+    }
+    // Gorehulk's Wall answers melee blows with iron
+    if (
+      target.team === "hero" &&
+      this.armorHookOf(target) === "retaliate" &&
+      source &&
+      source.team === "enemy" &&
+      source.alive &&
+      source.stats.range <= 90 &&
+      !opts.spell
+    ) {
+      this.damage(source, 6, target, { spell: true, color: "#c9a06b" });
     }
     amount = Math.max(1, Math.round(amount * (0.9 + Math.random() * 0.2)));
     const shield = this.effect(target, "shield");
@@ -442,7 +481,7 @@ export class Battle {
       source?.team === "hero" &&
       target.alive &&
       target.team === "enemy" &&
-      this.heroTalentRank(source, "kindledMind") > 0 &&
+      (this.heroTalentRank(source, "kindledMind") > 0 || this.armorHookOf(source) === "burnOnSpell") &&
       !this.effect(target, "burn")
     ) {
       target.effects.push(makeEffect("burn", 3, 2.7, source));
@@ -1594,6 +1633,10 @@ export class Battle {
   private updateHero(hero: Unit, dt: number, save: SaveData): void {
     if (hero.attackTarget && !hero.attackTarget.alive) hero.attackTarget = null;
     if (hero.healTarget && !hero.healTarget.alive) hero.healTarget = null;
+    // Mosstooth's Hide: wounds slowly knit themselves closed
+    if (hero.hp < hero.stats.maxHp && this.armorHookOf(hero) === "regen") {
+      this.heal(hero, 1.8 * dt, false, null);
+    }
     // auto orders release when finished so the player's own orders always win
     // ultimate: slow ambient charge, and mirror readiness into the button timer
     if (hero.calling && this.state === "fighting") this.gainUlt(hero, dt * 1.2);
