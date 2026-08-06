@@ -243,6 +243,12 @@ export class Battle {
       idleAnim: 0,
       leap: null,
     });
+    // harriers arrive on the wing
+    if (kind === "harrier") {
+      const bird = this.units[this.units.length - 1];
+      bird.aloft = true;
+      bird.supportTimer = 4 + Math.random() * 3;
+    }
   }
 
   private startNextWave(): void {
@@ -376,6 +382,8 @@ export class Battle {
     let speed = unit.stats.speed;
     const slow = this.effect(unit, "slow");
     if (slow) speed *= 1 - slow.power;
+    // the drummer's rhythm puts spring in a foe's stride too
+    if (unit.team === "enemy" && this.effect(unit, "haste")) speed *= 1.15;
     return speed;
   }
 
@@ -424,9 +432,29 @@ export class Battle {
       this.fx.burst(target.x, target.y - 10, "#c9c2e8", 6, 80, { glow: true });
       return;
     }
+    // a circling harrier is simply out of a blade's reach
+    if (target.aloft && source && source.team === "hero" && !opts.spell && source.stats.range <= 90) {
+      this.fx.floatText(target.x, target.y - target.radius - 40, "aloft!", "#d8cfc0", 11);
+      return;
+    }
     let amount = rawAmount * (1 - target.stats.armor);
     const vulnerable = this.effect(target, "vulnerable");
     if (vulnerable) amount *= 1 + vulnerable.power;
+    // the pavise: blows from the front glance off, and friends crouch in its shadow
+    if (target.team === "enemy" && source && source.team === "hero" && !opts.spell) {
+      if (target.enemyKind === "shieldbearer" && source.x < target.x) {
+        amount *= 0.45;
+        if (Math.random() < 0.35) this.fx.floatText(target.x - target.radius, target.y - target.radius * 2.6, "blocked", "#c9d2dd", 10);
+      } else if (
+        target.enemyKind !== "shieldbearer" &&
+        source.stats.range > 90 &&
+        this.livingEnemies().some(
+          (p) => p.enemyKind === "shieldbearer" && p !== target && target.x > p.x && target.x - p.x < 110 && Math.abs(target.y - p.y) < 48,
+        )
+      ) {
+        amount *= 0.65;
+      }
+    }
     const guard = this.effect(target, "guard");
     if (guard) amount *= 1 - guard.power;
     // Vanguard holds the line: sturdier while an enemy is at arm's reach
@@ -2528,6 +2556,18 @@ export class Battle {
       this.updateShaman(enemy, dt);
       return;
     }
+    if (enemy.enemyKind === "stalker") {
+      this.updateStalker(enemy, dt);
+      return;
+    }
+    if (enemy.enemyKind === "harrier") {
+      this.updateHarrier(enemy, dt);
+      return;
+    }
+    if (enemy.enemyKind === "drummer") {
+      this.updateDrummer(enemy, dt);
+      return;
+    }
     // Rimeclad ice casing: it cracks off at three-quarters strength
     if (enemy.enemyKind === "rimetroll" && enemy.phase === 0 && enemy.hp < enemy.stats.maxHp * 0.75) {
       enemy.phase = 1;
@@ -2582,6 +2622,148 @@ export class Battle {
     if (enemy.attackTimer <= 0 && enemy.windup <= 0) {
       this.startAttack(enemy, target);
     }
+  }
+
+  /** Fen Stalker: skirts the fight along a lane, then leaps on whoever mends the others. */
+  private updateStalker(st: Unit, dt: number): void {
+    st.supportTimer -= dt;
+    if (st.leap) return;
+    const pending = this.telegraphs.find((t) => t.owner === st);
+    // the hunt: mark the healer if one stands, else the frailest — on a long cadence
+    if (!pending && st.supportTimer <= 0 && !this.effect(st, "stun")) {
+      const heroes = this.livingHeroes();
+      if (heroes.length) {
+        const prey =
+          heroes.find((h) => h.stats.healPower >= 8) ??
+          [...heroes].sort((a, b) => a.stats.maxHp - b.stats.maxHp)[0];
+        this.telegraphs.push({
+          x: prey.x,
+          y: prey.y,
+          radius: 46,
+          time: 0,
+          duration: this.telegraphTime * 0.85,
+          owner: st,
+          kind: "pounce",
+        });
+        audio.play("hiss");
+        st.supportTimer = 11;
+        return;
+      }
+    }
+    const exposed = this.effect(st, "vulnerable");
+    const target = st.aggro && st.aggro.alive ? st.aggro : this.nearestHero(st);
+    if (!target) return;
+    st.aggro = target;
+    // between hunts it prowls the field's edge instead of joining the line
+    if (!exposed && !pending && st.supportTimer > 3.5) {
+      const laneY = st.id % 2 === 0 ? this.field.top + 18 : this.field.bottom - 18;
+      const lurk = this.clampToField({ x: Math.max(this.field.left + 80, target.x + 90), y: laneY }, st.radius);
+      if (Math.hypot(lurk.x - st.x, lurk.y - st.y) > 26) {
+        this.moveToward(st, lurk, dt, 20, 1.05);
+        st.facing = target.x >= st.x ? 1 : -1;
+        return;
+      }
+      st.facing = target.x >= st.x ? 1 : -1;
+      return;
+    }
+    // caught out (or waiting): it fights like any knife-thing
+    const dist = unitDist(st, target);
+    if (dist > st.stats.range + target.radius - 4) {
+      this.moveToward(st, target, dt, st.stats.range + target.radius - 8);
+      return;
+    }
+    st.facing = target.x >= st.x ? 1 : -1;
+    if (st.attackTimer <= 0 && st.windup <= 0) this.startAttack(st, target);
+  }
+
+  /** Moor Harrier: circles out of reach, dives on a telegraph, and is grounded after. */
+  private updateHarrier(h: Unit, dt: number): void {
+    h.supportTimer -= dt;
+    if (h.leap) return;
+    if (h.aloft === undefined) {
+      h.aloft = true;
+      h.supportTimer = 4 + Math.random() * 3;
+    }
+    if (!h.aloft) {
+      // grounded after the swoop — this is the window to hurt it
+      if (h.supportTimer <= 0 && !this.effect(h, "stun")) {
+        h.aloft = true;
+        h.supportTimer = 7 + Math.random() * 2.5;
+        this.fx.burst(h.x, h.y - 8, "#d8cfc0", 10, 100, { gravity: -60, life: 0.5 });
+        audio.play("wingbeat");
+        return;
+      }
+      const t = h.aggro && h.aggro.alive ? h.aggro : this.nearestHero(h);
+      if (!t) return;
+      h.aggro = t;
+      const dist = unitDist(h, t);
+      if (dist > h.stats.range + t.radius - 4) {
+        this.moveToward(h, t, dt, h.stats.range + t.radius - 8);
+        return;
+      }
+      h.facing = t.x >= h.x ? 1 : -1;
+      if (h.attackTimer <= 0 && h.windup <= 0) this.startAttack(h, t);
+      return;
+    }
+    // aloft: orbit the band's midst, untouchable by blades
+    const t = this.nearestHero(h);
+    if (!t) return;
+    h.phase += dt * 1.3;
+    const orbit = this.clampToField({ x: t.x + Math.cos(h.phase) * 175, y: t.y + Math.sin(h.phase) * 60 }, h.radius);
+    this.moveToward(h, orbit, dt, 8, 1.1);
+    h.facing = t.x >= h.x ? 1 : -1;
+    const pending = this.telegraphs.find((tg) => tg.owner === h);
+    if (!pending && h.supportTimer <= 0 && !this.effect(h, "stun")) {
+      const heroes = this.livingHeroes();
+      const prey = heroes[Math.floor(Math.random() * heroes.length)];
+      this.telegraphs.push({
+        x: prey.x,
+        y: prey.y,
+        radius: 52,
+        time: 0,
+        duration: this.telegraphTime * 0.9,
+        owner: h,
+        kind: "pounce",
+      });
+      audio.play("screech");
+      h.supportTimer = 999; // the landing sets the grounded clock
+    }
+  }
+
+  /** War-Drummer: hangs back and beats a rhythm that quickens every foe near it. */
+  private updateDrummer(d: Unit, dt: number): void {
+    d.supportTimer -= dt;
+    if (d.supportTimer <= 0 && !this.effect(d, "stun")) {
+      d.supportTimer = 4;
+      d.castGlow = 0.5;
+      let stirred = 0;
+      for (const ally of this.livingEnemies()) {
+        if (ally === d || Math.hypot(ally.x - d.x, ally.y - d.y) > 170) continue;
+        ally.effects = ally.effects.filter((e) => !(e.kind === "haste" && e.source === d));
+        ally.effects.push(makeEffect("haste", 4.4, 1.22, d));
+        stirred++;
+      }
+      this.fx.ring(d.x, d.y, 170, "#e8a05a", { width: 3.5, life: 0.6 });
+      this.fx.ring(d.x, d.y, 60, "#f5c88a", { width: 2.5, life: 0.4 });
+      if (stirred > 0) this.fx.floatText(d.x, d.y - d.radius * 3, "DOOM-doom-doom", "#e8a05a", 12);
+      audio.play("drumbeat");
+    }
+    // it keeps the drum out of sword's reach
+    const near = this.nearestHero(d);
+    if (!near) return;
+    const dist = unitDist(d, near);
+    if (dist < 190) {
+      const away = this.normalize({ x: d.x - near.x, y: d.y - near.y });
+      this.moveToward(d, this.clampToField({ x: d.x + away.x * 60, y: d.y + away.y * 60 }, d.radius), dt, 4, 0.9);
+      d.facing = near.x >= d.x ? 1 : -1;
+      return;
+    }
+    if (dist > 300) {
+      this.moveToward(d, near, dt, 260);
+      return;
+    }
+    d.facing = near.x >= d.x ? 1 : -1;
+    if (dist < d.stats.range + near.radius && d.attackTimer <= 0 && d.windup <= 0) this.startAttack(d, near);
   }
 
   private updateShaman(shaman: Unit, dt: number): void {
@@ -3096,6 +3278,37 @@ export class Battle {
 
   /** The pounce lands: the slam happens where the paws come down. */
   private landPounce(alpha: Unit, x: number, y: number, radius: number): void {
+    // the stalker's leap: one hard strike, then it stands exposed
+    if (alpha.enemyKind === "stalker") {
+      for (const hero of this.livingHeroes()) {
+        if (Math.hypot(hero.x - x, hero.y - y) < radius + hero.radius * 0.5) {
+          this.damage(hero, alpha.stats.damage * 1.5, alpha);
+        }
+      }
+      alpha.effects.push(makeEffect("vulnerable", 2.4, 0.5, null));
+      this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "exposed!", "#b6f0a8", 13);
+      this.fx.burst(x, y, "rgba(120,140,110,0.8)", 10, 100, { gravity: -20, size: 3.5 });
+      this.fx.ring(x, y, radius + 8, "#4a5a44", { width: 3, life: 0.35 });
+      this.fx.addShake(5);
+      audio.play("thud");
+      return;
+    }
+    // the harrier's dive: it strikes, then must catch its breath on the ground
+    if (alpha.enemyKind === "harrier") {
+      for (const hero of this.livingHeroes()) {
+        if (Math.hypot(hero.x - x, hero.y - y) < radius + hero.radius * 0.5) {
+          this.damage(hero, alpha.stats.damage * 1.4, alpha);
+        }
+      }
+      alpha.aloft = false;
+      alpha.supportTimer = 3;
+      this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "grounded!", "#ffd7a0", 13);
+      this.fx.burst(x, y, "#d8cfc0", 12, 110, { gravity: 80, life: 0.5 });
+      this.fx.ring(x, y, radius + 10, "#8a7a9c", { width: 3.5, life: 0.4 });
+      this.fx.addShake(6);
+      audio.play("thud");
+      return;
+    }
     alpha.lungeDir = { x: alpha.facing, y: 0 };
     alpha.lunge = 1;
     let struck = 0;

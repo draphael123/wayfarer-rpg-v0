@@ -2425,6 +2425,12 @@ const ENEMY_COLORS: Record<string, { body: string; shade: string; trim: string }
   ogre: { body: "#75875a", shade: "#5a6a4444", trim: "#39442a" },
   shaman: { body: "#578a86", shade: "#3f6a6644", trim: "#2c4a48" },
   warlord: { body: "#9a5240", shade: "#743c2f44", trim: "#40201a" },
+  bonecaller: { body: "#7a748c", shade: "#5c5870", trim: "#3f3b50" },
+  shambler: { body: "#6a7a5a", shade: "#525f44", trim: "#3a4434" },
+  stalker: { body: "#4a5a44", shade: "#38463447", trim: "#2c3830" },
+  shieldbearer: { body: "#7a6a4a", shade: "#5c503844", trim: "#aab4c2" },
+  harrier: { body: "#8a7a9c", shade: "#6a5e7c44", trim: "#d8cfc0" },
+  drummer: { body: "#a05c3c", shade: "#7c462e44", trim: "#e8a05a" },
 };
 
 function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
@@ -2690,6 +2696,68 @@ function drawIceWisp(ctx: CanvasRenderingContext2D, unit: Unit, time: number): v
   drawHealthBar(ctx, unit, y - r * 2);
 }
 
+/** Moor Harrier: all wing and grudge — circles aloft, folds to dive, sulks when grounded. */
+function drawHarrier(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const colors = regionalColors("harrier");
+  const aloft = !!unit.aloft || !!unit.leap;
+  const lift = unit.leap ? 26 : aloft ? 32 + Math.sin(time * 2.1 + unit.id) * 4 : 0;
+  const f = unit.facing;
+  const cx = unit.x;
+  const by = unit.y - 8 - lift;
+  // shadow shrinks the higher it rides
+  ctx.beginPath();
+  ctx.ellipse(unit.x, unit.y + 2, unit.radius * (aloft ? 0.9 : 1.5), unit.radius * (aloft ? 0.3 : 0.5), 0, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(20, 14, 30, ${aloft ? 0.16 : 0.3})`;
+  ctx.fill();
+  // wings: broad triangles that beat aloft, fold when grounded
+  const flap = aloft ? Math.sin(time * 9 + unit.id) * 10 : 2;
+  for (const side of [-1, 1]) {
+    const wing = new Path2D();
+    wing.moveTo(cx + side * 4, by - 4);
+    wing.quadraticCurveTo(cx + side * (aloft ? 26 : 12), by - (aloft ? 14 + flap * side * f * 0.4 : 2) - flap * 0.4, cx + side * (aloft ? 34 : 14), by + (aloft ? -6 - flap : 6));
+    wing.quadraticCurveTo(cx + side * (aloft ? 20 : 10), by + (aloft ? 2 : 8), cx + side * 3, by + 5);
+    wing.closePath();
+    shaded(ctx, wing, colors.trim, f, cx + side * 16, by - 4, 18, 2.2);
+  }
+  // body: a lean feathered spindle
+  const body = new Path2D();
+  body.ellipse(cx, by, 10, 13, 0, 0, Math.PI * 2);
+  shaded(ctx, body, colors.body, f, cx, by, 12, 2.6);
+  // tail feathers trail against the flight
+  ctx.beginPath();
+  ctx.moveTo(cx - f * 6, by + 8);
+  ctx.lineTo(cx - f * 15, by + 15);
+  ctx.lineTo(cx - f * 8, by + 11);
+  ctx.closePath();
+  outlined(ctx, colors.trim, 1.8);
+  // head + hooked beak
+  ctx.beginPath();
+  ctx.arc(cx + f * 6, by - 10, 5.5, 0, Math.PI * 2);
+  outlined(ctx, colors.body, 2);
+  ctx.beginPath();
+  ctx.moveTo(cx + f * 10.5, by - 11);
+  ctx.quadraticCurveTo(cx + f * 15, by - 10, cx + f * 12, by - 6.5);
+  ctx.lineTo(cx + f * 9.5, by - 8);
+  ctx.closePath();
+  outlined(ctx, "#e8c25a", 1.6);
+  // one keen eye
+  ctx.fillStyle = "#241d2e";
+  ctx.beginPath();
+  ctx.arc(cx + f * 6.5, by - 11, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+  // talons when grounded
+  if (!aloft) {
+    ctx.strokeStyle = "#e8c25a";
+    ctx.lineWidth = 2;
+    for (const side of [-4, 4]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + side, by + 12);
+      ctx.lineTo(cx + side, unit.y - 1);
+      ctx.stroke();
+    }
+  }
+}
+
 function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
   const kind = unit.enemyKind!;
   if (kind === "wolf" || kind === "alpha" || kind === "frostwolf") {
@@ -2698,6 +2766,10 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   }
   if (kind === "icewisp") {
     drawIceWisp(ctx, unit, time);
+    return;
+  }
+  if (kind === "harrier") {
+    drawHarrier(ctx, unit, time);
     return;
   }
   const pose = poseOf(unit, time);
@@ -2865,6 +2937,23 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.arc(cx + f * 1, headY - 2, headR * 1.02, Math.PI * 0.95, Math.PI * 2.05);
     ctx.closePath();
     outlined(ctx, colors.trim, 2);
+  } else if (kind === "stalker") {
+    // a deep hood swallows the face — only two knife-glints beneath
+    ctx.beginPath();
+    ctx.arc(cx + f * 1, headY - 1, headR * 1.1, Math.PI * 0.75, Math.PI * 2.25);
+    ctx.quadraticCurveTo(cx - f * headR * 0.2, headY + headR * 0.95, cx - f * headR * 1.1, headY + headR * 0.55);
+    ctx.closePath();
+    outlined(ctx, colors.trim, 2);
+    ctx.fillStyle = "rgba(12, 16, 12, 0.75)";
+    ctx.beginPath();
+    ctx.arc(cx + f * 1.5, headY + headR * 0.08, headR * 0.72, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#b6f0a8";
+    for (const off of [0.45, 0.02]) {
+      ctx.beginPath();
+      ctx.arc(hx0 + f * headR * off, headY + headR * 0.02, headR * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   // face
   if (kind === "goblin" || kind === "archer") {
@@ -2918,7 +3007,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
       ctx.closePath();
       ctx.fill();
     }
-  } else if (kind !== "shaman") {
+  } else if (kind !== "shaman" && kind !== "stalker") {
     // brutes: deep-set glower under a single heavy brow
     const glow = kind === "warlord";
     const eyeY = headY + headR * 0.02;
@@ -3027,6 +3116,92 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.lineTo(sx - 3, shY - H * 0.24);
     ctx.closePath();
     ctx.fill();
+  } else if (kind === "stalker") {
+    // a long knife carried low, point back — killer's grammar
+    const hx = shX + f * H * 0.14;
+    const hy = shY + H * 0.18 + pose.swing * 4;
+    limb(ctx, shX, shY, hx, hy, legW * 0.8, colors.body);
+    ctx.save();
+    ctx.translate(hx, hy);
+    ctx.rotate(f * (2.4 - pose.swing * 1.6));
+    ctx.beginPath();
+    ctx.moveTo(-1.3, 0);
+    ctx.lineTo(0, -H * 0.3);
+    ctx.lineTo(1.5, -1);
+    ctx.closePath();
+    outlined(ctx, "#c9ccd2", 1.6);
+    ctx.fillStyle = "#2c3830";
+    ctx.fillRect(-1.6, -1, 3.4, 4.5);
+    ctx.restore();
+  } else if (kind === "drummer") {
+    // the hide drum slung at the belly, sticks mid-beat
+    const drumY = hipY - H * 0.06;
+    ctx.beginPath();
+    ctx.ellipse(cx + f * 2, drumY, bodyW * 0.42, H * 0.11, 0, 0, Math.PI * 2);
+    outlined(ctx, "#d9c9a0", 2.2);
+    ctx.strokeStyle = "#8a5a3c";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - bodyW * 0.36, drumY + 2);
+    ctx.lineTo(cx - bodyW * 0.2, shoulderY + 2);
+    ctx.moveTo(cx + bodyW * 0.38, drumY + 2);
+    ctx.lineTo(cx + bodyW * 0.22, shoulderY + 2);
+    ctx.stroke();
+    // both arms beat — castGlow marks the downstroke
+    const beat = unit.castGlow > 0 ? 1 : Math.abs(Math.sin(time * 6 + unit.id)) * 0.5;
+    for (const s of [-1, 1]) {
+      const hx = cx + s * bodyW * 0.28;
+      const hy = drumY - H * (0.12 + 0.1 * (s > 0 ? beat : 1 - beat));
+      limb(ctx, cx + s * bodyW * 0.3, shY, hx, hy, legW * 0.8, colors.body);
+      ctx.strokeStyle = "#6b4a2a";
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      ctx.lineTo(hx + s * 3, hy - H * 0.1);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(hx + s * 3, hy - H * 0.1, 2.2, 0, Math.PI * 2);
+      outlined(ctx, "#d9c9a0", 1.4);
+    }
+  } else if (kind === "shieldbearer") {
+    // a mace behind, and the pavise itself in front — a door taught to walk
+    const hx = shX + f * H * 0.12;
+    const hy = shY + H * 0.12 + pose.swing * 5;
+    limb(ctx, shX, shY, hx, hy, legW * 0.85, colors.body);
+    ctx.save();
+    ctx.translate(hx, hy);
+    ctx.rotate(f * (0.5 + pose.swing * 1.4));
+    roundRect(ctx, -1.8, -H * 0.26, 3.6, H * 0.26, 2);
+    outlined(ctx, "#7a5a38", 1.8);
+    ctx.beginPath();
+    ctx.arc(0, -H * 0.27, 3.4, 0, Math.PI * 2);
+    outlined(ctx, "#8a939e", 1.8);
+    ctx.restore();
+    // the pavise: tall, slatted, dented — drawn last so it shields the body
+    const px = cx + f * bodyW * 0.62;
+    const pw = bodyW * 0.52;
+    const pTop = shoulderY - H * 0.18;
+    ctx.save();
+    ctx.translate(px, 0);
+    roundRect(ctx, -pw / 2, pTop, pw, gy - pTop, 4);
+    outlined(ctx, colors.trim, 2.6);
+    ctx.strokeStyle = "rgba(20,14,30,0.35)";
+    ctx.lineWidth = 1.4;
+    for (let i = 1; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-pw / 2 + (pw / 3) * i, pTop + 2);
+      ctx.lineTo(-pw / 2 + (pw / 3) * i, gy - 2);
+      ctx.stroke();
+    }
+    // boss-iron rim and a proud dent
+    ctx.strokeStyle = "#6b7480";
+    ctx.lineWidth = 2;
+    roundRect(ctx, -pw / 2 + 1.5, pTop + 1.5, pw - 3, gy - pTop - 3, 3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(pw * 0.12, (pTop + gy) / 2, 2.6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   } else {
     // brute / warlord club — huge overhead slam (brutes drag longer arms)
     const armLen = kind === "brute" ? H * 0.3 : H * 0.24;

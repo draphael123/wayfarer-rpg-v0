@@ -44,6 +44,10 @@ type SfxName =
   | "armorBrace"
   | "anvil"
   | "setChime"
+  | "hiss"
+  | "screech"
+  | "wingbeat"
+  | "drumbeat"
   | "howl"
   | "warhorn"
   | "flawless"
@@ -572,6 +576,31 @@ class AudioKit {
         this.tone(659, 0.16, "triangle", 0.16, 0, 0.14);
         this.tone(784, 0.2, "triangle", 0.16, 0, 0.28);
         this.tone(1047, 0.5, "sine", 0.14, 0, 0.42);
+        break;
+      // ---- new foes announce themselves
+      case "hiss":
+        // the stalker marks its prey from the reeds
+        this.noise(0.3, 0.12, 5200);
+        this.noise(0.2, 0.08, 3600, 0.12);
+        this.tone(180, 0.14, "sawtooth", 0.05, -40, 0.05);
+        break;
+      case "screech":
+        // a harrier folding its wings to fall
+        this.tone(1450, 0.32, "sawtooth", 0.1, -520);
+        this.tone(1900, 0.2, "square", 0.05, -700, 0.03);
+        this.noise(0.16, 0.06, 4200, 0.06);
+        break;
+      case "wingbeat":
+        // heavy air taken twice
+        this.noise(0.12, 0.16, 700);
+        this.noise(0.12, 0.14, 620, 0.16);
+        break;
+      case "drumbeat":
+        // three strikes of the hide drum: DOOM-doom-doom
+        this.tone(72, 0.22, "sine", 0.26, -10);
+        this.noise(0.06, 0.1, 500);
+        this.tone(72, 0.16, "sine", 0.18, -8, 0.2);
+        this.tone(72, 0.16, "sine", 0.18, -8, 0.36);
         break;
       // ---- armor skills: each family speaks in its own voice
       case "armorSurge":

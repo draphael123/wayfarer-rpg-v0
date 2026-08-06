@@ -1625,6 +1625,70 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     habit: "Slow but relentless. They pile up while the caller lives.",
   },
 
+  stalker: {
+    name: "Fen Stalker",
+    maxHp: 70,
+    damage: 15,
+    range: 32,
+    attackCooldown: 1.3,
+    speed: 135,
+    armor: 0,
+    radius: 13,
+    xp: 26,
+    body: "#4a5a44",
+    trim: "#2c3830",
+    lore: "It does not fight lines. It waits at the edge of the lamplight and picks the one who mends the others.",
+    habit: "Skirts the fight, then leaps on your backline. Exposed and fragile after it lands — punish it.",
+  },
+
+  shieldbearer: {
+    name: "Pavise Bearer",
+    maxHp: 150,
+    damage: 9,
+    range: 30,
+    attackCooldown: 1.5,
+    speed: 62,
+    armor: 0.1,
+    xp: 24,
+    radius: 16,
+    body: "#7a6a4a",
+    trim: "#aab4c2",
+    lore: "A door taken off its hinges and taught to walk. The goblins queue up behind it like it's payday.",
+    habit: "Blows from the front glance off its pavise, and foes crouch behind it. Flank it, or answer with spells.",
+  },
+
+  harrier: {
+    name: "Moor Harrier",
+    maxHp: 60,
+    damage: 12,
+    range: 34,
+    attackCooldown: 1.1,
+    speed: 150,
+    armor: 0,
+    radius: 12,
+    xp: 26,
+    body: "#8a7a9c",
+    trim: "#d8cfc0",
+    lore: "All wing and grudge. It circles until it likes someone's shadow, then falls on them like weather.",
+    habit: "Aloft, only arrows and spells can touch it. After a dive it's grounded a moment — that's your window.",
+  },
+
+  drummer: {
+    name: "War-Drummer",
+    maxHp: 110,
+    damage: 8,
+    range: 34,
+    attackCooldown: 1.6,
+    speed: 80,
+    armor: 0.05,
+    radius: 15,
+    xp: 28,
+    body: "#a05c3c",
+    trim: "#e8a05a",
+    lore: "It carries no blade. It doesn't need one — every beat of the hide drum puts murder in its neighbors' hands.",
+    habit: "Each drumbeat quickens every foe near it. Silence the drum first.",
+  },
+
   ogre: {
     name: "Mosstooth Ogre",
     maxHp: 330,
@@ -1805,7 +1869,7 @@ export const STAGES: StageDef[] = [
     xpReward: 36,
     waves: [
       [{ kind: "goblin", count: 3 }, { kind: "shaman", count: 1 }],
-      [{ kind: "shaman", count: 1 }, { kind: "archer", count: 2 }],
+      [{ kind: "shieldbearer", count: 1 }, { kind: "shaman", count: 1 }, { kind: "archer", count: 2 }],
       [{ kind: "brute", count: 1 }, { kind: "shaman", count: 1 }, { kind: "wolf", count: 2 }],
     ],
   },
@@ -1824,9 +1888,9 @@ export const STAGES: StageDef[] = [
     scale: 1.8,
     xpReward: 46,
     waves: [
-      [{ kind: "archer", count: 2 }, { kind: "wolf", count: 2 }],
-      [{ kind: "brute", count: 2 }, { kind: "bonecaller", count: 1 }],
-      [{ kind: "goblin", count: 4 }, { kind: "archer", count: 2 }, { kind: "bonecaller", count: 1 }],
+      [{ kind: "archer", count: 2 }, { kind: "wolf", count: 2 }, { kind: "stalker", count: 1 }],
+      [{ kind: "brute", count: 2 }, { kind: "bonecaller", count: 1 }, { kind: "harrier", count: 1 }],
+      [{ kind: "goblin", count: 4 }, { kind: "archer", count: 2 }, { kind: "bonecaller", count: 1 }, { kind: "stalker", count: 1 }],
     ],
   },
   {
@@ -1862,8 +1926,8 @@ export const STAGES: StageDef[] = [
     scale: 2.1,
     xpReward: 90,
     waves: [
-      [{ kind: "goblin", count: 3 }, { kind: "shaman", count: 1 }],
-      [{ kind: "brute", count: 2 }, { kind: "archer", count: 2 }, { kind: "bonecaller", count: 1 }],
+      [{ kind: "goblin", count: 3 }, { kind: "shaman", count: 1 }, { kind: "drummer", count: 1 }],
+      [{ kind: "brute", count: 2 }, { kind: "archer", count: 2 }, { kind: "shieldbearer", count: 1 }],
       [{ kind: "warlord", count: 1 }, { kind: "shaman", count: 2 }],
     ],
   },
@@ -1890,8 +1954,8 @@ export const STAGES: StageDef[] = [
     xpReward: 100,
     waves: [
       [{ kind: "frostwolf", count: 3 }, { kind: "icewisp", count: 1 }],
-      [{ kind: "snowhag", count: 1 }, { kind: "archer", count: 2 }, { kind: "frostwolf", count: 2 }],
-      [{ kind: "rimetroll", count: 1 }, { kind: "icewisp", count: 2 }],
+      [{ kind: "snowhag", count: 1 }, { kind: "archer", count: 2 }, { kind: "harrier", count: 1 }],
+      [{ kind: "rimetroll", count: 1 }, { kind: "icewisp", count: 2 }, { kind: "stalker", count: 1 }],
     ],
   },
   {
@@ -1902,9 +1966,9 @@ export const STAGES: StageDef[] = [
     scale: 3.3,
     xpReward: 112,
     waves: [
-      [{ kind: "icewisp", count: 3 }, { kind: "goblin", count: 2 }],
+      [{ kind: "icewisp", count: 3 }, { kind: "goblin", count: 2 }, { kind: "shieldbearer", count: 1 }],
       [{ kind: "snowhag", count: 1 }, { kind: "frostwolf", count: 3 }],
-      [{ kind: "rimetroll", count: 1 }, { kind: "bonecaller", count: 1 }, { kind: "icewisp", count: 2 }],
+      [{ kind: "rimetroll", count: 1 }, { kind: "bonecaller", count: 1 }, { kind: "icewisp", count: 2 }, { kind: "drummer", count: 1 }],
     ],
   },
   {
@@ -1915,9 +1979,9 @@ export const STAGES: StageDef[] = [
     scale: 3.6,
     xpReward: 126,
     waves: [
-      [{ kind: "icewisp", count: 4 }],
+      [{ kind: "icewisp", count: 4 }, { kind: "stalker", count: 1 }],
       [{ kind: "rimetroll", count: 1 }, { kind: "icewisp", count: 2 }, { kind: "snowhag", count: 1 }],
-      [{ kind: "rimetroll", count: 2 }, { kind: "icewisp", count: 2 }],
+      [{ kind: "rimetroll", count: 2 }, { kind: "icewisp", count: 2 }, { kind: "harrier", count: 1 }],
     ],
   },
   {
@@ -1929,8 +1993,8 @@ export const STAGES: StageDef[] = [
     xpReward: 140,
     waves: [
       [{ kind: "frostwolf", count: 4 }, { kind: "snowhag", count: 1 }],
-      [{ kind: "rimetroll", count: 1 }, { kind: "archer", count: 2 }, { kind: "icewisp", count: 2 }],
-      [{ kind: "rimetroll", count: 2 }, { kind: "snowhag", count: 1 }, { kind: "bonecaller", count: 1 }],
+      [{ kind: "rimetroll", count: 1 }, { kind: "archer", count: 2 }, { kind: "shieldbearer", count: 1 }, { kind: "drummer", count: 1 }],
+      [{ kind: "rimetroll", count: 2 }, { kind: "snowhag", count: 1 }, { kind: "stalker", count: 1 }, { kind: "harrier", count: 1 }],
     ],
   },
   {

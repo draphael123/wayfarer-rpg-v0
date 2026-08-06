@@ -499,11 +499,13 @@ export class Menus {
           switch (st.p) {
             case "map": this.renderMap(); break;
             case "party": this.renderParty(); break;
-            case "shop": this.renderShop("tavern"); break;
+            case "shop": this.renderShop("armory"); break;
             case "bestiary": this.renderBestiary(); break;
             case "chronicle": this.renderChronicle(); break;
             case "hero": this.renderHeroOverview(st.a ?? 0); break;
             case "equip": this.renderEquipment(st.a ?? 0); break;
+            case "spells": this.renderSpells(st.a ?? 0); break;
+            case "smithy": this.renderShop("smithy"); break;
             case "talents": this.renderTalents(st.a ?? 0); break;
             case "calling": this.renderCalling(st.a ?? 0); break;
             default: this.renderTitle();
@@ -1934,31 +1936,38 @@ export class Menus {
 
   // ------------------------------------------------------------------ village shops
 
-  renderShop(tab: "tavern" | "armory" | "spells" | "curios"): void {
+  renderShop(tab: "tavern" | "armory" | "smithy" | "spells" | "curios"): void {
     this.pushNav("shop");
     this.root.innerHTML = "";
     this.show();
     const save = this.save;
+    // the Tavern is its own door on the bottom bar — the Village tab row stays wares-only
+    const tavern = tab === "tavern";
     const page = el(`
       <div class="page">
         <div class="map-header">
           <div>
-            <div class="map-title">The Village</div>
+            <div class="map-title">${tavern ? "The Tavern" : "The Village"}</div>
             <div class="map-level"><span class="gold-chip">${ico("coin")} <span class="gold-num">${save.gold}</span> gold</span></div>
           </div>
         </div>
-        <div class="shop-tabs">
-          <button class="shop-tab ${tab === "tavern" ? "on" : ""}" data-tab="tavern">🍺 Tavern</button>
+        ${
+          tavern
+            ? ""
+            : `<div class="shop-tabs">
           <button class="shop-tab ${tab === "armory" ? "on" : ""}" data-tab="armory">${ico("shield")} Armory</button>
+          <button class="shop-tab ${tab === "smithy" ? "on" : ""}" data-tab="smithy">${ico("sword")} Smithy</button>
           <button class="shop-tab ${tab === "spells" ? "on" : ""}" data-tab="spells">${ico("spark")} Spells</button>
           <button class="shop-tab ${tab === "curios" ? "on" : ""}" data-tab="curios">${ico("gem")} Curios</button>
-        </div>
+        </div>`
+        }
         <div class="shop-body"></div>
       </div>
     `);
     const body = page.querySelector(".shop-body")!;
     if (tab === "tavern") this.buildTavern(body);
     else if (tab === "armory") this.buildArmory(body);
+    else if (tab === "smithy") this.buildSmithy(body);
     else if (tab === "curios") this.buildCabinet(body);
     else this.buildSpellShop(body);
     page.addEventListener("click", (event) => {
@@ -1966,7 +1975,7 @@ export class Menus {
       const tabBtn = target.closest("[data-tab]");
       if (tabBtn) {
         audio.play("click");
-        this.renderShop(tabBtn.getAttribute("data-tab") as "tavern" | "armory" | "spells" | "curios");
+        this.renderShop(tabBtn.getAttribute("data-tab") as "armory" | "smithy" | "spells" | "curios");
         return;
       }
       if (target.closest('[data-act="back"]')) {
@@ -1974,7 +1983,7 @@ export class Menus {
         this.renderMap();
       }
     });
-    this.mount(page, tab === "tavern" ? "tavern" : "shop");
+    this.mount(page, tavern ? "tavern" : "shop");
     this.tickGold(page);
   }
 
@@ -2115,7 +2124,8 @@ export class Menus {
     });
   }
 
-  private buildArmory(body: Element): void {
+  /** The Smithy: everything the hammer touches — weapons, the Forge, the Tinker's Bench. */
+  private buildSmithy(body: Element): void {
     const save = this.save;
     for (let i = 0; i < HEROES.length; i++) {
       const hero = save.heroes[i];
@@ -2129,7 +2139,7 @@ export class Menus {
             <div class="hero-avatar portrait" style="background:${def.accent}"><canvas width="64" height="64"></canvas></div>
             <div>
               <div class="hero-name">${def.name}</div>
-              <div class="hero-meta">${WEAPON_TIERS[hero.weaponTier].name} weapon · ${worn ? worn.name : "Traveler's Garb"}</div>
+              <div class="hero-meta">${WEAPON_TIERS[hero.weaponTier].name} weapon · ${worn ? pieceLabel(worn, save.forge) : "Traveler's Garb"}</div>
             </div>
           </div>
           <div class="gear-row">
@@ -2144,7 +2154,150 @@ export class Menus {
       drawHeroPortrait(card.querySelector(".hero-avatar canvas") as HTMLCanvasElement, i, save);
       body.appendChild(card);
     }
+    this.buildForgeBench(body);
+    this.buildTinkerBench(body);
+    body.addEventListener("click", (event) => {
+      const forgeBtn = (event.target as HTMLElement).closest("[data-forge]");
+      if (forgeBtn) {
+        const id = forgeBtn.getAttribute("data-forge")!;
+        const piece = armorById(id)!;
+        const lvl = save.forge[id] ?? 0;
+        if (lvl >= FORGE_MAX) return;
+        if (!this.spend(forgeCost(piece, lvl + 1))) return;
+        save.forge[id] = lvl + 1;
+        persist(save);
+        audio.play("anvil");
+        if (lvl + 1 >= FORGE_MAX) audio.play("levelup");
+        navigator.vibrate?.([12, 20, 30]);
+        // hammer sparks fly from the button that was struck
+        const rect = (forgeBtn as HTMLElement).getBoundingClientRect();
+        const sparks = el(`<div class="forge-sparks ${lvl + 1 >= FORGE_MAX ? "master" : ""}" style="left:${rect.left + rect.width / 2}px;top:${rect.top + rect.height / 2}px"></div>`);
+        for (let i = 0; i < 7; i++) {
+          const s = document.createElement("i");
+          s.style.setProperty("--dx", `${(Math.random() - 0.5) * 90}px`);
+          s.style.setProperty("--dy", `${-30 - Math.random() * 60}px`);
+          s.style.animationDelay = `${Math.random() * 0.08}s`;
+          sparks.appendChild(s);
+        }
+        document.body.appendChild(sparks);
+        setTimeout(() => sparks.remove(), 800);
+        this.showToast(`${piece.name} reforged to +${lvl + 1}${lvl + 1 >= FORGE_MAX ? " — masterwork!" : ""}`);
+        this.renderShop("smithy");
+        return;
+      }
+      const fuseBtn = (event.target as HTMLElement).closest("[data-fuse]");
+      if (fuseBtn) {
+        const id = fuseBtn.getAttribute("data-fuse")!;
+        const t = trinketById(id)!;
+        const remove = (times: number) => {
+          for (let k = 0; k < times; k++) {
+            const at = save.inventory.indexOf(id);
+            if (at >= 0) save.inventory.splice(at, 1);
+          }
+        };
+        if (t.rarity === "rare") {
+          remove(1);
+          save.gold += 120;
+          audio.play("coin");
+          this.showToast(`Sold the spare ${t.name} — +120 gold`);
+        } else {
+          remove(2);
+          const rares = TRINKETS.filter((r) => r.rarity === "rare");
+          const forged = rares[Math.floor(Math.random() * rares.length)];
+          save.inventory.push(forged.id);
+          save.lifetime.fuses += 1;
+          audio.play("levelup");
+          navigator.vibrate?.([15, 25, 40]);
+          this.showToast(`The tinker forges ${forged.icon} ${forged.name} — RARE!`);
+        }
+        persist(save);
+        this.renderShop("smithy");
+        return;
+      }
+      const btn = (event.target as HTMLElement).closest("[data-gear]");
+      if (!btn) return;
+      const [, idx] = btn.getAttribute("data-gear")!.split(":");
+      const i = Number(idx);
+      const hero = save.heroes[i];
+      const tier = hero.weaponTier + 1;
+      if (!this.spend(WEAPON_TIERS[tier].cost)) return;
+      hero.weaponTier = tier;
+      persist(save);
+      this.showToast(`${HEROES[i].name} equips a ${WEAPON_TIERS[tier].name} weapon!`);
+      this.renderShop("smithy");
+    });
+  }
 
+  /** The forge card: upgrades bind to the piece and sharpen everything it gives. */
+  private buildForgeBench(body: Element): void {
+    const save = this.save;
+    const ownedPieces = [...new Set(save.armory)].map((id) => armorById(id)).filter((p): p is ArmorDef => !!p);
+    if (!ownedPieces.length) {
+      body.appendChild(el(`<div class="shop-note">The Forge waits for armor worth reworking — buy pieces at the Armory first.</div>`));
+      return;
+    }
+    const forge = el(`
+      <div class="hero-card tinker-bench">
+        <div class="hero-name">The Forge</div>
+        <div class="hero-meta">The smith can rework any owned piece up to +${FORGE_MAX} — every bonus it gives grows a quarter stronger per mark.</div>
+        <div class="tinker-rows"></div>
+      </div>
+    `);
+    const rows = forge.querySelector(".tinker-rows")!;
+    for (const piece of ownedPieces) {
+      const lvl = save.forge[piece.id] ?? 0;
+      const pips = "●".repeat(lvl) + "○".repeat(FORGE_MAX - lvl);
+      const next = lvl < FORGE_MAX ? forgeCost(piece, lvl + 1) : 0;
+      rows.appendChild(
+        el(`
+          <div class="tinker-row">
+            <span class="tinker-item">${ico(piece.icon)} ${pieceLabel(piece, save.forge)} <span class="forge-pips">${pips}</span></span>
+            ${
+              lvl < FORGE_MAX
+                ? `<button class="big-btn buy-btn ${save.gold < next ? "cant" : ""}" data-forge="${piece.id}">Forge +${lvl + 1} — ${next}g</button>`
+                : '<span class="gear-max">Masterwork</span>'
+            }
+          </div>
+        `),
+      );
+    }
+    body.appendChild(forge);
+  }
+
+  /** Tinker's bench: duplicate trinkets aren't dead weight — fuse or sell them. */
+  private buildTinkerBench(body: Element): void {
+    const save = this.save;
+    const counts = new Map<string, number>();
+    for (const id of save.inventory) counts.set(id, (counts.get(id) ?? 0) + 1);
+    const dupes = [...counts.entries()].filter(([, n]) => n >= 2);
+    if (!dupes.length) return;
+    const bench = el(`
+      <div class="hero-card tinker-bench">
+        <div class="hero-name">Tinker's Bench</div>
+        <div class="hero-meta">Two copies of the same trinket can be reworked.</div>
+        <div class="tinker-rows"></div>
+      </div>
+    `);
+    const rows = bench.querySelector(".tinker-rows")!;
+    for (const [id, n] of dupes) {
+      const t = trinketById(id)!;
+      const rare = t.rarity === "rare";
+      rows.appendChild(
+        el(`
+          <div class="tinker-row">
+            <span class="tinker-item">${t.icon} ${t.name} ×${n}</span>
+            <button class="big-btn buy-btn" data-fuse="${id}">
+              ${rare ? "Sell spare — +120g" : "Fuse 2 → random RARE"}
+            </button>
+          </div>
+        `),
+      );
+    }
+    body.appendChild(bench);
+  }
+
+  private buildArmory(body: Element): void {
+    const save = this.save;
     // the armorer's rack: named pieces, each a decision — now in three fittings
     const rack = el(`
       <div class="hero-card">
@@ -2185,12 +2338,11 @@ export class Menus {
                 <em>${piece.blurb}</em>
                 ${wearers.length ? `<em class="curio-worn">worn by ${wearers.join(" & ")}</em>` : owned ? `<em class="curio-worn">in the armory, unworn</em>` : ""}
               </span>
+              ${owned > wearers.length ? `<button class="big-btn buy-btn" data-dress="${piece.id}">Dress…</button>` : ""}
               ${
-                piece.cost > 0 && owned === 0
+                piece.cost > 0
                   ? `<button class="big-btn buy-btn ${save.gold < piece.cost ? "cant" : ""}" data-armorbuy="${piece.id}">${ico("coin")} ${piece.cost}</button>`
-                  : piece.cost === 0
-                    ? '<span class="rare-tag">RELIC</span>'
-                    : `<button class="big-btn buy-btn ${save.gold < piece.cost ? "cant" : ""}" data-armorbuy="${piece.id}">${ico("coin")} ${piece.cost}</button>`
+                  : '<span class="rare-tag">RELIC</span>'
               }
             </div>
           `),
@@ -2198,67 +2350,7 @@ export class Menus {
       }
     }
     body.appendChild(rack);
-
-    // the forge: upgrades bind to the piece and sharpen everything it gives
-    const ownedPieces = [...new Set(save.armory)].map((id) => armorById(id)).filter((p): p is ArmorDef => !!p);
-    if (ownedPieces.length) {
-      const forge = el(`
-        <div class="hero-card tinker-bench">
-          <div class="hero-name">The Forge</div>
-          <div class="hero-meta">The smith can rework any owned piece up to +${FORGE_MAX} — every bonus it gives grows a quarter stronger per mark.</div>
-          <div class="tinker-rows"></div>
-        </div>
-      `);
-      const rows = forge.querySelector(".tinker-rows")!;
-      for (const piece of ownedPieces) {
-        const lvl = save.forge[piece.id] ?? 0;
-        const pips = "●".repeat(lvl) + "○".repeat(FORGE_MAX - lvl);
-        const next = lvl < FORGE_MAX ? forgeCost(piece, lvl + 1) : 0;
-        rows.appendChild(
-          el(`
-            <div class="tinker-row">
-              <span class="tinker-item">${ico(piece.icon)} ${pieceLabel(piece, save.forge)} <span class="forge-pips">${pips}</span></span>
-              ${
-                lvl < FORGE_MAX
-                  ? `<button class="big-btn buy-btn ${save.gold < next ? "cant" : ""}" data-forge="${piece.id}">Forge +${lvl + 1} — ${next}g</button>`
-                  : '<span class="gear-max">Masterwork</span>'
-              }
-            </div>
-          `),
-        );
-      }
-      body.appendChild(forge);
-    }
-
-    // Tinker's bench: duplicate trinkets aren't dead weight — fuse or sell them
-    const counts = new Map<string, number>();
-    for (const id of save.inventory) counts.set(id, (counts.get(id) ?? 0) + 1);
-    const dupes = [...counts.entries()].filter(([, n]) => n >= 2);
-    if (dupes.length) {
-      const bench = el(`
-        <div class="hero-card tinker-bench">
-          <div class="hero-name">Tinker's Bench</div>
-          <div class="hero-meta">Two copies of the same trinket can be reworked.</div>
-          <div class="tinker-rows"></div>
-        </div>
-      `);
-      const rows = bench.querySelector(".tinker-rows")!;
-      for (const [id, n] of dupes) {
-        const t = trinketById(id)!;
-        const rare = t.rarity === "rare";
-        rows.appendChild(
-          el(`
-            <div class="tinker-row">
-              <span class="tinker-item">${t.icon} ${t.name} ×${n}</span>
-              <button class="big-btn buy-btn" data-fuse="${id}">
-                ${rare ? "Sell spare — +120g" : "Fuse 2 → random RARE"}
-              </button>
-            </div>
-          `),
-        );
-      }
-      body.appendChild(bench);
-    }
+    body.appendChild(el(`<div class="shop-note">Weapon upgrades, the Forge, and the Tinker's Bench live at the <button class="linklike" data-goto-smithy>Smithy →</button></div>`));
 
     body.addEventListener("click", (event) => {
       const buyBtn = (event.target as HTMLElement).closest("[data-armorbuy]");
@@ -2272,74 +2364,17 @@ export class Menus {
         this.askWhoWears(piece.id);
         return;
       }
-      const forgeBtn = (event.target as HTMLElement).closest("[data-forge]");
-      if (forgeBtn) {
-        const id = forgeBtn.getAttribute("data-forge")!;
-        const piece = armorById(id)!;
-        const lvl = save.forge[id] ?? 0;
-        if (lvl >= FORGE_MAX) return;
-        if (!this.spend(forgeCost(piece, lvl + 1))) return;
-        save.forge[id] = lvl + 1;
-        persist(save);
-        audio.play("anvil");
-        if (lvl + 1 >= FORGE_MAX) audio.play("levelup");
-        navigator.vibrate?.([12, 20, 30]);
-        // hammer sparks fly from the button that was struck
-        const rect = (forgeBtn as HTMLElement).getBoundingClientRect();
-        const sparks = el(`<div class="forge-sparks ${lvl + 1 >= FORGE_MAX ? "master" : ""}" style="left:${rect.left + rect.width / 2}px;top:${rect.top + rect.height / 2}px"></div>`);
-        for (let i = 0; i < 7; i++) {
-          const s = document.createElement("i");
-          s.style.setProperty("--dx", `${(Math.random() - 0.5) * 90}px`);
-          s.style.setProperty("--dy", `${-30 - Math.random() * 60}px`);
-          s.style.animationDelay = `${Math.random() * 0.08}s`;
-          sparks.appendChild(s);
-        }
-        document.body.appendChild(sparks);
-        setTimeout(() => sparks.remove(), 800);
-        this.showToast(`${piece.name} reforged to +${lvl + 1}${lvl + 1 >= FORGE_MAX ? " — masterwork!" : ""}`);
-        this.renderShop("armory");
+      // an owned, unworn piece can be dressed straight from the rack
+      const dressBtn = (event.target as HTMLElement).closest("[data-dress]");
+      if (dressBtn) {
+        audio.play("click");
+        this.askWhoWears(dressBtn.getAttribute("data-dress")!);
         return;
       }
-      const fuseBtn = (event.target as HTMLElement).closest("[data-fuse]");
-      if (fuseBtn) {
-        const id = fuseBtn.getAttribute("data-fuse")!;
-        const t = trinketById(id)!;
-        const remove = (times: number) => {
-          for (let k = 0; k < times; k++) {
-            const at = save.inventory.indexOf(id);
-            if (at >= 0) save.inventory.splice(at, 1);
-          }
-        };
-        if (t.rarity === "rare") {
-          remove(1);
-          save.gold += 120;
-          audio.play("coin");
-          this.showToast(`Sold the spare ${t.name} — +120 gold`);
-        } else {
-          remove(2);
-          const rares = TRINKETS.filter((r) => r.rarity === "rare");
-          const forged = rares[Math.floor(Math.random() * rares.length)];
-          save.inventory.push(forged.id);
-          save.lifetime.fuses += 1;
-          audio.play("levelup");
-          navigator.vibrate?.([15, 25, 40]);
-          this.showToast(`The tinker forges ${forged.icon} ${forged.name} — RARE!`);
-        }
-        persist(save);
-        this.renderShop("armory");
-        return;
+      if ((event.target as HTMLElement).closest("[data-goto-smithy]")) {
+        audio.play("page");
+        this.renderShop("smithy");
       }
-      const btn = (event.target as HTMLElement).closest("[data-gear]");
-      if (!btn) return;
-      const [, idx] = btn.getAttribute("data-gear")!.split(":");
-      const i = Number(idx);
-      const hero = save.heroes[i];
-      const tier = hero.weaponTier + 1;
-      if (!this.spend(WEAPON_TIERS[tier].cost)) return;
-      hero.weaponTier = tier;
-      persist(save);
-      this.showToast(`${HEROES[i].name} equips a ${WEAPON_TIERS[tier].name} weapon!`);
-      this.renderShop("armory");
     });
   }
 
@@ -2417,7 +2452,7 @@ export class Menus {
   // ------------------------------------------------------------------ hero hub
 
   /** Tab rail every hero screen shares: one hero, four facets, plus ‹ › to walk the roster. */
-  private heroTabs(index: number, active: "overview" | "loadout" | "talents" | "calling"): HTMLElement {
+  private heroTabs(index: number, active: "overview" | "gear" | "spells" | "talents" | "calling"): HTMLElement {
     const save = this.save;
     const canCall = !!save.heroes[index].calling || save.level >= CALLING_UNLOCK_LEVEL;
     const roster = save.heroes.map((h, i) => ({ h, i })).filter(({ h }) => h.recruited).map(({ i }) => i);
@@ -2425,7 +2460,8 @@ export class Menus {
       <div class="shop-tabs hero-tabs">
         <button class="hero-step" data-hstep="-1" title="previous hero">‹</button>
         <button class="shop-tab ${active === "overview" ? "on" : ""}" data-htab="overview">${ico("banner")} Overview</button>
-        <button class="shop-tab ${active === "loadout" ? "on" : ""}" data-htab="loadout">${ico("shield")} Equip</button>
+        <button class="shop-tab ${active === "gear" ? "on" : ""}" data-htab="gear">${ico("shield")} Gear</button>
+        <button class="shop-tab ${active === "spells" ? "on" : ""}" data-htab="spells">${ico("spark")} Spells</button>
         <button class="shop-tab ${active === "talents" ? "on" : ""}" data-htab="talents">${ico("star")} Talents</button>
         <button class="shop-tab ${active === "calling" ? "on" : ""}" data-htab="calling" ${canCall ? "" : "disabled"}>${ico("sword")} Calling</button>
         <button class="hero-step" data-hstep="1" title="next hero">›</button>
@@ -2433,7 +2469,8 @@ export class Menus {
     `);
     const open = (i: number, tab: string) => {
       if (tab === "overview") this.renderHeroOverview(i);
-      else if (tab === "loadout") this.renderEquipment(i);
+      else if (tab === "gear") this.renderEquipment(i);
+      else if (tab === "spells") this.renderSpells(i);
       else if (tab === "talents") this.renderTalents(i);
       else if (this.save.heroes[i].calling || this.save.level >= CALLING_UNLOCK_LEVEL) this.renderCalling(i);
       else this.renderHeroOverview(i);
@@ -3003,6 +3040,7 @@ export class Menus {
 
   // ------------------------------------------------------------------ equipment
 
+  /** The Gear page: figure, weapon, the three armor slots, set meter, trinket. */
   renderEquipment(index: number): void {
     this.pushNav("equip", index);
     this.root.innerHTML = "";
@@ -3014,7 +3052,6 @@ export class Menus {
     const sheetHolds = sheetSworn ? callingEligible(sheetSworn, hero.attrs) : false;
     const weapon = dominantWeapon(hero.attrs, sheetHolds ? hero.calling : null);
     const oathGuided = sheetHolds && weapon !== dominantWeapon(hero.attrs);
-    const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
     const nextW = hero.weaponTier + 1 < WEAPON_TIERS.length ? WEAPON_TIERS[hero.weaponTier + 1] : null;
     const trinket = trinketById(hero.trinket);
     const dominant = ATTR_KEYS.reduce((best, k) => (hero.attrs[k] > hero.attrs[best] ? k : best), ATTR_KEYS[0]);
@@ -3046,7 +3083,6 @@ export class Menus {
                   : `<div class="gear-max">Finest weapon in the realm</div>`
               }
             </div>
-            <div class="gear-slots"></div>
             <div class="equip-slot">
               <div class="equip-slot-head">${ico("gem")} Trinket — <strong>${trinket ? `${trinket.icon} ${trinket.name}` : "none"}</strong></div>
               ${trinket ? `<div class="equip-blurb">${trinket.blurb}${trinket.rarity === "rare" ? ' <span class="rare-tag">RARE</span>' : ""}</div>` : ""}
@@ -3054,23 +3090,12 @@ export class Menus {
             </div>
           </div>
           <div class="sheet-right">
-            <div class="equip-slot loadout-panel">
-              <div class="equip-slot-head">${ico("spark")} Spell loadout — <strong>${hero.equipped.length}/${MAX_EQUIPPED}</strong>
-                <span class="loadout-hint ${this.pendingSpell ? "urgent" : ""}">${
-                  this.pendingSpell ? "tap a slot to swap it in" : "these fire from the battle bar"
-                }</span>
-              </div>
-              <div class="slot-row"></div>
-            </div>
-            <div class="equip-slot">
-              <div class="equip-slot-head">${ico("book")} Spellbook <span>tap to equip · tap again to remove</span></div>
-              <div class="spell-grid"></div>
-            </div>
+            <div class="gear-slots"></div>
           </div>
         </div>
       </div>
     `);
-    page.querySelector(".map-header")!.after(this.heroTabs(index, "loadout"));
+    page.querySelector(".map-header")!.after(this.heroTabs(index, "gear"));
     // live figure: the real battle render, idling
     const fig = page.querySelector(".figure-canvas") as HTMLCanvasElement;
     if (this.justDonned) {
@@ -3122,10 +3147,14 @@ export class Menus {
           return `<button class="toggle-btn trinket-opt ${wornId === p.id ? "on" : ""}" data-${dataKey}="${p.id}" title="${p.blurb}">${ico(p.icon)} ${pieceLabel(p, save.forge)}${p.boss ? " ✦" : ""}${bits.length ? ` <span class="delta-chips">${bits.join("")}</span>` : ""}</button>`;
         })
         .join("");
+      // a worn piece can be handed straight to a bandmate
+      const others = save.heroes.some((h, hi) => hi !== index && h.recruited);
       gearHolder.appendChild(
         el(`
           <div class="equip-slot">
-            <div class="equip-slot-head">${ico(sectionIcon)} ${title} — <strong>${worn ? pieceLabel(worn, save.forge) : kind === "body" ? "Traveler's Garb" : "none"}</strong> <span class="loadout-hint ${kind === "body" && !worn && pool.length ? "urgent" : ""}">${pool.length ? "tap a piece below to wear it" : "the Village Armory sells more"}</span></div>
+            <div class="equip-slot-head">${ico(sectionIcon)} ${title} — <strong>${worn ? pieceLabel(worn, save.forge) : kind === "body" ? "Traveler's Garb" : "none"}</strong>
+              ${worn && others ? `<button class="toggle-btn handoff-btn" data-handoff="${kind}">Hand to…</button>` : ""}
+              <span class="loadout-hint ${kind === "body" && !worn && pool.length ? "urgent" : ""}">${pool.length ? "tap a piece below to wear it" : `<button class="linklike" data-goto="armory">the Armory sells more →</button>`}</span></div>
             ${
               worn
                 ? `<div class="equip-blurb">${worn.blurb}${worn.boss ? ' <span class="rare-tag">RELIC</span>' : ""}${skill ? ` · grants <strong>${skill.name}</strong> in battle` : ""}</div>`
@@ -3161,51 +3190,6 @@ export class Menus {
       `),
     );
 
-    // loadout slots
-    const slotRow = page.querySelector(".slot-row")!;
-    for (let s = 0; s < MAX_EQUIPPED; s++) {
-      const id = hero.equipped[s] ?? null;
-      const slot = el(`
-        <button class="big-slot ${id ? "filled" : "empty"} ${this.pendingSpell ? "pulse" : ""}" data-slot="${s}" ${id ? `style="--chip:${abilityById(id).color}"` : ""}>
-          <span class="big-slot-ico"></span>
-          <span class="big-slot-name">${id ? abilityById(id).name : "Empty"}</span>
-          ${id && !this.pendingSpell ? '<span class="big-slot-x">×</span>' : ""}
-        </button>
-      `);
-      if (id) {
-        const holder = slot.querySelector(".big-slot-ico")!;
-        const canvas = document.createElement("canvas");
-        canvas.width = canvas.height = 68;
-        canvas.style.width = canvas.style.height = "34px";
-        const cctx = canvas.getContext("2d")!;
-        cctx.scale(2, 2);
-        drawAbilityGlyph(cctx, abilityById(id).icon, 17, 17, 10, abilityById(id).color);
-        holder.appendChild(canvas);
-      }
-      slotRow.appendChild(slot);
-    }
-    // sworn calling's ultimate rides along as a bonus fourth slot
-    const swornCalling = callingById(hero.calling);
-    const sheetOathHolds = swornCalling ? callingEligible(swornCalling, hero.attrs) : false;
-    if (swornCalling) {
-      const sigSlot = el(`
-        <div class="big-slot filled signature ${sheetOathHolds ? "" : "dormant"}" style="--chip:${sheetOathHolds ? swornCalling.color : "#7d7590"}">
-          <span class="big-slot-ico"></span>
-          <span class="big-slot-name">${swornCalling.signature.name}</span>
-          <span class="sig-tag">${ico(swornCalling.crest)} ${sheetOathHolds ? `${swornCalling.name} ultimate` : "oath dormant"}</span>
-        </div>
-      `);
-      const sigHolder = sigSlot.querySelector(".big-slot-ico")!;
-      const sigCanvas = document.createElement("canvas");
-      sigCanvas.width = sigCanvas.height = 68;
-      sigCanvas.style.width = sigCanvas.style.height = "34px";
-      const sigCtx = sigCanvas.getContext("2d")!;
-      sigCtx.scale(2, 2);
-      drawAbilityGlyph(sigCtx, swornCalling.signature.icon, 17, 17, 10, swornCalling.color);
-      sigHolder.appendChild(sigCanvas);
-      slotRow.appendChild(sigSlot);
-    }
-
     // trinket choices: none + every distinct loot piece not worn by someone else
     const options = page.querySelector(".trinket-options:not(.armor-options)")!;
     const takenElsewhere = save.heroes.filter((_, hi) => hi !== index).map((h) => h.trinket);
@@ -3224,47 +3208,6 @@ export class Menus {
           el(`<button class="toggle-btn trinket-opt ${hero.trinket === id ? "on" : ""}" data-trinket="${id}">${t.icon} ${t.name}${t.rarity === "rare" ? " ✦" : ""}</button>`),
         );
       }
-    }
-
-    const grid = page.querySelector(".spell-grid")!;
-    let lastAttr = "";
-    for (const ability of [...ABILITIES].sort((a, b) => ATTR_KEYS.indexOf(a.gate.attr) - ATTR_KEYS.indexOf(b.gate.attr) || a.gate.value - b.gate.value)) {
-      if (ability.gate.attr !== lastAttr) {
-        lastAttr = ability.gate.attr;
-        grid.appendChild(el(`<div class="spell-section">${ATTR_NAMES[ability.gate.attr]} <em>${hero.attrs[ability.gate.attr]} trained</em></div>`));
-      }
-      const gateOk = unlocked.includes(ability.id);
-      const owned = save.unlockedSpells.includes(ability.id);
-      const usable = gateOk && owned;
-      const slotAt = hero.equipped.indexOf(ability.id);
-      const isPending = this.pendingSpell === ability.id;
-      const tag = !owned
-        ? "Unlock at the Village"
-        : !gateOk
-          ? `Needs ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}`
-          : slotAt >= 0
-            ? `Equipped — slot ${slotAt + 1}`
-            : ability.blurb;
-      const chip = el(`
-        <button class="spell-chip ${usable ? "" : "locked"} ${slotAt >= 0 ? "equipped" : ""} ${isPending ? "pending" : ""}"
-          style="--chip:${ability.color}" data-ability="${ability.id}">
-          <span class="spell-ico"></span>
-          <span class="spell-info">
-            <strong>${ability.name}${isPending ? " — pick a slot" : ""}</strong>
-            <em>${tag}</em>
-          </span>
-          ${slotAt >= 0 ? `<span class="slot-badge">${slotAt + 1}</span>` : ""}
-        </button>
-      `);
-      const holder = chip.querySelector(".spell-ico")!;
-      const canvas = document.createElement("canvas");
-      canvas.width = canvas.height = 60;
-      canvas.style.width = canvas.style.height = "30px";
-      const cctx = canvas.getContext("2d")!;
-      cctx.scale(2, 2);
-      drawAbilityGlyph(cctx, ability.icon, 15, 15, 9, usable ? ability.color : "#6b6478");
-      holder.appendChild(canvas);
-      grid.appendChild(chip);
     }
 
     page.addEventListener("click", (event) => {
@@ -3323,6 +3266,197 @@ export class Menus {
         this.renderEquipment(index);
         return;
       }
+      const goto = target.closest("[data-goto]");
+      if (goto) {
+        audio.play("page");
+        this.renderShop("armory");
+        return;
+      }
+      const handoffBtn = target.closest("[data-handoff]");
+      if (handoffBtn) {
+        this.askHandoff(index, handoffBtn.getAttribute("data-handoff") as "body" | "helm" | "boots");
+        return;
+      }
+      if (target.closest('[data-act="back"]')) {
+        audio.play("click");
+        this.renderParty();
+      }
+    });
+    this.mount(page, "party");
+  }
+
+  /** Pass a worn piece straight to a bandmate — no doff-then-dress round trip. */
+  private askHandoff(index: number, kind: "body" | "helm" | "boots"): void {
+    const save = this.save;
+    const hero = save.heroes[index];
+    const slotKeyOf = (h: (typeof save.heroes)[number]) => (kind === "body" ? h.armor : kind === "helm" ? h.helm : h.boots);
+    const pieceId = slotKeyOf(hero);
+    const piece = armorById(pieceId);
+    if (!piece) return;
+    const pop = el(`
+      <div class="levelup-pop">
+        <div class="levelup-card">
+          <div class="levelup-title" style="font-size:20px">${pieceLabel(piece, save.forge)}</div>
+          <div class="levelup-line">Hand it to whom? (their current piece returns to the armory)</div>
+          <div class="wear-row">
+            ${save.heroes
+              .map((h, i) => ({ h, i }))
+              .filter(({ h, i }) => h.recruited && i !== index)
+              .map(({ h, i }) => `<button class="toggle-btn wear-opt" data-wear="${i}">${HEROES[i].name}${slotKeyOf(h) ? "" : " ◇"}</button>`)
+              .join("")}
+          </div>
+          <div class="levelup-actions"><button class="big-btn" data-wear="cancel">Keep it</button></div>
+        </div>
+      </div>
+    `);
+    pop.addEventListener("click", (event) => {
+      const pick = (event.target as HTMLElement).closest("[data-wear]")?.getAttribute("data-wear");
+      if (!pick) return;
+      if (pick !== "cancel") {
+        const to = save.heroes[Number(pick)];
+        if (kind === "body") {
+          hero.armor = null;
+          to.armor = pieceId;
+        } else if (kind === "helm") {
+          hero.helm = null;
+          to.helm = pieceId;
+        } else {
+          hero.boots = null;
+          to.boots = pieceId;
+        }
+        persist(save);
+        audio.play("clink");
+        this.showToast(`${HEROES[Number(pick)].name} takes the ${piece.name}`);
+      }
+      pop.remove();
+      this.renderEquipment(index);
+    });
+    this.root.appendChild(pop);
+  }
+
+  /** The Spells page: loadout slots plus the full spellbook. */
+  renderSpells(index: number): void {
+    this.pushNav("spells", index);
+    this.root.innerHTML = "";
+    this.show();
+    const save = this.save;
+    const hero = save.heroes[index];
+    const def = HEROES[index];
+    const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
+    const page = el(`
+      <div class="page hero-sheet">
+        <div class="map-header">
+          <div class="equip-title">
+            <div>
+              <div class="map-title">${def.name} <em class="sheet-title">${def.title}</em></div>
+              <div class="map-level">Spellcraft · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="equip-slot loadout-panel">
+          <div class="equip-slot-head">${ico("spark")} Spell loadout — <strong>${hero.equipped.length}/${MAX_EQUIPPED}</strong>
+            <span class="loadout-hint ${this.pendingSpell ? "urgent" : ""}">${
+              this.pendingSpell ? "tap a slot to swap it in" : "these fire from the battle bar"
+            }</span>
+          </div>
+          <div class="slot-row"></div>
+        </div>
+        <div class="equip-slot">
+          <div class="equip-slot-head">${ico("book")} Spellbook <span>tap to equip · tap again to remove</span></div>
+          <div class="spell-grid"></div>
+        </div>
+      </div>
+    `);
+    page.querySelector(".map-header")!.after(this.heroTabs(index, "spells"));
+
+    // loadout slots
+    const slotRow = page.querySelector(".slot-row")!;
+    for (let s = 0; s < MAX_EQUIPPED; s++) {
+      const id = hero.equipped[s] ?? null;
+      const slot = el(`
+        <button class="big-slot ${id ? "filled" : "empty"} ${this.pendingSpell ? "pulse" : ""}" data-slot="${s}" ${id ? `style="--chip:${abilityById(id).color}"` : ""}>
+          <span class="big-slot-ico"></span>
+          <span class="big-slot-name">${id ? abilityById(id).name : "Empty"}</span>
+          ${id && !this.pendingSpell ? '<span class="big-slot-x">×</span>' : ""}
+        </button>
+      `);
+      if (id) {
+        const holder = slot.querySelector(".big-slot-ico")!;
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 68;
+        canvas.style.width = canvas.style.height = "34px";
+        const cctx = canvas.getContext("2d")!;
+        cctx.scale(2, 2);
+        drawAbilityGlyph(cctx, abilityById(id).icon, 17, 17, 10, abilityById(id).color);
+        holder.appendChild(canvas);
+      }
+      slotRow.appendChild(slot);
+    }
+    // sworn calling's ultimate rides along as a bonus fourth slot
+    const swornCalling = callingById(hero.calling);
+    const sheetOathHolds = swornCalling ? callingEligible(swornCalling, hero.attrs) : false;
+    if (swornCalling) {
+      const sigSlot = el(`
+        <div class="big-slot filled signature ${sheetOathHolds ? "" : "dormant"}" style="--chip:${sheetOathHolds ? swornCalling.color : "#7d7590"}">
+          <span class="big-slot-ico"></span>
+          <span class="big-slot-name">${swornCalling.signature.name}</span>
+          <span class="sig-tag">${ico(swornCalling.crest)} ${sheetOathHolds ? `${swornCalling.name} ultimate` : "oath dormant"}</span>
+        </div>
+      `);
+      const sigHolder = sigSlot.querySelector(".big-slot-ico")!;
+      const sigCanvas = document.createElement("canvas");
+      sigCanvas.width = sigCanvas.height = 68;
+      sigCanvas.style.width = sigCanvas.style.height = "34px";
+      const sigCtx = sigCanvas.getContext("2d")!;
+      sigCtx.scale(2, 2);
+      drawAbilityGlyph(sigCtx, swornCalling.signature.icon, 17, 17, 10, swornCalling.color);
+      sigHolder.appendChild(sigCanvas);
+      slotRow.appendChild(sigSlot);
+    }
+
+    const grid = page.querySelector(".spell-grid")!;
+    let lastAttr = "";
+    for (const ability of [...ABILITIES].sort((a, b) => ATTR_KEYS.indexOf(a.gate.attr) - ATTR_KEYS.indexOf(b.gate.attr) || a.gate.value - b.gate.value)) {
+      if (ability.gate.attr !== lastAttr) {
+        lastAttr = ability.gate.attr;
+        grid.appendChild(el(`<div class="spell-section">${ATTR_NAMES[ability.gate.attr]} <em>${hero.attrs[ability.gate.attr]} trained</em></div>`));
+      }
+      const gateOk = unlocked.includes(ability.id);
+      const owned = save.unlockedSpells.includes(ability.id);
+      const usable = gateOk && owned;
+      const slotAt = hero.equipped.indexOf(ability.id);
+      const isPending = this.pendingSpell === ability.id;
+      const tag = !owned
+        ? "Unlock at the Village"
+        : !gateOk
+          ? `Needs ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}`
+          : slotAt >= 0
+            ? `Equipped — slot ${slotAt + 1}`
+            : ability.blurb;
+      const chip = el(`
+        <button class="spell-chip ${usable ? "" : "locked"} ${slotAt >= 0 ? "equipped" : ""} ${isPending ? "pending" : ""}"
+          style="--chip:${ability.color}" data-ability="${ability.id}">
+          <span class="spell-ico"></span>
+          <span class="spell-info">
+            <strong>${ability.name}${isPending ? " — pick a slot" : ""}</strong>
+            <em>${tag}</em>
+          </span>
+          ${slotAt >= 0 ? `<span class="slot-badge">${slotAt + 1}</span>` : ""}
+        </button>
+      `);
+      const holder = chip.querySelector(".spell-ico")!;
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 60;
+      canvas.style.width = canvas.style.height = "30px";
+      const cctx = canvas.getContext("2d")!;
+      cctx.scale(2, 2);
+      drawAbilityGlyph(cctx, ability.icon, 15, 15, 9, usable ? ability.color : "#6b6478");
+      holder.appendChild(canvas);
+      grid.appendChild(chip);
+    }
+
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
       const slotBtn = target.closest("[data-slot]");
       if (slotBtn) {
         const at = Number(slotBtn.getAttribute("data-slot"));
@@ -3338,7 +3472,7 @@ export class Menus {
           audio.play("click");
           persist(save);
         }
-        this.renderEquipment(index);
+        this.renderSpells(index);
         return;
       }
       const chip = target.closest("[data-ability]");
@@ -3348,7 +3482,7 @@ export class Menus {
           // tapping the waiting spell again cancels the swap
           this.pendingSpell = null;
           audio.play("click");
-          this.renderEquipment(index);
+          this.renderSpells(index);
           return;
         }
         if (!save.unlockedSpells.includes(id)) {
@@ -3367,12 +3501,12 @@ export class Menus {
           // slots full: arm replace mode instead of scolding
           this.pendingSpell = id;
           audio.play("click");
-          this.renderEquipment(index);
+          this.renderSpells(index);
           return;
         }
         audio.play("click");
         persist(save);
-        this.renderEquipment(index);
+        this.renderSpells(index);
         return;
       }
       if (target.closest('[data-act="back"]')) {
