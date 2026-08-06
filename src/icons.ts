@@ -93,6 +93,183 @@ export function drawAbilityGlyph(
       ctx.closePath();
       ctx.stroke();
       break;
+    case "sunder":
+      // cracked guard
+      ctx.moveTo(cx, cy - r);
+      ctx.quadraticCurveTo(cx + r, cy - r * 0.6, cx + r * 0.8, cy + r * 0.1);
+      ctx.quadraticCurveTo(cx + r * 0.5, cy + r * 0.8, cx, cy + r);
+      ctx.quadraticCurveTo(cx - r * 0.5, cy + r * 0.8, cx - r * 0.8, cy + r * 0.1);
+      ctx.quadraticCurveTo(cx - r, cy - r * 0.6, cx, cy - r);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.1, cy - r * 0.85);
+      ctx.lineTo(cx + r * 0.2, cy - r * 0.25);
+      ctx.lineTo(cx - r * 0.15, cy + r * 0.1);
+      ctx.lineTo(cx + r * 0.1, cy + r * 0.8);
+      ctx.stroke();
+      break;
+    case "groundbreaker":
+      for (let i = 0; i < 5; i++) {
+        const a = Math.PI * (0.15 + (i / 4) * 0.7);
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + r * 0.5);
+        ctx.lineTo(cx - Math.cos(a) * r * 1.05, cy + r * 0.5 - Math.sin(a) * r * 1.2);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy + r * 0.5, r * 0.24, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case "rush":
+      for (const off of [-0.5, 0.25]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + off * r, cy - r * 0.7);
+        ctx.lineTo(cx + off * r + r * 0.75, cy);
+        ctx.lineTo(cx + off * r, cy + r * 0.7);
+        ctx.stroke();
+      }
+      break;
+    case "twinshot":
+      for (const oy of [-0.45, 0.45]) {
+        ctx.beginPath();
+        ctx.moveTo(cx - r, cy + oy * r);
+        ctx.lineTo(cx + r * 0.55, cy + oy * r);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx + r * 0.3, cy + oy * r - r * 0.25);
+        ctx.lineTo(cx + r * 0.85, cy + oy * r);
+        ctx.lineTo(cx + r * 0.3, cy + oy * r + r * 0.25);
+        ctx.stroke();
+      }
+      break;
+    case "smokebomb":
+      for (const [ox, oy, rr] of [[-0.4, 0.25, 0.45], [0.35, 0.2, 0.5], [0, -0.35, 0.55]] as [number, number, number][]) {
+        ctx.beginPath();
+        ctx.arc(cx + ox * r, cy + oy * r, rr * r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      break;
+    case "deadeye":
+      ctx.arc(cx, cy, r * 0.7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
+        ctx.moveTo(cx + dx * r * 0.45, cy + dy * r * 0.45);
+        ctx.lineTo(cx + dx * r, cy + dy * r);
+      }
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case "missiles":
+      for (const [ox, oy] of [[-0.6, -0.4], [0, 0], [0.55, 0.45]] as [number, number][]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + ox * r - r * 0.35, cy + oy * r + r * 0.2);
+        ctx.lineTo(cx + ox * r + r * 0.35, cy + oy * r - r * 0.2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx + ox * r + r * 0.35, cy + oy * r - r * 0.2, r * 0.14, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    case "gravity":
+      for (let s2 = 0; s2 < 14; s2++) {
+        const a = s2 * 0.55;
+        const rr = r * (1 - s2 / 15);
+        const px2 = cx + Math.cos(a) * rr;
+        const py2 = cy + Math.sin(a) * rr;
+        if (s2 === 0) ctx.moveTo(px2, py2);
+        else ctx.lineTo(px2, py2);
+      }
+      ctx.stroke();
+      break;
+    case "meteor":
+      ctx.arc(cx - r * 0.25, cy + r * 0.35, r * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(cx + r * 0.1, cy - r * 0.05);
+      ctx.lineTo(cx + r, cy - r);
+      ctx.moveTo(cx + r * 0.35, cy + r * 0.3);
+      ctx.lineTo(cx + r * 1.05, cy - r * 0.15);
+      ctx.stroke();
+      break;
+    case "blessing":
+      ctx.moveTo(cx, cy - r * 0.9);
+      ctx.lineTo(cx, cy + r * 0.1);
+      ctx.moveTo(cx - r * 0.5, cy - r * 0.4);
+      ctx.lineTo(cx + r * 0.5, cy - r * 0.4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy + r * 0.55, r * 0.55, Math.PI * 0.15, Math.PI * 0.85);
+      ctx.stroke();
+      break;
+    case "ward":
+      ctx.moveTo(cx, cy - r * 0.9);
+      ctx.quadraticCurveTo(cx + r * 0.9, cy - r * 0.5, cx + r * 0.7, cy + r * 0.15);
+      ctx.quadraticCurveTo(cx + r * 0.45, cy + r * 0.75, cx, cy + r * 0.9);
+      ctx.quadraticCurveTo(cx - r * 0.45, cy + r * 0.75, cx - r * 0.7, cy + r * 0.15);
+      ctx.quadraticCurveTo(cx - r * 0.9, cy - r * 0.5, cx, cy - r * 0.9);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case "judgement":
+      for (const ox of [-0.55, 0, 0.55]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + ox * r, cy - r);
+        ctx.lineTo(cx + ox * r, cy + r * (ox === 0 ? 0.9 : 0.5));
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy - r, r * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case "secondwind":
+      ctx.arc(cx, cy, r * 0.75, -Math.PI * 0.4, Math.PI * 1.1);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + r * 0.35, cy - r * 0.95);
+      ctx.lineTo(cx + r * 0.75, cy - r * 0.45);
+      ctx.lineTo(cx + r * 0.15, cy - r * 0.35);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    case "ramwall":
+      ctx.moveTo(cx - r * 0.15, cy - r);
+      ctx.lineTo(cx - r * 0.15, cy + r);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + r * 0.15, cy - r * 0.55);
+      ctx.lineTo(cx + r * 0.8, cy);
+      ctx.lineTo(cx + r * 0.15, cy + r * 0.55);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.95, cy - r * 0.45);
+      ctx.lineTo(cx - r * 0.55, cy - r * 0.45);
+      ctx.moveTo(cx - r * 0.95, cy + r * 0.45);
+      ctx.lineTo(cx - r * 0.55, cy + r * 0.45);
+      ctx.stroke();
+      break;
+    case "bastion":
+      ctx.moveTo(cx - r * 0.85, cy + r);
+      ctx.lineTo(cx - r * 0.85, cy - r * 0.35);
+      ctx.lineTo(cx - r * 0.5, cy - r * 0.35);
+      ctx.lineTo(cx - r * 0.5, cy - r * 0.75);
+      ctx.lineTo(cx - r * 0.15, cy - r * 0.75);
+      ctx.lineTo(cx - r * 0.15, cy - r * 0.35);
+      ctx.lineTo(cx + r * 0.15, cy - r * 0.35);
+      ctx.lineTo(cx + r * 0.15, cy - r * 0.75);
+      ctx.lineTo(cx + r * 0.5, cy - r * 0.75);
+      ctx.lineTo(cx + r * 0.5, cy - r * 0.35);
+      ctx.lineTo(cx + r * 0.85, cy - r * 0.35);
+      ctx.lineTo(cx + r * 0.85, cy + r);
+      ctx.closePath();
+      ctx.stroke();
+      break;
     case "overpower":
       // heavy blow driving down
       ctx.moveTo(cx, cy - r);

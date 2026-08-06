@@ -1389,17 +1389,32 @@ export class Menus {
     body.appendChild(
       el(`<div class="shop-note">Unlock a spell once, then assign it to any hero who meets its attribute — up to ${MAX_EQUIPPED} spells per hero, on the Party screen.</div>`),
     );
-    for (const ability of ABILITIES) {
+    // shelved by attribute, cheapest gate first
+    const shelf = [...ABILITIES].sort(
+      (a, b) => ATTR_KEYS.indexOf(a.gate.attr) - ATTR_KEYS.indexOf(b.gate.attr) || a.gate.value - b.gate.value,
+    );
+    for (const ability of shelf) {
       const owned = save.unlockedSpells.includes(ability.id);
       const cost = SPELL_COSTS[ability.id] ?? 100;
       const card = el(`
         <div class="ability-chip shop-spell ${owned ? "equipped" : ""}" style="--chip:${ability.color}">
-          <div class="chip-name">${ability.name}</div>
+          <div class="shop-spell-head">
+            <span class="spell-ico"></span>
+            <div class="chip-name">${ability.name}</div>
+          </div>
           <div class="chip-gate">${ability.blurb}</div>
           <div class="chip-req">Requires ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}</div>
           ${owned ? '<div class="chip-owned">✓ unlocked</div>' : `<button class="big-btn buy-btn ${save.gold < cost ? "cant" : ""}" data-spell="${ability.id}">${ico("coin")} ${cost}</button>`}
         </div>
       `);
+      const holder = card.querySelector(".spell-ico")!;
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 64;
+      canvas.style.width = canvas.style.height = "32px";
+      const cctx = canvas.getContext("2d")!;
+      cctx.scale(2, 2);
+      drawAbilityGlyph(cctx, ability.icon, 16, 16, 9.5, ability.color);
+      holder.appendChild(canvas);
       body.appendChild(card);
     }
     body.addEventListener("click", (event) => {

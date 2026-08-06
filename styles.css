@@ -2108,3 +2108,23 @@ html, body {
 .adv-line.ult { color: color-mix(in srgb, var(--chip, #ffe9a3) 75%, #fff); }
 
 .adv-btn { margin-top: 5px; padding: 8px 12px; font-size: 13px; }
+
+/* ------------------------------------------------------- shop spell icons */
+
+.shop-spell-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.shop-spell-head .spell-ico {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.3);
+}

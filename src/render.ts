@@ -829,6 +829,37 @@ export function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number
 export function drawTelegraphs(ctx: CanvasRenderingContext2D, battle: Battle): void {
   for (const mark of battle.telegraphs) {
     const t = mark.time / mark.duration;
+    if (mark.kind === "meteor") {
+      // a friendly omen: the impact ring plus the star streaking in
+      const a = 0.4 + t * 0.5;
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = "#ff9b42";
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([8, 7]);
+      ctx.lineDashOffset = -battle.time * 30;
+      ctx.beginPath();
+      ctx.ellipse(mark.x, mark.y, mark.radius * (1 - t * 0.25), mark.radius * 0.55 * (1 - t * 0.25), 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // the star falls along a diagonal
+      const sx = mark.x + (1 - t) * 260;
+      const sy = mark.y - (1 - t) * 340;
+      ctx.fillStyle = "#ffb46b";
+      ctx.shadowColor = "#ff9b42";
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 6 + t * 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "rgba(255, 180, 107, 0.6)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(sx + 16, sy - 22);
+      ctx.lineTo(sx, sy);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      continue;
+    }
     const urgency = 0.35 + t * 0.55;
     ctx.globalAlpha = urgency;
     ctx.strokeStyle = "#ff8a70";
@@ -904,6 +935,54 @@ export function drawZones(ctx: CanvasRenderingContext2D, battle: Battle): void {
         ctx.beginPath();
         ctx.arc(zone.x + Math.cos(a) * zone.radius * 0.5, zone.y + Math.sin(a) * zone.radius * 0.28 - rise, 1.8, 0, Math.PI * 2);
         ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    if (zone.kind === "smoke") {
+      // roiling grey cover
+      ctx.globalAlpha = 0.4 * fade;
+      const sg = ctx.createRadialGradient(zone.x, zone.y, 6, zone.x, zone.y, zone.radius);
+      sg.addColorStop(0, "rgba(160, 168, 185, 0.85)");
+      sg.addColorStop(1, "rgba(140, 148, 165, 0)");
+      ctx.fillStyle = sg;
+      ctx.beginPath();
+      ctx.ellipse(zone.x, zone.y, zone.radius, zone.radius * 0.55, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.5 * fade;
+      ctx.fillStyle = "rgba(185, 192, 205, 0.5)";
+      for (let i = 0; i < 4; i++) {
+        const a = battle.time * 0.7 + (i / 4) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.ellipse(zone.x + Math.cos(a) * zone.radius * 0.4, zone.y + Math.sin(a) * zone.radius * 0.22 - 8, 22, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    if (zone.kind === "gravity") {
+      // spiraling violet pull
+      ctx.globalAlpha = 0.5 * fade;
+      const gg = ctx.createRadialGradient(zone.x, zone.y, 3, zone.x, zone.y, zone.radius);
+      gg.addColorStop(0, "rgba(80, 60, 180, 0.7)");
+      gg.addColorStop(1, "rgba(122, 106, 232, 0)");
+      ctx.fillStyle = gg;
+      ctx.beginPath();
+      ctx.ellipse(zone.x, zone.y, zone.radius, zone.radius * 0.55, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#9a8af2";
+      ctx.lineWidth = 1.8;
+      for (let arm = 0; arm < 3; arm++) {
+        ctx.beginPath();
+        for (let s = 0; s < 10; s++) {
+          const rr = zone.radius * (1 - s / 10) * 0.9;
+          const a = battle.time * 2.4 + (arm / 3) * Math.PI * 2 + s * 0.45;
+          const px2 = zone.x + Math.cos(a) * rr;
+          const py2 = zone.y + Math.sin(a) * rr * 0.55;
+          if (s === 0) ctx.moveTo(px2, py2);
+          else ctx.lineTo(px2, py2);
+        }
+        ctx.stroke();
       }
       ctx.globalAlpha = 1;
       continue;

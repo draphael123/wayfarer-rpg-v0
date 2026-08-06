@@ -324,6 +324,13 @@ export class Battle {
     if (guard) amount *= 1 - guard.power;
     // Vanguard holds the line: sturdier while an enemy is at arm's reach
     if (target.calling === "vanguard" && this.nearestEnemyWithin(target, 60)) amount *= 0.9;
+    // smoke cover softens whatever finds you in it
+    if (target.team === "hero") {
+      const smoke = this.zones.find(
+        (z) => z.kind === "smoke" && Math.hypot(target.x - z.x, target.y - z.y) < z.radius + target.radius,
+      );
+      if (smoke) amount *= 1 - smoke.power;
+    }
     // Bulwark Saint: allies shelter in the living wall's shadow
     if (
       target.team === "hero" &&
@@ -817,6 +824,260 @@ export class Battle {
         audio.play("shield");
         break;
       }
+      case "sunder": {
+        const victim = this.nearestEnemyWithin(hero, 75);
+        if (!victim) {
+          cast = false;
+          break;
+        }
+        this.damage(victim, 8 + attrs.str * 1.6, hero, { spell: true, color: "#c25a3a" });
+        if (victim.alive) {
+          victim.effects = victim.effects.filter((e) => e.kind !== "vulnerable");
+          victim.effects.push(makeEffect("vulnerable", 5, 0.25, hero));
+          this.fx.floatText(victim.x, victim.y - victim.radius * 3, "sundered!", "#ffb46b", 12);
+        }
+        hero.lungeDir = this.normalize({ x: victim.x - hero.x, y: victim.y - hero.y });
+        hero.lunge = 1;
+        this.fx.burst(victim.x, victim.y - 12, "#c25a3a", 8, 100, { glow: true });
+        audio.play("slash");
+        break;
+      }
+      case "groundbreaker": {
+        let hitAny = false;
+        for (const enemy of this.livingEnemies()) {
+          if (Math.hypot(enemy.x - hero.x, enemy.y - hero.y) < 95 + enemy.radius) {
+            this.damage(enemy, 8 + attrs.str * 1.8, hero, { spell: true, color: "#c9a06b" });
+            if (enemy.alive) enemy.effects.push(makeEffect("slow", 1.6, 0.4, hero));
+            hitAny = true;
+          }
+        }
+        this.fx.ring(hero.x, hero.y, 100, "#a8683f", { width: 6, life: 0.5 });
+        this.fx.burst(hero.x, hero.y, "rgba(150,120,90,0.8)", 18, 150, { gravity: 220, size: 4 });
+        this.fx.addShake(hitAny ? 9 : 5);
+        this.hitstop = Math.max(this.hitstop, 0.06);
+        audio.play("thud");
+        break;
+      }
+      case "rush": {
+        const marks = this.livingEnemies()
+          .map((e) => ({ e, d: Math.hypot(e.x - hero.x, e.y - hero.y) }))
+          .filter((t) => t.d < 280);
+        if (!marks.length) {
+          cast = false;
+          break;
+        }
+        const prey = marks.reduce((a, b) => (a.e.hp / a.e.stats.maxHp <= b.e.hp / b.e.stats.maxHp ? a : b)).e;
+        const from = { x: hero.x, y: hero.y };
+        const arrive = this.clampToField({ x: prey.x - Math.sign(prey.x - hero.x) * 26, y: prey.y }, hero.radius);
+        hero.x = arrive.x;
+        hero.y = arrive.y;
+        hero.moveTarget = null;
+        hero.facing = prey.x >= hero.x ? 1 : -1;
+        hero.lungeDir = this.normalize({ x: prey.x - hero.x, y: prey.y - hero.y });
+        hero.lunge = 1;
+        this.damage(prey, 12 + attrs.str * 3, hero, { spell: true, color: "#e0494b" });
+        for (let t2 = 0.15; t2 < 1; t2 += 0.2) {
+          this.fx.burst(from.x + (hero.x - from.x) * t2, from.y + (hero.y - from.y) * t2 - 10, "#e0494b", 2, 40, { glow: true, life: 0.25 });
+        }
+        this.fx.addShake(6);
+        audio.play("slash");
+        break;
+      }
+      case "twinshot": {
+        const reach = 400;
+        for (const spreadA of [-0.11, 0.11]) {
+          const ca = Math.cos(spreadA);
+          const sa = Math.sin(spreadA);
+          const d2 = { x: dir.x * ca - dir.y * sa, y: dir.x * sa + dir.y * ca };
+          for (const enemy of this.livingEnemies()) {
+            if (this.distToRay(hero, d2, reach, enemy) < enemy.radius + 12) {
+              this.damage(enemy, 8 + attrs.dex * 2, hero, { spell: true, color: "#b6f0a8" });
+            }
+          }
+          for (let t2 = 30; t2 < reach; t2 += 46) {
+            this.fx.burst(hero.x + d2.x * t2, hero.y + d2.y * t2 - 8, "#d8ffcf", 1, 26, { glow: true, life: 0.25 });
+          }
+        }
+        hero.lungeDir = dir;
+        hero.lunge = 0.7;
+        audio.play("shoot");
+        break;
+      }
+      case "smokebomb": {
+        if (!aim) {
+          cast = false;
+          break;
+        }
+        const at = this.clampToField(aim, 0);
+        this.zones.push({ x: at.x, y: at.y, radius: 82, time: 0, duration: 5, kind: "smoke", power: 0.33, dps: 0, from: hero });
+        this.fx.burst(at.x, at.y - 8, "rgba(150,158,175,0.8)", 20, 90, { gravity: -30, size: 5, life: 0.8 });
+        audio.play("shield");
+        break;
+      }
+      case "deadeye": {
+        // the first foe along the line eats the whole shot
+        const reach = 460;
+        let best: Unit | null = null;
+        let bestT = Infinity;
+        for (const enemy of this.livingEnemies()) {
+          if (this.distToRay(hero, dir, reach, enemy) < enemy.radius + 12) {
+            const t2 = (enemy.x - hero.x) * dir.x + (enemy.y - hero.y) * dir.y;
+            if (t2 >= 0 && t2 < bestT) {
+              bestT = t2;
+              best = enemy;
+            }
+          }
+        }
+        if (!best) {
+          cast = false;
+          break;
+        }
+        this.damage(best, 20 + attrs.dex * 4, hero, { spell: true, color: "#c9e86b" });
+        if (best.alive) best.effects.push(makeEffect("vulnerable", 4, 0.2, hero));
+        for (let t2 = 24; t2 < bestT; t2 += 22) {
+          this.fx.burst(hero.x + dir.x * t2, hero.y + dir.y * t2 - 8, "#f2ffd0", 1, 20, { glow: true, life: 0.2 });
+        }
+        this.fx.addShake(5);
+        this.hitstop = Math.max(this.hitstop, 0.06);
+        hero.lungeDir = dir;
+        hero.lunge = 0.8;
+        audio.play("shoot");
+        break;
+      }
+      case "missiles": {
+        const prey = this.nearestEnemyWithin(hero, 280);
+        if (!prey) {
+          cast = false;
+          break;
+        }
+        const dmg = (4 + attrs.int * 1.2) * (0.6 + hero.stats.spellPower * 0.4);
+        for (let i = 0; i < 3; i++) {
+          this.projectiles.push({
+            x: hero.x,
+            y: hero.y - 16 - i * 5,
+            target: prey,
+            aim: { x: hero.facing, y: 0 },
+            speed: 300 + i * 40,
+            damage: dmg,
+            from: hero,
+            kind: "bolt",
+            color: "#b48ae8",
+            heals: false,
+            life: 3,
+          });
+        }
+        hero.castGlow = 0.4;
+        audio.play("bolt");
+        break;
+      }
+      case "gravity": {
+        if (!aim) {
+          cast = false;
+          break;
+        }
+        const at = this.clampToField(aim, 0);
+        this.zones.push({ x: at.x, y: at.y, radius: 95, time: 0, duration: 3.5, kind: "gravity", power: 65, dps: 1 + attrs.int * 0.5, from: hero });
+        this.fx.ring(at.x, at.y, 95, "#7a6ae8", { width: 4, life: 0.6 });
+        this.fx.burst(at.x, at.y - 8, "#9a8af2", 14, 110, { glow: true, gravity: -40 });
+        audio.play("bolt");
+        break;
+      }
+      case "meteor": {
+        if (!aim) {
+          cast = false;
+          break;
+        }
+        const at = this.clampToField(aim, 0);
+        this.telegraphs.push({ x: at.x, y: at.y, radius: 92, time: 0, duration: 1.2, owner: hero, kind: "meteor" });
+        hero.castGlow = 0.5;
+        audio.play("fireball");
+        break;
+      }
+      case "blessing": {
+        const target = allyTarget ?? this.mostWoundedAlly() ?? hero;
+        this.heal(target, 12 + attrs.spi * 1.8, true, hero);
+        target.effects = target.effects.filter((e) => e.kind !== "slow" && e.kind !== "burn");
+        target.effects.push(makeEffect("haste", 5, 1.3, hero));
+        this.fx.burst(target.x, target.y - 18, "#e8d98a", 14, 100, { glow: true, gravity: -50 });
+        audio.play("heal");
+        break;
+      }
+      case "ward": {
+        const target = allyTarget ?? this.mostWoundedAlly() ?? hero;
+        target.effects = target.effects.filter((e) => e.kind !== "shield");
+        target.effects.push(makeEffect("shield", 8, 15 + attrs.spi * 2.5, hero));
+        this.fx.ring(target.x, target.y - 14, target.radius * 2.6, "#f2e0b0", { width: 4, life: 0.6, squash: 1 });
+        this.fx.burst(target.x, target.y - 16, "#fff0c8", 10, 80, { glow: true });
+        audio.play("shield");
+        break;
+      }
+      case "judgement": {
+        const guilty = this.livingEnemies().filter((e) => e.hp < e.stats.maxHp * 0.5);
+        if (!guilty.length) {
+          cast = false;
+          break;
+        }
+        for (const enemy of guilty) {
+          this.damage(enemy, 12 + attrs.spi * 2.2, hero, { spell: true, color: "#fff0b4" });
+          this.fx.burst(enemy.x, enemy.y - 30, "#fff0b4", 8, 70, { glow: true, gravity: 160 });
+          this.fx.pool(enemy.x, enemy.y, 46, "255,240,180", 0.5);
+        }
+        this.fx.addShake(5);
+        audio.play("heal");
+        break;
+      }
+      case "secondwind": {
+        this.heal(hero, 12 + attrs.vit * 2.5, true, hero);
+        hero.effects = hero.effects.filter((e) => e.kind !== "burn");
+        this.fx.burst(hero.x, hero.y - 16, "#b8c9a0", 12, 90, { glow: true, gravity: -60 });
+        audio.play("heal");
+        break;
+      }
+      case "ramwall": {
+        const dist = 130;
+        const from = { x: hero.x, y: hero.y };
+        const to = this.clampToField({ x: hero.x + dir.x * dist, y: hero.y + dir.y * dist }, hero.radius);
+        for (const enemy of this.livingEnemies()) {
+          if (this.distToRay(from, dir, dist, enemy) < enemy.radius + 26) {
+            this.damage(enemy, 6 + attrs.vit * 1.6, hero, { spell: true, color: "#c9a06b" });
+            if (enemy.alive) {
+              const side = this.normalize({ x: -dir.y, y: dir.x });
+              const flip = (enemy.x - from.x) * side.x + (enemy.y - from.y) * side.y >= 0 ? 1 : -1;
+              const shoved = this.clampToField({ x: enemy.x + side.x * flip * 40, y: enemy.y + side.y * flip * 40 }, enemy.radius);
+              enemy.x = shoved.x;
+              enemy.y = shoved.y;
+              enemy.effects.push(makeEffect("stun", 0.4, 1, hero));
+            }
+          }
+        }
+        hero.x = to.x;
+        hero.y = to.y;
+        hero.moveTarget = null;
+        hero.lungeDir = dir;
+        hero.lunge = 1;
+        this.fx.burst(from.x, from.y, "rgba(185,170,145,0.7)", 10, 80, { gravity: -20, size: 3.5 });
+        this.fx.addShake(7);
+        audio.play("thud");
+        break;
+      }
+      case "bastion": {
+        for (const ally of this.livingHeroes()) {
+          ally.effects = ally.effects.filter((e) => e.kind !== "shield");
+          ally.effects.push(makeEffect("shield", 7, 12 + attrs.vit * 2, hero));
+          this.fx.burst(ally.x, ally.y - 16, "#d8ccb0", 8, 80, { glow: true });
+        }
+        for (const enemy of this.livingEnemies()) {
+          if (Math.hypot(enemy.x - hero.x, enemy.y - hero.y) < 160) {
+            enemy.effects = enemy.effects.filter((e) => e.kind !== "taunt");
+            enemy.effects.push(makeEffect("taunt", 3, 1, hero));
+            enemy.alert = 0.5;
+          }
+        }
+        this.fx.ring(hero.x, hero.y, 160, "#d8ccb0", { width: 5, life: 0.6 });
+        this.fx.addShake(5);
+        audio.play("warcry");
+        break;
+      }
       // ----- calling signatures -----
       case "challenge": {
         for (const enemy of this.livingEnemies()) {
@@ -1173,6 +1434,22 @@ export class Battle {
         } else if (unit.team === "enemy" && zone.power > 0) {
           // Lightwarden ground scorches the unworthy
           unit.hp -= zone.power * dt;
+          if (unit.hp <= 0) {
+            this.kill(unit, zone.from);
+            return;
+          }
+        }
+        continue;
+      }
+      if (zone.kind === "smoke") continue; // damage reduction applies in damage()
+      if (zone.kind === "gravity") {
+        if (unit.team === "enemy") {
+          const gx = zone.x - unit.x;
+          const gyy = zone.y - unit.y;
+          const glen = Math.hypot(gx, gyy) || 1;
+          unit.x += (gx / glen) * zone.power * dt;
+          unit.y += (gyy / glen) * zone.power * dt;
+          unit.hp -= zone.dps * dt;
           if (unit.hp <= 0) {
             this.kill(unit, zone.from);
             return;
@@ -1577,6 +1854,27 @@ export class Battle {
       }
       if (mark.time >= mark.duration) {
         this.telegraphs.splice(i, 1);
+        if (mark.kind === "meteor") {
+          // the star lands
+          const casterAttrs = this.saveRef && mark.owner.heroIndex >= 0 ? this.saveRef.heroes[mark.owner.heroIndex].attrs : null;
+          const dmg = 30 + (casterAttrs ? casterAttrs.int * 4 : 40);
+          for (const enemy of this.livingEnemies()) {
+            if (Math.hypot(enemy.x - mark.x, enemy.y - mark.y) < mark.radius + enemy.radius) {
+              this.damage(enemy, dmg, mark.owner, { spell: true, color: "#ff9b42" });
+              if (enemy.alive) enemy.effects.push(makeEffect("burn", 3, 3.5, mark.owner));
+            }
+          }
+          this.fx.burst(mark.x, mark.y - 10, "#ff9b42", 30, 220, { glow: true, gravity: 80 });
+          this.fx.burst(mark.x, mark.y - 10, "#ffe08a", 18, 140, { glow: true });
+          this.fx.ring(mark.x, mark.y, mark.radius + 14, "#ff7a3a", { width: 6, life: 0.6 });
+          this.fx.pool(mark.x, mark.y, 120, "255,140,60", 1);
+          this.addDecal(mark.x, mark.y, "scorch", 52);
+          this.fx.addShake(11);
+          this.hitstop = Math.max(this.hitstop, 0.09);
+          this.zoomPunch = Math.max(this.zoomPunch, 1);
+          audio.play("fireball");
+          continue;
+        }
         if (mark.kind === "sweep") {
           // executioner's arc crashes down where it was promised
           const lord = mark.owner;

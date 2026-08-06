@@ -121,7 +121,7 @@ export interface Telegraph {
   time: number;
   duration: number;
   owner: Unit;
-  kind: "pounce" | "sweep";
+  kind: "pounce" | "sweep" | "meteor";
 }
 
 export interface GroundZone {
@@ -130,9 +130,9 @@ export interface GroundZone {
   radius: number;
   time: number;
   duration: number;
-  kind: "frost" | "sanctuary";
-  power: number; // frost: slow fraction · sanctuary: unused
-  dps: number; // frost: damage/s to enemies · sanctuary: healing/s to heroes
+  kind: "frost" | "sanctuary" | "smoke" | "gravity";
+  power: number; // frost: slow fraction · sanctuary: burn dps · smoke: damage reduction · gravity: pull px/s
+  dps: number; // frost: damage/s to enemies · sanctuary: healing/s to heroes · gravity: damage/s
   from: Unit;
 }
 
