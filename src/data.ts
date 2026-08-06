@@ -545,6 +545,10 @@ export function unlockedAbilities(attrs: Attributes): AbilityDef[] {
 
 /** Each calling favors an art; swearing its oath steadies the hand that way. */
 const CALLING_WEAPON_AFFINITY: Record<string, AttrKey> = {
+  duelist: "str",
+  warden: "str",
+  spellblade: "str",
+  nightblade: "dex",
   vanguard: "str",
   reaver: "str",
   ranger: "dex",
@@ -776,6 +780,126 @@ export const CALLINGS: CallingDef[] = [
       },
     ],
   },
+  {
+    id: "duelist",
+    name: "Duelist",
+    epithet: "the Measured Blade",
+    crest: "sword",
+    color: "#e8b45a",
+    entry: [
+      { attr: "str", value: 6 },
+      { attr: "dex", value: 6 },
+    ],
+    passive: "+8% attack speed, and melee blows against you are answered with a riposte.",
+    chargeHint: "Charges from damage dealt",
+    signature: sig("duel", "Perfect Duel", "instant", 12, "#ffd27d", "Ultimate: dash to the nearest foe and deliver six blinding strikes."),
+    advanced: [
+      {
+        id: "swordsaint",
+        name: "Swordsaint",
+        epithet: "the Drawn Line",
+        passive: "+10% critical chance.",
+        ultNote: "The Perfect Duel strikes eight times instead of six.",
+      },
+      {
+        id: "corsair",
+        name: "Corsair",
+        epithet: "the Laughing Edge",
+        passive: "+8% move and another +6% attack speed.",
+        ultNote: "Your riposte bites twice as hard.",
+      },
+    ],
+  },
+  {
+    id: "warden",
+    name: "Warden",
+    epithet: "the Standing Stone",
+    crest: "banner",
+    color: "#8fd0a8",
+    entry: [
+      { attr: "vit", value: 7 },
+      { attr: "spi", value: 5 },
+    ],
+    passive: "+12% health, and allies beside you take 8% less harm.",
+    chargeHint: "Charges from damage taken and healing done",
+    signature: sig("aegis", "Aegis of the Wall", "instant", 13, "#bff0cf", "Ultimate: shield the whole band and dare every foe to test you instead."),
+    advanced: [
+      {
+        id: "oathkeeper",
+        name: "Oathkeeper",
+        epithet: "the Unbroken Ring",
+        passive: "Your shelter reaches further and shields another 4%.",
+        ultNote: "The Aegis shields are half again as strong.",
+      },
+      {
+        id: "thornwarden",
+        name: "Thornwarden",
+        epithet: "the Answering Wall",
+        passive: "Melee blows against you are answered with thorns.",
+        ultNote: "Foes taunted by the Aegis bleed while they swing at you.",
+      },
+    ],
+  },
+  {
+    id: "spellblade",
+    name: "Spellblade",
+    epithet: "the Lit Edge",
+    crest: "spark",
+    color: "#c98fe8",
+    entry: [
+      { attr: "int", value: 6 },
+      { attr: "str", value: 6 },
+    ],
+    passive: "+8% spell power, and every melee hit hastens your cooldowns.",
+    chargeHint: "Charges from damage dealt",
+    signature: sig("nova", "Runedge Nova", "instant", 12, "#dcb0f5", "Ultimate: detonate the rune-charge in your blade, scorching everything around you."),
+    advanced: [
+      {
+        id: "runeknight",
+        name: "Runeknight",
+        epithet: "the Written Steel",
+        passive: "+8% more spell power and +10% health.",
+        ultNote: "The Nova leaves a burn on everything it touches.",
+      },
+      {
+        id: "stormedge",
+        name: "Stormedge",
+        epithet: "the Sky's Temper",
+        passive: "+8% attack speed.",
+        ultNote: "The Nova hurls lightning to the three nearest foes beyond its ring.",
+      },
+    ],
+  },
+  {
+    id: "nightblade",
+    name: "Nightblade",
+    epithet: "the Unseen Hour",
+    crest: "moon",
+    color: "#8a7fd8",
+    entry: [
+      { attr: "dex", value: 7 },
+      { attr: "int", value: 5 },
+    ],
+    passive: "+8% move, and every kill grants a burst of speed and shakes pursuers.",
+    chargeHint: "Charges fast from kills",
+    signature: sig("shadows", "Thousand Shadows", "instant", 14, "#b0a5f0", "Ultimate: step through the dark and cut every foe on the field once."),
+    advanced: [
+      {
+        id: "phantom",
+        name: "Phantom",
+        epithet: "the Cold Breath",
+        passive: "Another +8% move, and the first blow of every wave misses you.",
+        ultNote: "Foes cut by the Shadows are slowed, bleeding dark.",
+      },
+      {
+        id: "reaper",
+        name: "Reaper",
+        epithet: "the Kept Promise",
+        passive: "Your blows execute foes below a fifth of their strength.",
+        ultNote: "The Shadows strike twice against wounded foes.",
+      },
+    ],
+  },
 ];
 
 export function advCallingById(id: string | null | undefined): { adv: AdvCallingDef; parent: CallingDef } | null {
@@ -798,6 +922,45 @@ export function callingEligible(calling: CallingDef, attrs: Attributes): boolean
 
 function callingStatMods(calling?: string | null, advCalling?: string | null) {
   const m = { meleeDmg: 0, rangedDmg: 0, hpPct: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, startShield: 0 };
+  switch (calling) {
+    case "duelist":
+      m.atkSpeed += 0.08;
+      break;
+    case "warden":
+      m.hpPct += 0.12;
+      break;
+    case "spellblade":
+      m.spellPower += 0.08;
+      break;
+    case "nightblade":
+      m.moveSpeed += 0.08;
+      break;
+  }
+  switch (advCalling) {
+    case "swordsaint":
+      m.crit += 0.1;
+      break;
+    case "corsair":
+      m.moveSpeed += 0.08;
+      m.atkSpeed += 0.06;
+      break;
+    case "oathkeeper":
+      break;
+    case "thornwarden":
+      break;
+    case "runeknight":
+      m.spellPower += 0.08;
+      m.hpPct += 0.1;
+      break;
+    case "stormedge":
+      m.atkSpeed += 0.08;
+      break;
+    case "phantom":
+      m.moveSpeed += 0.08;
+      break;
+    case "reaper":
+      break;
+  }
   switch (calling) {
     case "vanguard":
       m.armorFlat = 0.05;

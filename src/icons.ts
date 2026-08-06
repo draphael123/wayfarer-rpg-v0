@@ -409,6 +409,49 @@ export function drawAbilityGlyph(
       ctx.closePath();
       ctx.fill();
       break;
+    case "duel": {
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.8, cy + r * 0.8);
+      ctx.lineTo(cx + r * 0.8, cy - r * 0.8);
+      ctx.moveTo(cx + r * 0.8, cy + r * 0.8);
+      ctx.lineTo(cx - r * 0.8, cy - r * 0.8);
+      ctx.stroke();
+      break;
+    }
+    case "aegis": {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 0.9);
+      ctx.lineTo(cx + r * 0.75, cy - r * 0.35);
+      ctx.quadraticCurveTo(cx + r * 0.65, cy + r * 0.55, cx, cy + r * 0.95);
+      ctx.quadraticCurveTo(cx - r * 0.65, cy + r * 0.55, cx - r * 0.75, cy - r * 0.35);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy + r * 0.05, r * 0.3, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    }
+    case "nova": {
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * r * 0.35, cy + Math.sin(a) * r * 0.35);
+        ctx.lineTo(cx + Math.cos(a) * r * 0.95, cy + Math.sin(a) * r * 0.95);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case "shadows": {
+      for (const o of [-0.55, 0, 0.55]) {
+        ctx.beginPath();
+        ctx.arc(cx + o * r, cy, r * 0.42, Math.PI * 0.25, Math.PI * 1.75);
+        ctx.stroke();
+      }
+      break;
+    }
     default:
       ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2);
       ctx.fill();

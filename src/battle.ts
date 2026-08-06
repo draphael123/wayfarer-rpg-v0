@@ -285,7 +285,7 @@ export class Battle {
     for (const hero of this.livingHeroes()) {
       if (this.heroTalentRank(hero, "windStep") > 0) this.windstepReady.add(hero.id);
       const armorHook = this.armorHookOf(hero);
-      if (armorHook === "dodgeFirstHit") this.armorDodgeReady.add(hero.id);
+      if (armorHook === "dodgeFirstHit" || hero.advCalling === "phantom") this.armorDodgeReady.add(hero.id);
       if (armorHook === "waveShield") {
         hero.effects = hero.effects.filter((e) => e.kind !== "shield");
         hero.effects.push(makeEffect("shield", 9999, 30, null));
@@ -382,6 +382,13 @@ export class Battle {
     ) {
       amount *= 0.92;
     }
+    // the Warden's shelter: stand beside the standing stone
+    if (target.team === "hero") {
+      const warden = this.livingHeroes().find(
+        (h) => h !== target && h.calling === "warden" && Math.hypot(h.x - target.x, h.y - target.y) < (h.advCalling === "oathkeeper" ? 130 : 90),
+      );
+      if (warden) amount *= warden.advCalling === "oathkeeper" ? 0.88 : 0.92;
+    }
     // a Warden's Hauberk shelters everyone near its wearer
     if (
       target.team === "hero" &&
@@ -399,6 +406,18 @@ export class Battle {
       !opts.spell
     ) {
       this.damage(source, rawAmount * 0.25, target, { spell: true, color: "#e0a34b" });
+    }
+    // the Duelist's riposte: melee blows against them are answered
+    if (
+      (target.calling === "duelist" || target.advCalling === "thornwarden") &&
+      source &&
+      source.team === "enemy" &&
+      source.alive &&
+      source.stats.range <= 90 &&
+      !opts.spell
+    ) {
+      const bite = target.advCalling === "corsair" ? 0.5 : 0.25;
+      this.damage(source, rawAmount * bite, target, { spell: true, color: "#ffd27d" });
     }
     // Gorehulk's Wall answers melee blows with iron
     if (
@@ -435,11 +454,11 @@ export class Battle {
     }
     // ultimate charge: playing your calling's role feeds the meter
     if (source?.team === "hero" && target.team === "enemy") {
-      const primary = source.calling === "reaver" || source.calling === "ranger" || source.calling === "arcanist";
+      const primary = ["reaver", "ranger", "arcanist", "duelist", "spellblade", "nightblade"].includes(source.calling ?? "");
       this.gainUlt(source, amount * (primary ? 0.3 : source.calling === "trickster" ? 0.18 : 0.12));
     }
     if (target.team === "hero") {
-      this.gainUlt(target, amount * (target.calling === "vanguard" ? 0.42 : 0.12));
+      this.gainUlt(target, amount * (target.calling === "vanguard" ? 0.42 : target.calling === "warden" ? 0.38 : 0.12));
     }
     if (amount > 24) this.hitstop = Math.max(this.hitstop, 0.055);
     if (amount > 18 && source) {
@@ -503,7 +522,7 @@ export class Battle {
       this.tally(from.heroIndex).healed += applied;
     }
     if (from && from.team === "hero" && target !== from) {
-      this.gainUlt(from, applied * (from.calling === "chaplain" ? 0.36 : 0.12));
+      this.gainUlt(from, applied * (from.calling === "chaplain" ? 0.36 : from.calling === "warden" ? 0.2 : 0.12));
     }
     if (showText && applied >= 1) {
       this.fx.floatText(target.x, target.y - target.radius - 14, `+${Math.round(applied)}`, "#8ee88b", 14);
@@ -568,7 +587,14 @@ export class Battle {
     }
     // kills surge the slayer's ultimate — Tricksters feast on them
     if (unit.team === "enemy" && killer?.team === "hero") {
-      this.gainUlt(killer, killer.advCalling === "spellthief" ? 25 : killer.calling === "trickster" ? 18 : 6);
+      this.gainUlt(killer, killer.advCalling === "spellthief" ? 25 : killer.calling === "trickster" || killer.calling === "nightblade" ? 18 : 6);
+      // Nightblade: every kill is a step into the dark — speed, and pursuers lose the scent
+      if (killer.calling === "nightblade") {
+        killer.effects.push(makeEffect("haste", 1.6, 1.5, killer));
+        for (const e of this.livingEnemies()) {
+          if (e.aggro === killer) e.aggro = null;
+        }
+      }
       // Spellthief: every kill shaves a second off the spell cooldowns
       if (killer.advCalling === "spellthief") {
         for (const ab of killer.abilities) {
@@ -1364,6 +1390,77 @@ export class Battle {
         audio.play("ultBlink");
         break;
       }
+      case "duel": {
+        const prey = this.livingEnemies().sort((a, b) => unitDist(hero, a) - unitDist(hero, b))[0];
+        if (!prey) {
+          cast = false;
+          break;
+        }
+        hero.x = this.clampToField({ x: prey.x - Math.sign(prey.x - hero.x || 1) * (prey.radius + 26), y: prey.y }, hero.radius).x;
+        hero.y = prey.y;
+        const strikes = hero.advCalling === "swordsaint" ? 8 : 6;
+        const per = (8 + attrs.str * 1.1 + attrs.dex * 0.8) * 1.1;
+        for (let i = 0; i < strikes; i++) {
+          if (!prey.alive) break;
+          this.damage(prey, per, hero, { spell: true, color: "#ffd27d" });
+          this.fx.slash(prey.x, prey.y - 12, Math.random() * Math.PI, 44, "#ffd27d", Math.PI * 1.2);
+        }
+        this.fx.ring(prey.x, prey.y, 60, "#ffd27d", { width: 4, life: 0.5 });
+        this.hitstop = Math.max(this.hitstop, 0.09);
+        audio.play("ultWhirlwind");
+        break;
+      }
+      case "aegis": {
+        const power = Math.round((26 + attrs.vit * 3.4) * (hero.advCalling === "oathkeeper" ? 1.5 : 1));
+        for (const ally of this.livingHeroes()) {
+          ally.effects = ally.effects.filter((e) => e.kind !== "shield");
+          ally.effects.push(makeEffect("shield", 9999, power, hero));
+          this.fx.ring(ally.x, ally.y - 10, ally.radius * 2.4, "#bff0cf", { width: 3, life: 0.5 });
+        }
+        for (const enemy of this.livingEnemies()) {
+          enemy.effects.push(makeEffect("taunt", 3.5, 1, hero));
+          if (hero.advCalling === "thornwarden") enemy.effects.push(makeEffect("burn", 3.5, 2.5, hero));
+        }
+        this.fx.ring(hero.x, hero.y, 200, "#bff0cf", { width: 5, life: 0.8 });
+        audio.play("ultSanctuary");
+        break;
+      }
+      case "nova": {
+        const dmg = (20 + attrs.int * 2.6 + attrs.str * 1.2) * hero.stats.spellPower;
+        const hitIds = new Set<number>();
+        for (const enemy of this.livingEnemies()) {
+          if (unitDist(hero, enemy) < 150 + enemy.radius) {
+            this.damage(enemy, dmg, hero, { spell: true, color: "#dcb0f5" });
+            if (enemy.alive && hero.advCalling === "runeknight") enemy.effects.push(makeEffect("burn", 3, 3, hero));
+            hitIds.add(enemy.id);
+          }
+        }
+        if (hero.advCalling === "stormedge") {
+          const beyond = this.livingEnemies().filter((e) => !hitIds.has(e.id)).sort((a, b) => unitDist(hero, a) - unitDist(hero, b)).slice(0, 3);
+          for (const e of beyond) {
+            this.damage(e, dmg * 0.6, hero, { spell: true, color: "#8fc7e8" });
+            this.fx.tracer(hero.x, hero.y - 16, e.x, e.y - 12, "#8fc7e8");
+          }
+        }
+        this.fx.ring(hero.x, hero.y, 155, "#dcb0f5", { width: 6, life: 0.6 });
+        this.fx.burst(hero.x, hero.y - 12, "#dcb0f5", 26, 210, { glow: true });
+        this.fx.addShake(8);
+        audio.play("ultBarrage");
+        break;
+      }
+      case "shadows": {
+        const per = 10 + attrs.dex * 2.0 + attrs.int * 0.8;
+        for (const enemy of this.livingEnemies()) {
+          const dmg = hero.advCalling === "reaper" && enemy.hp < enemy.stats.maxHp * 0.5 ? per * 2 : per;
+          this.damage(enemy, dmg, hero, { spell: true, color: "#b0a5f0" });
+          if (enemy.alive && hero.advCalling === "phantom") enemy.effects.push(makeEffect("slow", 2, 0.35, hero));
+          this.fx.slash(enemy.x, enemy.y - 12, Math.random() * Math.PI, 40, "#b0a5f0", Math.PI * 1.3);
+        }
+        this.fx.ring(hero.x, hero.y, 90, "#b0a5f0", { width: 4, life: 0.5 });
+        this.slowmo = Math.max(this.slowmo, 0.5);
+        audio.play("ultBlink");
+        break;
+      }
       default:
         cast = false;
     }
@@ -2155,6 +2252,16 @@ export class Battle {
         const threshold = attacker.advCalling === "blademaster" ? 0.5 : 0.4;
         const bonus = attacker.advCalling === "blademaster" ? 1.3 : 1.2;
         if (target.hp < target.stats.maxHp * threshold) dmg *= bonus;
+      }
+      // Reaper: the kept promise — foes below a fifth are simply finished
+      if (attacker.advCalling === "reaper" && target.hp < target.stats.maxHp * 0.2) {
+        dmg = Math.max(dmg, target.hp + 1);
+      }
+      // Spellblade: every melee hit hastens the runes
+      if (attacker.calling === "spellblade" && attacker.stats.range <= 90) {
+        for (const ab of attacker.abilities) {
+          if (!ab.ult && ab.timer > 0) ab.timer = Math.max(0, ab.timer - 0.3);
+        }
       }
     }
     if (!ranged) {
