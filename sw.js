@@ -1,5 +1,5 @@
 // Cache-first service worker so Wayband plays offline once installed.
-const CACHE = "wayband-v1";
+const CACHE = "wayband-v2";
 const ASSETS = ["./", "./index.html", "./styles.css", "./dist/game.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {

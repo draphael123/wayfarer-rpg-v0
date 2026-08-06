@@ -122,7 +122,7 @@ function startBattle(stageIndex: number): void {
   battle = new Battle(STAGES[stageIndex], save, fieldRect(), fx);
   hud = new Hud(battle, save, logicalW, logicalH);
   hud.freshPlayer = save.unlockedStage === 0 && save.level < 3;
-  audio.setMood("battle");
+  audio.setMood("battle", stageIndex);
   menus.hide();
 }
 
@@ -160,7 +160,8 @@ function startTutorial(kind = "basics"): void {
   battle = new Battle(TUTORIAL_STAGE, temp, fieldRect(), fx, true);
   hud = new Hud(battle, temp, logicalW, logicalH);
   tutorial = new Tutorial(battle, hud, kind);
-  audio.setMood("battle");
+  // lessons keep the calm campfire theme
+  audio.setMood("menu");
   menus.hide();
 }
 
@@ -394,6 +395,7 @@ function frame(now: number): void {
     }
     hud.update(dt);
     if (battle.state === "victory") rollLoot();
+    audio.setBossMusic(!battle.tutorialMode && !!battle.bossRef?.alive && battle.state === "fighting");
 
     // camera: ease toward the action (or the boss during their intro)
     const living = battle.units.filter((u) => u.alive);
@@ -486,6 +488,9 @@ Object.defineProperty(window, "__wayband", {
     },
     get hud() {
       return hud;
+    },
+    get audio() {
+      return audio;
     },
   },
 });

@@ -1,6 +1,10 @@
 /**
- * Tiny synthesized sound kit — no audio assets, everything is generated
- * with WebAudio oscillators and filtered noise.
+ * Hybrid audio kit: real CC0 recordings (per-stage music, foley SFX) loaded
+ * lazily as MP3, with the original synthesized WebAudio kit as an instant
+ * fallback while samples stream in (or if they fail to load).
+ *
+ * Music: medieval-fantasy & rpg-battle-system packs (Superpowers, CC0).
+ * SFX: ninja-adventure & medieval-fantasy packs (Superpowers, CC0).
  */
 
 type SfxName =
@@ -23,6 +27,42 @@ type SfxName =
   | "defeat"
   | "wave";
 
+/** SFX that have recorded versions; each entry lists variants to pick from. */
+const SAMPLE_SFX: Partial<Record<SfxName, string[]>> = {
+  click: ["sfx-click", "sfx-click2"],
+  coin: ["sfx-coin", "sfx-coin2"],
+  slash: ["sfx-slash"],
+  shoot: ["sfx-woosh", "sfx-woosh2"],
+  bolt: ["sfx-magic"],
+  roar: ["sfx-roar", "sfx-roar2"],
+  ready: ["sfx-ready"],
+  levelup: ["sfx-levelup"],
+  victory: ["sfx-victory"],
+  defeat: ["sfx-defeat"],
+  wave: ["sfx-wave"],
+};
+
+const MUSIC_TRACKS = [
+  "music-menu",
+  "music-stage0",
+  "music-stage1",
+  "music-stage2",
+  "music-stage3",
+  "music-stage4",
+  "music-stage5",
+  "music-boss",
+];
+
+const ALL_SAMPLES = [...MUSIC_TRACKS, ...Object.values(SAMPLE_SFX).flat()];
+
+/** Per-sample playback volume tweaks (samples are peak-normalized). */
+const SAMPLE_VOLUME: Record<string, number> = {
+  "sfx-click": 0.5,
+  "sfx-click2": 0.5,
+  "sfx-ready": 0.45,
+  "sfx-wave": 0.55,
+};
+
 class AudioKit {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -30,11 +70,34 @@ class AudioKit {
   private musicTimer: number | null = null;
   private musicStep = 0;
   private mood: "menu" | "battle" = "menu";
+  private stageId = 0;
+  private bossActive = false;
   soundOn = true;
   musicOn = true;
 
-  setMood(mood: "menu" | "battle"): void {
+  // ---- sample layer
+  private samples = new Map<string, AudioBuffer>();
+  private samplesRequested = false;
+  private trackNode: { name: string; src: AudioBufferSourceNode; gain: GainNode } | null = null;
+
+  setMood(mood: "menu" | "battle", stageId?: number): void {
     this.mood = mood;
+    if (stageId !== undefined) this.stageId = stageId;
+    if (mood === "menu") this.bossActive = false;
+    this.syncMusic();
+  }
+
+  /** Boss waves swap to the boss theme; cleared when the battle ends. */
+  setBossMusic(on: boolean): void {
+    if (this.bossActive === on) return;
+    this.bossActive = on;
+    this.syncMusic();
+  }
+
+  private desiredTrack(): string {
+    if (this.mood === "menu") return "music-menu";
+    if (this.bossActive) return "music-boss";
+    return `music-stage${Math.max(0, Math.min(5, this.stageId))}`;
   }
 
   private ensure(): AudioContext | null {
@@ -55,7 +118,89 @@ class AudioKit {
   /** Call from the first user gesture so the context is allowed to start. */
   unlock(): void {
     this.ensure();
-    this.startMusic();
+    this.loadSamples();
+    this.syncMusic();
+    if (!this.trackNode) this.startMusic();
+  }
+
+  /** Fetch + decode every sample once; swap the music over as tracks arrive. */
+  private loadSamples(): void {
+    if (this.samplesRequested) return;
+    this.samplesRequested = true;
+    const ctx = this.ensure();
+    if (!ctx) return;
+    const overrides = (window as unknown as { __WAYBAND_AUDIO?: Record<string, string> }).__WAYBAND_AUDIO ?? {};
+    for (const name of ALL_SAMPLES) {
+      const url = overrides[name] ?? `audio/${name}.mp3`;
+      fetch(url)
+        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`))))
+        .then((buf) => ctx.decodeAudioData(buf))
+        .then((audio) => {
+          this.samples.set(name, audio);
+          if (name === this.desiredTrack()) this.syncMusic();
+        })
+        .catch(() => {
+          /* stay on the synth fallback */
+        });
+    }
+  }
+
+  /** Crossfade the looped sample music to whatever the state wants. */
+  private syncMusic(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const want = this.desiredTrack();
+    if (!this.musicOn) {
+      this.stopTrack(0.3);
+      return;
+    }
+    if (this.trackNode?.name === want) return;
+    const buffer = this.samples.get(want);
+    if (!buffer) return; // synth keeps playing until the file lands
+    // stop the synth loop for good — samples own the music from here
+    if (this.musicTimer !== null) {
+      clearInterval(this.musicTimer);
+      this.musicTimer = null;
+    }
+    this.stopTrack(0.7);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true;
+    src.loopStart = 0.03;
+    src.loopEnd = Math.max(0.1, buffer.duration - 0.06);
+    const gain = ctx.createGain();
+    const level = 0.32;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(level, ctx.currentTime + 0.8);
+    src.connect(gain);
+    gain.connect(this.master);
+    src.start();
+    this.trackNode = { name: want, src, gain };
+  }
+
+  private stopTrack(fade: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.trackNode) return;
+    const { src, gain } = this.trackNode;
+    this.trackNode = null;
+    gain.gain.setValueAtTime(Math.max(0.0001, gain.gain.value), ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + fade);
+    src.stop(ctx.currentTime + fade + 0.05);
+  }
+
+  private playSample(name: string, volume = 1): boolean {
+    const ctx = this.ctx;
+    const buffer = this.samples.get(name);
+    if (!ctx || !this.master || !buffer) return false;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = 0.95 + Math.random() * 0.1;
+    const gain = ctx.createGain();
+    gain.gain.value = volume * (SAMPLE_VOLUME[name] ?? 0.75);
+    src.connect(gain);
+    gain.connect(this.master);
+    src.start();
+    return true;
   }
 
   private tone(
@@ -108,6 +253,12 @@ class AudioKit {
 
   play(name: SfxName): void {
     if (!this.soundOn) return;
+    // prefer a recorded variant when it has arrived
+    const variants = SAMPLE_SFX[name];
+    if (variants) {
+      const pick = variants[Math.floor(Math.random() * variants.length)];
+      if (this.playSample(pick)) return;
+    }
     switch (name) {
       case "click":
         this.tone(660, 0.06, "square", 0.12, 120);
@@ -181,8 +332,8 @@ class AudioKit {
     if (this.musicTimer !== null) return;
     const ctx = this.ensure();
     if (!ctx || !this.musicGain) return;
-    // Two moods over the same harmonic bed: a slow campfire arpeggio on menus,
-    // a driving pulse with a pentatonic lead in battle.
+    // Synth fallback bed: a slow campfire arpeggio on menus, a driving pulse
+    // in battle. Retires itself the moment a real track finishes loading.
     const chords = [
       [220, 261.6, 329.6, 392],
       [196, 246.9, 293.7, 392],
@@ -192,7 +343,7 @@ class AudioKit {
     const lead = [440, 523.2, 587.3, 659.2, 784, 659.2, 587.3, 523.2];
     const stepDur = 0.4;
     const tick = () => {
-      if (!this.musicOn || !this.soundOnContextAlive()) return;
+      if (!this.musicOn || !this.soundOnContextAlive() || this.trackNode) return;
       const chord = chords[Math.floor(this.musicStep / 8) % chords.length];
       const g = this.musicGain!;
       if (this.mood === "menu") {
@@ -203,7 +354,6 @@ class AudioKit {
         if (this.musicStep % 4 === 0) this.tone(58, 0.14, "sine", 0.4, -12, 0, g);
         if (this.musicStep % 16 === 10) this.tone(chord[2] * 4, 1.6, "sine", 0.13, 0, 0.2, g);
       } else {
-        // battle: bass on every beat, chugging chord pulse, wandering lead
         if (this.musicStep % 2 === 0) this.tone(chord[0] / 2, 0.32, "triangle", 0.5, 0, 0, g);
         this.tone(58, 0.1, "sine", this.musicStep % 4 === 0 ? 0.6 : 0.3, -14, 0, g);
         this.tone(chord[(this.musicStep % 3) + 1] ?? chord[1], 0.22, "square", 0.08, 0, 0, g);
@@ -227,7 +377,12 @@ class AudioKit {
 
   setMusic(on: boolean): void {
     this.musicOn = on;
-    if (on) this.startMusic();
+    if (on) {
+      this.syncMusic();
+      if (!this.trackNode) this.startMusic();
+    } else {
+      this.stopTrack(0.25);
+    }
   }
 }
 
