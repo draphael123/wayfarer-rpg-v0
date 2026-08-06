@@ -218,6 +218,7 @@ export class Battle {
     if (this.waveIndex >= this.stage.waves.length) {
       this.state = "victory";
       this.resultDelay = 1.4;
+      this.slowmo = Math.max(this.slowmo, 1.1); // savor the final blow
       // a shower of gold and light while the banner lands
       const cx = (this.field.left + this.field.right) / 2;
       const cy = (this.field.top + this.field.bottom) / 2;
@@ -285,6 +286,8 @@ export class Battle {
     if (before < 100 && hero.ultCharge >= 100) {
       this.fx.floatText(hero.x, hero.y - hero.radius * 3 - 12, "ultimate ready!", callingById(hero.calling)?.color ?? "#ffe9a3", 13);
       this.fx.ring(hero.x, hero.y, 46, callingById(hero.calling)?.color ?? "#ffe9a3", { width: 3, life: 0.5 });
+      audio.play("ultReady");
+      navigator.vibrate?.(35);
     }
   }
 
@@ -443,6 +446,12 @@ export class Battle {
     // kills surge the slayer's ultimate — Tricksters feast on them
     if (unit.team === "enemy" && killer?.team === "hero") {
       this.gainUlt(killer, killer.calling === "trickster" ? 18 : 6);
+      // quick kills climb a chime ladder
+      const streak = this.killStreaks.get(killer.id);
+      const n = streak && this.time - streak.t < 4 ? streak.n + 1 : 1;
+      this.killStreaks.set(killer.id, { n, t: this.time });
+      audio.killChime(n);
+      if (n === 3) this.fx.floatText(killer.x, killer.y - killer.radius * 3 - 8, "rampage!", "#ffd76b", 14);
     }
     // Battle Roar: kills whip the slayer into a brief fury
     if (unit.team === "enemy" && killer?.team === "hero" && this.heroTalentRank(killer, "battleRoar") > 0) {
@@ -679,7 +688,7 @@ export class Battle {
         this.fx.burst(hero.x, hero.y - 22, "#e0a34b", 20, 170, { glow: true });
         this.fx.addShake(6);
         this.zoomPunch = Math.max(this.zoomPunch, 0.5);
-        audio.play("warcry");
+        audio.play("ultChallenge");
         break;
       }
       case "whirlwind": {
@@ -706,7 +715,7 @@ export class Battle {
         this.hitstop = Math.max(this.hitstop, hitAny ? 0.08 : 0);
         this.zoomPunch = Math.max(this.zoomPunch, 0.7);
         hero.lunge = 0.8;
-        audio.play("slash");
+        audio.play("ultWhirlwind");
         break;
       }
       case "volley": {
@@ -733,7 +742,7 @@ export class Battle {
         this.fx.addShake(5);
         hero.lungeDir = dir;
         hero.lunge = 0.6;
-        audio.play("shoot");
+        audio.play("ultVolley");
         break;
       }
       case "barrage": {
@@ -758,7 +767,7 @@ export class Battle {
           }
         }
         this.fx.burst(hero.x, hero.y - 24, "#b79aee", 8, 90, { glow: true });
-        audio.play("bolt");
+        audio.play("ultBarrage");
         break;
       }
       case "sanctuary": {
@@ -781,7 +790,7 @@ export class Battle {
         this.fx.ring(at.x, at.y, 96, "#f2e7a0", { width: 4, life: 0.6 });
         this.fx.burst(at.x, at.y - 10, "#f2e7a0", 16, 100, { glow: true, gravity: -60 });
         this.fx.pool(at.x, at.y, 95, "242,231,160", 1.1);
-        audio.play("heal");
+        audio.play("ultSanctuary");
         break;
       }
       case "blink": {
@@ -803,7 +812,7 @@ export class Battle {
         }
         this.fx.burst(to.x, to.y - 14, "#9adeee", 14, 120, { glow: true });
         this.fx.ring(to.x, to.y, 40, "#9adeee", { width: 3, life: 0.35 });
-        audio.play("shield");
+        audio.play("ultBlink");
         break;
       }
       default:
@@ -814,6 +823,7 @@ export class Battle {
       if (state.ult) {
         hero.ultCharge = 0;
         state.timer = 1;
+        navigator.vibrate?.([18, 26, 42]);
       } else {
         const cdr = hero.heroIndex >= 0 ? cooldownReduction(save.heroes[hero.heroIndex]) : 0;
         state.timer = state.def.cooldown * (1 - cdr);
@@ -888,6 +898,7 @@ export class Battle {
       if (this.livingHeroes().length === 0 && this.state !== ("defeat" as BattleState)) {
         this.state = "defeat";
         this.resultDelay = 1.0;
+        this.slowmo = Math.max(this.slowmo, 1.3); // the fall lands in slow motion
         audio.play("defeat");
         return;
       }
@@ -1139,6 +1150,8 @@ export class Battle {
       this.updateAlpha(enemy, dt);
       return;
     }
+    if (enemy.enemyKind === "ogre") this.updateOgreRage(enemy, dt);
+    if (enemy.enemyKind === "warlord") this.updateWarlordSweep(enemy, dt);
 
     const taunt = this.effect(enemy, "taunt");
     let target: Unit | null = taunt && taunt.source && taunt.source.alive ? taunt.source : null;
@@ -1280,6 +1293,73 @@ export class Battle {
     }
   }
 
+  /** Below half health the ogre enrages and fixates on the frailest hero — a
+   *  taunt (Warcry, Challenge) is the answer. */
+  private updateOgreRage(ogre: Unit, dt: number): void {
+    const frac = ogre.hp / ogre.stats.maxHp;
+    if (frac < 0.55 && ogre.phase === 0) {
+      ogre.phase = 1;
+      ogre.effects.push(makeEffect("haste", 999, 1.5, null));
+      this.fx.floatText(ogre.x, ogre.y - ogre.radius * 3, "ENRAGED!", "#ff8a70", 20);
+      this.fx.ring(ogre.x, ogre.y, 150, "#ff8a70", { width: 5, life: 0.7 });
+      this.fx.addShake(9);
+      this.hitstop = Math.max(this.hitstop, 0.09);
+      audio.play("roar");
+      ogre.supportTimer = 0;
+    }
+    if (ogre.phase >= 1) {
+      ogre.supportTimer -= dt;
+      if (ogre.supportTimer <= 0) {
+        const heroes = this.livingHeroes();
+        if (heroes.length) {
+          const frail = heroes.reduce((a, b) => (a.stats.maxHp <= b.stats.maxHp ? a : b));
+          if (!this.effect(ogre, "taunt") && ogre.aggro !== frail) {
+            ogre.aggro = frail;
+            ogre.alert = 0.5;
+            this.fx.floatText(ogre.x, ogre.y - ogre.radius * 3 - 10, `hunts ${frail.name}!`, "#ff8a70", 14);
+          }
+          ogre.supportTimer = 6;
+        }
+      }
+    }
+  }
+
+  /** The warlord telegraphs a huge executioner's sweep at the thickest hero
+   *  cluster — spread out, or Blink clear of it. */
+  private updateWarlordSweep(lord: Unit, dt: number): void {
+    if (lord.phase === 0) {
+      lord.phase = 1;
+      lord.supportTimer = 5;
+    }
+    lord.supportTimer -= dt;
+    const pending = this.telegraphs.find((t) => t.owner === lord);
+    if (!pending && lord.supportTimer <= 0 && !this.effect(lord, "stun")) {
+      const heroes = this.livingHeroes();
+      if (!heroes.length) return;
+      let best = heroes[0];
+      let bestN = 0;
+      for (const h of heroes) {
+        const n = heroes.filter((o) => Math.hypot(o.x - h.x, o.y - h.y) < 120).length;
+        if (n > bestN) {
+          bestN = n;
+          best = h;
+        }
+      }
+      this.telegraphs.push({
+        x: best.x,
+        y: best.y,
+        radius: 105,
+        time: 0,
+        duration: this.telegraphTime + 0.3,
+        owner: lord,
+        kind: "sweep",
+      });
+      lord.castGlow = 0.4;
+      audio.play("warcry");
+      lord.supportTimer = 8.5;
+    }
+  }
+
   private updateTelegraphs(dt: number): void {
     for (let i = this.telegraphs.length - 1; i >= 0; i--) {
       const mark = this.telegraphs[i];
@@ -1290,6 +1370,26 @@ export class Battle {
       }
       if (mark.time >= mark.duration) {
         this.telegraphs.splice(i, 1);
+        if (mark.kind === "sweep") {
+          // executioner's arc crashes down where it was promised
+          const lord = mark.owner;
+          lord.lungeDir = this.normalize({ x: mark.x - lord.x, y: mark.y - lord.y });
+          lord.lunge = 1;
+          for (const hero of this.livingHeroes()) {
+            if (Math.hypot(hero.x - mark.x, hero.y - mark.y) < mark.radius + hero.radius * 0.5) {
+              this.damage(hero, lord.stats.damage * 1.5, lord);
+              if (hero.alive) hero.effects.push(makeEffect("slow", 1.5, 0.35, lord));
+            }
+          }
+          this.fx.slash(mark.x, mark.y - 10, Math.PI * 0.1, mark.radius * 0.8, "#ff9a85", Math.PI * 1.6);
+          this.fx.ring(mark.x, mark.y, mark.radius + 10, "#ff8a70", { width: 5, life: 0.5 });
+          this.fx.burst(mark.x, mark.y, "#c98a5a", 20, 190, { gravity: 200 });
+          this.fx.addShake(10);
+          this.hitstop = Math.max(this.hitstop, 0.08);
+          this.zoomPunch = Math.max(this.zoomPunch, 0.9);
+          audio.play("thud");
+          continue;
+        }
         const alpha = mark.owner;
         // leap to the marked spot
         alpha.lungeDir = { x: Math.sign(mark.x - alpha.x) || 1, y: 0 };
@@ -1357,6 +1457,8 @@ export class Battle {
       if (Math.random() < chance) {
         crit = true;
         dmg *= 1.6;
+        this.hitstop = Math.max(this.hitstop, 0.05);
+        this.zoomPunch = Math.max(this.zoomPunch, 0.4);
       }
       // Last Stand: fury below 30% health
       const lastStand = this.heroTalentRank(attacker, "lastStand");
@@ -1401,6 +1503,8 @@ export class Battle {
         life: 3,
       };
       this.projectiles.push(missile);
+      // muzzle flash at the loose
+      this.fx.burst(missile.x + attacker.facing * 4, missile.y, missile.color, 3, 55, { glow: true, life: 0.2, size: 2.4 });
       // Twin Arrows: every 4th ranged attack looses a second missile
       if (this.heroTalentRank(attacker, "twinArrows") > 0) {
         const n = (this.shotCounts.get(attacker.id) ?? 0) + 1;
@@ -1427,6 +1531,7 @@ export class Battle {
   }
 
   private shotCounts = new Map<number, number>();
+  private killStreaks = new Map<number, { n: number; t: number }>();
 
   private separateUnits(dt: number): void {
     const living = this.units.filter((u) => u.alive);

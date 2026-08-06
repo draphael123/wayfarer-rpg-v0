@@ -845,16 +845,32 @@ export function drawTelegraphs(ctx: CanvasRenderingContext2D, battle: Battle): v
     ctx.beginPath();
     ctx.ellipse(mark.x, mark.y, mark.radius * (1 - t * 0.5), mark.radius * 0.55 * (1 - t * 0.5), 0, 0, Math.PI * 2);
     ctx.fill();
-    // paw mark
-    ctx.globalAlpha = urgency;
-    ctx.fillStyle = "#ff8a70";
-    ctx.beginPath();
-    ctx.ellipse(mark.x, mark.y + 2, 7, 5, 0, 0, Math.PI * 2);
-    for (let i = -1; i <= 1; i++) {
-      ctx.ellipse(mark.x + i * 7, mark.y - 7, 2.8, 3.6, 0, 0, Math.PI * 2);
+    if (mark.kind === "sweep") {
+      // crossed blades: get out of the arc
+      ctx.globalAlpha = urgency;
+      ctx.strokeStyle = "#ff8a70";
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(mark.x - s * 11, mark.y - 11);
+        ctx.lineTo(mark.x + s * 11, mark.y + 11);
+        ctx.stroke();
+      }
+      ctx.lineCap = "butt";
+      ctx.globalAlpha = 1;
+    } else {
+      // paw mark
+      ctx.globalAlpha = urgency;
+      ctx.fillStyle = "#ff8a70";
+      ctx.beginPath();
+      ctx.ellipse(mark.x, mark.y + 2, 7, 5, 0, 0, Math.PI * 2);
+      for (let i = -1; i <= 1; i++) {
+        ctx.ellipse(mark.x + i * 7, mark.y - 7, 2.8, 3.6, 0, 0, Math.PI * 2);
+      }
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
-    ctx.fill();
-    ctx.globalAlpha = 1;
   }
 }
 

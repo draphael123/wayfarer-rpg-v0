@@ -119,7 +119,7 @@ export interface Telegraph {
   time: number;
   duration: number;
   owner: Unit;
-  kind: "pounce";
+  kind: "pounce" | "sweep";
 }
 
 export interface GroundZone {

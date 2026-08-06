@@ -7,6 +7,7 @@ import {
   callingById,
   callingEligible,
   DIFFICULTIES,
+  TRINKETS,
   trinketById,
   MAX_LEVEL,
   TALENTS,
@@ -1257,7 +1258,66 @@ export class Menus {
       drawHeroPortrait(card.querySelector(".hero-avatar canvas") as HTMLCanvasElement, i, save);
       body.appendChild(card);
     }
+
+    // Tinker's bench: duplicate trinkets aren't dead weight — fuse or sell them
+    const counts = new Map<string, number>();
+    for (const id of save.inventory) counts.set(id, (counts.get(id) ?? 0) + 1);
+    const dupes = [...counts.entries()].filter(([, n]) => n >= 2);
+    if (dupes.length) {
+      const bench = el(`
+        <div class="hero-card tinker-bench">
+          <div class="hero-name">Tinker's Bench</div>
+          <div class="hero-meta">Two copies of the same trinket can be reworked.</div>
+          <div class="tinker-rows"></div>
+        </div>
+      `);
+      const rows = bench.querySelector(".tinker-rows")!;
+      for (const [id, n] of dupes) {
+        const t = trinketById(id)!;
+        const rare = t.rarity === "rare";
+        rows.appendChild(
+          el(`
+            <div class="tinker-row">
+              <span class="tinker-item">${t.icon} ${t.name} ×${n}</span>
+              <button class="big-btn buy-btn" data-fuse="${id}">
+                ${rare ? "Sell spare — +120g" : "Fuse 2 → random RARE"}
+              </button>
+            </div>
+          `),
+        );
+      }
+      body.appendChild(bench);
+    }
+
     body.addEventListener("click", (event) => {
+      const fuseBtn = (event.target as HTMLElement).closest("[data-fuse]");
+      if (fuseBtn) {
+        const id = fuseBtn.getAttribute("data-fuse")!;
+        const t = trinketById(id)!;
+        const remove = (times: number) => {
+          for (let k = 0; k < times; k++) {
+            const at = save.inventory.indexOf(id);
+            if (at >= 0) save.inventory.splice(at, 1);
+          }
+        };
+        if (t.rarity === "rare") {
+          remove(1);
+          save.gold += 120;
+          audio.play("coin");
+          this.showToast(`Sold the spare ${t.name} — +120 gold`);
+        } else {
+          remove(2);
+          const rares = TRINKETS.filter((r) => r.rarity === "rare");
+          const forged = rares[Math.floor(Math.random() * rares.length)];
+          save.inventory.push(forged.id);
+          audio.play("levelup");
+          navigator.vibrate?.([15, 25, 40]);
+          this.showToast(`The tinker forges ${forged.icon} ${forged.name} — RARE!`);
+        }
+        persist(save);
+        this.renderShop("armory");
+        return;
+      }
       const btn = (event.target as HTMLElement).closest("[data-gear]");
       if (!btn) return;
       const [slot, idx] = btn.getAttribute("data-gear")!.split(":");

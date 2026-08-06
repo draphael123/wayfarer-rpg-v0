@@ -1,9 +1,9 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { BOSS_STAGES, DIFFICULTIES, STAGES, TRINKETS } from "./data";
+import { BOSS_STAGES, DIFFICULTIES, HEROES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
-import { Menus } from "./menus";
+import { drawHeroPortrait, Menus } from "./menus";
 import {
   drawBackground,
   drawColorGrade,
@@ -239,6 +239,87 @@ function settleVictory(): void {
   setTimeout(() => menus.showToast(`+${gold} gold · loot: ${drop.icon} ${drop.name}${rare ? " (RARE)" : ""}`), 150);
 }
 
+/** Compose a 1200x630 victory card and hand it to the OS share sheet (or download). */
+function shareVictory(): void {
+  if (!battle) return;
+  const b = battle;
+  const card = document.createElement("canvas");
+  card.width = 1200;
+  card.height = 630;
+  const c = card.getContext("2d")!;
+  const grad = c.createLinearGradient(0, 0, 0, 630);
+  grad.addColorStop(0, "#2c2342");
+  grad.addColorStop(1, "#151020");
+  c.fillStyle = grad;
+  c.fillRect(0, 0, 1200, 630);
+  c.strokeStyle = "#8ee88b";
+  c.lineWidth = 5;
+  c.strokeRect(24, 24, 1152, 582);
+  c.strokeStyle = "rgba(255,245,225,0.15)";
+  c.lineWidth = 2;
+  c.strokeRect(38, 38, 1124, 554);
+  c.textAlign = "center";
+  c.fillStyle = "#ffe9a3";
+  c.font = "700 68px Cinzel, Palatino, Georgia, serif";
+  c.fillText("WAYBAND", 600, 128);
+  c.fillStyle = "#8ee88b";
+  c.font = "700 40px Cinzel, Palatino, Georgia, serif";
+  c.fillText(`Victory — ${b.stage.name}`, 600, 196);
+  // the band, portrait by portrait
+  const roster = save.heroes.map((h, i) => ({ h, i })).filter(({ h }) => h.recruited && h.active);
+  const ps = 150;
+  const gap = 40;
+  const x0 = 600 - (roster.length * ps + (roster.length - 1) * gap) / 2;
+  roster.forEach(({ i }, at) => {
+    const px = x0 + at * (ps + gap);
+    const temp = document.createElement("canvas");
+    temp.width = temp.height = 128;
+    drawHeroPortrait(temp, i, save);
+    c.fillStyle = "rgba(0,0,0,0.3)";
+    c.beginPath();
+    c.roundRect(px, 240, ps, ps, 18);
+    c.fill();
+    c.drawImage(temp, px + 11, 240 + 5, ps - 22, ps - 22);
+    c.strokeStyle = HEROES[i].accent;
+    c.lineWidth = 3;
+    c.beginPath();
+    c.roundRect(px, 240, ps, ps, 18);
+    c.stroke();
+    c.fillStyle = "#f2ecd8";
+    c.font = "700 24px 'Segoe UI', system-ui, sans-serif";
+    c.fillText(HEROES[i].name, px + ps / 2, 240 + ps + 34);
+  });
+  const mult = DIFFICULTIES[save.difficulty ?? 1]?.rewardMult ?? 1;
+  const xp = Math.round((b.xpEarned + b.stage.xpReward) * mult);
+  const gold = Math.round((b.goldEarned + Math.round(b.stage.xpReward * 0.8)) * mult);
+  const mins = Math.floor(b.time / 60);
+  const secs = String(Math.floor(b.time % 60)).padStart(2, "0");
+  c.fillStyle = "#cfc7de";
+  c.font = "600 30px 'Segoe UI', system-ui, sans-serif";
+  c.fillText(
+    `Cleared in ${mins}:${secs} · ${b.heroDeaths === 0 ? "no heroes fell" : `${b.heroDeaths} fell`} · +${xp} xp · +${gold} gold`,
+    600,
+    508,
+  );
+  c.fillStyle = "#8d84a3";
+  c.font = "600 24px 'Segoe UI', system-ui, sans-serif";
+  c.fillText(`play at ${location.host}${location.pathname.replace(/\/$/, "")}`, 600, 566);
+  card.toBlob((blob) => {
+    if (!blob) return;
+    const file = new File([blob], "wayband-victory.png", { type: "image/png" });
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+    if (nav.canShare?.({ files: [file] })) {
+      void navigator.share({ files: [file], title: "Wayband", text: `We cleared ${b.stage.name}!` }).catch(() => undefined);
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "wayband-victory.png";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  });
+}
+
 function handleHudAction(action: string): void {
   if (!hud || !battle) return;
   switch (action) {
@@ -270,6 +351,10 @@ function handleHudAction(action: string): void {
     case "continue":
       settleVictory();
       endBattleToMap();
+      break;
+    case "share":
+      audio.play("click");
+      shareVictory();
       break;
     case "sound":
       save.sound = !save.sound;
@@ -383,6 +468,8 @@ function frame(now: number): void {
         battle.slowmo = Math.max(0, battle.slowmo - dt);
         simDt *= 0.3;
       }
+      // bullet time while aiming a gesture — lining up the shot is the fun part
+      if (hud.drag && hud.drag.mode === "ability") simDt *= 0.22;
       battle.update(simDt, battleSave);
       fx.update(simDt);
       if (tutorial) {
@@ -462,6 +549,22 @@ function frame(now: number): void {
     drawLighting(ctx, battle, logicalW, worldH);
     drawColorGrade(ctx, battle.stage, logicalW, worldH);
     drawVignette(ctx, logicalW, worldH);
+    // danger pulse: red edges close in when a hero is nearly down
+    if (battle.state === "fighting") {
+      let frailest = 1;
+      for (const u of battle.units) {
+        if (u.team === "hero" && u.alive) frailest = Math.min(frailest, u.hp / u.stats.maxHp);
+      }
+      if (frailest < 0.28) {
+        const danger = (0.28 - frailest) / 0.28;
+        const pulse = 0.55 + Math.abs(Math.sin(battle.time * 4)) * 0.45;
+        const dv = ctx.createRadialGradient(logicalW / 2, worldH * 0.45, Math.min(logicalW, worldH) * 0.45, logicalW / 2, worldH / 2, Math.max(logicalW, worldH) * 0.72);
+        dv.addColorStop(0, "rgba(200, 40, 30, 0)");
+        dv.addColorStop(1, `rgba(200, 40, 30, ${(0.24 + danger * 0.26) * pulse})`);
+        ctx.fillStyle = dv;
+        ctx.fillRect(0, 0, logicalW, worldH);
+      }
+    }
     hud.draw(ctx);
   } else {
     // simple backdrop behind DOM menus
@@ -487,6 +590,7 @@ Object.defineProperty(window, "__wayband", {
       frame(lastTime + dt * 1000);
     },
     startBattle,
+    shareVictory,
     shot(q = 0.72) {
       return canvas.toDataURL("image/jpeg", q);
     },

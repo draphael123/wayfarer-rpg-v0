@@ -25,7 +25,14 @@ type SfxName =
   | "levelup"
   | "victory"
   | "defeat"
-  | "wave";
+  | "wave"
+  | "ultReady"
+  | "ultChallenge"
+  | "ultWhirlwind"
+  | "ultVolley"
+  | "ultBarrage"
+  | "ultSanctuary"
+  | "ultBlink";
 
 /** SFX that have recorded versions; each entry lists variants to pick from. */
 const SAMPLE_SFX: Partial<Record<SfxName, string[]>> = {
@@ -251,6 +258,14 @@ class AudioKit {
     src.start(t0);
   }
 
+  /** Kill-streak chime: each quick kill climbs a semitone ladder. */
+  killChime(streak: number): void {
+    if (!this.soundOn) return;
+    const freq = 523 * Math.pow(1.1225, Math.min(streak - 1, 8));
+    this.tone(freq, 0.11, "triangle", 0.13, 40);
+    if (streak >= 3) this.tone(freq * 1.5, 0.1, "sine", 0.08, 0, 0.05);
+  }
+
   play(name: SfxName): void {
     if (!this.soundOn) return;
     // prefer a recorded variant when it has arrived
@@ -262,6 +277,43 @@ class AudioKit {
     switch (name) {
       case "click":
         this.tone(660, 0.06, "square", 0.12, 120);
+        break;
+      // ---- ultimate voices: each calling's big moment sounds like itself
+      case "ultReady":
+        this.tone(523, 0.14, "triangle", 0.2, 60);
+        this.tone(784, 0.18, "triangle", 0.2, 0, 0.1);
+        this.tone(1046, 0.34, "sine", 0.16, 0, 0.2);
+        break;
+      case "ultChallenge":
+        // war horn
+        this.tone(196, 0.55, "sawtooth", 0.2, 26);
+        this.tone(294, 0.55, "sawtooth", 0.13, 26, 0.02);
+        this.noise(0.24, 0.1, 900);
+        break;
+      case "ultWhirlwind":
+        this.noise(0.34, 0.28, 1500);
+        this.noise(0.26, 0.22, 2200, 0.12);
+        this.tone(150, 0.34, "sawtooth", 0.15, -70);
+        break;
+      case "ultVolley":
+        for (let i = 0; i < 4; i++) this.noise(0.08, 0.18, 3000, i * 0.07);
+        this.tone(95, 0.16, "sine", 0.2, -30, 0.32);
+        this.noise(0.12, 0.16, 800, 0.32);
+        break;
+      case "ultBarrage":
+        for (let i = 0; i < 5; i++) this.tone(920 - i * 60, 0.12, "square", 0.1, -320, i * 0.07);
+        this.noise(0.2, 0.08, 2600, 0.1);
+        break;
+      case "ultSanctuary":
+        this.tone(523, 0.9, "sine", 0.11);
+        this.tone(659, 0.9, "sine", 0.1, 0, 0.05);
+        this.tone(784, 0.9, "sine", 0.09, 0, 0.1);
+        this.tone(1046, 0.6, "triangle", 0.07, 0, 0.25);
+        break;
+      case "ultBlink":
+        this.tone(1250, 0.09, "sine", 0.16, -850);
+        this.noise(0.12, 0.16, 4200);
+        this.tone(480, 0.1, "triangle", 0.14, 320, 0.12);
         break;
       case "slash":
         this.noise(0.09, 0.25, 2600);

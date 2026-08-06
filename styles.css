@@ -2020,3 +2020,23 @@ html, body {
 .charge-hint { color: #d8cfa0 !important; font-size: 10.5px !important; }
 
 .big-slot.signature.dormant { opacity: 0.55; border-style: dashed; }
+
+/* --------------------------------------------------------- tinker's bench */
+
+.tinker-bench .hero-meta { margin-bottom: 8px; }
+
+.tinker-rows { display: flex; flex-direction: column; gap: 8px; }
+
+.tinker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.tinker-item { font-size: 13.5px; font-weight: 600; }
+
+.tinker-row .big-btn { padding: 8px 14px; font-size: 13px; }

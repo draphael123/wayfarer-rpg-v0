@@ -1283,7 +1283,8 @@ export class Hud {
     const bx = frame.x + 30;
     if (victory) {
       this.addOverlayButton(ctx, "continue", "Continue", bx, frame.y + 200, bw, "#8ee88b");
-      this.addOverlayButton(ctx, "retry", "Replay Stage", bx, frame.y + 248, bw);
+      this.addOverlayButton(ctx, "retry", "Replay", bx, frame.y + 248, (bw - 10) / 2);
+      this.addOverlayButton(ctx, "share", "Share", bx + (bw - 10) / 2 + 10, frame.y + 248, (bw - 10) / 2, "#ffe9a3");
     } else {
       this.addOverlayButton(ctx, "retry", "Try Again", bx, frame.y + 126, bw, "#ff8a70");
       this.addOverlayButton(ctx, "map", "Back to Map", bx, frame.y + 174, bw);
