@@ -428,8 +428,10 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 
 canvas.addEventListener("pointermove", (event) => {
-  if (!hud || event.pointerId !== activePointer) return;
+  if (!hud) return;
   const { x, y } = toLogical(event);
+  hud.trackMouse(x, y); // keyboard aim follows the pointer even unbuttoned
+  if (event.pointerId !== activePointer) return;
   hud.pointerMove(x, y);
   event.preventDefault();
 });
@@ -463,9 +465,28 @@ canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 document.addEventListener("pointerdown", () => audio.unlock(), { once: true });
 
 window.addEventListener("keydown", (event) => {
-  if (!hud) return;
-  if (event.key === "Escape" || event.key === "p") {
+  if (!hud || !battle) return;
+  if (event.key === "Escape") {
+    if (hud.cancelKeyAim()) return; // Esc first disarms an aimed hotkey
     hud.paused = !hud.paused;
+    return;
+  }
+  if (event.key === "p") {
+    hud.paused = !hud.paused;
+    return;
+  }
+  if (hud.paused || battle.state !== "fighting") return;
+  const key = event.key.toLowerCase();
+  const binds = battleSave.keybinds ?? save.keybinds;
+  for (let i = 0; i < 4; i++) {
+    if (key === binds[`hero${i + 1}`]) {
+      hud.selectHeroByIndex(i);
+      return;
+    }
+    if (key === binds[`ability${i + 1}`]) {
+      hud.hotkeyAbility(i);
+      return;
+    }
   }
 });
 

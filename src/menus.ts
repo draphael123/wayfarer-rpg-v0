@@ -55,7 +55,7 @@ function bestAttr(index: number): AttrKey {
 }
 import { drawAbilityGlyph, ico } from "./icons";
 import { drawHeroFigure, setColorSafe } from "./render";
-import { activeSlot, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey } from "./save";
+import { activeSlot, DEFAULT_KEYBINDS, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey } from "./save";
 import { exportTelemetry, telemetrySummary } from "./telemetry";
 import type { SaveData } from "./types";
 
@@ -496,6 +496,7 @@ export class Menus {
             <button class="toggle-btn" data-act="colorsafe"></button>
           </div>
           <button class="toggle-btn" data-act="bigtext"></button>
+          <button class="toggle-btn" data-act="hotkeys">⌨ Hotkeys</button>
           <button class="toggle-btn" data-act="bands">${ico("banner")} Bands — save slots</button>
           <div class="settings-row">
             <button class="toggle-btn" data-act="export-save">${ico("upload")} Export save</button>
@@ -553,6 +554,7 @@ export class Menus {
       }
       if (act === "tutorial") this.renderTutorials();
       if (act === "bands") this.renderProfiles();
+      if (act === "hotkeys") this.renderHotkeys();
       if (act === "sound") {
         this.save.sound = !this.save.sound;
         audio.setSound(this.save.sound);
@@ -1097,6 +1099,98 @@ export class Menus {
       if (act === "back") {
         audio.play("click");
         this.renderMap();
+      }
+    });
+    this.root.appendChild(page);
+  }
+
+  // ------------------------------------------------------------------ hotkeys
+
+  /** Rebind the battle keys: tap a row, press a key. */
+  renderHotkeys(): void {
+    this.root.innerHTML = "";
+    this.show();
+    const save = this.save;
+    const ROWS: [string, string][] = [
+      ["hero1", "Select hero 1"],
+      ["hero2", "Select hero 2"],
+      ["hero3", "Select hero 3"],
+      ["hero4", "Select hero 4"],
+      ["ability1", "Cast ability 1"],
+      ["ability2", "Cast ability 2"],
+      ["ability3", "Cast ability 3"],
+      ["ability4", "Cast the ULTIMATE"],
+    ];
+    const page = el(`
+      <div class="page">
+        <div class="map-header">
+          <div>
+            <div class="map-title">Hotkeys</div>
+            <div class="map-level">Tap a row, then press the key you want · aimed spells follow the mouse, click casts, Esc cancels</div>
+          </div>
+          <button class="big-btn party-btn" data-act="back">Title</button>
+        </div>
+        <div class="hotkey-list">
+          ${ROWS.map(
+            ([id, label]) => `
+            <button class="hotkey-row" data-bind="${id}">
+              <span class="hotkey-label">${label}</span>
+              <span class="hotkey-key">${(save.keybinds[id] ?? "").toUpperCase() || "—"}</span>
+            </button>`,
+          ).join("")}
+        </div>
+        <div class="map-footer">
+          <button class="toggle-btn" data-act="hotkey-defaults">Restore defaults</button>
+        </div>
+      </div>
+    `);
+    let listening: HTMLElement | null = null;
+    const capture = (event: KeyboardEvent) => {
+      if (!listening) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const id = listening.getAttribute("data-bind")!;
+      if (event.key !== "Escape") {
+        const key = event.key.toLowerCase();
+        if (key.length === 1) {
+          const takenBy = Object.keys(save.keybinds).find((k) => k !== id && save.keybinds[k] === key);
+          if (takenBy) {
+            this.showToast(`"${key.toUpperCase()}" already does something — unbind it first`);
+          } else {
+            save.keybinds[id] = key;
+            persist(save);
+            audio.play("click");
+          }
+        } else {
+          this.showToast("Single letters and digits only");
+        }
+      }
+      window.removeEventListener("keydown", capture, true);
+      listening = null;
+      this.renderHotkeys();
+    };
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const row = target.closest("[data-bind]") as HTMLElement | null;
+      if (row) {
+        audio.play("click");
+        listening = row;
+        row.classList.add("listening");
+        (row.querySelector(".hotkey-key") as HTMLElement).textContent = "press a key…";
+        window.addEventListener("keydown", capture, true);
+        return;
+      }
+      if (target.closest('[data-act="hotkey-defaults"]')) {
+        save.keybinds = { ...DEFAULT_KEYBINDS };
+        persist(save);
+        audio.play("click");
+        this.renderHotkeys();
+        return;
+      }
+      if (target.closest('[data-act="back"]')) {
+        window.removeEventListener("keydown", capture, true);
+        audio.play("click");
+        this.renderTitle();
       }
     });
     this.root.appendChild(page);

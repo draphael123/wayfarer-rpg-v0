@@ -196,6 +196,7 @@ export interface SaveData {
   reducedMotion: boolean; // calmer screen: no shake/zoom punch, no menu animation
   colorSafe: boolean; // colorblind-friendly health bars (hero bars go blue)
   bigText: boolean; // larger menu + hint text
+  keybinds: Record<string, string>; // action id -> key (hero1-4, ability1-4)
 }
 
 export interface LifetimeStats {

@@ -72,6 +72,18 @@ function defaultHero(index: number): HeroSave {
   return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armorTier: 0, talents: {}, trinket: null, calling: null, advCalling: null, armorVariant: null };
 }
 
+/** Out of the box: 1-4 picks a hero, QWER casts their abilities (R = ultimate). */
+export const DEFAULT_KEYBINDS: Record<string, string> = {
+  hero1: "1",
+  hero2: "2",
+  hero3: "3",
+  hero4: "4",
+  ability1: "q",
+  ability2: "w",
+  ability3: "e",
+  ability4: "r",
+};
+
 function emptyLifetime() {
   return { battles: 0, victories: 0, kills: 0, casts: 0, gold: 0, deaths: 0, fuses: 0, flawless: 0, brutalClears: 0 };
 }
@@ -101,6 +113,7 @@ export function defaultSave(): SaveData {
     reducedMotion: false,
     colorSafe: false,
     bigText: false,
+    keybinds: { ...DEFAULT_KEYBINDS },
   };
 }
 
@@ -181,6 +194,10 @@ export function loadSave(): SaveData {
     if (typeof parsed.reducedMotion !== "boolean") parsed.reducedMotion = false;
     if (typeof parsed.colorSafe !== "boolean") parsed.colorSafe = false;
     if (typeof parsed.bigText !== "boolean") parsed.bigText = false;
+    if (!parsed.keybinds || typeof parsed.keybinds !== "object") parsed.keybinds = { ...DEFAULT_KEYBINDS };
+    for (const k of Object.keys(DEFAULT_KEYBINDS)) {
+      if (typeof parsed.keybinds[k] !== "string") parsed.keybinds[k] = DEFAULT_KEYBINDS[k];
+    }
     return parsed;
   } catch {
     return defaultSave();

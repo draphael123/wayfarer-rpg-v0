@@ -2483,3 +2483,38 @@ body.big-text .page { zoom: 1.1; }
 .slot-sub { font-style: normal; font-size: 12px; color: #cfc7de; display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 
 .slot-btn { align-self: flex-start; padding: 9px 18px; }
+
+/* ---------------------------------------------------------- hotkeys */
+
+.hotkey-list { display: flex; flex-direction: column; gap: 7px; width: 100%; max-width: 520px; margin: 0 auto; }
+
+.hotkey-row {
+  font: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(255, 245, 225, 0.04);
+  border: 1px solid rgba(255, 235, 180, 0.12);
+  border-radius: 12px;
+  padding: 10px 14px;
+  color: #f2ecd8;
+  cursor: pointer;
+}
+
+.hotkey-row.listening { border-color: #ffe9a3; background: rgba(255, 233, 163, 0.08); }
+
+.hotkey-label { font-size: 13px; font-weight: 700; }
+
+.hotkey-key {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #ffe9a3;
+  background: rgba(12, 9, 18, 0.7);
+  border: 1px solid rgba(255, 233, 163, 0.35);
+  border-radius: 7px;
+  padding: 4px 11px;
+  min-width: 30px;
+  text-align: center;
+}

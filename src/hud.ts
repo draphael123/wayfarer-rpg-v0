@@ -50,6 +50,9 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 
 const ABILITY_REACH: Record<string, number> = { pierce: 430, frostwake: 360 };
 
+/** Key labels on ability buttons only make sense where a keyboard likely exists. */
+const FINE_POINTER = typeof matchMedia !== "undefined" && matchMedia("(pointer: fine)").matches;
+
 export class Hud {
   drag: DragState = null;
   selected: Unit | null = null;
@@ -62,6 +65,64 @@ export class Hud {
   private lastEnemyTap: { id: number; time: number } | null = null;
   /** When true the sim AI fights the battle; any time is a good time to retake command. */
   autopilot = false;
+  /** A hotkey armed an aimed ability: the preview follows the mouse, click casts. */
+  keyAim = false;
+  /** Last known pointer position in screen space (for keyboard-armed aiming). */
+  private mouseX = 0;
+  private mouseY = 0;
+
+  /** Track the pointer even when no button is held — keyboard aim follows it. */
+  trackMouse(x: number, y: number): void {
+    this.mouseX = x;
+    this.mouseY = y;
+    if (this.keyAim && this.drag && this.drag.mode === "ability") {
+      const wp = this.toWorld(x, y);
+      this.drag.x = wp.x;
+      this.drag.y = wp.y;
+      this.drag.hero.castGlow = Math.min(0.55, this.drag.hero.castGlow + 0.04);
+    }
+  }
+
+  /** Hotkey: pick the Nth party member (party order, alive or not — dead just clears). */
+  selectHeroByIndex(i: number): void {
+    const heroes = this.battle.heroes();
+    const hero = heroes[i];
+    if (!hero || !hero.alive) return;
+    this.selected = hero;
+    audio.play("click");
+  }
+
+  /** Hotkey: cast the selected hero's Nth ability (3 = the ultimate slot). */
+  hotkeyAbility(slot: number): void {
+    if (this.overlayActive() || this.tutorial) return;
+    const hero = this.selected && this.selected.alive ? this.selected : this.battle.livingHeroes()[0];
+    if (!hero) return;
+    this.selected = hero;
+    const ability = slot === 3 ? (hero.abilities.find((a) => a.ult) ?? hero.abilities[3]) : hero.abilities[slot];
+    if (!ability) return;
+    if (ability.timer > 0) {
+      audio.play("click");
+      return;
+    }
+    if (ability.def.targeting === "instant") {
+      this.battle.castAbility(hero, ability, this.save, null, null);
+      return;
+    }
+    // arm keyboard aim: the existing drag preview + bullet time carry it
+    const wp = this.toWorld(this.mouseX, this.mouseY);
+    this.keyAim = true;
+    this.drag = { mode: "ability", hero, ability, startX: hero.x, startY: hero.y - 40, x: wp.x, y: wp.y };
+    this.showHint(ability.def.targeting === "ally" ? "Click an ally to cast — Esc cancels" : "Aim with the mouse, click to cast — Esc cancels");
+    audio.play("click");
+  }
+
+  /** Returns true if an armed keyboard aim was cancelled (Esc). */
+  cancelKeyAim(): boolean {
+    if (!this.keyAim) return false;
+    this.keyAim = false;
+    this.drag = null;
+    return true;
+  }
   private abilityButtons: AbilityButtonRect[] = [];
   private portraits: PortraitRect[] = [];
   private overlayButtons: OverlayButton[] = [];
@@ -130,6 +191,21 @@ export class Hud {
 
   /** Returns an action id when a menu-level button is pressed. */
   pointerDown(x: number, y: number): string | null {
+    // a keyboard-armed aim resolves on the next click, wherever it lands
+    if (this.keyAim && this.drag && this.drag.mode === "ability") {
+      const drag = this.drag;
+      this.keyAim = false;
+      this.drag = null;
+      const wp = this.toWorld(x, y);
+      if (drag.ability.def.targeting === "ally") {
+        const target = this.battle.unitAt(wp.x, wp.y, "hero", 26);
+        if (target) this.battle.castAbility(drag.hero, drag.ability, this.save, null, target);
+        else this.showHint("No ally there — the spell waits");
+      } else {
+        this.battle.castAbility(drag.hero, drag.ability, this.save, this.battle.clampToField(wp, 0), null);
+      }
+      return null;
+    }
     if (this.overlayActive()) {
       for (const button of this.overlayButtons) {
         if (x >= button.x && x <= button.x + button.w && y >= button.y && y <= button.y + button.h) {
@@ -1148,6 +1224,19 @@ export class Hud {
         const by = py + 4;
         if (bx + bs > rowX0 + (i + 1) * clusterW - 2) break;
         this.drawAbilityButton(ctx, bx, by, bs, hero, ability, this.readyFlash[hero.id * 10 + a] ?? 0);
+        // key label for keyboard players, only on the selected hero's bar
+        if (FINE_POINTER && this.selected === hero) {
+          const bind = this.save.keybinds?.[ability.ult ? "ability4" : `ability${a + 1}`];
+          if (bind && bind.length === 1) {
+            ctx.fillStyle = "rgba(12, 9, 18, 0.85)";
+            roundRect(ctx, bx - 3, by - 3, 13, 13, 4);
+            ctx.fill();
+            ctx.fillStyle = "#cfc7de";
+            ctx.font = "800 9px 'Trebuchet MS', Verdana, sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText(bind.toUpperCase(), bx + 3.5, by + 6.5);
+          }
+        }
         this.abilityButtons.push({ x: bx, y: by, w: bs, h: bs, hero, ability });
       }
       if (hero.abilities.length === 0) {

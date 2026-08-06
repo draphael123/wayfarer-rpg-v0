@@ -898,16 +898,16 @@ export function deriveStats(
     attackCooldown = 1.15;
   } else if (weapon === "bow") {
     damage = 6 + attrs.dex * 1.7;
-    range = 210;
+    range = 300;
     attackCooldown = 1.0;
   } else if (weapon === "stave") {
     // a healer's holy spark — modest, but keeps them useful at range
     damage = 5 + attrs.spi * 1.1 + attrs.int * 0.5;
-    range = 175;
+    range = 260;
     attackCooldown = 1.4;
   } else {
     damage = 7 + attrs.int * 2.0;
-    range = 190;
+    range = 280;
     attackCooldown = 1.35;
   }
   attackCooldown *= 1 - Math.min(0.45, attrs.dex * 0.018);
@@ -1036,14 +1036,14 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   },
   alpha: {
     name: "Alpha of Thornwood",
-    maxHp: 380,
-    damage: 15,
+    maxHp: 1450,
+    damage: 17,
     range: 34,
     attackCooldown: 1.1,
     speed: 135,
     armor: 0.1,
     radius: 24,
-    xp: 60,
+    xp: 95,
     body: "#3f3a4d",
     trim: "#6e6680",
     lore: "The pack answers one voice. It has never known a hunt to fail.",
@@ -1151,7 +1151,7 @@ export const STAGES: StageDef[] = [
   {
     id: 4,
     name: "Gloaming Pass",
-    subtitle: "Night falls fast here",
+    subtitle: "The pack answers one voice",
     palette: {
       skyTop: "#4a5a8c",
       skyBottom: "#8d7ba8",
@@ -1161,13 +1161,10 @@ export const STAGES: StageDef[] = [
       prop: "#3d3554",
     },
     scale: 1.95,
-    xpReward: 58,
-    waves: [
-      [{ kind: "wolf", count: 4 }],
-      [{ kind: "shaman", count: 1 }, { kind: "brute", count: 2 }],
-      [{ kind: "archer", count: 2 }, { kind: "wolf", count: 3 }],
-      [{ kind: "alpha", count: 1 }],
-    ],
+    xpReward: 72,
+    // a true boss level: the Alpha from the first breath, its pack arriving
+    // as the fight itself summons them (howl at 60%, frenzy at 30%)
+    waves: [[{ kind: "alpha", count: 1 }]],
   },
   {
     id: 5,

@@ -29,6 +29,9 @@ function makeEffect(kind: StatusEffect["kind"], time: number, power: number, sou
   return { kind, time, power, source };
 }
 
+/** The great foes — they hunt by threat, not by proximity or frailty. */
+const BOSS_KINDS = ["alpha", "warlord", "ogre"];
+
 export class Battle {
   units: Unit[] = [];
   projectiles: Projectile[] = [];
@@ -36,6 +39,11 @@ export class Battle {
   telegraphs: Telegraph[] = [];
   state: BattleState = "wavebreak";
   waveIndex = -1;
+  /** Enemies still crashing through the treeline — waves arrive gradually. */
+  pendingSpawns: { kind: EnemyKind; at: number }[] = [];
+  /** Recent damage each hero (by id) has dealt to bosses; decays in seconds.
+   *  Pour damage in and the boss turns on YOU — that's how you peel it off the healer. */
+  threat: Record<number, number> = {};
   waveBanner = 0;
   breakTimer = 1.2;
   time = 0;
@@ -244,11 +252,22 @@ export class Battle {
       audio.play("victory");
       return;
     }
-    const BOSS_KINDS = ["alpha", "warlord", "ogre"];
     const bossWave = this.stage.waves[this.waveIndex].some((e) => BOSS_KINDS.includes(e.kind));
+    // bosses stride in alone and at once; the rest trickle through the treeline
+    let stagger = 0;
     this.stage.waves[this.waveIndex].forEach((entry, at) => {
       const count = entry.count + (at === 0 && !BOSS_KINDS.includes(entry.kind) ? this.extraSpawn : 0);
-      for (let i = 0; i < count; i++) this.spawnEnemy(entry.kind);
+      for (let i = 0; i < count; i++) {
+        if (BOSS_KINDS.includes(entry.kind)) {
+          this.spawnEnemy(entry.kind);
+        } else if (stagger === 0) {
+          this.spawnEnemy(entry.kind); // the wave visibly begins at once
+          stagger += 0.55 + Math.random() * 0.5;
+        } else {
+          this.pendingSpawns.push({ kind: entry.kind, at: this.time + stagger });
+          stagger += 0.55 + Math.random() * 0.5;
+        }
+      }
     });
     this.state = "fighting";
     this.waveBanner = 2.2;
@@ -366,6 +385,9 @@ export class Battle {
     if (this.tutorialMode && target.team === "hero" && target.hp < 1) target.hp = 1;
     if (source && source.team === "hero" && source.heroIndex >= 0 && target.team === "enemy") {
       this.tally(source.heroIndex).dealt += amount;
+      if (BOSS_KINDS.includes(target.enemyKind ?? "")) {
+        this.threat[source.id] = (this.threat[source.id] ?? 0) + amount;
+      }
     }
     if (target.team === "hero" && target.heroIndex >= 0) {
       this.tally(target.heroIndex).taken += amount;
@@ -1375,13 +1397,23 @@ export class Battle {
       this.updatePresentation(dt);
       return;
     }
+    // stragglers crash in on their own schedule
+    for (let i = this.pendingSpawns.length - 1; i >= 0; i--) {
+      if (this.time >= this.pendingSpawns[i].at) {
+        this.spawnEnemy(this.pendingSpawns[i].kind);
+        this.pendingSpawns.splice(i, 1);
+      }
+    }
+    // boss threat cools quickly — the fight keeps asking who is loudest NOW
+    for (const k in this.threat) this.threat[k] *= Math.exp(-dt * 0.28);
+
     if (this.tutorialMode) {
       this.state = "fighting";
     } else {
       if (this.state === "wavebreak") {
         this.breakTimer -= dt;
         if (this.breakTimer <= 0) this.startNextWave();
-      } else if (this.livingEnemies().length === 0) {
+      } else if (this.livingEnemies().length === 0 && this.pendingSpawns.length === 0) {
         if (this.waveIndex >= this.stage.waves.length - 1) {
           this.startNextWave(); // triggers victory
         } else {
@@ -1560,7 +1592,7 @@ export class Battle {
       let worstFrac = 0.9;
       for (const ally of this.livingHeroes()) {
         const frac = ally.hp / ally.stats.maxHp;
-        if (frac < worstFrac && unitDist(hero, ally) < 300) {
+        if (frac < worstFrac && unitDist(hero, ally) < 420) {
           worstFrac = frac;
           worst = ally;
         }
@@ -1574,8 +1606,9 @@ export class Battle {
     if (hero.healTarget) {
       const target = hero.healTarget;
       const dist = Math.hypot(target.x - hero.x, target.y - hero.y);
-      if (dist > 150) {
-        this.moveToward(hero, target, dt, 130);
+      // the mender works from the back line, not from inside the melee
+      if (dist > 270) {
+        this.moveToward(hero, target, dt, 240);
       } else {
         hero.facing = target.x >= hero.x ? 1 : -1;
         const spi = this.attrOf(hero, "spi", save);
@@ -1591,7 +1624,7 @@ export class Battle {
             const spillCount = hero.advCalling === "oracle" ? 2 : 1;
             const candidates = this.livingHeroes()
               .filter((ally) => ally !== target && ally !== hero && ally.hp / ally.stats.maxHp < 0.92)
-              .filter((ally) => Math.hypot(ally.x - target.x, ally.y - target.y) < 150)
+              .filter((ally) => Math.hypot(ally.x - target.x, ally.y - target.y) < 200)
               .sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)
               .slice(0, spillCount);
             for (const ally of candidates) this.heal(ally, rate * 0.3 * dt, false, hero);
@@ -1631,6 +1664,20 @@ export class Battle {
     attacker.pendingTarget = target;
     attacker.attackTimer = this.attackIntervalOf(attacker);
     attacker.facing = target.x >= attacker.x ? 1 : -1;
+  }
+
+  /** The hero a boss should be angry at: loudest recent damage, if anyone is loud. */
+  private topThreat(): Unit | null {
+    let best: Unit | null = null;
+    let bestV = 10; // below this, threat is just noise
+    for (const hero of this.livingHeroes()) {
+      const v = this.threat[hero.id] ?? 0;
+      if (v > bestV) {
+        bestV = v;
+        best = hero;
+      }
+    }
+    return best;
   }
 
   private nearestEnemyWithin(unit: Unit, range: number): Unit | null {
@@ -1679,6 +1726,8 @@ export class Battle {
 
     const taunt = this.effect(enemy, "taunt");
     let target: Unit | null = taunt && taunt.source && taunt.source.alive ? taunt.source : null;
+    // bosses answer the loudest threat — pour damage in and they turn on you
+    if (!target && BOSS_KINDS.includes(enemy.enemyKind ?? "")) target = this.topThreat();
     if (!target && enemy.aggro && enemy.aggro.alive) target = enemy.aggro;
     if (!target) target = this.nearestHero(enemy);
     if (!target) return;
@@ -1774,6 +1823,10 @@ export class Battle {
       alpha.phase = 3;
       this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "FRENZY!", "#ff8a70", 18);
       alpha.supportTimer = Math.min(alpha.supportTimer, 1.2);
+      // the last of the pack answers the frenzy
+      this.fx.ring(alpha.x, alpha.y, 200, "#ff8a70", { width: 4, life: 0.7 });
+      audio.play("roar");
+      for (let i = 0; i < 2; i++) this.spawnEnemy("wolf");
     }
     if (alpha.phase === 0) alpha.phase = 1;
 
@@ -1781,10 +1834,10 @@ export class Battle {
     alpha.supportTimer -= dt;
     const pending = this.telegraphs.find((t) => t.owner === alpha);
     if (!pending && alpha.supportTimer <= 0 && !this.effect(alpha, "stun")) {
-      // mark the squishiest hero's position
+      // the pounce hunts unpredictably — anyone can be marked
       const heroes = this.livingHeroes();
       if (heroes.length) {
-        const target = heroes.reduce((a, b) => (a.stats.maxHp <= b.stats.maxHp ? a : b));
+        const target = heroes[Math.floor(Math.random() * heroes.length)];
         this.telegraphs.push({
           x: target.x,
           y: target.y,
@@ -1795,13 +1848,14 @@ export class Battle {
           kind: "pounce",
         });
         audio.play("warcry");
-        alpha.supportTimer = alpha.phase === 3 ? 3.6 : 7.5;
+        alpha.supportTimer = alpha.phase === 3 ? 3.2 : 6.2;
       }
     }
 
-    // between pounces: normal wolf brawling
+    // between pounces: normal wolf brawling, steered by threat
     const taunt = this.effect(alpha, "taunt");
     let target: Unit | null = taunt && taunt.source && taunt.source.alive ? taunt.source : null;
+    if (!target) target = this.topThreat();
     if (!target && alpha.aggro && alpha.aggro.alive) target = alpha.aggro;
     if (!target) target = this.nearestHero(alpha);
     if (!target) return;
@@ -1817,9 +1871,9 @@ export class Battle {
     }
   }
 
-  /** Below half health the ogre enrages and fixates on the frailest hero — a
-   *  taunt (Warcry, Challenge) is the answer. */
-  private updateOgreRage(ogre: Unit, dt: number): void {
+  /** Below half health the ogre enrages: faster and angrier, but it still fights
+   *  whoever hurts it most — threat and taunts steer it, not the healer's hp bar. */
+  private updateOgreRage(ogre: Unit, _dt: number): void {
     const frac = ogre.hp / ogre.stats.maxHp;
     if (frac < 0.55 && ogre.phase === 0) {
       ogre.phase = 1;
@@ -1829,22 +1883,6 @@ export class Battle {
       this.fx.addShake(9);
       this.hitstop = Math.max(this.hitstop, 0.09);
       audio.play("roar");
-      ogre.supportTimer = 0;
-    }
-    if (ogre.phase >= 1) {
-      ogre.supportTimer -= dt;
-      if (ogre.supportTimer <= 0) {
-        const heroes = this.livingHeroes();
-        if (heroes.length) {
-          const frail = heroes.reduce((a, b) => (a.stats.maxHp <= b.stats.maxHp ? a : b));
-          if (!this.effect(ogre, "taunt") && ogre.aggro !== frail) {
-            ogre.aggro = frail;
-            ogre.alert = 0.5;
-            this.fx.floatText(ogre.x, ogre.y - ogre.radius * 3 - 10, `hunts ${frail.name}!`, "#ff8a70", 14);
-          }
-          ogre.supportTimer = 6;
-        }
-      }
     }
   }
 
