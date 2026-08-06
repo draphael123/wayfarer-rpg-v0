@@ -1490,6 +1490,102 @@ export class Battle {
         audio.play("ultShadows");
         break;
       }
+      case "avalanche": {
+        for (const enemy of this.livingEnemies()) {
+          if (unitDist(hero, enemy) < 130 + enemy.radius) {
+            this.damage(enemy, (16 + attrs.str * 2.6) * 1.1, hero, { spell: true, color: "#bcd8e8" });
+            if (enemy.alive) enemy.effects.push(makeEffect("slow", 2.5, 0.4, hero));
+          }
+        }
+        this.fx.ring(hero.x, hero.y, 135, "#bcd8e8", { width: 6, life: 0.6 });
+        this.fx.burst(hero.x, hero.y - 8, "#e8f2f8", 22, 180, { gravity: 160, size: 4 });
+        this.fx.addShake(9);
+        this.hitstop = Math.max(this.hitstop, 0.07);
+        audio.play("thud");
+        break;
+      }
+      case "hailknives": {
+        for (let k = -2; k <= 2; k++) {
+          const a = Math.atan2(dir.y, dir.x) + k * 0.16;
+          this.projectiles.push({
+            x: hero.x,
+            y: hero.y - 14,
+            target: null,
+            aim: { x: Math.cos(a), y: Math.sin(a) },
+            speed: 460,
+            damage: (7 + attrs.dex * 1.5) * hero.stats.spellPower,
+            from: hero,
+            kind: "bolt",
+            color: "#9fd6e8",
+            heals: false,
+            life: 1.1,
+          });
+        }
+        audio.play("shoot");
+        break;
+      }
+      case "windlash": {
+        for (const enemy of this.livingEnemies()) {
+          if (unitDist(hero, enemy) < 120 + enemy.radius) {
+            this.damage(enemy, (10 + attrs.dex * 2.0) * hero.stats.spellPower, hero, { spell: true, color: "#c9e8e0" });
+            if (enemy.alive) enemy.effects.push(makeEffect("slow", 2, 0.35, hero));
+          }
+        }
+        this.fx.ring(hero.x, hero.y, 125, "#c9e8e0", { width: 4, life: 0.5 });
+        audio.play("spSmokebomb");
+        break;
+      }
+      case "blizzard": {
+        if (!aim) {
+          cast = false;
+          break;
+        }
+        this.zones.push({ x: aim.x, y: aim.y, radius: 95, time: 0, duration: 5, kind: "frost", power: 0.45, dps: 6 + attrs.int * 1.4, from: hero });
+        this.fx.ring(aim.x, aim.y, 95, "#8fc7e8", { width: 4, life: 0.6 });
+        audio.play("frost");
+        break;
+      }
+      case "icelance": {
+        let first = true;
+        const reach = 430;
+        for (const enemy of this.livingEnemies()) {
+          if (this.distToRay(hero, dir, reach, enemy) < enemy.radius + 14) {
+            this.damage(enemy, (14 + attrs.int * 2.4) * hero.stats.spellPower, hero, { spell: true, color: "#b8e0f0" });
+            if (first && enemy.alive) {
+              enemy.effects.push(makeEffect("stun", 0.8, 1, hero));
+              first = false;
+            }
+          }
+        }
+        this.fx.tracer(hero.x, hero.y - 14, hero.x + dir.x * reach, hero.y - 14 + dir.y * reach, "#b8e0f0");
+        audio.play("frost");
+        break;
+      }
+      case "auroraveil": {
+        for (const ally of this.livingHeroes()) {
+          ally.effects.push(makeEffect("guard", 4.5, 0.25, hero));
+          this.fx.ring(ally.x, ally.y - 12, ally.radius * 2.2, "#b0e8c9", { width: 2.5, life: 0.5 });
+        }
+        audio.play("spBlessing");
+        break;
+      }
+      case "cleansing": {
+        for (const ally of this.livingHeroes()) {
+          this.heal(ally, 14 + attrs.spi * 2.2, true, hero);
+          ally.effects = ally.effects.filter((e) => !["burn", "slow", "stun", "vulnerable"].includes(e.kind));
+        }
+        this.fx.ring(hero.x, hero.y, 160, "#f0f5d8", { width: 4, life: 0.7 });
+        audio.play("spJudgement");
+        break;
+      }
+      case "permafrost": {
+        hero.effects = hero.effects.filter((e) => e.kind !== "shield");
+        hero.effects.push(makeEffect("shield", 9999, 25 + attrs.vit * 3, hero));
+        this.zones.push({ x: hero.x, y: hero.y, radius: 90, time: 0, duration: 5, kind: "frost", power: 0.4, dps: 3 + attrs.vit * 0.8, from: hero });
+        this.fx.ring(hero.x, hero.y, 90, "#a8c9d8", { width: 4, life: 0.6 });
+        audio.play("spStoneskin");
+        break;
+      }
       default:
         cast = false;
     }
@@ -1703,6 +1799,10 @@ export class Battle {
   }
 
   private updateEffects(unit: Unit, dt: number): void {
+    // ember-lined cloth: chill cannot take hold
+    if (unit.team === "hero" && this.armorHookOf(unit) === "slowProof") {
+      unit.effects = unit.effects.filter((e) => e.kind !== "slow");
+    }
     for (let i = unit.effects.length - 1; i >= 0; i--) {
       const effect = unit.effects[i];
       effect.time -= dt;

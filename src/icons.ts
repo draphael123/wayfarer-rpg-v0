@@ -452,6 +452,96 @@ export function drawAbilityGlyph(
       }
       break;
     }
+    case "avalanche": {
+      for (const [ox, oy, sc] of [[-0.4, -0.3, 0.5], [0.3, -0.55, 0.4], [0, 0.35, 0.65]] as number[][]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + ox * r, cy + (oy - sc * 0.6) * r);
+        ctx.lineTo(cx + (ox - sc * 0.55) * r, cy + (oy + sc * 0.5) * r);
+        ctx.lineTo(cx + (ox + sc * 0.55) * r, cy + (oy + sc * 0.5) * r);
+        ctx.closePath();
+        ctx.stroke();
+      }
+      break;
+    }
+    case "hailknives": {
+      for (let i = -1; i <= 1; i++) {
+        const a = -Math.PI / 2 + i * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(cx - Math.cos(a) * r * 0.2, cy + r * 0.7 - Math.sin(a) * -r * 0.2);
+        ctx.lineTo(cx + Math.cos(a) * r * 0.85, cy + r * 0.7 + Math.sin(a) * r * 1.4);
+        ctx.stroke();
+      }
+      break;
+    }
+    case "windlash": {
+      for (const oy of [-0.45, 0, 0.45]) {
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.8, cy + oy * r);
+        ctx.quadraticCurveTo(cx + r * 0.4, cy + (oy - 0.28) * r, cx + r * 0.8, cy + oy * r);
+        ctx.stroke();
+      }
+      break;
+    }
+    case "blizzard": {
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(cx - Math.cos(a) * r * 0.85, cy - Math.sin(a) * r * 0.85);
+        ctx.lineTo(cx + Math.cos(a) * r * 0.85, cy + Math.sin(a) * r * 0.85);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.3, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    }
+    case "icelance": {
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.85, cy + r * 0.85);
+      ctx.lineTo(cx + r * 0.7, cy - r * 0.7);
+      ctx.lineTo(cx + r * 0.9, cy - r * 0.9);
+      ctx.lineTo(cx + r * 0.55, cy - r * 0.55);
+      ctx.stroke();
+      break;
+    }
+    case "auroraveil": {
+      for (const oy of [-0.3, 0.1, 0.5]) {
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.85, cy + (oy + 0.15) * r);
+        ctx.quadraticCurveTo(cx - r * 0.2, cy + (oy - 0.5) * r, cx + r * 0.85, cy + (oy - 0.1) * r);
+        ctx.stroke();
+      }
+      break;
+    }
+    case "cleansing": {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * r * 0.6, cy + Math.sin(a) * r * 0.6);
+        ctx.lineTo(cx + Math.cos(a) * r * 0.95, cy + Math.sin(a) * r * 0.95);
+        ctx.stroke();
+      }
+      break;
+    }
+    case "permafrost": {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+        const px = cx + Math.cos(a) * r * 0.8;
+        const py = cy + Math.sin(a) * r * 0.8;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
     default:
       ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2);
       ctx.fill();

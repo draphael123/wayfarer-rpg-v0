@@ -1682,7 +1682,7 @@ export class Menus {
                 <div class="hero-avatar portrait mystery-hero"><span>?</span></div>
                 <div>
                   <div class="hero-name">An empty seat</div>
-                  <div class="hero-meta">The tavern keep says a wanderer will come once the <strong>Thornwood ogre</strong> falls.</div>
+                  <div class="hero-meta">${i <= 5 ? "The tavern keep says a wanderer will come once the <strong>Thornwood ogre</strong> falls." : "They winter in the north — the road must reach the <strong>Winterreach</strong> first."}</div>
                 </div>
               </div>
             </div>
@@ -2074,7 +2074,7 @@ export class Menus {
                 <div class="hero-meta">${
                   arrived
                     ? `For hire at the <strong>Village Tavern</strong> — ${ico("coin")} ${RECRUIT_COST[i] ?? "?"}`
-                    : "Word of the band must spread — fell the Thornwood ogre first."
+                    : i <= 5 ? "Word of the band must spread — fell the Thornwood ogre first." : "They winter in the north — the road must reach the Winterreach first."
                 }</div>
               </div>
               <div class="hero-points">🔒</div>

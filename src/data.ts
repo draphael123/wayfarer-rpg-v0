@@ -96,10 +96,29 @@ export const HEROES: HeroDef[] = [
     baseAttrs: { str: 4, dex: 1, int: 1, vit: 7, spi: 2 },
     build: { torso: 1.2, limb: 1.3, head: 0.95 },
   },
+  // the Winterreach's own: word of them comes when the road runs north
+  {
+    name: "Sigrid",
+    title: "the Shieldmaiden",
+    skin: "#e8c098",
+    hair: "#d9b06b",
+    accent: "#7a8a9c",
+    baseAttrs: { str: 5, dex: 1, int: 1, vit: 8, spi: 1 },
+    build: { torso: 1.16, limb: 1.12, head: 0.98 },
+  },
+  {
+    name: "Vesna",
+    title: "the Winterborn",
+    skin: "#f0dcc8",
+    hair: "#e8f0f5",
+    accent: "#6ea8c9",
+    baseAttrs: { str: 1, dex: 6, int: 6, vit: 2, spi: 1 },
+    build: { torso: 0.86, limb: 0.92, head: 1.02 },
+  },
 ];
 
 /** Hero indexes gated behind campaign progress: index → first unlockedStage that frees them. */
-export const HERO_GATE_STAGE: Record<number, number> = { 4: 2, 5: 2 };
+export const HERO_GATE_STAGE: Record<number, number> = { 4: 2, 5: 2, 6: 6, 7: 8 };
 
 export function heroArrived(save: { unlockedStage: number }, index: number): boolean {
   const gate = HERO_GATE_STAGE[index];
@@ -407,6 +426,86 @@ export const ABILITIES: AbilityDef[] = [
     icon: "bastion",
     blurb: "Shield the whole band and dare every nearby foe to come to you.",
   },
+  {
+    id: "avalanche",
+    name: "Avalanche Slam",
+    gate: { attr: "str", value: 16 },
+    targeting: "instant",
+    cooldown: 16,
+    color: "#bcd8e8",
+    icon: "avalanche",
+    blurb: "Bring the mountain down: everything near you is crushed and chilled.",
+  },
+  {
+    id: "hailknives",
+    name: "Hail of Knives",
+    gate: { attr: "dex", value: 15 },
+    targeting: "ray",
+    cooldown: 13,
+    color: "#9fd6e8",
+    icon: "hailknives",
+    blurb: "Drag to fan five frozen knives through everything in their arc.",
+  },
+  {
+    id: "windlash",
+    name: "Windlash",
+    gate: { attr: "dex", value: 17 },
+    targeting: "instant",
+    cooldown: 14,
+    color: "#c9e8e0",
+    icon: "windlash",
+    blurb: "A cutting gale scours every foe around you and slows their pursuit.",
+  },
+  {
+    id: "blizzard",
+    name: "Blizzard",
+    gate: { attr: "int", value: 15 },
+    targeting: "point",
+    cooldown: 17,
+    color: "#8fc7e8",
+    icon: "blizzard",
+    blurb: "Drag to call a whiteout that chills and rakes everything inside it.",
+  },
+  {
+    id: "icelance",
+    name: "Ice Lance",
+    gate: { attr: "int", value: 17 },
+    targeting: "ray",
+    cooldown: 12,
+    color: "#b8e0f0",
+    icon: "icelance",
+    blurb: "Drag to hurl a lance of ice that skewers a line and freezes the first struck.",
+  },
+  {
+    id: "auroraveil",
+    name: "Aurora Veil",
+    gate: { attr: "spi", value: 15 },
+    targeting: "instant",
+    cooldown: 18,
+    color: "#b0e8c9",
+    icon: "auroraveil",
+    blurb: "Northern light settles over the band — everyone endures a quarter of all harm.",
+  },
+  {
+    id: "cleansing",
+    name: "Cleansing Light",
+    gate: { attr: "spi", value: 17 },
+    targeting: "instant",
+    cooldown: 16,
+    color: "#f0f5d8",
+    icon: "cleansing",
+    blurb: "Mend the whole band and burn away every curse upon them.",
+  },
+  {
+    id: "permafrost",
+    name: "Permafrost",
+    gate: { attr: "vit", value: 16 },
+    targeting: "instant",
+    cooldown: 18,
+    color: "#a8c9d8",
+    icon: "permafrost",
+    blurb: "Ground yourself in old ice: a shield for you, frost at your feet for them.",
+  },
 ];
 
 export function abilityById(id: string): AbilityDef | undefined {
@@ -414,7 +513,7 @@ export function abilityById(id: string): AbilityDef | undefined {
 }
 
 /** Gold cost to recruit each hero at the tavern (by hero index). Bram and Sol are free founders. */
-export const RECRUIT_COST: Record<number, number> = { 1: 120, 2: 300, 4: 420, 5: 420 };
+export const RECRUIT_COST: Record<number, number> = { 1: 120, 2: 300, 4: 420, 5: 420, 6: 650, 7: 850 };
 
 export const PARTY_CAP = 4;
 
@@ -456,7 +555,7 @@ export interface ArmorDef {
   blurb: string;
   icon: string; // ico() name
   tint?: string; // metal/cloth accent on the sprite (mail/plate families)
-  hook?: "dodgeFirstHit" | "burnOnSpell" | "allyAura" | "waveShield" | "regen" | "retaliate";
+  hook?: "dodgeFirstHit" | "burnOnSpell" | "allyAura" | "waveShield" | "regen" | "retaliate" | "slowProof";
   boss?: EnemyKind; // first kill of this boss awards it
   mods: Partial<{ hpFlat: number; armorFlat: number; moveSpeed: number; atkSpeed: number; spellPower: number; healPower: number; rangedDmg: number; meleeDmg: number; cdr: number; crit: number }>;
 }
@@ -479,6 +578,13 @@ export const ARMORS: ArmorDef[] = [
   { id: "ironholdPlate", name: "Ironhold Plate", family: "plate", cost: 420, icon: "shield", tint: "#aab4c2", blurb: "+16% armor, +45 health — but 8% slower.", mods: { armorFlat: 0.16, hpFlat: 45, moveSpeed: -0.08 } },
   { id: "bulwarkPlate", name: "Bulwark Plate", family: "plate", cost: 460, icon: "shield", tint: "#8a99b8", blurb: "+12% armor, +35 health, and every wave begins with a 30-point shield.", hook: "waveShield", mods: { armorFlat: 0.12, hpFlat: 35 } },
   { id: "juggernautPlate", name: "Juggernaut Plate", family: "plate", cost: 500, icon: "shield", tint: "#b8a68a", blurb: "+14% armor, +60 health — but 10% slower.", mods: { armorFlat: 0.14, hpFlat: 60, moveSpeed: -0.1 } },
+  // winter stock — the north demands better dress
+  { id: "frostweaveRobe", name: "Frostweave Robe", family: "cloth", cost: 380, icon: "spark", blurb: "+14% spell power, −4% cooldowns — woven on glacier looms.", mods: { spellPower: 0.14, cdr: 0.04 } },
+  { id: "emberlined", name: "Ember-Lined Cloak", family: "cloth", cost: 340, icon: "moon", blurb: "+20 health, and chill cannot take hold of you.", hook: "slowProof", mods: { hpFlat: 20 } },
+  { id: "aurorasMantle", name: "Aurora's Mantle", family: "cloth", cost: 420, icon: "plus", blurb: "+20% healing, and nearby allies take 6% less harm.", hook: "allyAura", mods: { healPower: 0.2 } },
+  { id: "sleetrunners", name: "Sleetrunner's Leathers", family: "leather", cost: 380, icon: "arrow", blurb: "+14% move, +5% attack speed — made for running on ice.", mods: { moveSpeed: 0.14, atkSpeed: 0.05 } },
+  { id: "wyrmscaleMail", name: "Wyrmscale Mail", family: "mail", cost: 440, icon: "shield", tint: "#7ba8b8", blurb: "+12% armor, +6% spell power — scales that remember cold fire.", mods: { armorFlat: 0.12, spellPower: 0.06, hpFlat: 20 } },
+  { id: "glacierPlate", name: "Glacier Plate", family: "plate", cost: 560, icon: "shield", tint: "#a8ccd8", blurb: "+15% armor, +55 health, and every wave begins with a 30-point shield.", hook: "waveShield", mods: { armorFlat: 0.15, hpFlat: 55 } },
   // boss relics — a first kill yields them, and no shop ever will
   { id: "mosstoothHide", name: "Mosstooth's Hide", family: "leather", cost: 0, icon: "skull", boss: "ogre", blurb: "+50 health, and wounds slowly knit themselves closed.", hook: "regen", mods: { hpFlat: 50 } },
   { id: "alphasPelt", name: "The Alpha's Pelt", family: "leather", cost: 0, icon: "moon", boss: "alpha", blurb: "+14% move, and the first blow of every wave misses you.", hook: "dodgeFirstHit", mods: { moveSpeed: 0.14, hpFlat: 15 } },
@@ -507,6 +613,14 @@ function armorPieceMods(id: string | null | undefined) {
 
 /** Gold cost of each ability in the spell shop. */
 export const SPELL_COSTS: Record<string, number> = {
+  avalanche: 340,
+  hailknives: 300,
+  windlash: 340,
+  blizzard: 320,
+  icelance: 340,
+  auroraveil: 320,
+  cleansing: 360,
+  permafrost: 320,
   cleave: 80,
   pierce: 80,
   fireball: 80,
@@ -1500,6 +1614,12 @@ export const TRINKETS: TrinketDef[] = [
   { id: "gravewardenSeal", name: "Gravewarden's Seal", blurb: "+6% armor, battles start with a 25 hp ward", rarity: "rare", icon: "🗿" },
   { id: "marksmanEye", name: "Marksman's Eye", blurb: "+10% ranged damage, +5% critical chance", rarity: "rare", icon: "🎯" },
   { id: "harvestIdol", name: "Harvest Idol", blurb: "+12% healing, +20 health", rarity: "rare", icon: "🌾" },
+  { id: "frostBead", name: "Frost Bead", blurb: "+8% spell power", rarity: "common", icon: "❄️" },
+  { id: "wolfclawCharm", name: "Wolfclaw Charm", blurb: "+7% melee damage, +3% move", rarity: "common", icon: "🐾" },
+  { id: "icemirror", name: "Ice Mirror", blurb: "-7% cooldowns", rarity: "common", icon: "🧊" },
+  { id: "northstar", name: "Northstar Sliver", blurb: "+7% ranged damage, +3% crit", rarity: "common", icon: "⭐" },
+  { id: "heartOfWinter", name: "Heart of Winter", blurb: "+12% health, +8% armor", rarity: "rare", icon: "💙" },
+  { id: "aurorasTear", name: "Aurora's Tear", blurb: "-9% cooldowns, +8% healing", rarity: "rare", icon: "💧" },
 ];
 
 export function trinketById(id: string | null | undefined): TrinketDef | undefined {
@@ -1529,6 +1649,12 @@ export function trinketMods(id: string | null | undefined): TalentMods {
     case "gravewardenSeal": return { ...none, armorFlat: 0.06, startShield: 25 };
     case "marksmanEye": return { ...none, rangedDmg: 0.1, crit: 0.05 };
     case "harvestIdol": return { ...none, healPower: 0.12 };
+    case "frostBead": return { ...none, spellPower: 0.08 };
+    case "wolfclawCharm": return { ...none, meleeDmg: 0.07, moveSpeed: 0.03 };
+    case "icemirror": return { ...none, cdr: 0.07 };
+    case "northstar": return { ...none, rangedDmg: 0.07, crit: 0.03 };
+    case "heartOfWinter": return { ...none, hpPct: 0.12, armorFlat: 0.08 };
+    case "aurorasTear": return { ...none, cdr: 0.09, healPower: 0.08 };
     default: return none;
   }
 }

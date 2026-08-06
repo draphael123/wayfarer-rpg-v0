@@ -1803,6 +1803,50 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.moveTo(faceX - f * headR * 0.42, headY + headR * 0.28);
     ctx.lineTo(faceX - f * headR * 0.18, headY + headR * 0.55);
     ctx.stroke();
+  } else if (unit.heroIndex === 6) {
+    // Sigrid: golden hair in a crown braid, ringed by a steel circlet
+    ctx.beginPath();
+    ctx.arc(faceX - f * 0.5, headY - headR * 0.12, headR * 0.99, Math.PI * 0.95, Math.PI * 2.05);
+    ctx.closePath();
+    outlined(ctx, def.hair, 2);
+    ctx.strokeStyle = def.hair;
+    ctx.lineWidth = 4.2;
+    ctx.beginPath();
+    ctx.arc(faceX, headY - headR * 0.28, headR * 0.88, Math.PI * 1.08, Math.PI * 1.92);
+    ctx.stroke();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.2;
+    for (let bi = 0; bi < 4; bi++) {
+      const ba = Math.PI * (1.2 + bi * 0.18);
+      ctx.beginPath();
+      ctx.moveTo(faceX + Math.cos(ba) * headR * 0.78, headY - headR * 0.28 + Math.sin(ba) * headR * 0.78);
+      ctx.lineTo(faceX + Math.cos(ba) * headR * 0.98, headY - headR * 0.28 + Math.sin(ba) * headR * 0.98);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "#9aa7b8";
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(faceX, headY - headR * 0.12, headR * 0.97, Math.PI * 1.12, Math.PI * 1.88);
+    ctx.stroke();
+  } else if (unit.heroIndex === 7) {
+    // Vesna: winter-white sweep with a frost-blue streak, wind-caught
+    ctx.beginPath();
+    ctx.arc(faceX - f * 1.2, headY - headR * 0.1, headR * 1.0, Math.PI * 0.92, Math.PI * 2.08);
+    ctx.closePath();
+    outlined(ctx, def.hair, 2);
+    ctx.strokeStyle = "#8fc7e8";
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(faceX - f * headR * 0.55, headY - headR * 0.85);
+    ctx.quadraticCurveTo(faceX - f * headR * 1.05, headY - headR * 0.3, faceX - f * headR * 0.85, headY + headR * 0.35);
+    ctx.stroke();
+    // a stray lock across the brow
+    ctx.strokeStyle = def.hair;
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(faceX + f * headR * 0.3, headY - headR * 0.75);
+    ctx.quadraticCurveTo(faceX + f * headR * 0.75, headY - headR * 0.45, faceX + f * headR * 0.6, headY - headR * 0.1);
+    ctx.stroke();
   } else {
     // hair cap (Bram gets a leather headband)
     ctx.beginPath();
@@ -1835,6 +1879,15 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     case 5: // Kellan: one heavy brow
       face.eyeRy = 0.22;
       face.uniBrow = true;
+      break;
+    case 6: // Sigrid: steady, unimpressed
+      face.eyeRy = 0.23;
+      face.browW = 1.7;
+      break;
+    case 7: // Vesna: wide winter eyes, lashed
+      face.eyeRy = 0.3;
+      face.lashes = true;
+      face.browTilt = 0.05;
       break;
   }
   const eyeY = headY + headR * 0.1;
