@@ -82,22 +82,17 @@ type SfxName =
   | "spBastion";
 
 /** SFX that have recorded versions; each entry lists variants to pick from. */
+// Only the two big produced stingers keep their recordings — everything else
+// speaks in the synth voice so combat sounds like ONE instrument, warm and full,
+// instead of a drawer of clicky samples.
 const SAMPLE_SFX: Partial<Record<SfxName, string[]>> = {
-  click: ["sfx-click", "sfx-click2"],
-  coin: ["sfx-coin", "sfx-coin2"],
-  slash: ["sfx-slash"],
-  shoot: ["sfx-woosh", "sfx-woosh2"],
-  bolt: ["sfx-magic"],
-  roar: ["sfx-roar", "sfx-roar2"],
-  ready: ["sfx-ready"],
-  levelup: ["sfx-levelup"],
   victory: ["sfx-victory"],
   defeat: ["sfx-defeat"],
-  wave: ["sfx-wave"],
 };
 
+// music-menu.mp3 is deliberately NOT loaded — the title belongs to the live
+// campfire-folk synth theme now.
 const MUSIC_TRACKS = [
-  "music-menu",
   "music-stage0",
   "music-stage1",
   "music-stage2",
@@ -306,7 +301,14 @@ class AudioKit {
       this.master.connect(this.ctx.destination);
       this.sfxOut = this.ctx.createGain();
       this.sfxOut.gain.value = this.sfxLevel;
-      this.sfxOut.connect(this.master);
+      // every effect passes a gentle high-shelf cut — the whole kit warms up,
+      // and nothing clicks or hisses at the top end
+      const shelf = this.ctx.createBiquadFilter();
+      shelf.type = "highshelf";
+      shelf.frequency.value = 5200;
+      shelf.gain.value = -7;
+      this.sfxOut.connect(shelf);
+      shelf.connect(this.master);
       // all music routes through one lowpass so danger can muffle the world
       this.musicOut = this.ctx.createBiquadFilter();
       this.musicOut.type = "lowpass";
@@ -365,8 +367,14 @@ class AudioKit {
     }
     if (this.trackNode?.name === want) return;
     const buffer = this.samples.get(want);
-    if (!buffer) return; // synth keeps playing until the file lands
-    // stop the synth loop for good — samples own the music from here
+    if (!buffer) {
+      // nothing recorded bears this name (the title theme, the Winterreach) —
+      // hand the music back to the live synth bed
+      this.stopTrack(0.7);
+      this.startMusic();
+      return;
+    }
+    // a recording owns this scene — quiet the synth while it plays
     if (this.musicTimer !== null) {
       clearInterval(this.musicTimer);
       this.musicTimer = null;
@@ -460,12 +468,13 @@ class AudioKit {
     src.start(t0);
   }
 
-  /** Kill-streak chime: each quick kill climbs a semitone ladder. */
+  /** Kill-streak chime: each quick kill climbs — kept low and woody now. */
   killChime(streak: number): void {
     if (!this.soundOn) return;
-    const freq = 523 * Math.pow(1.1225, Math.min(streak - 1, 8));
-    this.tone(freq, 0.11, "triangle", 0.13, 40);
-    if (streak >= 3) this.tone(freq * 1.5, 0.1, "sine", 0.08, 0, 0.05);
+    const freq = 392 * Math.pow(1.1225, Math.min(streak - 1, 8));
+    this.tone(freq, 0.12, "triangle", 0.09, 20);
+    this.tone(freq / 2, 0.1, "sine", 0.07);
+    if (streak >= 3) this.tone(freq * 1.5, 0.1, "sine", 0.05, 0, 0.06);
   }
 
   play(name: SfxName): void {
@@ -772,26 +781,38 @@ class AudioKit {
         this.tone(1046, 0.3, "triangle", 0.09, 0, 0.3);
         break;
       case "slash":
-        this.noise(0.09, 0.25, 2600);
-        this.tone(220, 0.06, "sawtooth", 0.08, -80);
+        // steel with WEIGHT: air, edge, and a body thump under it
+        this.noise(0.11, 0.2, 1900);
+        this.tone(320, 0.07, "triangle", 0.12, -140);
+        this.tone(130, 0.09, "sine", 0.16, -30, 0.01);
         break;
       case "shoot":
-        this.tone(880, 0.08, "square", 0.1, -500);
+        // a real bow: string snap, then the shaft cutting air
+        this.tone(420, 0.05, "triangle", 0.14, -180);
+        this.noise(0.12, 0.12, 1600, 0.02);
+        this.tone(240, 0.08, "sine", 0.08, -60, 0.02);
         break;
       case "bolt":
-        this.tone(520, 0.12, "sawtooth", 0.1, 260);
+        // arcane with a low core, not a zap
+        this.tone(360, 0.14, "triangle", 0.12, 180);
+        this.tone(150, 0.12, "sine", 0.1, 40);
+        this.noise(0.08, 0.06, 2400, 0.02);
         break;
       case "hit":
-        this.noise(0.06, 0.2, 1400);
+        // flesh and padding, not a click
+        this.noise(0.08, 0.16, 900);
+        this.tone(110, 0.07, "sine", 0.14, -25);
         break;
       case "thud":
-        this.tone(90, 0.16, "sine", 0.35, -40);
-        this.noise(0.1, 0.22, 500);
+        this.tone(80, 0.2, "sine", 0.38, -35);
+        this.noise(0.12, 0.2, 420);
+        this.tone(160, 0.06, "triangle", 0.1, -60);
         break;
       case "heal":
-        this.tone(523, 0.14, "sine", 0.12);
-        this.tone(659, 0.14, "sine", 0.12, 0, 0.07);
-        this.tone(784, 0.2, "sine", 0.12, 0, 0.14);
+        // a warm breath, not a doorbell
+        this.tone(392, 0.28, "sine", 0.11, 30);
+        this.tone(523, 0.3, "sine", 0.1, 20, 0.09);
+        this.noise(0.2, 0.03, 2600, 0.02);
         break;
       case "fireball":
         this.noise(0.28, 0.3, 900);
@@ -808,20 +829,28 @@ class AudioKit {
         this.tone(330, 0.2, "triangle", 0.16, 160);
         break;
       case "ready":
-        this.tone(880, 0.1, "sine", 0.08);
-        this.tone(1320, 0.14, "sine", 0.07, 0, 0.07);
+        // a soft wooden knock and a low hum — present, not shrill
+        this.tone(587, 0.09, "triangle", 0.07);
+        this.tone(880, 0.12, "sine", 0.05, 0, 0.06);
         break;
       case "coin":
-        this.tone(1180, 0.07, "square", 0.12, 60);
-        this.tone(1560, 0.09, "square", 0.1, 40, 0.07);
+        // coin into a leather purse, not an arcade machine
+        this.tone(940, 0.06, "triangle", 0.1, 40);
+        this.tone(1180, 0.08, "sine", 0.07, 30, 0.05);
+        this.noise(0.04, 0.04, 3000, 0.01);
         break;
       case "roar":
-        this.tone(90, 0.5, "sawtooth", 0.3, 60);
-        this.noise(0.45, 0.25, 700);
-        this.tone(140, 0.4, "sawtooth", 0.18, -50, 0.1);
+        // a chest you can feel: two throats, breath, and a dying growl
+        this.tone(72, 0.7, "sawtooth", 0.26, 40);
+        this.tone(109, 0.65, "sawtooth", 0.16, 30, 0.03);
+        this.noise(0.55, 0.2, 480);
+        this.tone(96, 0.5, "sawtooth", 0.14, -45, 0.22);
+        this.noise(0.3, 0.08, 260, 0.35);
         break;
       case "levelup":
-        [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.18, "triangle", 0.14, 0, i * 0.09));
+        // rising warmth with a body under it — earned, not electronic
+        [392, 523, 659, 784].forEach((f, i) => this.tone(f, 0.22, "triangle", 0.12, 0, i * 0.09));
+        this.tone(196, 0.7, "sine", 0.12, 0, 0);
         break;
       case "victory":
         [392, 523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.3, "triangle", 0.14, 0, i * 0.13));
@@ -855,22 +884,47 @@ class AudioKit {
       const chord = chords[Math.floor(this.musicStep / 8) % chords.length];
       const g = this.musicGain!;
       if (this.mood === "menu") {
-        const note = chord[this.musicStep % chord.length];
-        const octave = this.musicStep % 8 >= 4 ? 2 : 1;
-        this.tone(note * octave, 0.9, "sine", 0.5, 0, 0, g);
-        if (this.musicStep % 8 === 0) this.tone(chord[0] / 2, 3.2, "triangle", 0.35, 0, 0, g);
-        if (this.musicStep % 4 === 0) this.tone(58, 0.14, "sine", 0.4, -12, 0, g);
-        if (this.musicStep % 16 === 10) this.tone(chord[2] * 4, 1.6, "sine", 0.13, 0, 0.2, g);
+        // CAMPFIRE FOLK: plucked strings around the fire — a band at rest.
+        // Am — F — C — G, fingerpicked with a wandering thumb, warm and unhurried.
+        const folk = [
+          [110, 220, 261.6, 329.6], // Am: bass, then broken chord
+          [87.3, 174.6, 220, 261.6], // F
+          [130.8, 196, 261.6, 329.6], // C
+          [98, 196, 246.9, 293.7], // G
+        ];
+        const bar = folk[Math.floor(this.musicStep / 8) % folk.length];
+        const s8 = this.musicStep % 8;
+        // the pluck: fast-decay triangle doubled with a whisper-detuned partner
+        const pluck = (f: number, vol: number, delay = 0) => {
+          this.tone(f, 0.55, "triangle", vol, 0, delay, g);
+          this.tone(f * 1.004, 0.45, "sine", vol * 0.45, 0, delay + 0.008, g);
+        };
+        // thumb bass on the strong beats, fingers answering between
+        if (s8 === 0) {
+          pluck(bar[0], 0.5);
+          this.tone(bar[0] / 2, 3.4, "sine", 0.2, 0, 0, g); // fire-warm drone underneath
+        } else if (s8 === 2 || s8 === 5) pluck(bar[1], 0.34);
+        else if (s8 === 3 || s8 === 6) pluck(bar[2], 0.38);
+        else if (s8 === 4) pluck(bar[3], 0.4);
+        else if (s8 === 7 && this.musicStep % 16 === 15) pluck(bar[3] * 2, 0.26, 0.12); // a grace note before the turn
+        // now and then a harmonic rings out over the fire
+        if (this.musicStep % 32 === 20) this.tone(bar[2] * 4, 2.2, "sine", 0.09, 0, 0.15, g);
       } else if (this.mood === "battle" && this.stageId >= 6) {
-        // the winter theme: sparse bells over a low drone, snow in the spaces
+        // the winter theme: sparse bells over a deep double-drone, a cold fifth
+        // shadowing the melody, and — rarely — a horn from across the ice
         const scale = [220, 261.6, 293.7, 349.2, 392, 440];
-        if (this.musicStep % 8 === 0) this.tone(55, 3.4, "sine", 0.4, 0, 0, g);
+        if (this.musicStep % 8 === 0) {
+          this.tone(55, 3.6, "sine", 0.38, 0, 0, g);
+          this.tone(82.4, 3.6, "sine", 0.18, 0, 0, g);
+        }
         if (this.musicStep % 2 === 0) {
           const n = scale[Math.floor(Math.abs(Math.sin(this.musicStep * 1.7)) * scale.length) % scale.length];
-          this.tone(n * 2, 1.1, "sine", 0.34, 0, 0, g);
-          this.tone(n * 2 + 2, 1.1, "sine", 0.12, 0, 0, g);
+          this.tone(n * 2, 1.2, "sine", 0.32, 0, 0, g);
+          this.tone(n * 2 + 2, 1.2, "sine", 0.11, 0, 0, g);
+          this.tone(n * 3, 1.0, "sine", 0.08, 0, 0.05, g); // the cold fifth above
         }
         if (this.musicStep % 16 === 12) this.tone(scale[2] * 4, 1.8, "sine", 0.1, 0, 0.2, g);
+        if (this.musicStep % 64 === 40) this.tone(110, 2.6, "sawtooth", 0.06, 4, 0.1, g); // the far horn
       } else {
         if (this.musicStep % 2 === 0) this.tone(chord[0] / 2, 0.32, "triangle", 0.5, 0, 0, g);
         this.tone(58, 0.1, "sine", this.musicStep % 4 === 0 ? 0.6 : 0.3, -14, 0, g);
