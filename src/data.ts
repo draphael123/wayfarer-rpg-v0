@@ -70,7 +70,32 @@ export const HEROES: HeroDef[] = [
     accent: "#8f8672",
     baseAttrs: { str: 2, dex: 1, int: 2, vit: 4, spi: 6 },
   },
+  // late arrivals — word of the band spreads once the Thornwood ogre falls
+  {
+    name: "Maren",
+    title: "the Tidecaller",
+    skin: "#d8a87e",
+    hair: "#7ba8b8",
+    accent: "#4a7a8c",
+    baseAttrs: { str: 1, dex: 2, int: 5, vit: 2, spi: 5 },
+  },
+  {
+    name: "Kellan",
+    title: "the Unbroken",
+    skin: "#b98a62",
+    hair: "#3a3632",
+    accent: "#5a5f6e",
+    baseAttrs: { str: 4, dex: 1, int: 1, vit: 7, spi: 2 },
+  },
 ];
+
+/** Hero indexes gated behind campaign progress: index → first unlockedStage that frees them. */
+export const HERO_GATE_STAGE: Record<number, number> = { 4: 2, 5: 2 };
+
+export function heroArrived(save: { unlockedStage: number }, index: number): boolean {
+  const gate = HERO_GATE_STAGE[index];
+  return gate === undefined || save.unlockedStage >= gate;
+}
 
 export const ABILITIES: AbilityDef[] = [
   {
@@ -170,7 +195,7 @@ export function abilityById(id: string): AbilityDef | undefined {
 }
 
 /** Gold cost to recruit each hero at the tavern (by hero index). Bram and Sol are free founders. */
-export const RECRUIT_COST: Record<number, number> = { 1: 120, 2: 300 };
+export const RECRUIT_COST: Record<number, number> = { 1: 120, 2: 300, 4: 420, 5: 420 };
 
 export const PARTY_CAP = 4;
 

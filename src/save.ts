@@ -23,8 +23,8 @@ export function defaultSave(): SaveData {
     unlockedStage: 0,
     level: 1,
     xp: 0,
-    unspent: [0, 0, 0, 0],
-    heroes: [0, 1, 2, 3].map(defaultHero),
+    unspent: HEROES.map(() => 0),
+    heroes: HEROES.map((_, i) => defaultHero(i)),
     sound: true,
     music: true,
     speed: 0.5,
@@ -53,8 +53,17 @@ export function loadSave(): SaveData {
     const raw = localStorage.getItem(KEY);
     if (!raw) return defaultSave();
     const parsed = JSON.parse(raw) as SaveData;
-    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.heroes) || parsed.heroes.length !== 4) {
+    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.heroes) || parsed.heroes.length < 4 || parsed.heroes.length > HEROES.length) {
       return defaultSave();
+    }
+    // roster growth: older saves gain the late-arrival heroes, benched, with
+    // catch-up attribute points for the levels the band already earned
+    if (!Array.isArray(parsed.unspent)) parsed.unspent = parsed.heroes.map(() => 0);
+    while (parsed.heroes.length < HEROES.length) {
+      parsed.heroes.push(defaultHero(parsed.heroes.length));
+    }
+    while (parsed.unspent.length < HEROES.length) {
+      parsed.unspent.push(Math.max(0, ((parsed.level ?? 1) - 1) * POINTS_PER_LEVEL));
     }
     parsed.heroes.forEach((hero, i) => {
       for (const key of ATTR_KEYS) {

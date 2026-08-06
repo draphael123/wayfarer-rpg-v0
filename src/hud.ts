@@ -1,6 +1,6 @@
 import { audio } from "./audio";
 import type { Battle } from "./battle";
-import { DIFFICULTIES, HEROES } from "./data";
+import { callingById, DIFFICULTIES, HEROES } from "./data";
 import { drawAbilityGlyph } from "./icons";
 import type { AbilityState, SaveData, Unit } from "./types";
 
@@ -886,6 +886,20 @@ export class Hud {
         ctx.stroke();
       }
       ctx.restore();
+
+      // sworn-oath crest pinned to the portrait corner
+      const heroOath = callingById(hero.calling);
+      if (heroOath) {
+        ctx.save();
+        ctx.translate(x0 + 5, py + 5);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = heroOath.color;
+        ctx.fillRect(-4, -4, 8, 8);
+        ctx.strokeStyle = "#17111f";
+        ctx.lineWidth = 1.4;
+        ctx.strokeRect(-4, -4, 8, 8);
+        ctx.restore();
+      }
 
       // hp sliver under portrait
       const frac = Math.max(0, hero.hp / hero.stats.maxHp);

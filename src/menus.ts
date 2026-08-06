@@ -7,6 +7,7 @@ import {
   callingById,
   callingEligible,
   DIFFICULTIES,
+  heroArrived,
   TRINKETS,
   trinketById,
   MAX_LEVEL,
@@ -243,6 +244,18 @@ export function drawHeroPortrait(canvas: HTMLCanvasElement, index: number, save:
   ctx.moveTo(29.5, 34.6);
   ctx.quadraticCurveTo(32, 36, 34.5, 34.6);
   ctx.stroke();
+  // crest badge for a sworn (and honored) oath
+  const oath = callingById(hero.calling);
+  if (oath && callingEligible(oath, hero.attrs)) {
+    ctx.beginPath();
+    ctx.arc(51, 53, 9, 0, Math.PI * 2);
+    ctx.fillStyle = oath.color;
+    ctx.fill();
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+    drawAbilityGlyph(ctx, oath.signature.icon, 51, 53, 4.6, "#17111f");
+  }
   ctx.restore();
 }
 
@@ -1189,6 +1202,23 @@ export class Menus {
       const def = HEROES[i];
       const hero = save.heroes[i];
       const cost = RECRUIT_COST[i];
+      const arrived = heroArrived(save, i);
+      if (!arrived && !hero.recruited) {
+        body.appendChild(
+          el(`
+            <div class="hero-card locked-hero">
+              <div class="hero-head">
+                <div class="hero-avatar portrait mystery-hero"><span>?</span></div>
+                <div>
+                  <div class="hero-name">An empty seat</div>
+                  <div class="hero-meta">The tavern keep says a wanderer will come once the <strong>Thornwood ogre</strong> falls.</div>
+                </div>
+              </div>
+            </div>
+          `),
+        );
+        continue;
+      }
       const card = el(`
         <div class="hero-card ${hero.recruited ? "" : "locked-hero"}" style="--accent:${def.accent}">
           <div class="hero-head">
@@ -1387,6 +1417,7 @@ export class Menus {
     }
     for (let i = 0; i < HEROES.length; i++) {
       if (this.save.heroes[i].recruited) continue;
+      const arrived = heroArrived(this.save, i);
       const lockedCard = el(`
           <div class="hero-card locked-hero" style="--accent:${HEROES[i].accent}">
             <div class="hero-head">
@@ -1394,14 +1425,18 @@ export class Menus {
                 <canvas width="64" height="64"></canvas>
               </div>
               <div>
-                <div class="hero-name">${HEROES[i].name} <em>${HEROES[i].title}</em></div>
-                <div class="hero-meta">For hire at the <strong>Village Tavern</strong> — ${ico("coin")} ${RECRUIT_COST[i] ?? "?"}</div>
+                <div class="hero-name">${arrived ? `${HEROES[i].name} <em>${HEROES[i].title}</em>` : "A distant wanderer"}</div>
+                <div class="hero-meta">${
+                  arrived
+                    ? `For hire at the <strong>Village Tavern</strong> — ${ico("coin")} ${RECRUIT_COST[i] ?? "?"}`
+                    : "Word of the band must spread — fell the Thornwood ogre first."
+                }</div>
               </div>
               <div class="hero-points">🔒</div>
             </div>
           </div>
         `);
-      drawHeroPortrait(lockedCard.querySelector(".hero-avatar canvas") as HTMLCanvasElement, i, this.save);
+      if (arrived) drawHeroPortrait(lockedCard.querySelector(".hero-avatar canvas") as HTMLCanvasElement, i, this.save);
       list.appendChild(lockedCard);
     }
     page.addEventListener("click", (event) => {

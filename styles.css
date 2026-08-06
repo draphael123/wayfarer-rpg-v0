@@ -2040,3 +2040,16 @@ html, body {
 .tinker-item { font-size: 13.5px; font-weight: 600; }
 
 .tinker-row .big-btn { padding: 8px 14px; font-size: 13px; }
+
+/* ------------------------------------------------------- mystery recruit */
+
+.mystery-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 245, 225, 0.06);
+  border: 1.5px dashed rgba(255, 245, 225, 0.25);
+  color: #857c99;
+  font-size: 26px;
+  font-weight: 800;
+}

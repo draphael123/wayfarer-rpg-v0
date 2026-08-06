@@ -1,5 +1,5 @@
 import type { Battle } from "./battle";
-import { deriveStats, HEROES } from "./data";
+import { callingById, callingEligible, deriveStats, HEROES } from "./data";
 import type { SaveData, StageDef, Unit } from "./types";
 
 const OUTLINE = "#241b2e";
@@ -1088,7 +1088,9 @@ export function drawHeroFigure(
 ): void {
   const ctx = canvas.getContext("2d")!;
   const hero = save.heroes[heroIndex];
-  const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, hero.calling);
+  const oathDef = callingById(hero.calling);
+  const activeOath = oathDef && callingEligible(oathDef, hero.attrs) ? hero.calling : null;
+  const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, activeOath);
   const radius = 13;
   const scale = canvas.height / (radius * 3.7 * 1.55);
   const unit = {
@@ -1097,7 +1099,7 @@ export function drawHeroFigure(
     team: "hero",
     heroIndex,
     enemyKind: null,
-    calling: hero.calling,
+    calling: activeOath,
     x: canvas.width / 2 / scale,
     y: canvas.height / scale - radius * 0.9,
     radius,
@@ -1173,6 +1175,21 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   limb(ctx, cx - f * bodyW * 0.3, shoulderY + 3, bhx, bhy, legW * 0.85, def.skin);
   hand(ctx, bhx, bhy, def.skin);
 
+  // calling regalia: a cape in the oath's color billows out behind
+  const oath = callingById(unit.calling);
+  if (oath && !robed) {
+    const sway = Math.sin(unit.bobPhase * 0.8) * 2 - f * pose.walk * 4;
+    const hemY = gy - H * 0.06;
+    const cape = new Path2D();
+    cape.moveTo(cx + f * bodyW * 0.1, shoulderY - 4);
+    cape.lineTo(cx - f * bodyW * 0.6, shoulderY - 2);
+    cape.quadraticCurveTo(cx - f * bodyW * 1.35 + sway, (shoulderY + hemY) / 2, cx - f * bodyW * 1.05 + sway * 1.3, hemY);
+    cape.lineTo(cx - f * bodyW * 0.25, hemY - 2);
+    cape.quadraticCurveTo(cx - f * bodyW * 0.1, (hipY + shoulderY) / 2, cx + f * bodyW * 0.1, shoulderY - 4);
+    cape.closePath();
+    shaded(ctx, cape, oath.color, f, cx - f * bodyW * 0.7, (shoulderY + hemY) / 2, bodyW * 0.6, 2.2);
+  }
+
   if (robed) {
     // full healer's robe: cream cloth to the ground, accent stole, swaying hem
     const hem = Math.sin(unit.bobPhase * 0.9) * 2;
@@ -1185,9 +1202,10 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     robe.closePath();
     shaded(ctx, robe, "#efe6d0", f, cx, (shoulderY + gy) / 2, H * 0.32);
     // accent stole draped down the front — breaks up the snowman silhouette
+    // (a sworn oath dyes the stole in its color)
     ctx.save();
     ctx.clip(robe);
-    ctx.fillStyle = def.accent;
+    ctx.fillStyle = oath?.color ?? def.accent;
     ctx.globalAlpha = 0.85;
     ctx.fillRect(cx + f * bodyW * 0.16 - 2.2, shoulderY - 2, 4.4, gy - shoulderY);
     ctx.globalAlpha = 1;
@@ -1219,6 +1237,18 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.fillRect(cx - bodyW * 0.5, hipY - 1, bodyW, 3);
     ctx.fillStyle = "#c9a95c";
     ctx.fillRect(cx + f * 1.5 - 1.6, hipY - 0.5, 3.2, 2.2);
+  }
+  // oath clasp pinned at the shoulder
+  if (oath) {
+    const px2 = cx + f * bodyW * 0.32;
+    const py2 = shoulderY + 1;
+    ctx.beginPath();
+    ctx.arc(px2, py2, 3.4, 0, Math.PI * 2);
+    outlined(ctx, oath.color, 1.6);
+    ctx.fillStyle = "#fff6d8";
+    ctx.beginPath();
+    ctx.arc(px2, py2, 1.3, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // armor flair grows with tier
@@ -1298,6 +1328,42 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.lineWidth = 1.8;
     ctx.beginPath();
     ctx.arc(faceX, headY - headR * 0.05, headR * 0.99, Math.PI * 1.15, Math.PI * 1.85);
+    ctx.stroke();
+  } else if (unit.heroIndex === 4) {
+    // Maren: sea-glass hair with a braid draped over the front shoulder
+    ctx.beginPath();
+    ctx.arc(faceX - f * 0.5, headY - headR * 0.1, headR * 0.99, Math.PI * 0.95, Math.PI * 2.05);
+    ctx.closePath();
+    outlined(ctx, def.hair, 2);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 5.6;
+    ctx.beginPath();
+    ctx.moveTo(faceX + f * headR * 0.75, headY - headR * 0.2);
+    ctx.quadraticCurveTo(faceX + f * headR * 1.15, headY + headR * 0.7, faceX + f * headR * 0.9, headY + headR * 1.5);
+    ctx.stroke();
+    ctx.strokeStyle = def.hair;
+    ctx.lineWidth = 3.4;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(faceX + f * headR * 0.9, headY + headR * 1.55, 2.2, 0, Math.PI * 2);
+    outlined(ctx, "#e8f2f0", 1.4);
+  } else if (unit.heroIndex === 5) {
+    // Kellan: cropped iron-dark hair under a notched browband
+    ctx.beginPath();
+    ctx.arc(faceX - f * 0.5, headY - headR * 0.16, headR * 0.96, Math.PI * 1.0, Math.PI * 2.0);
+    ctx.closePath();
+    outlined(ctx, def.hair, 2);
+    ctx.strokeStyle = "#8a8f9c";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(faceX, headY - headR * 0.16, headR * 0.95, Math.PI * 1.04, Math.PI * 1.96);
+    ctx.stroke();
+    // old scar across the cheek
+    ctx.strokeStyle = "rgba(120, 62, 42, 0.75)";
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(faceX - f * headR * 0.42, headY + headR * 0.28);
+    ctx.lineTo(faceX - f * headR * 0.18, headY + headR * 0.55);
     ctx.stroke();
   } else {
     // hair cap (Bram gets a leather headband)
