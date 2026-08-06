@@ -34,6 +34,8 @@ export interface HeroDef {
   hair: string;
   accent: string;
   baseAttrs: Attributes;
+  /** Body-shape multipliers so silhouettes differ below the neck too. */
+  build: { torso: number; limb: number; head: number };
 }
 
 // Starting biases are suggestions only — every point can be reallocated freely.
@@ -45,6 +47,7 @@ export const HEROES: HeroDef[] = [
     hair: "#6b3f22",
     accent: "#8a6a58",
     baseAttrs: { str: 6, dex: 2, int: 1, vit: 5, spi: 1 },
+    build: { torso: 1.04, limb: 1.05, head: 1 },
   },
   {
     name: "Wren",
@@ -53,6 +56,7 @@ export const HEROES: HeroDef[] = [
     hair: "#2e2a35",
     accent: "#6d7a64",
     baseAttrs: { str: 2, dex: 7, int: 2, vit: 3, spi: 1 },
+    build: { torso: 0.88, limb: 0.85, head: 1 },
   },
   {
     name: "Ezri",
@@ -61,6 +65,7 @@ export const HEROES: HeroDef[] = [
     hair: "#a8552f",
     accent: "#6c6880",
     baseAttrs: { str: 1, dex: 2, int: 7, vit: 3, spi: 2 },
+    build: { torso: 0.92, limb: 0.88, head: 1 },
   },
   {
     name: "Sol",
@@ -69,6 +74,7 @@ export const HEROES: HeroDef[] = [
     hair: "#e8e2d0",
     accent: "#8f8672",
     baseAttrs: { str: 2, dex: 1, int: 2, vit: 4, spi: 6 },
+    build: { torso: 1, limb: 0.9, head: 1.02 },
   },
   // late arrivals — word of the band spreads once the Thornwood ogre falls
   {
@@ -78,6 +84,7 @@ export const HEROES: HeroDef[] = [
     hair: "#7ba8b8",
     accent: "#4a7a8c",
     baseAttrs: { str: 1, dex: 2, int: 5, vit: 2, spi: 5 },
+    build: { torso: 0.9, limb: 0.85, head: 1 },
   },
   {
     name: "Kellan",
@@ -86,6 +93,7 @@ export const HEROES: HeroDef[] = [
     hair: "#3a3632",
     accent: "#5a5f6e",
     baseAttrs: { str: 4, dex: 1, int: 1, vit: 7, spi: 2 },
+    build: { torso: 1.2, limb: 1.3, head: 0.95 },
   },
 ];
 

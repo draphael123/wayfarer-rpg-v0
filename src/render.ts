@@ -48,7 +48,7 @@ function limb(
 ): void {
   ctx.lineCap = "round";
   ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = width + 2.6;
+  ctx.lineWidth = width + 3.2;
   ctx.beginPath();
   ctx.moveTo(x1, y1);
   ctx.lineTo(x2, y2);
@@ -1421,12 +1421,13 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   drawShadow(ctx, unit, pose.bounce);
   if (selected) drawSelection(ctx, unit, time);
 
+  const build = def.build ?? { torso: 1, limb: 1, head: 1 };
   const hipY = gy - H * 0.30;
   const shoulderY = gy - H * 0.52 + pose.breathe * 0.4;
-  const headR = H * 0.29;
+  const headR = H * 0.29 * build.head;
   const headY = shoulderY - headR * 0.85;
-  const bodyW = H * 0.34;
-  const legW = H * 0.10;
+  const bodyW = H * 0.34 * build.torso;
+  const legW = H * 0.10 * build.limb;
   const stride = H * 0.14;
   const robed = unit.stats.weapon === "stave";
   const gear = save.heroes[unit.heroIndex];
@@ -1471,7 +1472,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     robe.quadraticCurveTo(cx + bodyW * 0.6, hipY - H * 0.06, cx + bodyW * 0.72 - hem * 0.4, gy);
     robe.quadraticCurveTo(cx + hem, gy + 2.5, cx - bodyW * 0.72 + hem * 0.4, gy);
     robe.closePath();
-    shaded(ctx, robe, "#efe6d0", f, cx, (shoulderY + gy) / 2, H * 0.32);
+    shaded(ctx, robe, "#efe6d0", f, cx, (shoulderY + gy) / 2, H * 0.32, 3);
     // accent stole draped down the front — breaks up the snowman silhouette
     // (a sworn oath dyes the stole in its color)
     ctx.save();
@@ -1489,6 +1490,10 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.quadraticCurveTo(cx, hipY + 3.5, cx + bodyW * 0.5, hipY);
     ctx.stroke();
   } else {
+    // hip mass so the legs grow out of a body, not a point
+    ctx.beginPath();
+    ctx.ellipse(cx, hipY + H * 0.045, bodyW * 0.4, H * 0.075, 0, 0, Math.PI * 2);
+    outlined(ctx, "#433753", 2.6);
     // front leg
     const ffx = cx + f * 2 + f * pose.walk * stride;
     limb(ctx, cx + f * 2, hipY, ffx, gy - 1, legW, "#4a3d5c");
@@ -1502,7 +1507,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     tunic.quadraticCurveTo(cx + bodyW * 0.62, shoulderY, cx + bodyW * 0.52, hipY + 3);
     tunic.quadraticCurveTo(cx, hipY + H * 0.07, cx - bodyW * 0.52, hipY + 3);
     tunic.closePath();
-    shaded(ctx, tunic, def.accent, f, cx, (shoulderY + hipY) / 2, bodyW * 0.55);
+    shaded(ctx, tunic, def.accent, f, cx, (shoulderY + hipY) / 2, bodyW * 0.55, 3);
     // belt
     ctx.fillStyle = "rgba(20,14,30,0.5)";
     ctx.fillRect(cx - bodyW * 0.5, hipY - 1, bodyW, 3);
@@ -1543,7 +1548,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   const faceX = cx + f * 1.5;
   const head = new Path2D();
   head.arc(faceX, headY, headR, 0, Math.PI * 2);
-  shaded(ctx, head, def.skin, f, faceX, headY, headR);
+  shaded(ctx, head, def.skin, f, faceX, headY, headR, 3);
   if (!robed && aTier >= 3) {
     // plate helm with a nose guard (tinted by the plate's making)
     ctx.beginPath();
@@ -1651,6 +1656,25 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     }
   }
   // chibi face: two eyes toward facing (they blink!), brows, a living mouth, blush
+  // — with per-hero character: sharp, gentle, lashed, or glowering
+  const face = { eyeRy: 0.26, browW: 1.5, browTilt: 0, uniBrow: false, lashes: false, softLids: false };
+  switch (unit.heroIndex) {
+    case 2: // Ezri: sharp, knowing
+      face.eyeRy = 0.21;
+      face.browTilt = 0.09;
+      break;
+    case 3: // Sol: gentle
+      face.softLids = true;
+      face.browW = 1.2;
+      break;
+    case 4: // Maren: lashes
+      face.lashes = true;
+      break;
+    case 5: // Kellan: one heavy brow
+      face.eyeRy = 0.22;
+      face.uniBrow = true;
+      break;
+  }
   const eyeY = headY + headR * 0.1;
   const eyeXs = [faceX + f * headR * 0.62, faceX + f * headR * 0.06];
   const shut = blinkShut(unit, time);
@@ -1665,7 +1689,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
       continue;
     }
     ctx.beginPath();
-    ctx.ellipse(ex, eyeY, headR * 0.2, headR * 0.26, 0, 0, Math.PI * 2);
+    ctx.ellipse(ex, eyeY, headR * 0.2, headR * face.eyeRy, 0, 0, Math.PI * 2);
     ctx.fillStyle = "#fdf8ee";
     ctx.fill();
     ctx.strokeStyle = OUTLINE;
@@ -1675,14 +1699,38 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.beginPath();
     ctx.arc(ex + f * headR * 0.07, eyeY + headR * 0.04, headR * 0.115, 0, Math.PI * 2);
     ctx.fill();
+    if (face.lashes) {
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(ex + f * headR * 0.16, eyeY - headR * 0.2);
+      ctx.lineTo(ex + f * headR * 0.3, eyeY - headR * 0.3);
+      ctx.stroke();
+    }
+    if (face.softLids) {
+      ctx.strokeStyle = "rgba(36, 27, 46, 0.4)";
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(ex - f * headR * 0.14, eyeY + headR * 0.3);
+      ctx.quadraticCurveTo(ex, eyeY + headR * 0.36, ex + f * headR * 0.14, eyeY + headR * 0.3);
+      ctx.stroke();
+    }
   }
   ctx.strokeStyle = OUTLINE;
-  ctx.lineWidth = 1.5;
-  for (const ex of eyeXs) {
+  if (!shut && face.uniBrow) {
+    ctx.lineWidth = 2.6;
     ctx.beginPath();
-    ctx.moveTo(ex - f * headR * 0.18, eyeY - headR * 0.42);
-    ctx.lineTo(ex + f * headR * 0.2, eyeY - headR * 0.36);
+    ctx.moveTo(eyeXs[1] - f * headR * 0.22, eyeY - headR * 0.4);
+    ctx.lineTo(eyeXs[0] + f * headR * 0.24, eyeY - headR * 0.32);
     ctx.stroke();
+  } else if (!shut) {
+    ctx.lineWidth = face.browW;
+    for (const ex of eyeXs) {
+      ctx.beginPath();
+      ctx.moveTo(ex - f * headR * 0.18, eyeY - headR * (0.42 - face.browTilt));
+      ctx.lineTo(ex + f * headR * 0.2, eyeY - headR * (0.36 + face.browTilt));
+      ctx.stroke();
+    }
   }
   // mouth tracks the fight: grit while swinging, worry when hurt, easy smile otherwise
   const mouthX = faceX + f * headR * 0.34;
@@ -1781,22 +1829,22 @@ function drawHeroWeapon(
     ctx.save();
     ctx.translate(handX, handY);
     ctx.rotate(angle + f * 0.35 - f * Math.PI / 2);
-    // blade
+    // blade — broad enough to mean it
     ctx.beginPath();
-    ctx.moveTo(-2.4, -4);
-    ctx.lineTo(-1.6, -H * 0.52);
-    ctx.lineTo(0, -H * 0.58);
-    ctx.lineTo(1.6, -H * 0.52);
-    ctx.lineTo(2.4, -4);
+    ctx.moveTo(-3.4, -4);
+    ctx.lineTo(-2.2, -H * 0.52);
+    ctx.lineTo(0, -H * 0.6);
+    ctx.lineTo(2.2, -H * 0.52);
+    ctx.lineTo(3.4, -4);
     ctx.closePath();
     if (glow) {
       ctx.shadowColor = "#9fd0ff";
       ctx.shadowBlur = 8;
     }
-    outlined(ctx, metal, 2);
+    outlined(ctx, metal, 2.2);
     ctx.shadowBlur = 0;
     ctx.fillStyle = "rgba(255,255,255,0.5)";
-    ctx.fillRect(-0.6, -H * 0.52, 1.2, H * 0.46);
+    ctx.fillRect(-0.8, -H * 0.52, 1.6, H * 0.46);
     if (wTier >= 2) {
       // steel and above get a fuller, wider blade profile
       ctx.strokeStyle = "rgba(255,255,255,0.55)";
@@ -1806,11 +1854,14 @@ function drawHeroWeapon(
       ctx.lineTo(-1.2, -H * 0.5);
       ctx.stroke();
     }
-    // crossguard + grip
-    roundRect(ctx, -5, -4.5, 10, 3.4, 1.5);
+    // crossguard + grip + pommel
+    roundRect(ctx, -6.4, -4.8, 12.8, 3.8, 1.8);
     outlined(ctx, "#a8862f", 1.8);
-    roundRect(ctx, -1.7, -1, 3.4, 6.5, 1.5);
+    roundRect(ctx, -2.1, -1, 4.2, 7, 1.8);
     outlined(ctx, "#6b4a2a", 1.6);
+    ctx.beginPath();
+    ctx.arc(0, 6.6, 2, 0, Math.PI * 2);
+    outlined(ctx, "#a8862f", 1.4);
     ctx.restore();
   } else if (unit.stats.weapon === "bow") {
     const handX = shX + f * H * 0.2;
@@ -1822,15 +1873,31 @@ function drawHeroWeapon(
     ctx.scale(f, 1);
     const draw = swing; // string pull
     ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 4.4;
+    ctx.lineWidth = 5.4;
     ctx.beginPath();
     ctx.arc(0, 0, H * 0.26, -Math.PI / 2.5, Math.PI / 2.5);
     ctx.stroke();
     ctx.strokeStyle = "#9c7440";
-    ctx.lineWidth = 2.6;
+    ctx.lineWidth = 3.2;
     ctx.beginPath();
     ctx.arc(0, 0, H * 0.26, -Math.PI / 2.5, Math.PI / 2.5);
     ctx.stroke();
+    // recurve tips + a wrapped grip where the hand sits
+    const tipR = H * 0.26;
+    for (const s of [-1, 1]) {
+      const ta = (s * Math.PI) / 2.5;
+      ctx.strokeStyle = "#9c7440";
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(ta) * tipR, Math.sin(ta) * tipR);
+      ctx.lineTo(Math.cos(ta) * tipR + 3.4, Math.sin(ta) * tipR + s * 2.4);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#6b4a2a";
+    ctx.fillRect(tipR - 2.4, -4.5, 4.4, 9);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(tipR - 2.4, -4.5, 4.4, 9);
     const tipY = Math.sin(Math.PI / 2.5) * H * 0.26;
     const tipX = Math.cos(Math.PI / 2.5) * H * 0.26;
     ctx.strokeStyle = "#efe8d4";
@@ -1855,7 +1922,16 @@ function drawHeroWeapon(
     ctx.save();
     ctx.translate(handX, handY);
     ctx.rotate(angle * 0.35 - f * 0.08);
-    limb(ctx, 0, H * 0.2, 0, -H * 0.56, 3.6, "#d9c9a0");
+    limb(ctx, 0, H * 0.2, 0, -H * 0.56, 4.4, "#d9c9a0");
+    // wrapped grip
+    ctx.strokeStyle = "#8a6a42";
+    ctx.lineWidth = 1.6;
+    for (let wIdx = 0; wIdx < 3; wIdx++) {
+      ctx.beginPath();
+      ctx.moveTo(-2.6, H * 0.02 + wIdx * 3);
+      ctx.lineTo(2.6, H * 0.02 + wIdx * 3 + 1.4);
+      ctx.stroke();
+    }
     const discY = -H * 0.6;
     const flare = 0.55 + Math.sin(time * 4) * 0.15 + raise;
     ctx.globalAlpha = Math.min(1, flare);
@@ -1887,7 +1963,16 @@ function drawHeroWeapon(
     ctx.save();
     ctx.translate(handX, handY);
     ctx.rotate(angle * 0.4 - f * 0.12);
-    limb(ctx, 0, H * 0.14, 0, -H * 0.5, 3.4, "#6d5638");
+    limb(ctx, 0, H * 0.14, 0, -H * 0.5, 4.2, "#6d5638");
+    // wrapped grip
+    ctx.strokeStyle = "#4a3a26";
+    ctx.lineWidth = 1.6;
+    for (let wIdx = 0; wIdx < 3; wIdx++) {
+      ctx.beginPath();
+      ctx.moveTo(-2.4, H * 0.01 + wIdx * 3);
+      ctx.lineTo(2.4, H * 0.01 + wIdx * 3 + 1.2);
+      ctx.stroke();
+    }
     const orbPulse = 3.6 + Math.sin(time * 5) * 0.7 + raise * 2.5;
     ctx.shadowColor = accent;
     ctx.shadowBlur = 9 + raise * 10;
@@ -1933,7 +2018,20 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
   // body
   const wolfBody = new Path2D();
   wolfBody.ellipse(cx, bodyY, r * 1.3 * stretchB, r * 0.62, -f * 0.08, 0, Math.PI * 2);
-  shaded(ctx, wolfBody, colors.body, f, cx, bodyY, r * 0.9);
+  shaded(ctx, wolfBody, colors.body, f, cx, bodyY, r * 0.9, 3);
+  // every wolf carries a little ruff at the neck (the Alpha's is grander)
+  if (!isAlpha) {
+    ctx.beginPath();
+    for (let i = 0; i < 3; i++) {
+      const mx = cx + f * r * (0.4 + i * 0.2);
+      const my = bodyY - r * 0.52;
+      ctx.moveTo(mx, my);
+      ctx.lineTo(mx + f * r * 0.08, my - r * 0.28);
+      ctx.lineTo(mx + f * r * 0.2, my);
+    }
+    ctx.closePath();
+    outlined(ctx, colors.trim, 1.8);
+  }
   if (isAlpha) {
     // bristling mane along the neck and shoulders
     ctx.beginPath();
@@ -2019,7 +2117,8 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   const hipY = gy - H * (big ? 0.26 : 0.30);
   const shoulderY = gy - H * (big ? 0.6 : 0.52) + pose.breathe * 0.5;
   const headR = H * (big ? 0.17 : 0.27);
-  const headY = shoulderY - headR * (big ? 0.5 : 0.85);
+  // brutes hunch — head slung low, knuckles near the ground
+  const headY = shoulderY - headR * (big ? 0.5 : 0.85) + (kind === "brute" ? H * 0.09 : 0);
   const bodyW = H * (big ? 0.52 : 0.34);
   const legW = H * (big ? 0.13 : 0.10);
   const stride = H * 0.13;
@@ -2046,7 +2145,24 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     torso.quadraticCurveTo(cx, hipY + H * 0.07, cx - bodyW * 0.52, hipY + 3);
   }
   torso.closePath();
-  shaded(ctx, torso, colors.body, f, cx, (shoulderY + hipY) / 2, bodyW * (big ? 0.7 : 0.55));
+  shaded(ctx, torso, colors.body, f, cx, (shoulderY + hipY) / 2, bodyW * (big ? 0.7 : 0.55), 3);
+  // archer's quiver rides the back
+  if (kind === "archer") {
+    ctx.save();
+    ctx.translate(cx - f * bodyW * 0.48, shoulderY + 2);
+    ctx.rotate(-f * 0.35);
+    roundRect(ctx, -3.5, -H * 0.16, 7, H * 0.3, 3);
+    outlined(ctx, "#6b4a2a", 2);
+    ctx.strokeStyle = "#d9c9a0";
+    ctx.lineWidth = 1.6;
+    for (const ox of [-1.6, 0.6]) {
+      ctx.beginPath();
+      ctx.moveTo(ox, -H * 0.15);
+      ctx.lineTo(ox + 1.4, -H * 0.26);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   if (kind === "warlord") {
     // armor plate
     ctx.beginPath();
@@ -2056,6 +2172,12 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.lineTo(cx - bodyW * 0.3, hipY - 1);
     ctx.closePath();
     outlined(ctx, "#5a4a52", 2);
+    // stacked pauldrons: this one came dressed for war
+    for (const s of [0, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + f * bodyW * 0.42, shoulderY - 2 - s * 4.5, bodyW * (0.26 - s * 0.06), 5.2 - s, f * 0.2, 0, Math.PI * 2);
+      outlined(ctx, "#6b5a62", 2);
+    }
   }
   if (kind === "ogre") {
     // moss grown over the shoulders — it slept a long time
@@ -2064,11 +2186,14 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.ellipse(cx - bodyW * 0.3, shoulderY - 2, bodyW * 0.22, 5, 0.3, 0, Math.PI * 2);
     ctx.ellipse(cx + bodyW * 0.35, shoulderY - 1, bodyW * 0.18, 4, -0.2, 0, Math.PI * 2);
     ctx.fill();
-    // pot belly line
-    ctx.strokeStyle = "rgba(20,14,30,0.35)";
-    ctx.lineWidth = 2;
+    // a real hanging belly, paler where the sun never reached
     ctx.beginPath();
-    ctx.arc(cx, hipY - H * 0.05, bodyW * 0.34, Math.PI * 0.2, Math.PI * 0.8);
+    ctx.ellipse(cx + f * 1.5, hipY - H * 0.01, bodyW * 0.42, H * 0.15, 0, 0, Math.PI * 2);
+    outlined(ctx, "#87996a", 2.4);
+    ctx.strokeStyle = "rgba(20,14,30,0.3)";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(cx + f * 2, hipY + H * 0.02, 2.2, 0, Math.PI);
     ctx.stroke();
   }
   // loincloth
@@ -2079,7 +2204,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   const hx0 = cx + f * 2;
   const head = new Path2D();
   head.arc(hx0, headY, headR, 0, Math.PI * 2);
-  shaded(ctx, head, colors.body, f, hx0, headY, headR);
+  shaded(ctx, head, colors.body, f, hx0, headY, headR, 3);
   // goblinoid ears — per-goblin tilt so a mob doesn't read as clones
   if (kind === "goblin" || kind === "archer" || kind === "shaman") {
     const tilt = (hash01(unit.id * 3.7) - 0.5) * 8;
@@ -2097,7 +2222,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     outlined(ctx, colors.body, 2);
   }
   if (kind === "shaman") {
-    // hood + glowing mask eyes
+    // hood + glowing mask eyes + ritual paint
     ctx.beginPath();
     ctx.arc(cx + f * 1, headY - 1.5, headR * 1.04, Math.PI * 0.85, Math.PI * 2.15);
     ctx.closePath();
@@ -2106,6 +2231,14 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.beginPath();
     ctx.arc(cx + f * headR * 0.45, headY + 1, 2, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = "#d9a441";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(cx + f * headR * 0.15, headY + headR * 0.32);
+    ctx.lineTo(cx + f * headR * 0.32, headY + headR * 0.6);
+    ctx.moveTo(cx + f * headR * 0.48, headY + headR * 0.28);
+    ctx.lineTo(cx + f * headR * 0.65, headY + headR * 0.55);
+    ctx.stroke();
   } else if (kind === "brute" || kind === "warlord" || kind === "ogre") {
     // horns + underbite tusks
     for (const s of [-1, 1]) {
@@ -2124,6 +2257,10 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
       ctx.arc(cx + f * 2, headY - headR * 0.3, headR * 1.02, Math.PI, Math.PI * 2);
       ctx.closePath();
       outlined(ctx, "#5a4a52", 2);
+      // jaw guard
+      ctx.fillStyle = "#5a4a52";
+      roundRect(ctx, hx0 - f * headR * 0.1 - headR * 0.45, headY + headR * 0.5, headR * 0.9, headR * 0.3, 2);
+      outlined(ctx, "#5a4a52", 1.6);
     }
   } else if (kind === "archer") {
     ctx.beginPath();
@@ -2196,6 +2333,16 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
         ctx.fillStyle = OUTLINE;
         ctx.beginPath();
         ctx.arc(hx0 + f * headR * (off + 0.03), eyeY + headR * 0.02, headR * 0.07, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // Mosstooth is barely awake: heavy lids sag over his eyes
+    if (kind === "ogre") {
+      ctx.fillStyle = colors.body;
+      for (const off of [0.62, 0.1]) {
+        ctx.beginPath();
+        ctx.arc(hx0 + f * headR * off, eyeY - headR * 0.03, headR * 0.15, Math.PI, Math.PI * 2);
+        ctx.closePath();
         ctx.fill();
       }
     }
@@ -2283,10 +2430,11 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.closePath();
     ctx.fill();
   } else {
-    // brute / warlord club — huge overhead slam
+    // brute / warlord club — huge overhead slam (brutes drag longer arms)
+    const armLen = kind === "brute" ? H * 0.3 : H * 0.24;
     const angle = f * (-1.9 + pose.swing * 2.6);
-    const hx = shX + Math.cos(angle) * H * 0.24;
-    const hy = shY + Math.sin(angle) * H * 0.24 + H * 0.04;
+    const hx = shX + Math.cos(angle) * armLen;
+    const hy = shY + Math.sin(angle) * armLen + H * 0.04;
     limb(ctx, shX, shY, hx, hy, legW, colors.body);
     ctx.save();
     ctx.translate(hx, hy);
