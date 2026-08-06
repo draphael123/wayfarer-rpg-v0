@@ -1,5 +1,11 @@
 import { audio } from "./audio";
 import { ARMOR_ACTIVES, DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, talentMods, trinketMods, SET_BONUSES } from "./data";
+
+// Battleheart pacing: cooldowns run 2.5× longer, so each cast must matter more.
+// Heals compensate harder than damage — a mend that has to cover a 20s window
+// must be worth waiting for.
+const SPELL_POTENCY = 1.5;
+const HEAL_POTENCY = 1.8;
 import type { FxSystem } from "./fx";
 import type {
   AbilityState,
@@ -82,6 +88,16 @@ export class Battle {
   bossRef: Unit | null = null;
   slowmo = 0; // kill-cam seconds remaining
   ultFlash: { color: string; time: number } | null = null; // ult-cast screen tint
+  private castingSpell = false; // true while a hero's castAbility resolves — heals read it
+  private moonHunt: { remaining: number; whiffs: number; cool: number } | null = null; // the Alpha's phase-3 set-piece
+  private alphaPrey: Unit | null = null; // who the pack-ruled Alpha has committed to hunting
+  private alphaPick = 0; // seconds until it picks fresh prey
+  private ogreCart = false; // Mosstooth's 66% set-piece fired
+  private ogreFlop = false; // Mosstooth's 33% set-piece fired
+  private clusterTime = 0; // Gorehulk's discipline: how long heroes have bunched up
+  private clusterCool = 0; // cooldown on the scatter volley
+  private bannerPlanted = false; // Gorehulk's 33% war banner
+  private stillness: Record<number, { x: number; y: number; t: number }> = {}; // Rimeheart's cracking ice
 
   constructor(
     public stage: StageDef,
@@ -437,6 +453,8 @@ export class Battle {
       this.fx.floatText(target.x, target.y - target.radius - 40, "aloft!", "#d8cfc0", 11);
       return;
     }
+    // Battleheart pacing: with cooldowns stretched, every hero cast lands harder
+    if (opts.spell && source && source.team === "hero" && target.team === "enemy") rawAmount *= SPELL_POTENCY;
     let amount = rawAmount * (1 - target.stats.armor);
     const vulnerable = this.effect(target, "vulnerable");
     if (vulnerable) amount *= 1 + vulnerable.power;
@@ -666,6 +684,8 @@ export class Battle {
 
   heal(target: Unit, amount: number, showText = true, from: Unit | null = null): void {
     if (!target.alive || target.hp >= target.stats.maxHp) return;
+    // spell heals share the potency compensation (channel healing keeps its own pace)
+    if (this.castingSpell && from && from.team === "hero") amount *= HEAL_POTENCY;
     const applied = Math.min(target.stats.maxHp - target.hp, amount);
     target.hp += applied;
     if (from && from.team === "hero" && from.heroIndex >= 0 && applied >= 1) {
@@ -859,6 +879,7 @@ export class Battle {
     const attrs = save.heroes[hero.heroIndex].attrs;
     const dir = aim ? this.normalize({ x: aim.x - hero.x, y: aim.y - hero.y }) : { x: hero.facing, y: 0 };
     let cast = true;
+    this.castingSpell = hero.team === "hero";
     switch (id) {
       case "cleave": {
         const dmg = 12 + attrs.str * 3;
@@ -1994,7 +2015,7 @@ export class Battle {
       // --- armor skills: the worn body piece's family answers ---
       case "armorSurge": {
         // cloth: a rush of focus — shave seconds off every other cooldown
-        const shave = 3 + this.bodyForgeOf(hero);
+        const shave = 6 + this.bodyForgeOf(hero) * 2;
         for (const ab of hero.abilities) {
           if (ab !== state && !ab.ult && ab.timer > 0) ab.timer = Math.max(0, ab.timer - shave);
         }
@@ -2063,6 +2084,7 @@ export class Battle {
       default:
         cast = false;
     }
+    this.castingSpell = false;
     if (cast) {
       this.castCounts[id] = (this.castCounts[id] ?? 0) + 1;
       if (state.ult) {
@@ -2568,6 +2590,10 @@ export class Battle {
       this.updateDrummer(enemy, dt);
       return;
     }
+    if (enemy.enemyKind === "warbanner") {
+      this.updateBanner(enemy, dt);
+      return;
+    }
     // Rimeclad ice casing: it cracks off at three-quarters strength
     if (enemy.enemyKind === "rimetroll" && enemy.phase === 0 && enemy.hp < enemy.stats.maxHp * 0.75) {
       enemy.phase = 1;
@@ -2730,6 +2756,27 @@ export class Battle {
     }
   }
 
+  /** Gorehulk's war banner: stands where planted, pulsing rage — and falls with its lord. */
+  private updateBanner(banner: Unit, dt: number): void {
+    if (!this.livingEnemies().some((u) => u.enemyKind === "warlord")) {
+      // the lord is dead; the standard means nothing now
+      this.damage(banner, 99999, null);
+      return;
+    }
+    banner.supportTimer -= dt;
+    if (banner.supportTimer <= 0) {
+      banner.supportTimer = 3;
+      banner.castGlow = 0.5;
+      for (const ally of this.livingEnemies()) {
+        if (ally === banner || Math.hypot(ally.x - banner.x, ally.y - banner.y) > 220) continue;
+        ally.effects = ally.effects.filter((e) => !(e.kind === "haste" && e.source === banner));
+        ally.effects.push(makeEffect("haste", 3.4, 1.3, banner));
+      }
+      this.fx.ring(banner.x, banner.y, 220, "#9a2f28", { width: 3.5, life: 0.6 });
+      audio.play("drumbeat");
+    }
+  }
+
   /** War-Drummer: hangs back and beats a rhythm that quickens every foe near it. */
   private updateDrummer(d: Unit, dt: number): void {
     d.supportTimer -= dt;
@@ -2878,6 +2925,30 @@ export class Battle {
   private rimeBreath = 9;
 
   /** Rimeheart: hail from above, a freezing breath, and a heart that sheds its own armor. */
+  /** NEMESIS RULE — the king forbids it: your most-leaned-on spell is sealed for a
+   *  while at each phase turn. Ultimates and armor skills are beneath his notice. */
+  private forbidSpell(king: Unit): void {
+    const counts = Object.entries(this.castCounts).filter(([id]) => !id.startsWith("armor"));
+    if (!counts.length) return;
+    counts.sort((a, b) => b[1] - a[1]);
+    const banned = counts[0][0];
+    const def = abilityById(banned);
+    let struckAny = false;
+    for (const hero of this.livingHeroes()) {
+      for (const ab of hero.abilities) {
+        if (ab.def.id === banned && !ab.ult) {
+          ab.timer = Math.max(ab.timer, 20);
+          this.fx.ring(hero.x, hero.y - 10, hero.radius * 2.4, "#b8e0f0", { width: 2.5, life: 0.7 });
+          struckAny = true;
+        }
+      }
+    }
+    if (struckAny) {
+      this.fx.floatText(king.x, king.y - king.radius * 3 - 16, `"${def?.name ?? banned}" IS FORBIDDEN!`, "#b8e0f0", 17);
+      audio.play("glacialGroan");
+    }
+  }
+
   private updateRimeheart(king: Unit, dt: number): void {
     const frac = king.hp / king.stats.maxHp;
     if (king.phase === 0) {
@@ -2889,6 +2960,7 @@ export class Battle {
       king.phase = 2;
       this.fx.floatText(king.x, king.y - king.radius * 3, "THE LONG BREATH!", "#b8e0f0", 18);
       audio.play("howl");
+      this.forbidSpell(king);
     }
     if (frac < 0.33 && king.phase < 3) {
       king.phase = 3;
@@ -2902,6 +2974,28 @@ export class Battle {
       this.fx.addShake(10);
       this.hitstop = Math.max(this.hitstop, 0.1);
       audio.play("staggerBreak");
+      this.forbidSpell(king);
+    }
+    // NEMESIS RULE — the cracking ice (phase 2+): stand still too long and the
+    // lake opens under you. The court allows no statues.
+    if (king.phase >= 2) {
+      for (const hero of this.livingHeroes()) {
+        const rec = this.stillness[hero.id] ?? { x: hero.x, y: hero.y, t: 0 };
+        if (Math.hypot(hero.x - rec.x, hero.y - rec.y) < 7) {
+          rec.t += dt;
+          if (rec.t > 2.6) {
+            this.telegraphs.push({ x: hero.x, y: hero.y, radius: 55, time: 0, duration: 1.1, owner: king, kind: "sweep" });
+            this.fx.floatText(hero.x, hero.y - hero.radius - 26, "the ice cracks!", "#b8e0f0", 12);
+            audio.play("frost");
+            rec.t = -1.5; // grace after each crack
+          }
+        } else {
+          rec.x = hero.x;
+          rec.y = hero.y;
+          rec.t = Math.max(0, rec.t - dt);
+        }
+        this.stillness[hero.id] = rec;
+      }
     }
     // HAIL: ice falls where heroes stand
     this.rimeHail -= dt;
@@ -2963,14 +3057,63 @@ export class Battle {
     }
     if (phase === 3 && alpha.phase < 3) {
       alpha.phase = 3;
-      this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "FRENZY!", "#ff8a70", 18);
+      this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "THE MOONLIGHT HUNT!", "#c9c2e8", 20);
       alpha.supportTimer = Math.min(alpha.supportTimer, 1.2);
-      // the last of the pack answers the frenzy
       this.fx.ring(alpha.x, alpha.y, 200, "#ff8a70", { width: 4, life: 0.7 });
+      this.fx.ring(alpha.x, alpha.y, 260, "#c9c2e8", { width: 3, life: 0.9 });
       audio.play("howl");
       for (let i = 0; i < 2; i++) this.spawnEnemy("wolf");
+      // set-piece: it leaves the field and falls on you three times from the dark
+      this.moonHunt = { remaining: 3, whiffs: 0, cool: 1.0 };
     }
     if (alpha.phase === 0) alpha.phase = 1;
+
+    // THE MOONLIGHT HUNT: a pure dodge sequence — survive it, or better, embarrass it
+    if (this.moonHunt) {
+      const hunt = this.moonHunt;
+      if (!alpha.leap && !this.telegraphs.some((t) => t.owner === alpha)) {
+        if (hunt.remaining <= 0) {
+          this.moonHunt = null;
+          if (hunt.whiffs >= 3) {
+            // it caught nothing but snow — utterly spent
+            alpha.effects.push(makeEffect("stun", 3.2, 1, null));
+            alpha.effects.push(makeEffect("vulnerable", 3.2, 0.6, null));
+            this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "THE HUNT FAILS!", "#ffe9a3", 20);
+            this.bossStagger += this.bossStaggerMax * 0.5;
+            if (this.bossStagger >= this.bossStaggerMax && alpha === this.bossRef) this.staggerBoss(alpha);
+            audio.play("staggerBreak");
+          } else {
+            alpha.effects.push(makeEffect("stun", 1.2, 1, null));
+            this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "winded…", "#c9c2e8", 14);
+          }
+          alpha.supportTimer = 5;
+        } else {
+          hunt.cool -= dt;
+          if (hunt.cool <= 0) {
+            // vanish to the treeline, then fall out of the dark
+            alpha.x = this.field.right + 160;
+            alpha.y = this.field.top + Math.random() * (this.field.bottom - this.field.top);
+            const heroes = this.livingHeroes();
+            if (heroes.length) {
+              const prey = heroes[Math.floor(Math.random() * heroes.length)];
+              this.telegraphs.push({
+                x: prey.x,
+                y: prey.y,
+                radius: 62,
+                time: 0,
+                duration: this.telegraphTime * 0.75,
+                owner: alpha,
+                kind: "pounce",
+              });
+              audio.play("hiss");
+            }
+            hunt.remaining--;
+            hunt.cool = 0.5;
+          }
+        }
+      }
+      return; // the hunt owns the wolf entirely
+    }
 
     // pounce cadence: supportTimer doubles as the pounce clock
     alpha.supportTimer -= dt;
@@ -3014,9 +3157,51 @@ export class Battle {
         return;
       }
     }
-    // between pounces: normal wolf brawling, steered by threat
-    const taunt = this.effect(alpha, "taunt");
+    // NEMESIS RULE — the pack has no master: while TWO or more packmates live the
+    // Alpha cannot be taunted, and it hunts whoever your line protects least. Thin
+    // the pack, or your tank means nothing to it.
+    const packCount = this.livingEnemies().filter((u) => u !== alpha && (u.enemyKind === "wolf" || u.enemyKind === "frostwolf")).length;
+    const packRules = packCount >= 2;
+    const taunt = packRules ? undefined : this.effect(alpha, "taunt");
+    if (packRules && this.effect(alpha, "taunt") && Math.floor((this.time - dt) * 0.4) !== Math.floor(this.time * 0.4)) {
+      this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "the pack has no master!", "#c9c2e8", 12);
+    }
     let target: Unit | null = taunt && taunt.source && taunt.source.alive ? taunt.source : null;
+    if (!target && packRules) {
+      // it slips past the shield and goes for the soft — but commits to a hunt
+      // for a few breaths rather than flickering between prey
+      this.alphaPick -= dt;
+      if (this.alphaPick <= 0 || !this.alphaPrey || !this.alphaPrey.alive) {
+        this.alphaPick = 4;
+        let low = Infinity;
+        for (const h of this.livingHeroes()) {
+          const v = this.threat[h.id] ?? 0;
+          if (v < low) {
+            low = v;
+            this.alphaPrey = h;
+          }
+        }
+        // the hunted one is TOLD — get them moving
+        if (this.alphaPrey) {
+          this.fx.floatText(this.alphaPrey.x, this.alphaPrey.y - this.alphaPrey.radius - 28, "the Alpha's eyes find you!", "#c9c2e8", 12);
+          this.fx.ring(this.alphaPrey.x, this.alphaPrey.y, this.alphaPrey.radius * 2.6, "#c9c2e8", { width: 2.5, life: 0.8 });
+          audio.play("hiss");
+        }
+      }
+      target = this.alphaPrey;
+      // a stalk, not a sprint — the soft target can run, and the pack can be thinned
+      if (target) {
+        alpha.aggro = target;
+        const dist = unitDist(alpha, target);
+        if (dist > alpha.stats.range + target.radius - 4) {
+          this.moveToward(alpha, target, dt, alpha.stats.range + target.radius - 8, 0.8);
+          return;
+        }
+        alpha.facing = target.x >= alpha.x ? 1 : -1;
+        if (alpha.attackTimer <= 0 && alpha.windup <= 0) this.startAttack(alpha, target);
+        return;
+      }
+    }
     if (!target) target = this.topThreat(alpha.aggro && alpha.aggro.alive ? alpha.aggro : null);
     if (!target && alpha.aggro && alpha.aggro.alive) target = alpha.aggro;
     if (!target) target = this.nearestFighter(alpha);
@@ -3038,6 +3223,40 @@ export class Battle {
    *  whoever hurts it most — threat and taunts steer it, not the healer's hp bar. */
   private updateOgreRage(ogre: Unit, _dt: number): void {
     const frac = ogre.hp / ogre.stats.maxHp;
+    // SET-PIECE @66%: he rips the wrecked cart loose and drags it across the
+    // field in three sweeping lanes — readable gaps, if you move NOW
+    if (frac < 0.66 && !this.ogreCart) {
+      this.ogreCart = true;
+      this.fx.floatText(ogre.x, ogre.y - ogre.radius * 3, "RIPS THE CART LOOSE!", "#ffb4a0", 18);
+      this.fx.addShake(8);
+      audio.play("roar");
+      const top = this.field.top;
+      const span = this.field.bottom - top;
+      [0.18, 0.52, 0.86].forEach((fr, i) => {
+        this.telegraphs.push({
+          x: this.field.left + 190 + i * 150,
+          y: top + span * fr,
+          radius: 95,
+          time: 0,
+          duration: this.telegraphTime + 0.5 + i * 0.7,
+          owner: ogre,
+          kind: "sweep",
+        });
+      });
+    }
+    // SET-PIECE @33%: the belly-flop — a huge promise, and a huge mistake to miss
+    if (frac < 0.33 && !this.ogreFlop) {
+      this.ogreFlop = true;
+      const heroes = this.livingHeroes();
+      if (heroes.length) {
+        const cx = heroes.reduce((a, h) => a + h.x, 0) / heroes.length;
+        const cy = heroes.reduce((a, h) => a + h.y, 0) / heroes.length;
+        const at = this.clampToField({ x: cx, y: cy }, 40);
+        this.telegraphs.push({ x: at.x, y: at.y, radius: 150, time: 0, duration: this.telegraphTime + 0.9, owner: ogre, kind: "sweep" });
+        this.fx.floatText(ogre.x, ogre.y - ogre.radius * 3, "HE LEAPS!", "#ff8a70", 20);
+        audio.play("roar");
+      }
+    }
     if (frac < 0.55 && ogre.phase === 0) {
       ogre.phase = 1;
       ogre.effects.push(makeEffect("haste", 999, 1.5, null));
@@ -3122,7 +3341,8 @@ export class Battle {
       this.spawnEnemy("goblin");
       this.spawnEnemy("archer");
     }
-    // PHASE 3 — no quarter: faster, angrier, and melee blows are answered
+    // PHASE 3 — no quarter: faster, angrier, and melee blows are answered.
+    // SET-PIECE: he plants the war banner — smash it or fight his whole rage
     if (frac < 0.33 && lord.phase < 3) {
       lord.phase = 3;
       this.fx.floatText(lord.x, lord.y - lord.radius * 3, "NO QUARTER!", "#ff5a48", 20);
@@ -3130,6 +3350,30 @@ export class Battle {
       this.fx.addShake(9);
       this.hitstop = Math.max(this.hitstop, 0.09);
       audio.play("roar");
+      if (!this.bannerPlanted) {
+        this.bannerPlanted = true;
+        const at = this.clampToField({ x: lord.x + 70, y: lord.y }, 16);
+        this.spawnEnemy("warbanner", { x: at.x, y: at.y });
+        this.fx.floatText(at.x, at.y - 40, "PLANTS THE WAR BANNER!", "#ff8a70", 16);
+        this.fx.ring(at.x, at.y, 220, "#9a2f28", { width: 4, life: 0.8 });
+        audio.play("warhorn");
+      }
+    }
+    // NEMESIS RULE — the warlord's discipline: bunch up for long and he calls a
+    // volley down on the cluster. Spread, or eat axes together.
+    const disciplined = this.livingHeroes();
+    const clustered = disciplined.filter((h) => disciplined.some((o) => o !== h && Math.hypot(o.x - h.x, o.y - h.y) < 70));
+    this.clusterCool -= dt;
+    if (clustered.length >= 2) this.clusterTime += dt;
+    else this.clusterTime = Math.max(0, this.clusterTime - dt * 2);
+    if (this.clusterTime > 3 && this.clusterCool <= 0 && !this.effect(lord, "stun")) {
+      this.clusterCool = 9;
+      this.clusterTime = 0;
+      for (const h of clustered.slice(0, 3)) {
+        this.telegraphs.push({ x: h.x, y: h.y, radius: 48, time: 0, duration: this.telegraphTime * 0.9, owner: lord, kind: "sweep" });
+      }
+      this.fx.floatText(lord.x, lord.y - lord.radius * 3, "SCATTER!", "#ffb4a0", 17);
+      audio.play("warhorn");
     }
     // SHIELDWALL: he plants and weathers the storm — hold your burst
     this.warlordWall -= dt;
@@ -3225,20 +3469,33 @@ export class Battle {
           // executioner's arc crashes down where it was promised (thrown axes bite lighter)
           const lord = mark.owner;
           const isAxe = mark.radius <= 60;
+          const isFlop = lord.enemyKind === "ogre" && mark.radius > 120;
           lord.lungeDir = this.normalize({ x: mark.x - lord.x, y: mark.y - lord.y });
           lord.lunge = 1;
+          let struck = 0;
           for (const hero of this.livingHeroes()) {
             if (Math.hypot(hero.x - mark.x, hero.y - mark.y) < mark.radius + hero.radius * 0.5) {
-              this.damage(hero, lord.stats.damage * (isAxe ? 0.75 : 1.5), lord);
+              this.damage(hero, lord.stats.damage * (isFlop ? 1.6 : isAxe ? 0.75 : 1.5), lord);
               if (hero.alive) hero.effects.push(makeEffect("slow", 1.5, isAxe ? 0.25 : 0.35, lord));
+              struck++;
             }
+          }
+          // dodging is a weapon: a promise that finds nobody costs the boss poise
+          if (struck === 0 && lord === this.bossRef && this.bossStaggerMax > 0) {
+            this.bossStagger += this.bossStaggerMax * (isFlop ? 0.5 : 0.18);
+            this.fx.floatText(mark.x, mark.y - 20, isFlop ? "FACE-FIRST!" : "wide open!", "#ffe9a3", isFlop ? 18 : 14);
+            if (isFlop && lord.alive) {
+              lord.effects.push(makeEffect("stun", 2.6, 1, null));
+              lord.effects.push(makeEffect("vulnerable", 2.6, 0.45, null));
+            }
+            if (this.bossStagger >= this.bossStaggerMax) this.staggerBoss(lord);
           }
           this.fx.slash(mark.x, mark.y - 10, Math.PI * 0.1, mark.radius * 0.8, "#ff9a85", Math.PI * 1.6);
           this.fx.ring(mark.x, mark.y, mark.radius + 10, "#ff8a70", { width: 5, life: 0.5 });
           this.fx.burst(mark.x, mark.y, "#c98a5a", 20, 190, { gravity: 200 });
-          this.fx.addShake(10);
+          this.fx.addShake(isFlop ? 12 : 10);
           this.hitstop = Math.max(this.hitstop, 0.08);
-          this.zoomPunch = Math.max(this.zoomPunch, 0.9);
+          this.zoomPunch = Math.max(this.zoomPunch, isFlop ? 1.1 : 0.9);
           audio.play("thud");
           continue;
         }
@@ -3312,9 +3569,11 @@ export class Battle {
     alpha.lungeDir = { x: alpha.facing, y: 0 };
     alpha.lunge = 1;
     let struck = 0;
+    // hunt-dives fall lighter — three in a row must be survivable without dodging every one
+    const pounceMult = this.moonHunt ? 1.2 : 1.7;
     for (const hero of this.livingHeroes()) {
       if (Math.hypot(hero.x - x, hero.y - y) < radius + hero.radius * 0.5) {
-        this.damage(hero, alpha.stats.damage * 1.7, alpha);
+        this.damage(hero, alpha.stats.damage * pounceMult, alpha);
         struck++;
       }
     }
@@ -3330,12 +3589,13 @@ export class Battle {
     this.hitstop = Math.max(this.hitstop, 0.07);
     this.zoomPunch = Math.max(this.zoomPunch, 1);
     audio.play("thud");
-    // frenzy leaves the alpha exhausted: your window
-    if (alpha.phase === 3) {
+    // frenzy leaves the alpha exhausted: your window (the hunt has its own reckoning)
+    if (alpha.phase === 3 && !this.moonHunt) {
       alpha.effects.push(makeEffect("stun", 2.4, 1, null));
       alpha.effects.push(makeEffect("vulnerable", 2.4, 0.75, null));
       this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "exhausted!", "#ffe9a3", 15);
     }
+    if (this.moonHunt && struck === 0) this.moonHunt.whiffs++;
   }
 
   /** Bosses opening a fight square up to the nearest FIGHTER — never the mender by default. */

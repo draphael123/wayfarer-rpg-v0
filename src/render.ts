@@ -2431,6 +2431,7 @@ const ENEMY_COLORS: Record<string, { body: string; shade: string; trim: string }
   shieldbearer: { body: "#7a6a4a", shade: "#5c503844", trim: "#aab4c2" },
   harrier: { body: "#8a7a9c", shade: "#6a5e7c44", trim: "#d8cfc0" },
   drummer: { body: "#a05c3c", shade: "#7c462e44", trim: "#e8a05a" },
+  warbanner: { body: "#9a2f28", shade: "#742420", trim: "#5a4a52" },
 };
 
 function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
@@ -2770,6 +2771,57 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   }
   if (kind === "harrier") {
     drawHarrier(ctx, unit, time);
+    return;
+  }
+  if (kind === "warbanner") {
+    // Gorehulk's standard: a spear-shaft driven into the dirt, rag snapping
+    const bx = unit.x;
+    const gy = unit.y;
+    ctx.beginPath();
+    ctx.ellipse(bx, gy + 2, 16, 5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(20, 14, 30, 0.3)";
+    ctx.fill();
+    ctx.strokeStyle = "#4a3a30";
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(bx, gy);
+    ctx.lineTo(bx, gy - 64);
+    ctx.stroke();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    const wave = Math.sin(time * 5 + unit.id) * 4;
+    const rag = new Path2D();
+    rag.moveTo(bx + 2, gy - 62);
+    rag.quadraticCurveTo(bx + 22, gy - 58 + wave, bx + 38, gy - 52 + wave * 1.4);
+    rag.lineTo(bx + 30, gy - 44 + wave);
+    rag.lineTo(bx + 36, gy - 38 + wave * 0.8);
+    rag.lineTo(bx + 2, gy - 36);
+    rag.closePath();
+    shaded(ctx, rag, "#9a2f28", 1, bx + 18, gy - 48, 20, 2.2);
+    // the lord's crude sigil
+    ctx.strokeStyle = "#e8ddc8";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bx + 10, gy - 56);
+    ctx.lineTo(bx + 20, gy - 44);
+    ctx.moveTo(bx + 20, gy - 56);
+    ctx.lineTo(bx + 10, gy - 44);
+    ctx.stroke();
+    // spearhead + rage pulse
+    ctx.beginPath();
+    ctx.moveTo(bx - 3, gy - 64);
+    ctx.lineTo(bx, gy - 76);
+    ctx.lineTo(bx + 3, gy - 64);
+    ctx.closePath();
+    outlined(ctx, "#8a939e", 1.6);
+    if (unit.castGlow > 0) {
+      ctx.strokeStyle = `rgba(255, 90, 72, ${unit.castGlow})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(bx, gy - 40, 30 + (0.5 - unit.castGlow) * 60, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     return;
   }
   const pose = poseOf(unit, time);

@@ -19,7 +19,8 @@ export type EnemyKind =
   | "stalker"
   | "shieldbearer"
   | "harrier"
-  | "drummer";
+  | "drummer"
+  | "warbanner";
 
 export interface Vec {
   x: number;

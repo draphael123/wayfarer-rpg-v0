@@ -518,6 +518,10 @@ export const ABILITIES: AbilityDef[] = [
   },
 ];
 
+// Battleheart pacing: every cast is a decision. Cooldowns stretched across the
+// board — the battle side compensates by making each cast land harder.
+for (const a of ABILITIES) a.cooldown = Math.round(a.cooldown * 2.5);
+
 export function abilityById(id: string): AbilityDef | undefined {
   return ABILITIES.find((a) => a.id === id);
 }
@@ -756,7 +760,7 @@ export const ARMOR_ACTIVES: Record<ArmorFamily, AbilityDef> = {
     name: "Surge",
     gate: { attr: "int", value: 0 },
     targeting: "instant",
-    cooldown: 24,
+    cooldown: 30,
     color: "#b48ae8",
     icon: "chainspark",
     blurb: "Cloth skill: a rush of focus shaves seconds off this hero's cooldowns.",
@@ -766,7 +770,7 @@ export const ARMOR_ACTIVES: Record<ArmorFamily, AbilityDef> = {
     name: "Tumble",
     gate: { attr: "dex", value: 0 },
     targeting: "instant",
-    cooldown: 18,
+    cooldown: 24,
     color: "#8ed081",
     icon: "rush",
     blurb: "Leather skill: roll clear — shed the foes' attention and sprint briefly.",
@@ -776,7 +780,7 @@ export const ARMOR_ACTIVES: Record<ArmorFamily, AbilityDef> = {
     name: "Rally",
     gate: { attr: "vit", value: 0 },
     targeting: "instant",
-    cooldown: 26,
+    cooldown: 32,
     color: "#9fd4e8",
     icon: "secondwind",
     blurb: "Mail skill: a steadying shout mends this hero and allies close by.",
@@ -786,7 +790,7 @@ export const ARMOR_ACTIVES: Record<ArmorFamily, AbilityDef> = {
     name: "Brace",
     gate: { attr: "vit", value: 0 },
     targeting: "instant",
-    cooldown: 22,
+    cooldown: 28,
     color: "#c9d2dd",
     icon: "stoneskin",
     blurb: "Plate skill: plant your feet — take greatly reduced harm for a few seconds.",
@@ -1687,6 +1691,22 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     trim: "#e8a05a",
     lore: "It carries no blade. It doesn't need one — every beat of the hide drum puts murder in its neighbors' hands.",
     habit: "Each drumbeat quickens every foe near it. Silence the drum first.",
+  },
+
+  warbanner: {
+    name: "War Banner",
+    maxHp: 240,
+    damage: 0,
+    range: 0,
+    attackCooldown: 99,
+    speed: 0,
+    armor: 0,
+    radius: 14,
+    xp: 20,
+    body: "#9a2f28",
+    trim: "#5a4a52",
+    lore: "Gorehulk's standard, driven into the dirt. While it stands, every wretch under it fights like two.",
+    habit: "Planted at a third of the warlord's strength. It pulses rage into every foe near it — smash it fast.",
   },
 
   ogre: {
