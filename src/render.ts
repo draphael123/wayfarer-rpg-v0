@@ -1077,6 +1077,176 @@ function flashOverlay(ctx: CanvasRenderingContext2D, unit: Unit, cx: number, cy:
 let figureMode = false;
 
 /**
+ * Living title backdrop: the recruited band idles around a campfire under a
+ * starry sky. Drawn behind the DOM menus every frame.
+ */
+export function drawTitleDiorama(ctx: CanvasRenderingContext2D, save: SaveData, w: number, h: number, time: number): void {
+  const horizon = h * 0.46;
+  // night sky
+  const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+  sky.addColorStop(0, "#141127");
+  sky.addColorStop(1, "#2b2344");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, w, horizon + 2);
+  // stars
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  for (let i = 0; i < 40; i++) {
+    const sx = hash01(i * 3.1) * w;
+    const sy = hash01(i * 7.7) * horizon * 0.9;
+    ctx.globalAlpha = 0.2 + Math.abs(Math.sin(time * 1.4 + i * 2.2)) * 0.6;
+    ctx.fillRect(sx, sy, 1.5, 1.5);
+  }
+  ctx.globalAlpha = 1;
+  // moon
+  ctx.fillStyle = "#e8e6f5";
+  ctx.beginPath();
+  ctx.arc(w * 0.82, horizon * 0.3, 17, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#141127";
+  ctx.beginPath();
+  ctx.arc(w * 0.82 - 7, horizon * 0.3 - 4, 14, 0, Math.PI * 2);
+  ctx.fill();
+  // hills + ground
+  ctx.fillStyle = "#1d1a33";
+  ctx.beginPath();
+  ctx.moveTo(0, horizon + 2);
+  for (let x = 0; x <= w; x += 12) ctx.lineTo(x, horizon - 20 - Math.sin(x * 0.006 + 2) * 16 - Math.sin(x * 0.017) * 7);
+  ctx.lineTo(w, horizon + 2);
+  ctx.closePath();
+  ctx.fill();
+  const ground = ctx.createLinearGradient(0, horizon, 0, h);
+  ground.addColorStop(0, "#232338");
+  ground.addColorStop(1, "#17141f");
+  ctx.fillStyle = ground;
+  ctx.fillRect(0, horizon, w, h - horizon);
+  // pines silhouetted on the ridge
+  ctx.fillStyle = "#151228";
+  for (let i = 0; i < 8; i++) {
+    const tx = hash01(i * 13.7) * w;
+    const ty = horizon - 14 - Math.sin(tx * 0.006 + 2) * 16;
+    const th = 22 + hash01(i * 5.1) * 20;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty - th);
+    ctx.lineTo(tx - th * 0.36, ty);
+    ctx.lineTo(tx + th * 0.36, ty);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // campfire
+  const fx2 = w * 0.5;
+  const fy2 = h * 0.76;
+  const flick = 0.85 + Math.sin(time * 9) * 0.08 + Math.sin(time * 23.7) * 0.07;
+  const glow = ctx.createRadialGradient(fx2, fy2 - 8, 4, fx2, fy2 - 8, 150 * flick);
+  glow.addColorStop(0, "rgba(255, 170, 80, 0.34)");
+  glow.addColorStop(1, "rgba(255, 150, 60, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(fx2 - 160, fy2 - 160, 320, 320);
+  // logs
+  ctx.save();
+  ctx.translate(fx2, fy2 + 2);
+  for (const a of [-0.42, 0.42]) {
+    ctx.save();
+    ctx.rotate(a);
+    roundRect(ctx, -16, -3, 32, 6, 3);
+    outlined(ctx, "#4a3626", 1.8);
+    ctx.restore();
+  }
+  ctx.restore();
+  // flames: three flickering teardrops
+  for (const [off, scale, color] of [
+    [0, 1, "#ff9b42"],
+    [-5, 0.65, "#ffc46b"],
+    [5, 0.55, "#ffc46b"],
+  ] as [number, number, string][]) {
+    const fl = flick + Math.sin(time * 13 + off) * 0.12;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(fx2 + off, fy2 - 2);
+    ctx.quadraticCurveTo(fx2 + off - 7 * scale, fy2 - 12 * scale * fl, fx2 + off + Math.sin(time * 11 + off) * 2.4, fy2 - 26 * scale * fl);
+    ctx.quadraticCurveTo(fx2 + off + 7 * scale, fy2 - 12 * scale * fl, fx2 + off, fy2 - 2);
+    ctx.fill();
+  }
+  // sparks drifting up
+  ctx.fillStyle = "#ffce8a";
+  for (let i = 0; i < 6; i++) {
+    const cyc = (time * 26 + i * 21) % 70;
+    ctx.globalAlpha = Math.max(0, 1 - cyc / 70) * 0.8;
+    ctx.beginPath();
+    ctx.arc(fx2 + Math.sin(time * 2 + i * 4) * (6 + cyc * 0.24), fy2 - 12 - cyc, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // the band, gathered round
+  const roster = save.heroes.map((hs, i) => ({ hs, i })).filter(({ hs }) => hs.recruited).slice(0, 6);
+  figureMode = true;
+  roster.forEach(({ i }, at) => {
+    const side = at % 2 === 0 ? -1 : 1;
+    const rank = Math.floor(at / 2);
+    const ux = fx2 + side * (62 + rank * 52);
+    const uy = fy2 + 8 + rank * 9;
+    const hs = save.heroes[i];
+    const oathDef = callingById(hs.calling);
+    const active = oathDef && callingEligible(oathDef, hs.attrs) ? hs.calling : null;
+    const mock = {
+      id: i + 40,
+      name: HEROES[i].name,
+      team: "hero",
+      heroIndex: i,
+      enemyKind: null,
+      calling: active,
+      advCalling: active ? hs.advCalling : null,
+      ultCharge: 0,
+      entered: true,
+      x: ux,
+      y: uy,
+      radius: 13,
+      stats: deriveStats(hs.attrs, hs.weaponTier, hs.armorTier, hs.talents, hs.trinket, active, active ? hs.advCalling : null),
+      hp: 1,
+      attackTimer: 0,
+      moveTarget: null,
+      attackTarget: null,
+      healTarget: null,
+      stance: "attack",
+      autoOrder: false,
+      abilities: [],
+      effects: [],
+      facing: (side < 0 ? 1 : -1) as 1 | -1,
+      bobPhase: 0,
+      lunge: 0,
+      lungeDir: { x: 0, y: 0 },
+      hitFlash: 0,
+      castGlow: 0,
+      channelBeam: 0,
+      deathTime: 0,
+      alive: true,
+      aggro: null,
+      supportTimer: 0,
+      phase: 0,
+      windup: 0,
+      pendingTarget: null,
+      alert: 0,
+      celebrate: false,
+      idleTimer: 0,
+      idleAnim: 0,
+    } as unknown as Unit;
+    mock.hp = mock.stats.maxHp;
+    drawHero(ctx, mock, save, false, time + i * 1.7);
+  });
+  figureMode = false;
+  // warm firelight kisses the near ground
+  ctx.globalAlpha = 0.5;
+  const warm = ctx.createRadialGradient(fx2, fy2, 6, fx2, fy2, 120);
+  warm.addColorStop(0, "rgba(255, 160, 70, 0.22)");
+  warm.addColorStop(1, "rgba(255, 160, 70, 0)");
+  ctx.fillStyle = warm;
+  ctx.beginPath();
+  ctx.ellipse(fx2, fy2 + 4, 130, 44, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  drawVignette(ctx, w, h);
+}
+
+/**
  * Full-body hero render for menu screens — the real in-battle drawing with
  * live weapon morph and armor tier, minus combat chrome. `t` animates idle.
  */
@@ -1090,7 +1260,7 @@ export function drawHeroFigure(
   const hero = save.heroes[heroIndex];
   const oathDef = callingById(hero.calling);
   const activeOath = oathDef && callingEligible(oathDef, hero.attrs) ? hero.calling : null;
-  const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, activeOath);
+  const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null);
   const radius = 13;
   const scale = canvas.height / (radius * 3.7 * 1.55);
   const unit = {
@@ -1100,6 +1270,8 @@ export function drawHeroFigure(
     heroIndex,
     enemyKind: null,
     calling: activeOath,
+    advCalling: activeOath ? hero.advCalling : null,
+    entered: true,
     x: canvas.width / 2 / scale,
     y: canvas.height / scale - radius * 0.9,
     radius,

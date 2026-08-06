@@ -87,7 +87,8 @@ export class Battle {
       // an oath only holds while its stat requirements are still met
       const sworn = callingById(heroSave.calling);
       const oath = sworn && callingEligible(sworn, heroSave.attrs) ? sworn : null;
-      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier, heroSave.talents, heroSave.trinket, oath?.id ?? null);
+      const advanced = oath ? heroSave.advCalling : null;
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier, heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced);
       const abilities: AbilityState[] = heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d)
@@ -100,7 +101,9 @@ export class Battle {
         heroIndex: i,
         enemyKind: null,
         calling: oath?.id ?? null,
+        advCalling: advanced,
         ultCharge: 0,
+        entered: true,
         x: pos.x,
         y: pos.y,
         radius: 15,
@@ -168,7 +171,9 @@ export class Battle {
       heroIndex: -1,
       enemyKind: kind,
       calling: null,
+      advCalling: null,
       ultCharge: 0,
+      entered: false,
       x,
       y,
       radius: def.radius,
@@ -298,6 +303,8 @@ export class Battle {
     if (unit.team === "enemy") interval /= this.enemyHaste;
     // Ranger skirmisher: faster shots while nothing is in their face
     if (unit.calling === "ranger" && !this.nearestEnemyWithin(unit, 70)) interval /= 1.15;
+    // Berserker: the red mist quickens once blood is drawn
+    if (unit.advCalling === "berserker" && unit.hp < unit.stats.maxHp * 0.65) interval /= 1.25;
     return interval;
   }
 
@@ -317,6 +324,24 @@ export class Battle {
     if (guard) amount *= 1 - guard.power;
     // Vanguard holds the line: sturdier while an enemy is at arm's reach
     if (target.calling === "vanguard" && this.nearestEnemyWithin(target, 60)) amount *= 0.9;
+    // Bulwark Saint: allies shelter in the living wall's shadow
+    if (
+      target.team === "hero" &&
+      this.livingHeroes().some((h) => h !== target && h.advCalling === "bulwarkSaint" && Math.hypot(h.x - target.x, h.y - target.y) < 90)
+    ) {
+      amount *= 0.92;
+    }
+    // Warbreaker: melee blows are answered in kind
+    if (
+      target.advCalling === "warbreaker" &&
+      source &&
+      source.team === "enemy" &&
+      source.alive &&
+      source.stats.range <= 90 &&
+      !opts.spell
+    ) {
+      this.damage(source, rawAmount * 0.25, target, { spell: true, color: "#e0a34b" });
+    }
     amount = Math.max(1, Math.round(amount * (0.9 + Math.random() * 0.2)));
     const shield = this.effect(target, "shield");
     if (shield) {
@@ -445,7 +470,13 @@ export class Battle {
     if (unit.radius > 20) this.zoomPunch = Math.max(this.zoomPunch, 0.8);
     // kills surge the slayer's ultimate — Tricksters feast on them
     if (unit.team === "enemy" && killer?.team === "hero") {
-      this.gainUlt(killer, killer.calling === "trickster" ? 18 : 6);
+      this.gainUlt(killer, killer.advCalling === "spellthief" ? 25 : killer.calling === "trickster" ? 18 : 6);
+      // Spellthief: every kill shaves a second off the spell cooldowns
+      if (killer.advCalling === "spellthief") {
+        for (const ab of killer.abilities) {
+          if (!ab.ult && ab.timer > 0) ab.timer = Math.max(0, ab.timer - 1);
+        }
+      }
       // quick kills climb a chime ladder
       const streak = this.killStreaks.get(killer.id);
       const n = streak && this.time - streak.t < 4 ? streak.n + 1 : 1;
@@ -683,6 +714,19 @@ export class Battle {
         hero.effects.push(makeEffect("guard", 5, 0.35, hero));
         hero.effects = hero.effects.filter((e) => e.kind !== "shield");
         hero.effects.push(makeEffect("shield", 6, 20 + attrs.vit * 3, hero));
+        // Bulwark Saint: the challenge shelters the whole band
+        if (hero.advCalling === "bulwarkSaint") {
+          for (const ally of this.livingHeroes()) {
+            if (ally === hero) continue;
+            ally.effects = ally.effects.filter((e) => e.kind !== "shield");
+            ally.effects.push(makeEffect("shield", 6, Math.round(ally.stats.maxHp * 0.15), hero));
+            this.fx.burst(ally.x, ally.y - 16, "#e0d4b8", 8, 80, { glow: true });
+          }
+        }
+        // Warbreaker: the challenge whips you into a fury
+        if (hero.advCalling === "warbreaker") {
+          hero.effects.push(makeEffect("haste", 5, 1.35, hero));
+        }
         this.fx.ring(hero.x, hero.y, 175, "#e0a34b", { width: 5, life: 0.6 });
         this.fx.ring(hero.x, hero.y, 100, "#ffdf9e", { width: 3, life: 0.45 });
         this.fx.burst(hero.x, hero.y - 22, "#e0a34b", 20, 170, { glow: true });
@@ -693,12 +737,16 @@ export class Battle {
       }
       case "whirlwind": {
         const dmg = hero.stats.damage * 2.3;
+        const reach = hero.advCalling === "blademaster" ? 110 : 85;
+        let dealt = 0;
         let hitAny = false;
         for (const enemy of this.livingEnemies()) {
           const d = Math.hypot(enemy.x - hero.x, enemy.y - hero.y);
-          if (d < 85 + enemy.radius) {
+          if (d < reach + enemy.radius) {
             this.damage(enemy, dmg, hero, { spell: true, color: "#ff9a85" });
+            dealt += dmg;
             if (enemy.alive) {
+              if (hero.advCalling === "blademaster") enemy.effects.push(makeEffect("burn", 3, 3, hero));
               enemy.effects.push(makeEffect("stun", 0.7, 1, hero));
               const away = this.normalize({ x: enemy.x - hero.x, y: enemy.y - hero.y });
               const shoved = this.clampToField({ x: enemy.x + away.x * 36, y: enemy.y + away.y * 36 }, enemy.radius);
@@ -708,9 +756,13 @@ export class Battle {
             hitAny = true;
           }
         }
+        // Berserker: the spin drinks deep
+        if (hero.advCalling === "berserker" && dealt > 0) {
+          this.heal(hero, dealt * 0.4, true, hero);
+        }
         this.fx.slash(hero.x, hero.y - 12, 0, 66, "#ff9a85", Math.PI * 2);
         this.fx.slash(hero.x, hero.y - 12, Math.PI, 50, "#ffd0c5", Math.PI * 2);
-        this.fx.ring(hero.x, hero.y, 100, "#d1543f", { width: 5, life: 0.5 });
+        this.fx.ring(hero.x, hero.y, reach + 15, "#d1543f", { width: 5, life: 0.5 });
         this.fx.addShake(hitAny ? 9 : 4);
         this.hitstop = Math.max(this.hitstop, hitAny ? 0.08 : 0);
         this.zoomPunch = Math.max(this.zoomPunch, 0.7);
@@ -725,11 +777,16 @@ export class Battle {
         }
         const at = this.clampToField(aim, 0);
         const dmg = 14 + attrs.dex * 3.2;
+        const spread = hero.advCalling === "hawkeye" ? 125 : 95;
         for (const enemy of this.livingEnemies()) {
-          if (Math.hypot(enemy.x - at.x, enemy.y - at.y) < 95 + enemy.radius) {
+          if (Math.hypot(enemy.x - at.x, enemy.y - at.y) < spread + enemy.radius) {
             this.damage(enemy, dmg, hero, { spell: true, color: "#cfe8b0" });
             if (enemy.alive) enemy.effects.push(makeEffect("slow", 2, 0.35, hero));
           }
+        }
+        // Strider: the storm leaves a chilling field behind
+        if (hero.advCalling === "strider") {
+          this.zones.push({ x: at.x, y: at.y, radius: 80, time: 0, duration: 4, kind: "frost", power: 0.35, dps: 1.5, from: hero });
         }
         // arrowfall
         for (let i = 0; i < 20; i++) {
@@ -758,6 +815,18 @@ export class Battle {
         const dmg = (10 + attrs.int * 2.6) * (0.5 + hero.stats.spellPower * 0.5);
         for (const { e } of targets) {
           this.damage(e, dmg, hero, { spell: true, color: "#b79aee" });
+          // Runebinder: the bolts brand their victims
+          if (hero.advCalling === "runebinder" && e.alive) {
+            e.effects.push(makeEffect("burn", 4, 2 + attrs.int * 0.4, hero));
+          }
+          // Stormcaller: the bolts arc onward
+          if (hero.advCalling === "stormcaller") {
+            const near = this.livingEnemies().find((o) => o !== e && Math.hypot(o.x - e.x, o.y - e.y) < 90);
+            if (near) {
+              this.damage(near, dmg * 0.4, hero, { spell: true, color: "#d8c5ff" });
+              this.fx.burst(near.x, near.y - 12, "#d8c5ff", 6, 90, { glow: true });
+            }
+          }
           this.fx.burst(e.x, e.y - 14, "#b79aee", 10, 120, { glow: true });
           // bolt streak from caster to victim
           const steps = 6;
@@ -781,9 +850,10 @@ export class Battle {
           y: at.y,
           radius: 92,
           time: 0,
-          duration: 6.5,
+          duration: hero.advCalling === "oracle" ? 8.5 : 6.5,
           kind: "sanctuary",
-          power: 0,
+          // Lightwardens consecrate ground that burns the unworthy
+          power: hero.advCalling === "lightwarden" ? 5 + attrs.spi * 1.2 : 0,
           dps: 9 + attrs.spi * 2.2,
           from: hero,
         });
@@ -798,6 +868,15 @@ export class Battle {
         const from = { x: hero.x, y: hero.y };
         const to = this.clampToField({ x: hero.x + dir.x * dist, y: hero.y + dir.y * dist }, hero.radius);
         this.fx.burst(from.x, from.y - 14, "#9adeee", 12, 110, { glow: true });
+        // Shadowdancer: the foes you abandon freeze mid-lunge
+        if (hero.advCalling === "shadowdancer") {
+          for (const enemy of this.livingEnemies()) {
+            if (Math.hypot(enemy.x - from.x, enemy.y - from.y) < 120) {
+              enemy.effects.push(makeEffect("stun", 1.1, 1, hero));
+            }
+          }
+          this.fx.ring(from.x, from.y, 120, "#9adeee", { width: 3, life: 0.4 });
+        }
         hero.x = to.x;
         hero.y = to.y;
         hero.moveTarget = null;
@@ -976,6 +1055,13 @@ export class Battle {
           if (Math.floor((this.time - dt) * 1.1) !== Math.floor(this.time * 1.1)) {
             this.fx.burst(unit.x, unit.y - 16, "#f2e7a0", 2, 40, { gravity: -70, glow: true });
           }
+        } else if (unit.team === "enemy" && zone.power > 0) {
+          // Lightwarden ground scorches the unworthy
+          unit.hp -= zone.power * dt;
+          if (unit.hp <= 0) {
+            this.kill(unit, zone.from);
+            return;
+          }
         }
         continue;
       }
@@ -1067,19 +1153,16 @@ export class Battle {
         } else {
           hero.channelBeam = 1;
           this.heal(target, rate * dt, false, hero);
-          // Chaplain's grace: the channel spills onto another wounded ally nearby
+          // Chaplain's grace: the channel spills onto wounded allies nearby
+          // (Oracles reach two; everyone else one)
           if (hero.calling === "chaplain") {
-            let spill: Unit | null = null;
-            let worst = 0.92;
-            for (const ally of this.livingHeroes()) {
-              if (ally === target || ally === hero) continue;
-              const frac = ally.hp / ally.stats.maxHp;
-              if (frac < worst && Math.hypot(ally.x - target.x, ally.y - target.y) < 150) {
-                worst = frac;
-                spill = ally;
-              }
-            }
-            if (spill) this.heal(spill, rate * 0.3 * dt, false, hero);
+            const spillCount = hero.advCalling === "oracle" ? 2 : 1;
+            const candidates = this.livingHeroes()
+              .filter((ally) => ally !== target && ally !== hero && ally.hp / ally.stats.maxHp < 0.92)
+              .filter((ally) => Math.hypot(ally.x - target.x, ally.y - target.y) < 150)
+              .sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)
+              .slice(0, spillCount);
+            for (const ally of candidates) this.heal(ally, rate * 0.3 * dt, false, hero);
           }
           if (Math.floor((this.time - dt) * 1.25) !== Math.floor(this.time * 1.25)) {
             this.fx.floatText(target.x, target.y - target.radius - 14, `+${Math.round(rate * 0.8)}`, "#8ee88b", 12);
@@ -1137,6 +1220,15 @@ export class Battle {
       enemy.x -= this.speedOf(enemy) * 1.8 * dt;
       enemy.bobPhase += dt * 14;
       return;
+    }
+    // crash through the treeline: a burst of leaves and dust on arrival
+    if (!enemy.entered) {
+      enemy.entered = true;
+      this.fx.burst(enemy.x + enemy.radius, enemy.y - 10, "rgba(120, 150, 90, 0.8)", 8, 110, { gravity: 120, size: 3.2, life: 0.5 });
+      this.fx.burst(enemy.x, enemy.y + 2, "rgba(185, 170, 145, 0.7)", 6, 60, { gravity: -30, size: 3 });
+      this.fx.addShake(enemy.radius > 20 ? 4 : 1.5);
+      enemy.lunge = 0.5;
+      enemy.lungeDir = { x: -1, y: 0 };
     }
     // then close most of the gap at a quickened pace so fights start fast
     const nearestForPace = this.nearestHero(enemy);
@@ -1469,9 +1561,11 @@ export class Battle {
       if (this.heroTalentRank(attacker, "executioner") > 0 && target.hp < target.stats.maxHp * 0.25) {
         dmg *= 2;
       }
-      // Reaver: red-handed against the already-bleeding
-      if (attacker.calling === "reaver" && target.hp < target.stats.maxHp * 0.4) {
-        dmg *= 1.2;
+      // Reaver: red-handed against the already-bleeding (Blademasters cut deeper, sooner)
+      if (attacker.calling === "reaver") {
+        const threshold = attacker.advCalling === "blademaster" ? 0.5 : 0.4;
+        const bonus = attacker.advCalling === "blademaster" ? 1.3 : 1.2;
+        if (target.hp < target.stats.maxHp * threshold) dmg *= bonus;
       }
     }
     if (!ranged) {

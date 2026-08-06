@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#151020">
   <title>Wayband — classless party tactics</title>
@@ -27,6 +28,14 @@
     if ("serviceWorker" in navigator && location.protocol === "https:") {
       navigator.serviceWorker.register("sw.js").catch(() => {});
     }
+    // Stash the install prompt so the title screen can offer an Install button.
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      window.__installPrompt = e;
+    });
+    window.addEventListener("appinstalled", () => {
+      window.__installPrompt = null;
+    });
   </script>
 </body>
 </html>

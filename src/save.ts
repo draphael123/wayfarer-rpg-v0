@@ -14,7 +14,7 @@ function defaultHero(index: number): HeroSave {
     .filter((a) => STARTING_SPELLS.includes(a.id))
     .slice(0, MAX_EQUIPPED)
     .map((a) => a.id);
-  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armorTier: 0, talents: {}, trinket: null, calling: null };
+  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armorTier: 0, talents: {}, trinket: null, calling: null, advCalling: null };
 }
 
 export function defaultSave(): SaveData {
@@ -80,6 +80,7 @@ export function loadSave(): SaveData {
       if (!hero.talents || typeof hero.talents !== "object") hero.talents = {};
       if (hero.trinket === undefined) hero.trinket = null;
       if (hero.calling === undefined) hero.calling = null;
+      if (hero.advCalling === undefined) hero.advCalling = null;
     });
     if (typeof parsed.speed !== "number" || parsed.speed < 0.25 || parsed.speed > 2) parsed.speed = 0.5;
     if (!parsed.bestiary || typeof parsed.bestiary !== "object") parsed.bestiary = {};

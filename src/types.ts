@@ -60,7 +60,9 @@ export interface Unit {
   heroIndex: number; // -1 for enemies
   enemyKind: EnemyKind | null;
   calling: string | null; // sworn calling (heroes only, null while the oath is dormant)
+  advCalling: string | null; // advanced branch (null unless the oath is active and advanced)
   ultCharge: number; // 0-100, fills from the calling's role actions
+  entered: boolean; // enemies flip this crashing onto the field (spawn presentation)
   x: number;
   y: number;
   radius: number;
@@ -166,6 +168,7 @@ export interface HeroSave {
   talents: Record<string, number>; // talent id -> rank
   trinket: string | null;
   calling: string | null; // sworn calling id (band level 5+), null = unsworn
+  advCalling: string | null; // advanced branch id (band level 20+), null = not yet advanced
 }
 
 export interface SaveData {

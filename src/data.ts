@@ -260,6 +260,14 @@ export function dominantWeapon(attrs: Attributes): WeaponKind {
 // Callings are a prestige layer ON TOP of the classless build: entry is gated
 // by the stats you chose, nothing about stats/spells/respec ever locks.
 
+export interface AdvCallingDef {
+  id: string;
+  name: string;
+  epithet: string;
+  passive: string; // what the advancement adds on top of the base calling
+  ultNote: string; // how it upgrades the ultimate
+}
+
 export interface CallingDef {
   id: string;
   name: string;
@@ -270,10 +278,13 @@ export interface CallingDef {
   passive: string; // menu description of the always-on perk
   signature: AbilityDef; // charge-based ultimate, exclusive to the calling
   chargeHint: string; // how the ultimate meter fills
+  advanced: [AdvCallingDef, AdvCallingDef]; // level-20 branch choice
 }
 
 export const CALLING_UNLOCK_LEVEL = 5;
 export const CALLING_SWITCH_COST = 150;
+export const ADV_CALLING_LEVEL = 20;
+export const ADV_SWITCH_COST = 300;
 
 const sig = (id: string, name: string, targeting: AbilityDef["targeting"], cooldown: number, color: string, blurb: string): AbilityDef => ({
   id,
@@ -297,6 +308,22 @@ export const CALLINGS: CallingDef[] = [
     passive: "+5% armor, and +10% more while an enemy is at arm's reach.",
     chargeHint: "Charges from damage you take",
     signature: sig("challenge", "Challenge", "instant", 14, "#e0a34b", "Ultimate: every nearby foe must attack you while you brace behind a holy shield."),
+    advanced: [
+      {
+        id: "bulwarkSaint",
+        name: "Bulwark Saint",
+        epithet: "the Living Wall",
+        passive: "Allies near you take 8% less damage.",
+        ultNote: "Challenge also shields every ally for 15% of their health.",
+      },
+      {
+        id: "warbreaker",
+        name: "Warbreaker",
+        epithet: "the Answer in Iron",
+        passive: "Melee attackers take 25% of their blow back as retaliation.",
+        ultNote: "Challenge whips you into a fury: +35% attack speed while it holds.",
+      },
+    ],
   },
   {
     id: "reaver",
@@ -308,6 +335,22 @@ export const CALLINGS: CallingDef[] = [
     passive: "+8% melee damage, +20% more against foes below 40% health.",
     chargeHint: "Charges from damage you deal",
     signature: sig("whirlwind", "Whirlwind", "instant", 12, "#d1543f", "Ultimate: a devastating spin that staggers and shoves everything around you."),
+    advanced: [
+      {
+        id: "berserker",
+        name: "Berserker",
+        epithet: "the Red Mist",
+        passive: "Once bloodied (below 65% health) you attack 25% faster.",
+        ultNote: "Whirlwind drinks deep: heals you for 40% of the damage it deals.",
+      },
+      {
+        id: "blademaster",
+        name: "Blademaster",
+        epithet: "the Edge Incarnate",
+        passive: "Your execute bonus deepens: +30% against foes below half health.",
+        ultNote: "Whirlwind sweeps wider and leaves everything it touches bleeding.",
+      },
+    ],
   },
   {
     id: "ranger",
@@ -319,6 +362,22 @@ export const CALLINGS: CallingDef[] = [
     passive: "+8% move, +6% ranged damage, attack faster while nothing is in your face.",
     chargeHint: "Charges from damage you deal",
     signature: sig("volley", "Volley", "point", 14, "#a8d080", "Ultimate: a storm of arrows that wounds and slows everything under it."),
+    advanced: [
+      {
+        id: "hawkeye",
+        name: "Hawkeye",
+        epithet: "the Far-Death",
+        passive: "Your shots reach 15% further.",
+        ultNote: "Volley blankets a far wider stretch of ground.",
+      },
+      {
+        id: "strider",
+        name: "Strider",
+        epithet: "the Wind That Walks",
+        passive: "Another +8% move speed — nothing catches you.",
+        ultNote: "Volley leaves a chilling field that keeps slowing foes who cross it.",
+      },
+    ],
   },
   {
     id: "arcanist",
@@ -330,6 +389,22 @@ export const CALLINGS: CallingDef[] = [
     passive: "Spells recharge 10% faster and hit 8% harder.",
     chargeHint: "Charges from damage you deal",
     signature: sig("barrage", "Arcane Barrage", "instant", 13, "#b79aee", "Ultimate: hurl five seeking bolts at the nearest enemies."),
+    advanced: [
+      {
+        id: "stormcaller",
+        name: "Stormcaller",
+        epithet: "the Sky's Wrath",
+        passive: "Another +8% spell power.",
+        ultNote: "Barrage bolts arc onward, splashing 40% of their bite to a nearby foe.",
+      },
+      {
+        id: "runebinder",
+        name: "Runebinder",
+        epithet: "the Patient Sigil",
+        passive: "Abilities recharge another 8% faster.",
+        ultNote: "Barrage brands its victims, burning them for several seconds.",
+      },
+    ],
   },
   {
     id: "chaplain",
@@ -341,6 +416,22 @@ export const CALLINGS: CallingDef[] = [
     passive: "+10% healing; your channel spills 30% onto another wounded ally nearby.",
     chargeHint: "Charges from healing you give",
     signature: sig("sanctuary", "Sanctuary", "point", 16, "#f2e7a0", "Ultimate: consecrate ground that swiftly mends every ally standing on it."),
+    advanced: [
+      {
+        id: "lightwarden",
+        name: "Lightwarden",
+        epithet: "the Burning Grace",
+        passive: "Another +8% healing power.",
+        ultNote: "Sanctuary scorches enemies who dare stand in it.",
+      },
+      {
+        id: "oracle",
+        name: "Oracle",
+        epithet: "the Threefold Voice",
+        passive: "Your channel spills onto two allies instead of one.",
+        ultNote: "Sanctuary lingers two seconds longer.",
+      },
+    ],
   },
   {
     id: "trickster",
@@ -355,8 +446,34 @@ export const CALLINGS: CallingDef[] = [
     passive: "+6% move and abilities recharge 6% faster.",
     chargeHint: "Charges fast from kills",
     signature: sig("blink", "Blink", "ray", 11, "#9adeee", "Ultimate: vanish and reappear in a burst of speed, shedding every foe hunting you."),
+    advanced: [
+      {
+        id: "shadowdancer",
+        name: "Shadowdancer",
+        epithet: "the Second Shadow",
+        passive: "Another +6% move speed.",
+        ultNote: "Blink stuns the foes you abandon, frozen mid-lunge at empty air.",
+      },
+      {
+        id: "spellthief",
+        name: "Spellthief",
+        epithet: "the Borrowed Hour",
+        passive: "Kills shave a second off all your spell cooldowns.",
+        ultNote: "Kills feed your ultimate even faster.",
+      },
+    ],
   },
 ];
+
+export function advCallingById(id: string | null | undefined): { adv: AdvCallingDef; parent: CallingDef } | null {
+  if (!id) return null;
+  for (const c of CALLINGS) {
+    for (const adv of c.advanced) {
+      if (adv.id === id) return { adv, parent: c };
+    }
+  }
+  return null;
+}
 
 export function callingById(id: string | null | undefined): CallingDef | null {
   return CALLINGS.find((c) => c.id === id) ?? null;
@@ -366,7 +483,7 @@ export function callingEligible(calling: CallingDef, attrs: Attributes): boolean
   return calling.entry.every((e) => attrs[e.attr] >= e.value);
 }
 
-function callingStatMods(calling?: string | null) {
+function callingStatMods(calling?: string | null, advCalling?: string | null) {
   const m = { meleeDmg: 0, rangedDmg: 0, hpPct: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, startShield: 0 };
   switch (calling) {
     case "vanguard":
@@ -391,12 +508,32 @@ function callingStatMods(calling?: string | null) {
       m.cdr = 0.06;
       break;
   }
+  switch (advCalling) {
+    case "stormcaller":
+      m.spellPower += 0.08;
+      break;
+    case "runebinder":
+      m.cdr += 0.08;
+      break;
+    case "lightwarden":
+      m.healPower += 0.08;
+      break;
+    case "strider":
+      m.moveSpeed += 0.08;
+      break;
+    case "shadowdancer":
+      m.moveSpeed += 0.06;
+      break;
+  }
   return m;
 }
 
-/** Total ability-cooldown reduction from talents, trinket, and calling. */
+/** Total ability-cooldown reduction from talents, trinket, and calling(s). */
 export function cooldownReduction(hero: HeroSave): number {
-  return Math.min(0.5, talentMods(hero.talents).cdr + trinketMods(hero.trinket).cdr + callingStatMods(hero.calling).cdr);
+  return Math.min(
+    0.5,
+    talentMods(hero.talents).cdr + trinketMods(hero.trinket).cdr + callingStatMods(hero.calling, hero.advCalling).cdr,
+  );
 }
 
 export function deriveStats(
@@ -406,10 +543,11 @@ export function deriveStats(
   talents?: Record<string, number>,
   trinket?: string | null,
   calling?: string | null,
+  advCalling?: string | null,
 ): DerivedStats {
   const t = talentMods(talents);
   const k = trinketMods(trinket);
-  const c = callingStatMods(calling);
+  const c = callingStatMods(calling, advCalling);
   const mods = {
     meleeDmg: t.meleeDmg + k.meleeDmg + c.meleeDmg,
     rangedDmg: t.rangedDmg + k.rangedDmg + c.rangedDmg,
@@ -451,6 +589,7 @@ export function deriveStats(
     attackCooldown = 1.35;
   }
   attackCooldown *= 1 - Math.min(0.45, attrs.dex * 0.018);
+  if (advCalling === "hawkeye") range *= 1.15;
   damage += WEAPON_DAMAGE_BONUS[weaponTier];
   damage *= 1 + (weapon === "sword" ? mods.meleeDmg : mods.rangedDmg);
   return {

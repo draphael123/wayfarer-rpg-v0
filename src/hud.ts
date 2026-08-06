@@ -61,6 +61,8 @@ export class Hud {
   hint = "";
   hintTime = 0;
   freshPlayer = false;
+  private aimHintShown = false;
+  private ultHintShown = false;
   private coachStage = 0;
   private lastLivingHeroes = -1;
   private readyFlash: Record<number, number> = {}; // per ability-slot key
@@ -192,8 +194,13 @@ export class Hud {
               y,
             };
             this.showHint(
-              b.ability.def.targeting === "ally" ? "Drag onto an ally, then release" : "Drag to aim, then release",
+              !this.aimHintShown
+                ? "Time slows while you aim — drag out, take your time, release"
+                : b.ability.def.targeting === "ally"
+                  ? "Drag onto an ally, then release"
+                  : "Drag to aim, then release",
             );
+            this.aimHintShown = true;
           }
           return null;
         }
@@ -300,6 +307,10 @@ export class Hud {
         const prev = this.prevTimers[key] ?? 0;
         if (prev > 0 && ability.timer <= 0 && hero.alive) {
           this.readyFlash[key] = 0.6;
+          if (ability.ult && !this.ultHintShown) {
+            this.ultHintShown = true;
+            this.showHint(`${hero.name}'s ULTIMATE is ready — the glowing diamond button!`);
+          }
           if (this.battle.time - this.lastChime > 1.2) {
             audio.play("ready");
             this.lastChime = this.battle.time;
@@ -582,13 +593,23 @@ export class Hud {
     if (c < 2.1 && c > 0.4) {
       const boss = this.battle.bossRef;
       ctx.textAlign = "center";
-      ctx.font = "800 30px Palatino, 'Palatino Linotype', Georgia, serif";
+      ctx.font = "700 34px Cinzel, Palatino, 'Palatino Linotype', Georgia, serif";
       ctx.lineWidth = 6;
       ctx.strokeStyle = "rgba(12, 9, 20, 0.9)";
       const y = this.height * 0.26;
       ctx.strokeText(boss.name.toUpperCase(), this.width / 2, y);
       ctx.fillStyle = "#ff8a70";
       ctx.fillText(boss.name.toUpperCase(), this.width / 2, y);
+      // flanking dashes give the name card some ceremony
+      const nameW = ctx.measureText(boss.name.toUpperCase()).width;
+      ctx.strokeStyle = "rgba(255, 138, 112, 0.55)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(this.width / 2 - nameW / 2 - 48, y - 10);
+      ctx.lineTo(this.width / 2 - nameW / 2 - 14, y - 10);
+      ctx.moveTo(this.width / 2 + nameW / 2 + 14, y - 10);
+      ctx.lineTo(this.width / 2 + nameW / 2 + 48, y - 10);
+      ctx.stroke();
       ctx.font = "600 italic 13px Georgia, serif";
       ctx.fillStyle = "#e6dcc2";
       const tip =

@@ -1,6 +1,9 @@
 import { audio } from "./audio";
 import {
   ABILITIES,
+  ADV_CALLING_LEVEL,
+  ADV_SWITCH_COST,
+  advCallingById,
   CALLINGS,
   CALLING_SWITCH_COST,
   CALLING_UNLOCK_LEVEL,
@@ -460,6 +463,7 @@ export class Menus {
             <button class="toggle-btn" data-act="import-save">${ico("download")} Import save</button>
           </div>
           <button class="toggle-btn" data-act="export-data">${ico("chart")} Export playtest data</button>
+          ${(window as unknown as { __installPrompt?: unknown }).__installPrompt ? `<button class="toggle-btn" data-act="install">${ico("download")} Install app</button>` : ""}
           <button class="toggle-btn danger" data-act="reset">Reset all progress</button>
         </div>
         <div class="credit">drag your heroes · draw your spells · shape your band</div>
@@ -503,6 +507,13 @@ export class Menus {
         this.save.speed = nextSpeed(this.save.speed);
         persist(this.save);
         syncToggles();
+      }
+      if (act === "install") {
+        const holder = window as unknown as { __installPrompt?: { prompt: () => void } | null };
+        holder.__installPrompt?.prompt();
+        holder.__installPrompt = null;
+        audio.play("click");
+        this.renderTitle();
       }
       if (act === "export-save") {
         const code = btoa(unescape(encodeURIComponent(JSON.stringify(this.save))));
@@ -638,6 +649,11 @@ export class Menus {
             ${
               info.level - info.gained < CALLING_UNLOCK_LEVEL && info.level >= CALLING_UNLOCK_LEVEL
                 ? '<div class="levelup-line callings-unlocked">Callings unlocked — each hero may now swear an oath on the Party screen</div>'
+                : ""
+            }
+            ${
+              info.level - info.gained < ADV_CALLING_LEVEL && info.level >= ADV_CALLING_LEVEL
+                ? '<div class="levelup-line callings-unlocked">Advanced callings unlocked — every sworn oath can now deepen down one of two paths</div>'
                 : ""
             }
             <div class="levelup-actions">
@@ -1018,6 +1034,8 @@ export class Menus {
           <div class="shop-note"><strong>🍺 The Tavern</strong> — recruit new heroes to the band. Anyone hired can be rotated in or out of your fighting party of ${PARTY_CAP} on the Party screen.</div>
           <div class="shop-note"><strong>${ico("shield")} The Armory</strong> — buy each hero better weapons (more damage) and armor (more health and protection). Three tiers of each.</div>
           <div class="shop-note"><strong>${ico("spark")} The Spell Shop</strong> — unlock a spell once for the whole band, then assign it to any hero whose attributes meet its bar. Each hero carries up to ${MAX_EQUIPPED} spells.</div>
+          <div class="shop-note"><strong>${ico("banner")} Callings</strong> — at band level ${CALLING_UNLOCK_LEVEL} each hero may swear an oath their stats have earned: an always-on passive, regalia, and an ULTIMATE that charges as they play their role. At level ${ADV_CALLING_LEVEL} every oath deepens down one of two paths. Stats never lock — but drop below an oath's bar and it sleeps.</div>
+          <div class="shop-note"><strong>${ico("skull")} Bosses</strong> — the great foes fight dirty: the ogre hunts your frailest once enraged (a taunt answers it), and marked ground means MOVE. Watch for the crossed blades.</div>
           <div class="shop-note"><strong>${ico("star")} Talents</strong> — every 2 band levels, each hero earns a talent point for the Strength, Dexterity, and Magic trees. Find them on the Party screen.</div>
         </div>
       </div>
@@ -1455,7 +1473,16 @@ export class Menus {
     const hero = save.heroes[index];
     const sworn = callingById(hero.calling);
     const oathHolds = sworn ? callingEligible(sworn, hero.attrs) : false;
-    const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, oathHolds ? hero.calling : null);
+    const advInfo = oathHolds ? advCallingById(hero.advCalling) : null;
+    const stats = deriveStats(
+      hero.attrs,
+      hero.weaponTier,
+      hero.armorTier,
+      hero.talents,
+      hero.trinket,
+      oathHolds ? hero.calling : null,
+      oathHolds ? hero.advCalling : null,
+    );
     const weapon = dominantWeapon(hero.attrs);
     const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
     const inParty = hero.active;
@@ -1469,11 +1496,11 @@ export class Menus {
             <canvas width="64" height="64"></canvas>
           </div>
           <div>
-            <div class="hero-name">${def.name} <em>${sworn ? sworn.epithet : def.title}</em></div>
+            <div class="hero-name">${def.name} <em>${advInfo ? advInfo.adv.epithet : sworn ? sworn.epithet : def.title}</em></div>
             <div class="hero-meta">${
               sworn
                 ? oathHolds
-                  ? `<span class="calling-tag" style="color:${sworn.color}">${sworn.name}</span> · `
+                  ? `<span class="calling-tag" style="color:${sworn.color}">${advInfo ? advInfo.adv.name : sworn.name}</span> · `
                   : `<span class="calling-tag dormant">${sworn.name} — dormant</span> · `
                 : ""
             }${WEAPON_LABEL[weapon]} · ${WEAPON_TIERS[hero.weaponTier].name} / ${ARMOR_TIERS[hero.armorTier].name}</div>
@@ -1507,7 +1534,7 @@ export class Menus {
             ${sworn ? (oathHolds ? `style="border-color:${sworn.color};color:${sworn.color}"` : 'style="border-color:#ff9a85;color:#ff9a85"') : ""}>
             ${
               sworn
-                ? `${ico(sworn.crest)} ${sworn.name}${oathHolds ? "" : " (dormant)"}`
+                ? `${ico(sworn.crest)} ${advInfo ? advInfo.adv.name : sworn.name}${oathHolds ? "" : " (dormant)"}`
                 : save.level >= CALLING_UNLOCK_LEVEL
                   ? "Choose a Calling"
                   : `Calling at band lv ${CALLING_UNLOCK_LEVEL}`
@@ -1574,7 +1601,8 @@ export class Menus {
         const c = callingById(hero.calling);
         return c && callingEligible(c, hero.attrs) ? hero.calling : null;
       };
-      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, effCalling());
+      const effAdv = () => (effCalling() ? hero.advCalling : null);
+      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, effCalling(), effAdv());
       hero.attrs[key] += 1;
       save.unspent[index] -= 1;
       const before = unlocked.length;
@@ -1595,7 +1623,7 @@ export class Menus {
         audio.play("click");
       }
       persist(save);
-      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, effCalling());
+      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, effCalling(), effAdv());
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, statsBefore, statsAfter);
     });
@@ -1689,10 +1717,55 @@ export class Menus {
       cctx.scale(2, 2);
       drawAbilityGlyph(cctx, c.signature.icon, 15, 15, 9, c.color);
       holder.appendChild(canvas);
+      // level-20 advancement: the sworn calling shows its two branches
+      if (isSworn) {
+        const advReady = save.level >= ADV_CALLING_LEVEL;
+        const advWrap = el(`
+          <div class="adv-section">
+            <div class="adv-head">Advancement ${advReady ? "" : `<span>at band level ${ADV_CALLING_LEVEL}</span>`}</div>
+            <div class="adv-branches"></div>
+          </div>
+        `);
+        const branches = advWrap.querySelector(".adv-branches")!;
+        for (const adv of c.advanced) {
+          const isCurrent = hero.advCalling === adv.id;
+          branches.appendChild(
+            el(`
+              <div class="adv-branch ${isCurrent ? "sworn" : ""} ${advReady ? "" : "locked"}">
+                <strong>${adv.name} <em>${adv.epithet}</em>${isCurrent ? '<span class="sworn-badge">Chosen</span>' : ""}</strong>
+                <span class="adv-line">${adv.passive}</span>
+                <span class="adv-line ult">${adv.ultNote}</span>
+                ${
+                  isCurrent || !advReady
+                    ? ""
+                    : `<button class="big-btn ${hero.advCalling ? "" : "primary"} adv-btn" data-advance="${adv.id}">
+                        ${hero.advCalling ? `Switch — ${ADV_SWITCH_COST}g` : "Advance"}
+                      </button>`
+                }
+              </div>
+            `),
+          );
+        }
+        card.appendChild(advWrap);
+      }
       grid.appendChild(card);
     }
     page.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
+      const advance = target.closest("[data-advance]");
+      if (advance) {
+        const id = advance.getAttribute("data-advance")!;
+        if (save.level < ADV_CALLING_LEVEL) return;
+        if (hero.advCalling && !this.spend(ADV_SWITCH_COST)) return;
+        hero.advCalling = id;
+        persist(save);
+        audio.play("levelup");
+        navigator.vibrate?.([20, 30, 50]);
+        const found = advCallingById(id)!;
+        this.showToast(`${def.name} rises: ${found.adv.name}, ${found.adv.epithet}!`);
+        this.renderCalling(index);
+        return;
+      }
       const swear = target.closest("[data-swear]");
       if (swear) {
         const id = swear.getAttribute("data-swear")!;
@@ -1700,6 +1773,7 @@ export class Menus {
         if (!callingEligible(c, hero.attrs)) return;
         if (hero.calling && !this.spend(CALLING_SWITCH_COST)) return;
         hero.calling = id;
+        hero.advCalling = null; // a new oath starts unadvanced
         persist(save);
         audio.play("levelup");
         this.showToast(`${def.name} swears the ${c.name}'s oath — ${c.signature.name} joins the battle bar`);

@@ -13,6 +13,7 @@ import {
   drawProjectiles,
   drawReflections,
   drawTelegraphs,
+  drawTitleDiorama,
   drawUnits,
   drawVignette,
   drawZones,
@@ -567,12 +568,8 @@ function frame(now: number): void {
     }
     hud.draw(ctx);
   } else {
-    // simple backdrop behind DOM menus
-    const grad = ctx.createLinearGradient(0, 0, 0, logicalH);
-    grad.addColorStop(0, "#221b33");
-    grad.addColorStop(1, "#151020");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, logicalW, logicalH);
+    // the band camps behind the menus
+    drawTitleDiorama(ctx, save, logicalW, logicalH, now / 1000);
   }
 
   rafId = requestAnimationFrame(frame);
@@ -580,6 +577,65 @@ function frame(now: number): void {
 
 menus.renderTitle();
 rafId = requestAnimationFrame(frame);
+
+/**
+ * Headless battle for balance work: auto-orders every hero (nearest-enemy
+ * aggro, healers channel the wounded, abilities fire on cooldown) and runs the
+ * sim without rendering. Returns the outcome; run 21+ per config before
+ * trusting any comparison.
+ */
+function runSim(
+  stageIndex: number,
+  opts: { maxSeconds?: number; saveOverride?: SaveData } = {},
+): { result: string; time: number; deaths: number; casts: number } {
+  const simSave: SaveData = opts.saveOverride ?? (JSON.parse(JSON.stringify(save)) as SaveData);
+  const fxSys = new FxSystem();
+  const b = new Battle(STAGES[stageIndex], simSave, fieldRect(), fxSys);
+  const maxT = opts.maxSeconds ?? 240;
+  let casts = 0;
+  const dt = 1 / 30;
+  while (b.state !== "victory" && b.state !== "defeat" && b.time < maxT) {
+    const enemies = b.units.filter((u) => u.team === "enemy" && u.alive);
+    for (const heroU of b.units) {
+      if (heroU.team !== "hero" || !heroU.alive) continue;
+      if (heroU.stats.healPower >= 8) {
+        const wounded = b.units
+          .filter((u) => u.team === "hero" && u.alive && u !== heroU && u.hp < u.stats.maxHp * 0.7)
+          .sort((a, c) => a.hp / a.stats.maxHp - c.hp / c.stats.maxHp)[0];
+        heroU.healTarget = wounded ?? null;
+        if (wounded) heroU.attackTarget = null;
+      }
+      if (!heroU.healTarget && (!heroU.attackTarget || !heroU.attackTarget.alive) && enemies.length) {
+        let best = enemies[0];
+        let bd = Infinity;
+        for (const e of enemies) {
+          const d = Math.hypot(e.x - heroU.x, e.y - heroU.y);
+          if (d < bd) {
+            bd = d;
+            best = e;
+          }
+        }
+        heroU.attackTarget = best;
+      }
+      for (const ab of heroU.abilities) {
+        if (ab.timer > 0) continue;
+        const target = heroU.attackTarget && heroU.attackTarget.alive ? heroU.attackTarget : enemies[0];
+        const aim = target ? { x: target.x, y: target.y } : null;
+        if (b.castAbility(heroU, ab, simSave, aim, null)) casts++;
+      }
+    }
+    b.update(dt, simSave);
+    fxSys.update(dt);
+    if (fxSys.particles.length > 300) fxSys.particles.length = 0;
+    if (fxSys.floaters.length > 150) fxSys.floaters.length = 0;
+  }
+  return {
+    result: b.state === "victory" ? "victory" : b.state === "defeat" ? "defeat" : "timeout",
+    time: Math.round(b.time * 10) / 10,
+    deaths: b.heroDeaths,
+    casts,
+  };
+}
 
 // debug/testing hook
 Object.defineProperty(window, "__wayband", {
@@ -591,6 +647,7 @@ Object.defineProperty(window, "__wayband", {
     },
     startBattle,
     shareVictory,
+    sim: runSim,
     shot(q = 0.72) {
       return canvas.toDataURL("image/jpeg", q);
     },
