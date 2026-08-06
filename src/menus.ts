@@ -384,6 +384,7 @@ export class Menus {
           <button class="toggle-btn danger" data-act="reset">Reset all progress</button>
         </div>
         <div class="credit">drag your heroes · draw your spells · shape your band</div>
+        <div class="version-tag">WAYBAND · woodland build</div>
       </div>
     `);
     const syncToggles = () => {
@@ -546,6 +547,7 @@ export class Menus {
           </div>
         </div>
       `);
+      navigator.vibrate?.([16, 40, 24]);
       pop.addEventListener("click", (event) => {
         const act = (event.target as HTMLElement).closest("[data-act]")?.getAttribute("data-act");
         if (act === "lv-spend") {
@@ -1069,6 +1071,7 @@ export class Menus {
     this.save.gold -= cost;
     persist(this.save);
     audio.play("coin");
+    navigator.vibrate?.(12);
     return true;
   }
 
