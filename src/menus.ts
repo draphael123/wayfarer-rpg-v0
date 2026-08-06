@@ -52,7 +52,7 @@ function bestAttr(index: number): AttrKey {
 }
 import { drawAbilityGlyph, ico } from "./icons";
 import { drawHeroFigure, setColorSafe } from "./render";
-import { activeSlot, DEFAULT_KEYBINDS, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey } from "./save";
+import { activeSlot, DEFAULT_KEYBINDS, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
 import { exportTelemetry, telemetrySummary } from "./telemetry";
 import type { SaveData } from "./types";
 
@@ -540,7 +540,7 @@ export class Menus {
     const syncToggles = () => {
       (page.querySelector('[data-act="sound"]') as HTMLElement).textContent = `Sound: ${this.save.sound ? "on" : "off"}`;
       (page.querySelector('[data-act="music"]') as HTMLElement).textContent = `Music: ${this.save.music ? "on" : "off"}`;
-      (page.querySelector('[data-act="speed"]') as HTMLElement).textContent = `Combat speed: ×${this.save.speed}`;
+      (page.querySelector('[data-act="speed"]') as HTMLElement).textContent = `Combat speed: ${speedLabel(this.save.speed)}`;
       (page.querySelector('[data-act="motion"]') as HTMLElement).textContent = `Calm motion: ${this.save.reducedMotion ? "on" : "off"}`;
       (page.querySelector('[data-act="colorsafe"]') as HTMLElement).textContent = `Safe colors: ${this.save.colorSafe ? "on" : "off"}`;
       (page.querySelector('[data-act="bigtext"]') as HTMLElement).textContent = `Large text: ${this.save.bigText ? "on" : "off"}`;

@@ -118,7 +118,7 @@ export function defaultSave(): SaveData {
   };
 }
 
-export const SPEED_OPTIONS = [0.35, 0.5, 0.75, 1, 1.5, 2];
+export const SPEED_OPTIONS = [0.35, 0.5, 0.75, 1];
 
 export function nextSpeed(current: number): number {
   const at = SPEED_OPTIONS.findIndex((s) => Math.abs(s - current) < 0.01);
@@ -126,7 +126,8 @@ export function nextSpeed(current: number): number {
 }
 
 export function speedLabel(speed: number): string {
-  return `×${speed}`;
+  const shown = speed / 0.5; // the classic pace reads as ×1
+  return `×${shown % 1 === 0 ? shown : shown.toFixed(1)}`;
 }
 
 export function loadSave(): SaveData {
@@ -182,7 +183,7 @@ export function loadSave(): SaveData {
       if (hero.advCalling === undefined) hero.advCalling = null;
       // pre-variant saves at plate tier default to the classic juggernaut look
     });
-    if (typeof parsed.speed !== "number" || parsed.speed < 0.25 || parsed.speed > 2) parsed.speed = 0.5;
+    if (typeof parsed.speed !== "number" || parsed.speed < 0.25 || parsed.speed > 1) parsed.speed = 0.5;
     if (!parsed.bestiary || typeof parsed.bestiary !== "object") parsed.bestiary = {};
     if (typeof parsed.gold !== "number") parsed.gold = parsed.unlockedStage * 60;
     if (!Array.isArray(parsed.unlockedSpells)) {

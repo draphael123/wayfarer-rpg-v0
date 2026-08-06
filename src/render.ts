@@ -474,12 +474,14 @@ export function drawBackground(
   // drawn twice so the furniture streams past seamlessly as the band marches
   {
     const span = w + OVERSCAN * 2;
-    const soff = ((travel * 0.9) % span + span) % span;
+    const dist = travel * 0.9;
+    const seg = Math.floor(dist / span);
+    const soff = ((dist % span) + span) % span;
     ctx.save();
     ctx.translate(-soff, 0);
-    drawSetDressing(ctx, stage, w, h, horizon, time);
+    drawSetDressing(ctx, stage, w, h, horizon, time, seg);
     ctx.translate(span, 0);
-    drawSetDressing(ctx, stage, w, h, horizon, time);
+    drawSetDressing(ctx, stage, w, h, horizon, time, seg + 1);
     ctx.restore();
   }
 
@@ -596,17 +598,18 @@ function drawSetDressing(
   h: number,
   horizon: number,
   time: number,
+  seed = 0,
 ): void {
   const groundAt = (t: number, band: number) => horizon + 14 + hash01(t) * (h - horizon - 30) * band;
   // ground variation shared by every field: scattered pebbles
   for (let i = 0; i < 9; i++) {
-    const px = hash01(i * 17 + stage.id * 91) * w;
-    const py = horizon + 20 + hash01(i * 29 + stage.id * 7) * (h - horizon - 40);
+    const px = hash01(seed * 137.3 + i * 17 + stage.id * 91) * w;
+    const py = horizon + 20 + hash01(seed * 137.3 + i * 29 + stage.id * 7) * (h - horizon - 40);
     if (i % 3 !== 0) {
       ctx.fillStyle = "rgba(20, 14, 30, 0.18)";
       ctx.beginPath();
-      ctx.arc(px, py, 1.6 + hash01(i * 5) * 1.8, 0, Math.PI * 2);
-      ctx.arc(px + 5, py + 2, 1.2 + hash01(i * 7) * 1.4, 0, Math.PI * 2);
+      ctx.arc(px, py, 1.6 + hash01(seed * 137.3 + i * 5) * 1.8, 0, Math.PI * 2);
+      ctx.arc(px + 5, py + 2, 1.2 + hash01(seed * 137.3 + i * 7) * 1.4, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -614,8 +617,8 @@ function drawSetDressing(
     // meadow flowers nodding in the breeze, loosely clustered
     for (let i = 0; i < 12; i++) {
       const cluster = Math.floor(i / 3);
-      const fx2 = hash01(cluster * 41) * w + (hash01(i * 7) - 0.5) * 46;
-      const fy2 = horizon + 30 + hash01(cluster * 23) * (h - horizon - 50) + (hash01(i * 11) - 0.5) * 20;
+      const fx2 = hash01(seed * 137.3 + cluster * 41) * w + (hash01(seed * 137.3 + i * 7) - 0.5) * 46;
+      const fy2 = horizon + 30 + hash01(seed * 137.3 + cluster * 23) * (h - horizon - 50) + (hash01(seed * 137.3 + i * 11) - 0.5) * 20;
       const sway = Math.sin(time * 1.8 + i * 2) * 1.5;
       ctx.strokeStyle = "#5c7a3e";
       ctx.lineWidth = 1.6;
@@ -710,12 +713,12 @@ function drawSetDressing(
   if (stage.id === 2) {
     // clusters of glowing marsh mushrooms
     for (let i = 0; i < 3; i++) {
-      const mx2 = w * (0.15 + i * 0.35) + hash01(i * 19) * 30;
+      const mx2 = w * (0.15 + i * 0.35) + hash01(seed * 137.3 + i * 19) * 30;
       const my2 = groundAt(i * 6.7, 0.9);
       const pulse = 0.5 + Math.abs(Math.sin(time * 1.8 + i * 2.4)) * 0.5;
       for (let m = 0; m < 3; m++) {
-        const ox = (m - 1) * 7 + hash01(m * 3 + i) * 3;
-        const mh = 6 + hash01(m + i * 5) * 5;
+        const ox = (m - 1) * 7 + hash01(seed * 137.3 + m * 3 + i) * 3;
+        const mh = 6 + hash01(seed * 137.3 + m + i * 5) * 5;
         ctx.strokeStyle = "#5c7a66";
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -735,8 +738,8 @@ function drawSetDressing(
   if (stage.id === 4) {
     // wolf eyes blinking in the dark brush — the pack is watching
     for (let i = 0; i < 3; i++) {
-      const ex = w * (0.1 + i * 0.4) + hash01(i * 7) * 40;
-      const ey = horizon + 12 + hash01(i * 11) * 14;
+      const ex = w * (0.1 + i * 0.4) + hash01(seed * 137.3 + i * 7) * 40;
+      const ey = horizon + 12 + hash01(seed * 137.3 + i * 11) * 14;
       const blink = Math.abs(Math.sin(time * 0.7 + i * 2.9));
       if (blink > 0.2) {
         ctx.fillStyle = `rgba(255, 200, 90, ${Math.min(0.85, blink)})`;
@@ -814,26 +817,26 @@ function drawSetDressing(
   } else if (stage.id === 2) {
     // swamp: still pools with reeds
     for (let i = 0; i < 3; i++) {
-      const px = w * (0.2 + i * 0.3) + hash01(i * 9) * 40;
+      const px = w * (0.2 + i * 0.3) + hash01(seed * 137.3 + i * 9) * 40;
       const py = groundAt(i * 3.3, 0.8);
       ctx.fillStyle = "rgba(90, 140, 150, 0.5)";
       ctx.beginPath();
-      ctx.ellipse(px, py, 40 + hash01(i) * 24, 10, 0, 0, Math.PI * 2);
+      ctx.ellipse(px, py, 40 + hash01(seed * 137.3 + i) * 24, 10, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = "rgba(200, 230, 225, 0.35)";
       ctx.lineWidth = 1.4;
       ctx.beginPath();
-      ctx.ellipse(px, py, 30 + hash01(i) * 20, 7, 0, 0, Math.PI * 2);
+      ctx.ellipse(px, py, 30 + hash01(seed * 137.3 + i) * 20, 7, 0, 0, Math.PI * 2);
       ctx.stroke();
       ctx.strokeStyle = "#3a5c46";
       ctx.lineWidth = 2.2;
       ctx.lineCap = "round";
       for (let rd = 0; rd < 4; rd++) {
-        const rx = px - 30 + rd * 18 + hash01(rd * 3 + i) * 8;
+        const rx = px - 30 + rd * 18 + hash01(seed * 137.3 + rd * 3 + i) * 8;
         const sway = Math.sin(time * 1.4 + rd + i) * 2;
         ctx.beginPath();
         ctx.moveTo(rx, py + 2);
-        ctx.quadraticCurveTo(rx + sway, py - 12, rx + sway * 1.6, py - 20 - hash01(rd) * 8);
+        ctx.quadraticCurveTo(rx + sway, py - 12, rx + sway * 1.6, py - 20 - hash01(seed * 137.3 + rd) * 8);
         ctx.stroke();
       }
       ctx.lineCap = "butt";
@@ -877,11 +880,11 @@ function drawSetDressing(
       const sy = groundAt(i * 5.9, 0.75);
       ctx.save();
       ctx.translate(sx, sy);
-      ctx.rotate((hash01(i * 13) - 0.5) * 0.24);
+      ctx.rotate((hash01(seed * 137.3 + i * 13) - 0.5) * 0.24);
       ctx.beginPath();
       ctx.moveTo(-10, 0);
-      ctx.lineTo(-7, -34 - hash01(i) * 14);
-      ctx.lineTo(6, -38 - hash01(i) * 14);
+      ctx.lineTo(-7, -34 - hash01(seed * 137.3 + i) * 14);
+      ctx.lineTo(6, -38 - hash01(seed * 137.3 + i) * 14);
       ctx.lineTo(11, 0);
       ctx.closePath();
       outlined(ctx, "#4a4468", 2.2);
@@ -2795,9 +2798,70 @@ function drawFallen(ctx: CanvasRenderingContext2D, unit: Unit): void {
   if (fade <= 0) return;
   const color = unit.team === "hero" ? HEROES[unit.heroIndex].accent : ENEMY_COLORS[unit.enemyKind!]?.body ?? "#777";
   const skin = unit.team === "hero" ? HEROES[unit.heroIndex].skin : color;
+  const isWolf = unit.enemyKind === "wolf" || unit.enemyKind === "alpha";
   ctx.save();
   ctx.globalAlpha = fade;
   ctx.translate(unit.x, unit.y);
+  const r = unit.radius;
+  if (isWolf) {
+    // a wolf falls on its side: long body, legs out, head thrown back
+    const wolfColor = unit.enemyKind === "alpha" ? "#3f3a4d" : color;
+    const flop = fall; // rolls onto the flank as it lands
+    ctx.rotate(-unit.facing * (1 - flop) * 0.3);
+    // flank
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 0.35, r * 1.35, r * 0.55 + flop * r * 0.1, unit.facing * 0.06, 0, Math.PI * 2);
+    outlined(ctx, wolfColor, 2);
+    // legs stiff toward the viewer
+    ctx.strokeStyle = wolfColor;
+    ctx.lineWidth = r * 0.22;
+    ctx.lineCap = "round";
+    for (const lx of [-r * 0.6, -r * 0.2, r * 0.35, r * 0.7]) {
+      ctx.beginPath();
+      ctx.moveTo(lx, -r * 0.25);
+      ctx.lineTo(lx + unit.facing * r * 0.16, r * 0.12 * flop);
+      ctx.stroke();
+    }
+    ctx.lineCap = "butt";
+    // head back, snout up
+    ctx.beginPath();
+    ctx.arc(unit.facing * r * 1.35, -r * 0.55, r * 0.45, 0, Math.PI * 2);
+    outlined(ctx, wolfColor, 2);
+    ctx.beginPath();
+    ctx.moveTo(unit.facing * r * 1.55, -r * 0.75);
+    ctx.lineTo(unit.facing * r * 2.05, -r * 0.95);
+    ctx.lineTo(unit.facing * r * 1.6, -r * 0.45);
+    ctx.closePath();
+    outlined(ctx, wolfColor, 1.8);
+    // limp ear + tail
+    ctx.beginPath();
+    ctx.moveTo(unit.facing * r * 1.2, -r * 0.9);
+    ctx.lineTo(unit.facing * r * 1.05, -r * 1.2);
+    ctx.lineTo(unit.facing * r * 1.4, -r * 0.95);
+    ctx.closePath();
+    outlined(ctx, wolfColor, 1.6);
+    ctx.strokeStyle = wolfColor;
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-unit.facing * r * 1.3, -r * 0.3);
+    ctx.quadraticCurveTo(-unit.facing * r * 1.8, -r * 0.15, -unit.facing * r * 2.0, -r * 0.05);
+    ctx.stroke();
+    ctx.lineCap = "butt";
+    // x eye
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.4;
+    const wex = unit.facing * r * 1.4;
+    ctx.beginPath();
+    ctx.moveTo(wex - 2, -r * 0.6 - 2);
+    ctx.lineTo(wex + 2, -r * 0.6 + 2);
+    ctx.moveTo(wex + 2, -r * 0.6 - 2);
+    ctx.lineTo(wex - 2, -r * 0.6 + 2);
+    ctx.stroke();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    return;
+  }
   ctx.rotate(-unit.facing * fall * Math.PI * 0.5);
   const H = unit.radius * 2.6;
   ctx.beginPath();

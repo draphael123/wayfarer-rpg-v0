@@ -1,4 +1,5 @@
 import { audio } from "./audio";
+import { speedLabel } from "./save";
 import type { Battle } from "./battle";
 import { callingById, DIFFICULTIES, HEROES } from "./data";
 import { drawAbilityGlyph } from "./icons";
@@ -757,9 +758,9 @@ export class Hud {
       roundRect(ctx, x, y + 11, w * frac, 3, 1.5);
       ctx.fill();
     }
-    // phase markers at 60% / 30% (the Alpha's phase transitions)
-    if (this.battle.bossRef?.enemyKind === "alpha") {
-      for (const mark of [0.6, 0.3]) {
+    // phase markers (Alpha 60/30, Gorehulk 66/33)
+    if (this.battle.bossRef?.enemyKind === "alpha" || this.battle.bossRef?.enemyKind === "warlord") {
+      for (const mark of this.battle.bossRef.enemyKind === "alpha" ? [0.6, 0.3] : [0.66, 0.33]) {
         ctx.fillStyle = frac > mark ? "#ffe9a3" : "rgba(255,255,255,0.25)";
         ctx.fillRect(x + w * mark - 1, y + 9, 2, 13);
       }
@@ -1214,7 +1215,7 @@ export class Hud {
       }
 
       // ability buttons
-      const bs = 40;
+      const bs = 46;
       const bx0 = x0 + ps + 7;
       for (let a = 0; a < hero.abilities.length; a++) {
         const ability = hero.abilities[a];
@@ -1594,7 +1595,7 @@ export class Hud {
     this.addOverlayButton(ctx, "resume", "Resume", bx, frame.y + 64, bw);
     this.addOverlayButton(ctx, "retry", "Restart Battle", bx, frame.y + 108, bw);
     this.addOverlayButton(ctx, "map", "Retreat to Map", bx, frame.y + 152, bw);
-    this.addOverlayButton(ctx, "speed", `Combat speed: ×${this.save.speed}`, bx, frame.y + 196, bw);
+    this.addOverlayButton(ctx, "speed", `Combat speed: ${speedLabel(this.save.speed)}`, bx, frame.y + 196, bw);
     this.addOverlayButton(ctx, "sound", `Sound: ${this.save.sound ? "on" : "off"}`, bx, frame.y + 240, bw / 2 - 5);
     this.addOverlayButton(
       ctx,

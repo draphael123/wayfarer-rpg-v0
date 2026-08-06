@@ -428,6 +428,17 @@ export class Battle {
       const bite = target.advCalling === "corsair" ? 0.5 : 0.25;
       this.damage(source, rawAmount * bite, target, { spell: true, color: "#ffd27d" });
     }
+    // NO QUARTER: the enraged warlord answers melee blows himself
+    if (
+      target.enemyKind === "warlord" &&
+      target.phase >= 3 &&
+      source &&
+      source.team === "hero" &&
+      source.stats.range <= 90 &&
+      !opts.spell
+    ) {
+      this.damage(source, rawAmount * 0.15, target, { spell: true, color: "#ff8a70" });
+    }
     // Gorehulk's Wall answers melee blows with iron
     if (
       target.team === "hero" &&
@@ -1952,9 +1963,10 @@ export class Battle {
     const taunt = this.effect(enemy, "taunt");
     let target: Unit | null = taunt && taunt.source && taunt.source.alive ? taunt.source : null;
     // bosses answer the loudest threat — pour damage in and they turn on you
-    if (!target && BOSS_KINDS.includes(enemy.enemyKind ?? "")) target = this.topThreat(enemy.aggro && enemy.aggro.alive ? enemy.aggro : null);
+    const bossBrain = BOSS_KINDS.includes(enemy.enemyKind ?? "");
+    if (!target && bossBrain) target = this.topThreat(enemy.aggro && enemy.aggro.alive ? enemy.aggro : null);
     if (!target && enemy.aggro && enemy.aggro.alive) target = enemy.aggro;
-    if (!target) target = this.nearestHero(enemy);
+    if (!target) target = bossBrain ? this.nearestFighter(enemy) : this.nearestHero(enemy);
     if (!target) return;
     if (!enemy.aggro) {
       enemy.alert = 0.5;
@@ -2023,10 +2035,17 @@ export class Battle {
         life: 3,
       });
       audio.play("bolt");
-    } else if (nearest && shaman.attackTimer <= 0 && unitDist(shaman, nearest) <= shaman.stats.range) {
-      shaman.facing = nearest.x >= shaman.x ? 1 : -1;
-      this.performAttack(shaman, nearest);
-      shaman.attackTimer = this.attackIntervalOf(shaman);
+    } else if (nearest) {
+      // nothing to mend: the shaman fights like everyone else
+      const dist = unitDist(shaman, nearest);
+      if (dist > shaman.stats.range) {
+        this.moveToward(shaman, nearest, dt, shaman.stats.range - 12);
+      } else if (shaman.attackTimer <= 0) {
+        shaman.facing = nearest.x >= shaman.x ? 1 : -1;
+        this.performAttack(shaman, nearest);
+        shaman.attackTimer = this.attackIntervalOf(shaman);
+      }
+      shaman.supportTimer = 0.4; // keep glancing for wounded packmates
     }
   }
 
@@ -2082,7 +2101,7 @@ export class Battle {
     let target: Unit | null = taunt && taunt.source && taunt.source.alive ? taunt.source : null;
     if (!target) target = this.topThreat(alpha.aggro && alpha.aggro.alive ? alpha.aggro : null);
     if (!target && alpha.aggro && alpha.aggro.alive) target = alpha.aggro;
-    if (!target) target = this.nearestHero(alpha);
+    if (!target) target = this.nearestFighter(alpha);
     if (!target) return;
     alpha.aggro = target;
     const dist = unitDist(alpha, target);
@@ -2113,10 +2132,65 @@ export class Battle {
 
   /** The warlord telegraphs a huge executioner's sweep at the thickest hero
    *  cluster — spread out, or Blink clear of it. */
+  private warlordWall = 6; // seconds until the next shieldwall stance
+  private warlordThrow = 4; // seconds until the next hurled axe (phase 2+)
+
   private updateWarlordSweep(lord: Unit, dt: number): void {
     if (lord.phase === 0) {
       lord.phase = 1;
       lord.supportTimer = 5;
+      this.warlordWall = 6;
+      this.warlordThrow = 4;
+    }
+    const frac = lord.hp / lord.stats.maxHp;
+    // PHASE 2 — the hollow answers: reinforcements, and he starts throwing
+    if (frac < 0.66 && lord.phase < 2) {
+      lord.phase = 2;
+      this.fx.floatText(lord.x, lord.y - lord.radius * 3, "THE HOLLOW ANSWERS!", "#ff8a70", 18);
+      this.fx.ring(lord.x, lord.y, 200, "#ff8a70", { width: 5, life: 0.8 });
+      this.fx.addShake(8);
+      audio.play("warhorn");
+      this.spawnEnemy("goblin");
+      this.spawnEnemy("archer");
+    }
+    // PHASE 3 — no quarter: faster, angrier, and melee blows are answered
+    if (frac < 0.33 && lord.phase < 3) {
+      lord.phase = 3;
+      this.fx.floatText(lord.x, lord.y - lord.radius * 3, "NO QUARTER!", "#ff5a48", 20);
+      lord.effects.push(makeEffect("haste", 999, 1.25, null));
+      this.fx.addShake(9);
+      this.hitstop = Math.max(this.hitstop, 0.09);
+      audio.play("roar");
+    }
+    // SHIELDWALL: he plants and weathers the storm — hold your burst
+    this.warlordWall -= dt;
+    if (this.warlordWall <= 0 && !this.effect(lord, "stun")) {
+      this.warlordWall = 14;
+      lord.effects.push(makeEffect("guard", 2.2, 0.45, null));
+      this.fx.floatText(lord.x, lord.y - lord.radius * 3, "SHIELDWALL!", "#c9d2dd", 15);
+      this.fx.ring(lord.x, lord.y, lord.radius * 3, "#c9d2dd", { width: 4, life: 0.5 });
+      audio.play("shield");
+    }
+    // THE HURLED AXE (phase 2+): the back line is not safe either
+    if (lord.phase >= 2) {
+      this.warlordThrow -= dt;
+      if (this.warlordThrow <= 0 && !this.effect(lord, "stun")) {
+        this.warlordThrow = lord.phase >= 3 ? 8 : 11;
+        let far: Unit | null = null;
+        let fd = -1;
+        for (const h of this.livingHeroes()) {
+          const d = unitDist(lord, h);
+          if (d > fd) {
+            fd = d;
+            far = h;
+          }
+        }
+        if (far) {
+          this.telegraphs.push({ x: far.x, y: far.y, radius: 52, time: 0, duration: this.telegraphTime, owner: lord, kind: "sweep" });
+          this.fx.floatText(lord.x, lord.y - lord.radius * 3, "hurls his axe!", "#ffb4a0", 13);
+          audio.play("shoot");
+        }
+      }
     }
     lord.supportTimer -= dt;
     const pending = this.telegraphs.find((t) => t.owner === lord);
@@ -2143,7 +2217,7 @@ export class Battle {
       });
       lord.castGlow = 0.4;
       audio.play("warcry");
-      lord.supportTimer = 8.5;
+      lord.supportTimer = lord.phase >= 3 ? 6.5 : 8.5;
     }
   }
 
@@ -2179,14 +2253,15 @@ export class Battle {
           continue;
         }
         if (mark.kind === "sweep") {
-          // executioner's arc crashes down where it was promised
+          // executioner's arc crashes down where it was promised (thrown axes bite lighter)
           const lord = mark.owner;
+          const isAxe = mark.radius <= 60;
           lord.lungeDir = this.normalize({ x: mark.x - lord.x, y: mark.y - lord.y });
           lord.lunge = 1;
           for (const hero of this.livingHeroes()) {
             if (Math.hypot(hero.x - mark.x, hero.y - mark.y) < mark.radius + hero.radius * 0.5) {
-              this.damage(hero, lord.stats.damage * 1.5, lord);
-              if (hero.alive) hero.effects.push(makeEffect("slow", 1.5, 0.35, lord));
+              this.damage(hero, lord.stats.damage * (isAxe ? 0.75 : 1.5), lord);
+              if (hero.alive) hero.effects.push(makeEffect("slow", 1.5, isAxe ? 0.25 : 0.35, lord));
             }
           }
           this.fx.slash(mark.x, mark.y - 10, Math.PI * 0.1, mark.radius * 0.8, "#ff9a85", Math.PI * 1.6);
@@ -2238,6 +2313,21 @@ export class Battle {
       alpha.effects.push(makeEffect("vulnerable", 2.4, 0.75, null));
       this.fx.floatText(alpha.x, alpha.y - alpha.radius * 3, "exhausted!", "#ffe9a3", 15);
     }
+  }
+
+  /** Bosses opening a fight square up to the nearest FIGHTER — never the mender by default. */
+  private nearestFighter(from: Unit): Unit | null {
+    let best: Unit | null = null;
+    let bestDist = Infinity;
+    for (const hero of this.livingHeroes()) {
+      if (hero.stats.healPower >= 8) continue;
+      const d = unitDist(from, hero);
+      if (d < bestDist) {
+        bestDist = d;
+        best = hero;
+      }
+    }
+    return best ?? this.nearestHero(from);
   }
 
   private nearestHero(from: Unit): Unit | null {
