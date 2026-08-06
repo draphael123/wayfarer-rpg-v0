@@ -2785,7 +2785,14 @@ export class Menus {
     `);
     page.querySelector(".map-header")!.after(this.heroTabs(index, "calling"));
     const grid = page.querySelector(".calling-grid")!;
-    for (const c of CALLINGS) {
+    const FAMILY_ORDER = ["Iron", "Blade", "Hunt", "Elemental", "Faith & Shadow", "Song & Craft"];
+    const ordered = [...CALLINGS].sort((a, b) => FAMILY_ORDER.indexOf(a.family) - FAMILY_ORDER.indexOf(b.family));
+    let lastFamily = "";
+    for (const c of ordered) {
+      if (c.family !== lastFamily) {
+        lastFamily = c.family;
+        grid.appendChild(el(`<div class="calling-family">${c.family} <span>${ordered.filter((o) => o.family === c.family).length} paths</span></div>`));
+      }
       const eligible = callingEligible(c, hero.attrs);
       const isSworn = hero.calling === c.id;
       const card = el(`
@@ -2830,7 +2837,7 @@ export class Menus {
       drawAbilityGlyph(cctx, c.signature.icon, 15, 15, 9, c.color);
       holder.appendChild(canvas);
       // level-20 advancement: the sworn calling shows its two branches
-      if (isSworn) {
+      if (isSworn && c.advanced) {
         const advReady = save.level >= ADV_CALLING_LEVEL;
         const advWrap = el(`
           <div class="adv-section">

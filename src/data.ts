@@ -721,7 +721,8 @@ export interface CallingDef {
   passive: string; // menu description of the always-on perk
   signature: AbilityDef; // charge-based ultimate, exclusive to the calling
   chargeHint: string; // how the ultimate meter fills
-  advanced: [AdvCallingDef, AdvCallingDef]; // level-20 branch choice
+  family: string; // picker grouping (Iron, Blade, Hunt, Elemental, Faith & Shadow, Song & Craft)
+  advanced?: [AdvCallingDef, AdvCallingDef]; // level-20 branch choice (the founding ten)
 }
 
 export const CALLING_UNLOCK_LEVEL = 5;
@@ -743,6 +744,7 @@ const sig = (id: string, name: string, targeting: AbilityDef["targeting"], coold
 export const CALLINGS: CallingDef[] = [
   {
     id: "vanguard",
+    family: "Iron",
     name: "Vanguard",
     epithet: "Shield of the Band",
     crest: "shield",
@@ -770,6 +772,7 @@ export const CALLINGS: CallingDef[] = [
   },
   {
     id: "reaver",
+    family: "Blade",
     name: "Reaver",
     epithet: "Red-Handed",
     crest: "sword",
@@ -797,6 +800,7 @@ export const CALLINGS: CallingDef[] = [
   },
   {
     id: "ranger",
+    family: "Hunt",
     name: "Ranger",
     epithet: "of the Long Watch",
     crest: "bow",
@@ -824,6 +828,7 @@ export const CALLINGS: CallingDef[] = [
   },
   {
     id: "arcanist",
+    family: "Elemental",
     name: "Arcanist",
     epithet: "Ember-Eyed",
     crest: "spark",
@@ -851,6 +856,7 @@ export const CALLINGS: CallingDef[] = [
   },
   {
     id: "chaplain",
+    family: "Faith & Shadow",
     name: "Chaplain",
     epithet: "Lantern-Bearer",
     crest: "plus",
@@ -878,6 +884,7 @@ export const CALLINGS: CallingDef[] = [
   },
   {
     id: "trickster",
+    family: "Hunt",
     name: "Trickster",
     epithet: "Twice-Shadowed",
     crest: "moon",
@@ -908,6 +915,7 @@ export const CALLINGS: CallingDef[] = [
   },
   {
     id: "duelist",
+    family: "Blade",
     name: "Duelist",
     epithet: "the Measured Blade",
     crest: "sword",
@@ -938,6 +946,7 @@ export const CALLINGS: CallingDef[] = [
   },
   {
     id: "warden",
+    family: "Iron",
     name: "Warden",
     epithet: "the Standing Stone",
     crest: "banner",
@@ -968,6 +977,7 @@ export const CALLINGS: CallingDef[] = [
   },
   {
     id: "spellblade",
+    family: "Elemental",
     name: "Spellblade",
     epithet: "the Lit Edge",
     crest: "spark",
@@ -998,6 +1008,7 @@ export const CALLINGS: CallingDef[] = [
   },
   {
     id: "nightblade",
+    family: "Blade",
     name: "Nightblade",
     epithet: "the Unseen Hour",
     crest: "moon",
@@ -1026,12 +1037,111 @@ export const CALLINGS: CallingDef[] = [
       },
     ],
   },
+  // ---- the widened pool: families of the level-5 choice ----
+  {
+    id: "pyromancer", name: "Pyromancer", epithet: "the Burning Hand", crest: "flame", color: "#ff7a45",
+    family: "Elemental", entry: [{ attr: "int", value: 8 }],
+    passive: "+10% spell power, and your damaging spells set foes ablaze.",
+    chargeHint: "Charges from spell damage",
+    signature: sig("cataclysm", "Cataclysm", "point", 14, "#ff7a45", "Ultimate: a rain of embers hammers the ground, burning everything it touches."),
+  },
+  {
+    id: "cryomancer", name: "Cryomancer", epithet: "the Still Air", crest: "snow", color: "#7cc7e8",
+    family: "Elemental", entry: [{ attr: "int", value: 8 }],
+    passive: "+6% spell power, and your damaging spells chill.",
+    chargeHint: "Charges from spell damage",
+    signature: sig("deepfreeze", "Deep Freeze", "instant", 14, "#7cc7e8", "Ultimate: the air snaps still — every nearby foe freezes solid."),
+  },
+  {
+    id: "tempest", name: "Stormweaver", epithet: "the Sky's Temper", crest: "bolt", color: "#8fb8ff",
+    family: "Elemental", entry: [{ attr: "int", value: 6 }, { attr: "dex", value: 6 }],
+    passive: "Every 4th attack forks lightning to a second foe.",
+    chargeHint: "Charges from damage you deal",
+    signature: sig("stormburst", "Stormburst", "instant", 14, "#8fb8ff", "Ultimate: chain lightning leaps through up to six foes and rattles them senseless."),
+  },
+  {
+    id: "geomancer", name: "Geomancer", epithet: "the Standing Stone", crest: "mountain", color: "#c0a878",
+    family: "Elemental", entry: [{ attr: "int", value: 6 }, { attr: "vit", value: 6 }],
+    passive: "+4% armor, and allies at your side share the stone's patience.",
+    chargeHint: "Charges from damage you take",
+    signature: sig("stoneward", "Stoneward", "instant", 14, "#c0a878", "Ultimate: stone rises to ward the whole band and slow everything that presses in."),
+  },
+  {
+    id: "exorcist", name: "Exorcist", epithet: "the Lantern at Dusk", crest: "sun", color: "#f2d16b",
+    family: "Faith & Shadow", entry: [{ attr: "spi", value: 6 }, { attr: "int", value: 6 }],
+    passive: "+15% damage against beasts and the risen dead.",
+    chargeHint: "Charges from damage you deal",
+    signature: sig("banishment", "Banishment", "instant", 14, "#f2d16b", "Ultimate: a burst of consecrated light scours everything near you."),
+  },
+  {
+    id: "bloodknight", name: "Blood Knight", epithet: "the Red Chalice", crest: "drop", color: "#c04858",
+    family: "Iron", entry: [{ attr: "str", value: 6 }, { attr: "vit", value: 6 }],
+    passive: "Melee blows feed you: heal 8% of the damage you deal.",
+    chargeHint: "Charges from damage you deal",
+    signature: sig("crimsonpact", "Crimson Pact", "instant", 14, "#c04858", "Ultimate: drink the life of every foe around you."),
+  },
+  {
+    id: "seer", name: "Seer", epithet: "Who Sees the Thread", crest: "moon", color: "#b8a8e8",
+    family: "Faith & Shadow", entry: [{ attr: "spi", value: 8 }],
+    passive: "Once each wave, foresight halves the first heavy blow an ally would take.",
+    chargeHint: "Charges from healing you give",
+    signature: sig("fateweave", "Fateweave", "instant", 14, "#b8a8e8", "Ultimate: the band steps outside fate — each hero shrugs off the next hit and quickens."),
+  },
+  {
+    id: "lancer", name: "Lancer", epithet: "the First Blood", crest: "spear", color: "#d8a048",
+    family: "Blade", entry: [{ attr: "str", value: 6 }, { attr: "dex", value: 6 }],
+    passive: "First blood: +30% damage the first time you strike each foe.",
+    chargeHint: "Charges from damage you deal",
+    signature: sig("impale", "Impale", "ray", 14, "#d8a048", "Ultimate: a thunderous charge down the line, skewering everything in your path."),
+  },
+  {
+    id: "monk", name: "Monk", epithet: "the Open Palm", crest: "fist", color: "#e8b878",
+    family: "Blade", entry: [{ attr: "dex", value: 6 }, { attr: "vit", value: 6 }],
+    passive: "Every 3rd strike staggers — small foes reel, bosses feel it in the stagger bar.",
+    chargeHint: "Charges from damage you deal",
+    signature: sig("hundredfists", "Hundred Fists", "instant", 14, "#e8b878", "Ultimate: a blur of fists — five blows land in a single breath."),
+  },
+  {
+    id: "necromancer", name: "Necromancer", epithet: "the Quiet Shepherd", crest: "ghost", color: "#9a88b8",
+    family: "Faith & Shadow", entry: [{ attr: "int", value: 6 }, { attr: "spi", value: 6 }],
+    passive: "Death feeds you: every fall on the field charges your ultimate.",
+    chargeHint: "Charges from any death nearby",
+    signature: sig("gravecall", "Gravecall", "instant", 14, "#9a88b8", "Ultimate: every corpse on the field bursts with pale fire."),
+  },
+  {
+    id: "bard", name: "Bard", epithet: "of the Long Song", crest: "harp", color: "#e8c8a0",
+    family: "Song & Craft", entry: [{ attr: "spi", value: 6 }, { attr: "dex", value: 6 }],
+    passive: "Your song quickens allies near you: +6% attack speed.",
+    chargeHint: "Charges from healing and from allies' kills",
+    signature: sig("battlehymn", "Battle Hymn", "instant", 14, "#e8c8a0", "Ultimate: a soaring hymn — the whole band surges with speed and heart."),
+  },
+  {
+    id: "alchemist", name: "Alchemist", epithet: "the Bitter Cure", crest: "flask", color: "#9ad06a",
+    family: "Song & Craft", entry: [{ attr: "int", value: 6 }, { attr: "dex", value: 6 }],
+    passive: "Your damaging spells splash caustic reagents that keep eating.",
+    chargeHint: "Charges from spell damage",
+    signature: sig("elixirbomb", "Elixir Bomb", "point", 14, "#9ad06a", "Ultimate: a hurled elixir that scalds foes and mends heroes in the same breath."),
+  },
+  {
+    id: "trapper", name: "Trapper", epithet: "of the Quiet Snare", crest: "net", color: "#a8925a",
+    family: "Hunt", entry: [{ attr: "dex", value: 8 }],
+    passive: "Each fight opens with a hidden snare beneath the foes' line.",
+    chargeHint: "Charges from damage you deal",
+    signature: sig("snarefield", "Snarefield", "point", 14, "#a8925a", "Ultimate: the ground sprouts iron teeth — a wide field of dragging snares."),
+  },
+  {
+    id: "warcrier", name: "Warcrier", epithet: "the Rolling Thunder", crest: "horn", color: "#e09858",
+    family: "Song & Craft", entry: [{ attr: "str", value: 6 }, { attr: "spi", value: 6 }],
+    passive: "Your kills rally the band: everyone strikes faster for a moment.",
+    chargeHint: "Charges from damage you deal and take",
+    signature: sig("greatshout", "Great Shout", "instant", 14, "#e09858", "Ultimate: a shout that buckles knees — foes reel, the band roars."),
+  },
 ];
 
 export function advCallingById(id: string | null | undefined): { adv: AdvCallingDef; parent: CallingDef } | null {
   if (!id) return null;
   for (const c of CALLINGS) {
-    for (const adv of c.advanced) {
+    for (const adv of c.advanced ?? []) {
       if (adv.id === id) return { adv, parent: c };
     }
   }
@@ -1088,6 +1198,20 @@ function callingStatMods(calling?: string | null, advCalling?: string | null) {
       break;
   }
   switch (calling) {
+    case "pyromancer": m.spellPower += 0.10; break;
+    case "cryomancer": m.spellPower += 0.06; m.cdr += 0.04; break;
+    case "tempest": m.spellPower += 0.05; m.atkSpeed += 0.05; break;
+    case "geomancer": m.armorFlat += 0.04; m.spellPower += 0.05; break;
+    case "exorcist": m.spellPower += 0.06; m.healPower += 0.06; break;
+    case "bloodknight": m.meleeDmg += 0.05; m.hpPct += 0.06; break;
+    case "seer": m.healPower += 0.08; break;
+    case "lancer": m.meleeDmg += 0.05; m.moveSpeed += 0.06; break;
+    case "monk": m.atkSpeed += 0.06; m.armorFlat += 0.02; break;
+    case "necromancer": m.spellPower += 0.08; break;
+    case "bard": m.cdr += 0.06; m.healPower += 0.04; break;
+    case "alchemist": m.cdr += 0.08; break;
+    case "trapper": m.rangedDmg += 0.05; m.cdr += 0.04; break;
+    case "warcrier": m.hpPct += 0.05; m.healPower += 0.04; break;
     case "vanguard":
       m.armorFlat = 0.05;
       break;
@@ -1299,7 +1423,37 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     trim: "#2c4a48",
     lore: "Masked menders of the war-bands, muttering green fire.",
     habit: "Heals its allies from the back. Kill it first.",
+  },  bonecaller: {
+    name: "Bone-Caller",
+    maxHp: 70,
+    damage: 9,
+    range: 180,
+    attackCooldown: 2.2,
+    speed: 80,
+    armor: 0,
+    radius: 13,
+    xp: 22,
+    body: "#b8b29a",
+    trim: "#4a4438",
+    lore: "A grave-priest of the war-bands. The dead do not rest where it walks.",
+    habit: "Raises fallen enemies as shamblers. Kill it before the bodies stack.",
   },
+  shambler: {
+    name: "Shambler",
+    maxHp: 40,
+    damage: 7,
+    range: 28,
+    attackCooldown: 1.5,
+    speed: 62,
+    armor: 0,
+    radius: 12,
+    xp: 4,
+    body: "#6a7a5a",
+    trim: "#3a4434",
+    lore: "What the Bone-Caller leaves standing. Slow, cold, and uncomplaining.",
+    habit: "Slow but relentless. They pile up while the caller lives.",
+  },
+
   ogre: {
     name: "Mosstooth Ogre",
     maxHp: 330,
@@ -1500,8 +1654,8 @@ export const STAGES: StageDef[] = [
     xpReward: 46,
     waves: [
       [{ kind: "archer", count: 2 }, { kind: "wolf", count: 2 }],
-      [{ kind: "brute", count: 2 }, { kind: "shaman", count: 1 }],
-      [{ kind: "goblin", count: 4 }, { kind: "archer", count: 2 }],
+      [{ kind: "brute", count: 2 }, { kind: "bonecaller", count: 1 }],
+      [{ kind: "goblin", count: 4 }, { kind: "archer", count: 2 }, { kind: "bonecaller", count: 1 }],
     ],
   },
   {
@@ -1538,7 +1692,7 @@ export const STAGES: StageDef[] = [
     xpReward: 90,
     waves: [
       [{ kind: "goblin", count: 3 }, { kind: "shaman", count: 1 }],
-      [{ kind: "brute", count: 2 }, { kind: "archer", count: 2 }],
+      [{ kind: "brute", count: 2 }, { kind: "archer", count: 2 }, { kind: "bonecaller", count: 1 }],
       [{ kind: "warlord", count: 1 }, { kind: "shaman", count: 2 }],
     ],
   },
@@ -1579,7 +1733,7 @@ export const STAGES: StageDef[] = [
     waves: [
       [{ kind: "icewisp", count: 3 }, { kind: "goblin", count: 2 }],
       [{ kind: "snowhag", count: 1 }, { kind: "frostwolf", count: 3 }],
-      [{ kind: "rimetroll", count: 1 }, { kind: "snowhag", count: 1 }, { kind: "icewisp", count: 2 }],
+      [{ kind: "rimetroll", count: 1 }, { kind: "bonecaller", count: 1 }, { kind: "icewisp", count: 2 }],
     ],
   },
   {
@@ -1605,7 +1759,7 @@ export const STAGES: StageDef[] = [
     waves: [
       [{ kind: "frostwolf", count: 4 }, { kind: "snowhag", count: 1 }],
       [{ kind: "rimetroll", count: 1 }, { kind: "archer", count: 2 }, { kind: "icewisp", count: 2 }],
-      [{ kind: "rimetroll", count: 2 }, { kind: "snowhag", count: 2 }],
+      [{ kind: "rimetroll", count: 2 }, { kind: "snowhag", count: 1 }, { kind: "bonecaller", count: 1 }],
     ],
   },
   {

@@ -13,7 +13,9 @@ export type EnemyKind =
   | "icewisp"
   | "rimetroll"
   | "snowhag"
-  | "rimeheart";
+  | "rimeheart"
+  | "bonecaller"
+  | "shambler";
 
 export interface Vec {
   x: number;

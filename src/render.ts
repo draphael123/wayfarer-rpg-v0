@@ -2718,7 +2718,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   head.arc(hx0, headY, headR, 0, Math.PI * 2);
   shaded(ctx, head, colors.body, f, hx0, headY, headR, 3);
   // goblinoid ears — per-goblin tilt so a mob doesn't read as clones
-  if (kind === "goblin" || kind === "archer" || kind === "shaman" || kind === "snowhag") {
+  if (kind === "goblin" || kind === "archer" || kind === "shaman" || kind === "snowhag" || kind === "shambler") {
     const tilt = (hash01(unit.id * 3.7) - 0.5) * 8;
     ctx.beginPath();
     ctx.moveTo(cx - f * headR * 0.5, headY - 2);
@@ -2733,7 +2733,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.closePath();
     outlined(ctx, colors.body, 2);
   }
-  if (kind === "shaman" || kind === "snowhag") {
+  if (kind === "shaman" || kind === "snowhag" || kind === "bonecaller") {
     // hood + glowing mask eyes + ritual paint
     ctx.beginPath();
     ctx.arc(cx + f * 1, headY - 1.5, headR * 1.04, Math.PI * 0.85, Math.PI * 2.15);
