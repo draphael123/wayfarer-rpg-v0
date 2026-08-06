@@ -1192,7 +1192,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   alpha: {
     name: "Alpha of Thornwood",
     maxHp: 1450,
-    damage: 17,
+    damage: 19,
     range: 34,
     attackCooldown: 1.1,
     speed: 135,

@@ -132,6 +132,8 @@ export class Hud {
   freshPlayer = false;
   private aimHintShown = false;
   private ultHintShown = false;
+  private threatHintShown = false;
+  private marchHintShown = false;
   private coachStage = 0;
   private lastLivingHeroes = -1;
   private readyFlash: Record<number, number> = {}; // per ability-slot key
@@ -428,6 +430,15 @@ export class Hud {
 
   update(dt: number): void {
     this.hintTime = Math.max(0, this.hintTime - dt);
+    // teach the new game, once each, at the moment it matters
+    if (!this.marchHintShown && this.battle.marching) {
+      this.marchHintShown = true;
+      this.showHint("The road goes on — the band marches to the next fight");
+    }
+    if (!this.threatHintShown && this.battle.bossRef?.alive && this.battle.cinematic <= 0 && this.battle.state === "fighting") {
+      this.threatHintShown = true;
+      this.showHint("It hunts whoever hurts it most — your warrior can hold its anger");
+    }
     if (this.hold) this.hold.time += dt;
     for (const m of this.moveMarks) m.t += dt;
     this.moveMarks = this.moveMarks.filter((m) => m.t < 0.9);

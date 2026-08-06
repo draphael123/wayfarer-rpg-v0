@@ -33,6 +33,11 @@ type SfxName =
   | "ultBarrage"
   | "ultSanctuary"
   | "ultBlink"
+  | "ultDuel"
+  | "ultAegis"
+  | "ultNova"
+  | "ultShadows"
+  | "relic"
   | "hitHeavy"
   | "spSunder"
   | "spOverpower"
@@ -460,6 +465,36 @@ class AudioKit {
         this.tone(294, 0.55, "sawtooth", 0.13, 26, 0.02);
         this.noise(0.24, 0.1, 900);
         break;
+      case "ultDuel":
+        // six ringing strikes, quickening
+        for (let i = 0; i < 6; i++) this.tone(660 + i * 60, 0.07, "square", 0.12, 30, i * 0.055);
+        this.tone(1180, 0.3, "triangle", 0.12, -200, 0.36);
+        break;
+      case "ultAegis":
+        // a warm wall of sound rising
+        this.tone(196, 0.9, "triangle", 0.2, 40);
+        this.tone(294, 0.8, "sine", 0.16, 30, 0.08);
+        this.tone(392, 0.7, "sine", 0.14, 30, 0.16);
+        this.tone(587, 0.6, "sine", 0.1, 0, 0.28);
+        break;
+      case "ultNova":
+        // rune-charge released
+        this.tone(880, 0.12, "sawtooth", 0.14, -500);
+        this.noise(0.5, 0.22, 900);
+        this.tone(110, 0.6, "sawtooth", 0.18, -40, 0.06);
+        break;
+      case "ultShadows":
+        // whispers crossing the field
+        for (let i = 0; i < 5; i++) this.noise(0.12, 0.1, 2400 - i * 300, i * 0.07);
+        this.tone(392, 0.4, "sine", 0.1, -120, 0.3);
+        break;
+      case "relic":
+        // something old changes hands
+        this.tone(523, 0.16, "triangle", 0.16);
+        this.tone(659, 0.16, "triangle", 0.16, 0, 0.14);
+        this.tone(784, 0.2, "triangle", 0.16, 0, 0.28);
+        this.tone(1047, 0.5, "sine", 0.14, 0, 0.42);
+        break;
       case "ultWhirlwind":
         this.noise(0.34, 0.28, 1500);
         this.noise(0.26, 0.22, 2200, 0.12);
@@ -705,6 +740,23 @@ class AudioKit {
       const kind = this.mood === "menu" ? ("menu" as const) : this.stageId;
       this.ambienceKind = null;
       this.setAmbience(kind);
+    }
+  }
+
+  private marchTimer: number | null = null;
+  private marchStep = 0;
+
+  /** Soft footfalls while the band marches between fights. */
+  setMarching(on: boolean): void {
+    if (on && this.marchTimer === null && this.soundOn) {
+      this.marchTimer = window.setInterval(() => {
+        if (!this.soundOnContextAlive()) return;
+        this.noise(0.05, 0.05, this.marchStep % 2 ? 500 : 380);
+        this.marchStep++;
+      }, 300);
+    } else if (!on && this.marchTimer !== null) {
+      clearInterval(this.marchTimer);
+      this.marchTimer = null;
     }
   }
 

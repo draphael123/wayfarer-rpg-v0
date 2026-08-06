@@ -1413,7 +1413,7 @@ export class Battle {
         }
         this.fx.ring(prey.x, prey.y, 60, "#ffd27d", { width: 4, life: 0.5 });
         this.hitstop = Math.max(this.hitstop, 0.09);
-        audio.play("ultWhirlwind");
+        audio.play("ultDuel");
         break;
       }
       case "aegis": {
@@ -1428,7 +1428,7 @@ export class Battle {
           if (hero.advCalling === "thornwarden") enemy.effects.push(makeEffect("burn", 3.5, 2.5, hero));
         }
         this.fx.ring(hero.x, hero.y, 200, "#bff0cf", { width: 5, life: 0.8 });
-        audio.play("ultSanctuary");
+        audio.play("ultAegis");
         break;
       }
       case "nova": {
@@ -1451,7 +1451,7 @@ export class Battle {
         this.fx.ring(hero.x, hero.y, 155, "#dcb0f5", { width: 6, life: 0.6 });
         this.fx.burst(hero.x, hero.y - 12, "#dcb0f5", 26, 210, { glow: true });
         this.fx.addShake(8);
-        audio.play("ultBarrage");
+        audio.play("ultNova");
         break;
       }
       case "shadows": {
@@ -1464,7 +1464,7 @@ export class Battle {
         }
         this.fx.ring(hero.x, hero.y, 90, "#b0a5f0", { width: 4, life: 0.5 });
         this.slowmo = Math.max(this.slowmo, 0.5);
-        audio.play("ultBlink");
+        audio.play("ultShadows");
         break;
       }
       default:

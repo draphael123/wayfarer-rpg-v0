@@ -1411,10 +1411,11 @@ export class Menus {
         <div class="guide-list">
           <div class="shop-note"><strong>${ico("coin")} Gold</strong> — every foe you slay and stage you clear pays gold. Even defeats salvage half the spoils.</div>
           <div class="shop-note"><strong>🍺 The Tavern</strong> — recruit new heroes to the band. Anyone hired can be rotated in or out of your fighting party of ${PARTY_CAP} on the Party screen.</div>
-          <div class="shop-note"><strong>${ico("shield")} The Armory</strong> — buy each hero better weapons (more damage) and armor (more health and protection). Three tiers of each.</div>
+          <div class="shop-note"><strong>${ico("shield")} The Armory</strong> — weapons upgrade in tiers, but armor is a WARDROBE: named pieces with real identities (a cloak that slips the first hit of a wave, plate that starts each fight shielded). Buy from the Armorer's Rack, dress heroes on their Equip screen — and the great foes each guard a RELIC piece for whoever fells them first.</div>
           <div class="shop-note"><strong>${ico("spark")} The Spell Shop</strong> — unlock a spell once for the whole band, then assign it to any hero whose attributes meet its bar. Each hero carries up to ${MAX_EQUIPPED} spells.</div>
           <div class="shop-note"><strong>${ico("banner")} Callings</strong> — at band level ${CALLING_UNLOCK_LEVEL} each hero may swear an oath their stats have earned: an always-on passive, regalia, and an ULTIMATE that charges as they play their role. At level ${ADV_CALLING_LEVEL} every oath deepens down one of two paths. Stats never lock — but drop below an oath's bar and it sleeps.</div>
-          <div class="shop-note"><strong>${ico("skull")} Bosses</strong> — the great foes fight dirty: the ogre hunts your frailest once enraged (a taunt answers it), and marked ground means MOVE. Watch for the crossed blades.</div>
+          <div class="shop-note"><strong>${ico("skull")} Bosses</strong> — the great foes hunt whoever HURTS them most. Pour damage in and a boss turns on you; your warrior holds its anger just by standing in its face, and taunts trump everything. Marked ground means MOVE.</div>
+          <div class="shop-note"><strong>⌨ Keyboard</strong> — on a computer: 1–4 picks a hero, Q/W/E casts, R is the ultimate. Aimed spells follow the mouse; click casts, Esc cancels. Rebind in Settings.</div>
           <div class="shop-note"><strong>${ico("star")} Talents</strong> — every 2 band levels, each hero earns a talent point for the Strength, Dexterity, and Magic trees. Find them on the Party screen.</div>
         </div>
       </div>

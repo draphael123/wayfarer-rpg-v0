@@ -253,7 +253,10 @@ function settleVictory(): void {
   for (const relic of ARMORS) {
     if (relic.boss && (battle.killCounts[relic.boss] ?? 0) > 0 && !save.armory.includes(relic.id)) {
       save.armory.push(relic.id);
-      setTimeout(() => menus.showToast(`RELIC CLAIMED: ${relic.name} — dress a hero on their Equip screen`), 900);
+      setTimeout(() => {
+        audio.play("relic");
+        menus.showToast(`RELIC CLAIMED: ${relic.name} — dress a hero on their Equip screen`);
+      }, 900);
     }
   }
   // loot was revealed on the victory card; bank it now
@@ -545,6 +548,7 @@ function frame(now: number): void {
     hud.update(dt);
     if (battle.state === "victory") rollLoot();
     audio.setBossMusic(!battle.tutorialMode && !!battle.bossRef?.alive && battle.state === "fighting");
+    audio.setMarching(!hud.paused && battle.marching);
 
     // camera: ease toward the action (or the boss during their intro)
     const living = battle.units.filter((u) => u.alive);
