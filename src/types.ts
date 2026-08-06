@@ -122,6 +122,7 @@ export interface Unit {
   leap: { t: number; dur: number; fromX: number; fromY: number; toX: number; toY: number; radius: number } | null; // airborne pounce in flight
   marching?: boolean; // held in the between-fights walk — render keeps the legs moving
   aloft?: boolean; // harriers circle out of melee reach until they dive
+  affix?: string; // elite modifier (stubborn/swift/burning/bulwark/vengeful)
 }
 
 export interface Projectile {

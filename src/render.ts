@@ -3527,6 +3527,20 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
       idleFlourishFx(battle, unit);
     }
     idlePrev.set(unit, unit.idleAnim);
+    // elite affixes wear a turning gold ring — you can see the trouble coming
+    if (unit.team === "enemy" && unit.affix && unit.entered) {
+      const spin = battle.time * 1.6 + unit.id;
+      ctx.globalAlpha = 0.65;
+      ctx.strokeStyle = unit.affix === "burning" ? "#ff9a5a" : unit.affix === "vengeful" ? "#ff8a70" : "#ffd76b";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([7, 6]);
+      ctx.lineDashOffset = -spin * 14;
+      ctx.beginPath();
+      ctx.ellipse(unit.x, unit.y + 2, unit.radius * 1.7, unit.radius * 0.7, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
     // Hard+ difficulty shows on the enemies themselves: a smoldering crimson ring
     if (unit.team === "enemy" && (save.difficulty ?? 1) >= 2 && unit.entered) {
       const brutal = (save.difficulty ?? 1) >= 3;

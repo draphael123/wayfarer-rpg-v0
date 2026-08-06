@@ -98,6 +98,7 @@ export class Battle {
   private clusterCool = 0; // cooldown on the scatter volley
   private bannerPlanted = false; // Gorehulk's 33% war banner
   private stillness: Record<number, { x: number; y: number; t: number }> = {}; // Rimeheart's cracking ice
+  private detonations: { x: number; y: number; at: number; dmg: number; r: number }[] = []; // vengeful elites' last words
 
   constructor(
     public stage: StageDef,
@@ -265,7 +266,37 @@ export class Battle {
       bird.aloft = true;
       bird.supportTimer = 4 + Math.random() * 3;
     }
+    // ELITE AFFIXES: some foes come touched — a title, a twist, and a lesson.
+    // More of them on higher difficulties and deeper roads.
+    const affixable = !this.tutorialMode && !BOSS_KINDS.includes(kind) && kind !== "warbanner" && kind !== "shambler";
+    if (affixable) {
+      const idx = this.saveRef?.difficulty ?? 1;
+      const chance = [0, 0.1, 0.17, 0.24][idx] + this.stage.id * 0.005;
+      if (Math.random() < chance) {
+        const pool = ["stubborn", "swift", "burning", "bulwark", "vengeful"];
+        const u = this.units[this.units.length - 1];
+        u.affix = pool[Math.floor(Math.random() * pool.length)];
+        if (u.affix === "stubborn") {
+          u.stats.maxHp = Math.round(u.stats.maxHp * 1.35);
+          u.hp = u.stats.maxHp;
+          u.stats.armor = Math.min(0.6, u.stats.armor + 0.2);
+        } else if (u.affix === "swift") {
+          u.effects.push(makeEffect("haste", 9999, 1.3, null));
+        } else if (u.affix === "bulwark") {
+          u.effects.push(makeEffect("shield", 9999, 45, null));
+        }
+      }
+    }
   }
+
+  /** Elite titles, announced when they crash in. */
+  static readonly AFFIX_NAMES: Record<string, string> = {
+    stubborn: "STUBBORN",
+    swift: "SWIFT",
+    burning: "BURNING",
+    bulwark: "WARDED",
+    vengeful: "VENGEFUL",
+  };
 
   private startNextWave(): void {
     this.waveIndex++;
@@ -452,6 +483,17 @@ export class Battle {
     if (target.aloft && source && source.team === "hero" && !opts.spell && source.stats.range <= 90) {
       this.fx.floatText(target.x, target.y - target.radius - 40, "aloft!", "#d8cfc0", 11);
       return;
+    }
+    // FLANKING: a blade from behind bites deeper — for everyone. Positioning pays.
+    if (source && source.alive && !opts.spell && source.team !== target.team && source.stats.range <= 90) {
+      if ((source.x - target.x) * target.facing < 0) {
+        rawAmount *= 1.25;
+        if (Math.random() < 0.2) this.fx.floatText(target.x, target.y - target.radius - 28, "flanked!", "#ffd27d", 10);
+      }
+    }
+    // a BURNING elite's blows set you alight
+    if (source?.affix === "burning" && !opts.spell && target.team === "hero") {
+      target.effects.push(makeEffect("burn", 2.5, 3, source));
     }
     // Battleheart pacing: with cooldowns stretched, every hero cast lands harder
     if (opts.spell && source && source.team === "hero" && target.team === "enemy") rawAmount *= SPELL_POTENCY;
@@ -727,6 +769,12 @@ export class Battle {
 
   private kill(unit: Unit, killer: Unit | null = null): void {
     if (unit.team === "hero") this.heroDeaths++;
+    // a VENGEFUL elite doesn't go quietly — back away from the body
+    if (unit.team === "enemy" && unit.affix === "vengeful") {
+      this.detonations.push({ x: unit.x, y: unit.y, at: this.time + 0.9, dmg: Math.max(10, unit.stats.damage * 1.2), r: 62 });
+      this.fx.ring(unit.x, unit.y, 62, "#ff8a70", { width: 3, life: 0.9 });
+      this.fx.floatText(unit.x, unit.y - unit.radius * 2.5, "it swells…", "#ff8a70", 12);
+    }
     unit.alive = false;
     unit.hp = 0;
     unit.deathTime = 0;
@@ -2285,10 +2333,22 @@ export class Battle {
           const target = unit.pendingTarget;
           unit.pendingTarget = null;
           if (target.alive) {
-            this.performAttack(unit, target);
-            // the Alpha's howled-up bites draw blood
-            if (unit.enemyKind === "alpha" && unit.phase >= 2 && target.alive && unit.stats.range < 90) {
-              target.effects.push(makeEffect("burn", 3, 3, unit));
+            // stepping out of a telegraphed swing makes it MISS — dodging is play now
+            if (
+              unit.team === "enemy" &&
+              unit.stats.range <= 90 &&
+              unitDist(unit, target) > unit.stats.range + target.radius + 16
+            ) {
+              unit.lunge = 0.6;
+              unit.lungeDir = this.normalize({ x: target.x - unit.x, y: target.y - unit.y });
+              this.fx.floatText(unit.x, unit.y - unit.radius * 2.6, "missed!", "#d8d2e4", 11);
+              this.fx.burst(unit.x + unit.lungeDir.x * 20, unit.y - 6, "rgba(200,195,210,0.5)", 4, 60, { life: 0.3 });
+            } else {
+              this.performAttack(unit, target);
+              // the Alpha's howled-up bites draw blood
+              if (unit.enemyKind === "alpha" && unit.phase >= 2 && target.alive && unit.stats.range < 90) {
+                target.effects.push(makeEffect("burn", 3, 3, unit));
+              }
             }
           }
         }
@@ -2299,6 +2359,19 @@ export class Battle {
     }
 
     this.separateUnits(dt);
+    // vengeful elites burst where they fell
+    for (let i = this.detonations.length - 1; i >= 0; i--) {
+      const d = this.detonations[i];
+      if (this.time < d.at) continue;
+      this.detonations.splice(i, 1);
+      for (const hero of this.livingHeroes()) {
+        if (Math.hypot(hero.x - d.x, hero.y - d.y) < d.r + hero.radius * 0.5) this.damage(hero, d.dmg, null, { color: "#ff8a70" });
+      }
+      this.fx.burst(d.x, d.y - 8, "#ff8a70", 16, 150, { glow: true, gravity: 60 });
+      this.fx.ring(d.x, d.y, d.r + 8, "#ff8a70", { width: 4, life: 0.4 });
+      this.fx.addShake(5);
+      audio.play("thud");
+    }
     this.updateTelegraphs(dt);
     this.updateZones(dt);
     this.updateProjectiles(dt);
@@ -2501,7 +2574,18 @@ export class Battle {
 
   /** Begin the anticipation pose; the strike lands when windup expires. */
   private startAttack(attacker: Unit, target: Unit): void {
-    attacker.windup = 0.13;
+    // enemies TELEGRAPH their swings now — a readable windup you can step out of.
+    // Heroes stay snappy; bosses have their own telegraph language already.
+    if (attacker.team === "enemy") {
+      const boss = BOSS_KINDS.includes(attacker.enemyKind ?? "");
+      const ranged = attacker.stats.range > 90;
+      attacker.windup = boss ? 0.32 : ranged ? 0.3 : 0.55;
+      if (!boss && !ranged) {
+        this.fx.ring(attacker.x, attacker.y, attacker.radius * 2.1, "#ff9a85", { width: 2, life: attacker.windup, squash: 0.4 });
+      }
+    } else {
+      attacker.windup = 0.13;
+    }
     attacker.pendingTarget = target;
     attacker.attackTimer = this.attackIntervalOf(attacker);
     attacker.facing = target.x >= attacker.x ? 1 : -1;
@@ -2563,6 +2647,10 @@ export class Battle {
       this.fx.addShake(enemy.radius > 20 ? 4 : 1.5);
       enemy.lunge = 0.5;
       enemy.lungeDir = { x: -1, y: 0 };
+      if (enemy.affix) {
+        this.fx.floatText(enemy.x, enemy.y - enemy.radius * 3 - 8, Battle.AFFIX_NAMES[enemy.affix] ?? enemy.affix, "#ffd76b", 13);
+        this.fx.ring(enemy.x, enemy.y, enemy.radius * 2.6, "#ffd76b", { width: 2.5, life: 0.6 });
+      }
     }
     // mid-leap the body belongs to the arc, not the brain
     if (enemy.leap) return;
