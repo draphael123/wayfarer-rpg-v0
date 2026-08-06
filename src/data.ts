@@ -557,6 +557,8 @@ export type ArmorFamily = "cloth" | "leather" | "mail" | "plate";
 /** Family drives the sprite (0 = bare, 1 = leather pauldrons, 2 = chain, 3 = plate). */
 export const ARMOR_FAMILY_TIER: Record<ArmorFamily, number> = { cloth: 0, leather: 1, mail: 2, plate: 3 };
 
+export type ArmorSlot = "body" | "helm" | "boots";
+
 export interface ArmorDef {
   id: string;
   name: string;
@@ -564,10 +566,15 @@ export interface ArmorDef {
   cost: number; // 0 = not sold (boss unique or starter)
   blurb: string;
   icon: string; // ico() name
+  slot?: ArmorSlot; // omitted = body (the piece that carries family identity, hook, and skill)
   tint?: string; // metal/cloth accent on the sprite (mail/plate families)
   hook?: "dodgeFirstHit" | "burnOnSpell" | "allyAura" | "waveShield" | "regen" | "retaliate" | "slowProof";
   boss?: EnemyKind; // first kill of this boss awards it
   mods: Partial<{ hpFlat: number; armorFlat: number; moveSpeed: number; atkSpeed: number; spellPower: number; healPower: number; rangedDmg: number; meleeDmg: number; cdr: number; crit: number }>;
+}
+
+export function slotOf(piece: ArmorDef): ArmorSlot {
+  return piece.slot ?? "body";
 }
 
 export const ARMORS: ArmorDef[] = [
@@ -602,25 +609,189 @@ export const ARMORS: ArmorDef[] = [
   { id: "rimeheartsCore", name: "Rimeheart's Core", family: "plate", cost: 0, icon: "skull", tint: "#a8d8ec", boss: "rimeheart", blurb: "+16% armor, +50 health, chill cannot take hold, and wounds slowly knit closed.", hook: "regen", mods: { armorFlat: 0.16, hpFlat: 50 } },
 ];
 
+// --- helms & boots: smaller pieces that tune stats and complete a family set ---
+
+export const HELMS: ArmorDef[] = [
+  { id: "sageCirclet", name: "Sage's Circlet", family: "cloth", slot: "helm", cost: 120, icon: "spark", blurb: "+6% spell power, −2% cooldowns.", mods: { spellPower: 0.06, cdr: 0.02 } },
+  { id: "pilgrimCowl", name: "Pilgrim's Cowl", family: "cloth", slot: "helm", cost: 110, icon: "plus", blurb: "+8% healing.", mods: { healPower: 0.08 } },
+  { id: "huntersHood", name: "Hunter's Hood", family: "leather", slot: "helm", cost: 130, icon: "bow", blurb: "+6% ranged damage, +2% move.", mods: { rangedDmg: 0.06, moveSpeed: 0.02 } },
+  { id: "trackersCap", name: "Tracker's Cap", family: "leather", slot: "helm", cost: 100, icon: "moon", blurb: "+10 health, +4% move.", mods: { hpFlat: 10, moveSpeed: 0.04 } },
+  { id: "steelCoif", name: "Steel Coif", family: "mail", slot: "helm", cost: 150, icon: "shield", blurb: "+15 health, +3% armor.", mods: { hpFlat: 15, armorFlat: 0.03 } },
+  { id: "wardensVisor", name: "Warden's Visor", family: "mail", slot: "helm", cost: 180, icon: "banner", blurb: "+5% armor.", mods: { armorFlat: 0.05 } },
+  { id: "greathelm", name: "Greathelm", family: "plate", slot: "helm", cost: 220, icon: "shield", tint: "#aab4c2", blurb: "+6% armor, +15 health — but 2% slower.", mods: { armorFlat: 0.06, hpFlat: 15, moveSpeed: -0.02 } },
+  { id: "wingedHelm", name: "Winged Helm", family: "plate", slot: "helm", cost: 260, icon: "sword", tint: "#b8a68a", blurb: "+4% armor, +5% melee damage.", mods: { armorFlat: 0.04, meleeDmg: 0.05 } },
+];
+
+export const BOOTS: ArmorDef[] = [
+  { id: "driftSandals", name: "Drift Sandals", family: "cloth", slot: "boots", cost: 100, icon: "arrow", blurb: "+6% move, −2% cooldowns.", mods: { moveSpeed: 0.06, cdr: 0.02 } },
+  { id: "quietSlippers", name: "Quiet Slippers", family: "cloth", slot: "boots", cost: 90, icon: "moon", blurb: "+4% move, +4% spell power.", mods: { moveSpeed: 0.04, spellPower: 0.04 } },
+  { id: "roadstriders", name: "Roadstriders", family: "leather", slot: "boots", cost: 120, icon: "arrow", blurb: "+8% move speed.", mods: { moveSpeed: 0.08 } },
+  { id: "springheels", name: "Springheel Boots", family: "leather", slot: "boots", cost: 150, icon: "bow", blurb: "+5% move, +4% attack speed.", mods: { moveSpeed: 0.05, atkSpeed: 0.04 } },
+  { id: "marchGreaves", name: "March Greaves", family: "mail", slot: "boots", cost: 140, icon: "shield", blurb: "+12 health, +3% armor.", mods: { hpFlat: 12, armorFlat: 0.03 } },
+  { id: "anchorSabatons", name: "Anchor Sabatons", family: "mail", slot: "boots", cost: 170, icon: "banner", blurb: "+5% armor — planted like a pier post.", mods: { armorFlat: 0.05 } },
+  { id: "bulwarkGreaves", name: "Bulwark Greaves", family: "plate", slot: "boots", cost: 200, icon: "shield", tint: "#8a99b8", blurb: "+5% armor, +12 health — but 3% slower.", mods: { armorFlat: 0.05, hpFlat: 12, moveSpeed: -0.03 } },
+  { id: "earthshakers", name: "Earthshaker Greaves", family: "plate", slot: "boots", cost: 240, icon: "sword", tint: "#b8a68a", blurb: "+4% armor, +4% melee damage.", mods: { armorFlat: 0.04, meleeDmg: 0.04 } },
+];
+
+/** Every wearable piece in the realm, all three slots. */
+export const ALL_GEAR: ArmorDef[] = [...ARMORS, ...HELMS, ...BOOTS];
+
 export function armorById(id: string | null | undefined): ArmorDef | null {
-  return ARMORS.find((a) => a.id === id) ?? null;
+  return ALL_GEAR.find((a) => a.id === id) ?? null;
 }
 
-function armorPieceMods(id: string | null | undefined) {
-  const m = { meleeDmg: 0, rangedDmg: 0, hpPct: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, startShield: 0 };
-  const piece = armorById(id);
-  if (!piece) return m;
-  m.meleeDmg = piece.mods.meleeDmg ?? 0;
-  m.rangedDmg = piece.mods.rangedDmg ?? 0;
-  m.armorFlat = piece.mods.armorFlat ?? 0;
-  m.cdr = piece.mods.cdr ?? 0;
-  m.atkSpeed = piece.mods.atkSpeed ?? 0;
-  m.moveSpeed = piece.mods.moveSpeed ?? 0;
-  m.crit = piece.mods.crit ?? 0;
-  m.spellPower = piece.mods.spellPower ?? 0;
-  m.healPower = piece.mods.healPower ?? 0;
+// --- the forge: upgrades bind to a piece and scale everything it gives ---
+
+export const FORGE_MAX = 3;
+
+/** How much stronger a piece's mods are at this forge level. */
+export function forgeScale(level: number): number {
+  return 1 + 0.25 * Math.max(0, Math.min(FORGE_MAX, level));
+}
+
+/** Gold to raise a piece TO the given level (relics forge from a 420g base). */
+export function forgeCost(piece: ArmorDef, toLevel: number): number {
+  const base = piece.cost > 0 ? piece.cost : 420;
+  return Math.round((base * [0.5, 0.8, 1.2][toLevel - 1]) / 10) * 10;
+}
+
+/** A piece's display name with its forge mark. */
+export function pieceLabel(piece: ArmorDef, forge: Record<string, number> | undefined): string {
+  const lvl = forge?.[piece.id] ?? 0;
+  return lvl > 0 ? `${piece.name} +${lvl}` : piece.name;
+}
+
+// --- family sets: dress a hero head to toe in one family and it answers ---
+
+export interface SetBonusDef {
+  two: string; // menu text for the 2-piece bonus
+  three: string; // menu text for the 3-piece bonus
+  hook3?: "allyAura" | "waveShield"; // battle-side hook granted at 3 pieces
+}
+
+export const SET_BONUSES: Record<ArmorFamily, SetBonusDef> = {
+  cloth: { two: "−8% cooldowns", three: "+10% spell power, +10% healing" },
+  leather: { two: "+8% move speed", three: "+8% attack speed, +5% crit" },
+  mail: { two: "+20 health, +4% armor", three: "nearby allies take 6% less harm", hook3: "allyAura" },
+  plate: { two: "+8% armor", three: "every wave begins with a 30-point shield", hook3: "waveShield" },
+};
+
+/** What this hero is wearing, resolved for stat math. */
+export interface GearWorn {
+  body: string | null;
+  helm: string | null;
+  boots: string | null;
+  forge?: Record<string, number>;
+}
+
+export function heroGearOf(hero: Pick<HeroSave, "armor" | "helm" | "boots">, forge?: Record<string, number>): GearWorn {
+  return { body: hero.armor, helm: hero.helm ?? null, boots: hero.boots ?? null, forge };
+}
+
+/** The family worn 2+ times across the three slots (at most one can qualify). */
+export function armorSetOf(gear: GearWorn): { family: ArmorFamily; tier: 2 | 3 } | null {
+  const counts: Partial<Record<ArmorFamily, number>> = {};
+  for (const id of [gear.body, gear.helm, gear.boots]) {
+    const piece = armorById(id);
+    if (piece) counts[piece.family] = (counts[piece.family] ?? 0) + 1;
+  }
+  for (const family of Object.keys(counts) as ArmorFamily[]) {
+    const n = counts[family] ?? 0;
+    if (n >= 2) return { family, tier: n >= 3 ? 3 : 2 };
+  }
+  return null;
+}
+
+function normalizeGear(gear: GearWorn | string | null | undefined): GearWorn {
+  if (gear && typeof gear === "object") return gear;
+  return { body: gear ?? null, helm: null, boots: null };
+}
+
+function gearMods(input: GearWorn | string | null | undefined) {
+  const m = { meleeDmg: 0, rangedDmg: 0, hpPct: 0, hpFlat: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, startShield: 0 };
+  const gear = normalizeGear(input);
+  for (const id of [gear.body, gear.helm, gear.boots]) {
+    const piece = armorById(id);
+    if (!piece) continue;
+    const s = forgeScale(gear.forge?.[piece.id] ?? 0);
+    m.meleeDmg += (piece.mods.meleeDmg ?? 0) * s;
+    m.rangedDmg += (piece.mods.rangedDmg ?? 0) * s;
+    m.hpFlat += (piece.mods.hpFlat ?? 0) * s;
+    m.armorFlat += (piece.mods.armorFlat ?? 0) * s;
+    m.cdr += (piece.mods.cdr ?? 0) * s;
+    m.atkSpeed += (piece.mods.atkSpeed ?? 0) * s;
+    m.moveSpeed += (piece.mods.moveSpeed ?? 0) * s;
+    m.crit += (piece.mods.crit ?? 0) * s;
+    m.spellPower += (piece.mods.spellPower ?? 0) * s;
+    m.healPower += (piece.mods.healPower ?? 0) * s;
+  }
+  const set = armorSetOf(gear);
+  if (set) {
+    if (set.family === "cloth") m.cdr += 0.08;
+    if (set.family === "leather") m.moveSpeed += 0.08;
+    if (set.family === "mail") {
+      m.hpFlat += 20;
+      m.armorFlat += 0.04;
+    }
+    if (set.family === "plate") m.armorFlat += 0.08;
+    if (set.tier >= 3) {
+      if (set.family === "cloth") {
+        m.spellPower += 0.1;
+        m.healPower += 0.1;
+      }
+      if (set.family === "leather") {
+        m.atkSpeed += 0.08;
+        m.crit += 0.05;
+      }
+    }
+  }
   return m;
 }
+
+// --- armor skills: the worn body piece's family grants a fifth battle button ---
+
+export const ARMOR_ACTIVES: Record<ArmorFamily, AbilityDef> = {
+  cloth: {
+    id: "armorSurge",
+    name: "Surge",
+    gate: { attr: "int", value: 0 },
+    targeting: "instant",
+    cooldown: 24,
+    color: "#b48ae8",
+    icon: "chainspark",
+    blurb: "Cloth skill: a rush of focus shaves seconds off this hero's cooldowns.",
+  },
+  leather: {
+    id: "armorTumble",
+    name: "Tumble",
+    gate: { attr: "dex", value: 0 },
+    targeting: "instant",
+    cooldown: 18,
+    color: "#8ed081",
+    icon: "rush",
+    blurb: "Leather skill: roll clear — shed the foes' attention and sprint briefly.",
+  },
+  mail: {
+    id: "armorRally",
+    name: "Rally",
+    gate: { attr: "vit", value: 0 },
+    targeting: "instant",
+    cooldown: 26,
+    color: "#9fd4e8",
+    icon: "secondwind",
+    blurb: "Mail skill: a steadying shout mends this hero and allies close by.",
+  },
+  plate: {
+    id: "armorBrace",
+    name: "Brace",
+    gate: { attr: "vit", value: 0 },
+    targeting: "instant",
+    cooldown: 22,
+    color: "#c9d2dd",
+    icon: "stoneskin",
+    blurb: "Plate skill: plant your feet — take greatly reduced harm for a few seconds.",
+  },
+};
 
 /** Gold cost of each ability in the spell shop. */
 export const SPELL_COSTS: Record<string, number> = {
@@ -1265,7 +1436,7 @@ export function cooldownReduction(hero: HeroSave): number {
 export function deriveStats(
   attrs: Attributes,
   weaponTier = 0,
-  armor: string | null = null,
+  armor: GearWorn | string | null = null,
   talents?: Record<string, number>,
   trinket?: string | null,
   calling?: string | null,
@@ -1274,7 +1445,7 @@ export function deriveStats(
   const t = talentMods(talents);
   const k = trinketMods(trinket);
   const c = callingStatMods(calling, advCalling);
-  const v = armorPieceMods(armor);
+  const v = gearMods(armor);
   const mods = {
     meleeDmg: t.meleeDmg + k.meleeDmg + c.meleeDmg + v.meleeDmg,
     rangedDmg: t.rangedDmg + k.rangedDmg + c.rangedDmg + v.rangedDmg,
@@ -1289,7 +1460,7 @@ export function deriveStats(
     startShield: t.startShield + k.startShield + c.startShield + v.startShield,
   };
   const weapon = dominantWeapon(attrs, calling);
-  const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + (armorById(armor)?.mods.hpFlat ?? 0));
+  const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + v.hpFlat);
   const armorFrac = Math.min(0.65, attrs.vit * 0.02 + attrs.str * 0.01);
   const speed = 95 + Math.min(45, attrs.dex * 3);
   const healPower = 2 + attrs.spi * 1.6;

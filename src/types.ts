@@ -54,6 +54,7 @@ export interface AbilityState {
   def: AbilityDef;
   timer: number; // seconds until ready; 0 = ready (ultimates mirror charge here: 1 = charging, 0 = full)
   ult?: boolean; // calling ultimate: gated by Unit.ultCharge, not time
+  armorSkill?: boolean; // family skill granted by the worn body armor
 }
 
 export interface DerivedStats {
@@ -181,7 +182,9 @@ export interface HeroSave {
   recruited: boolean;
   active: boolean; // in the fighting party (max 4)
   weaponTier: number; // 0-3
-  armor: string | null; // equipped armor piece id (null = traveler's garb)
+  armor: string | null; // equipped body armor piece id (null = traveler's garb)
+  helm: string | null; // equipped helm piece id
+  boots: string | null; // equipped boots piece id
   talents: Record<string, number>; // talent id -> rank
   trinket: string | null;
   calling: string | null; // sworn calling id (band level 5+), null = unsworn
@@ -204,7 +207,8 @@ export interface SaveData {
   gold: number;
   unlockedSpells: string[]; // ability ids bought in the spell shop (account-wide)
   inventory: string[]; // trinket ids collected as loot
-  armory: string[]; // armor piece ids owned (one copy dresses one hero)
+  armory: string[]; // armor piece ids owned, any slot (one copy dresses one hero)
+  forge: Record<string, number>; // piece id -> forge level 0-3 (upgrades bind to the piece)
   difficulty: number; // index into DIFFICULTIES
   seenIntro: boolean; // first-run tutorial prompt shown
   stageStats: Record<number, { bestTime: number; clears: number }>; // per-stage clear records

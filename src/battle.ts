@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, callingById, callingEligible, cooldownReduction, deriveStats, partyRoster, talentMods, trinketMods } from "./data";
+import { ARMOR_ACTIVES, DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, talentMods, trinketMods, SET_BONUSES } from "./data";
 import type { FxSystem } from "./fx";
 import type {
   AbilityState,
@@ -110,12 +110,15 @@ export class Battle {
       const sworn = callingById(heroSave.calling);
       const oath = sworn && callingEligible(sworn, heroSave.attrs) ? sworn : null;
       const advanced = oath ? heroSave.advCalling : null;
-      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armor, heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced);
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroGearOf(heroSave, save.forge), heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced);
       const abilities: AbilityState[] = heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d)
         .map((def) => ({ def, timer: 0 }));
       if (oath) abilities.push({ def: oath.signature, timer: 1, ult: true });
+      // the worn body armor's family grants its skill as a fifth button
+      const bodyPiece = armorById(heroSave.armor);
+      if (bodyPiece) abilities.push({ def: ARMOR_ACTIVES[bodyPiece.family], timer: 0, armorSkill: true });
       this.units.push({
         id: nextUnitId++,
         name: HEROES[i].name,
@@ -323,7 +326,7 @@ export class Battle {
       }
       const armorHook = this.armorHookOf(hero);
       if (armorHook === "dodgeFirstHit" || hero.advCalling === "phantom") this.armorDodgeReady.add(hero.id);
-      if (armorHook === "waveShield") {
+      if (armorHook === "waveShield" || this.armorSetHookOf(hero) === "waveShield") {
         hero.effects = hero.effects.filter((e) => e.kind !== "shield");
         hero.effects.push(makeEffect("shield", 9999, 30, null));
       }
@@ -338,6 +341,22 @@ export class Battle {
   private armorHookOf(unit: Unit): string | null {
     if (unit.team !== "hero" || unit.heroIndex < 0 || !this.saveRef) return null;
     return armorById(this.saveRef.heroes[unit.heroIndex]?.armor)?.hook ?? null;
+  }
+
+  /** The hook earned by wearing three pieces of one family (mail aura / plate ward). */
+  private armorSetHookOf(unit: Unit): string | null {
+    if (unit.team !== "hero" || unit.heroIndex < 0 || !this.saveRef) return null;
+    const hero = this.saveRef.heroes[unit.heroIndex];
+    if (!hero) return null;
+    const set = armorSetOf(heroGearOf(hero));
+    return set && set.tier >= 3 ? (SET_BONUSES[set.family].hook3 ?? null) : null;
+  }
+
+  /** Forge level of the hero's worn body piece — armor skills grow with it. */
+  private bodyForgeOf(unit: Unit): number {
+    if (unit.team !== "hero" || unit.heroIndex < 0 || !this.saveRef) return 0;
+    const id = this.saveRef.heroes[unit.heroIndex]?.armor;
+    return id ? (this.saveRef.forge?.[id] ?? 0) : 0;
   }
 
   /** Rank of a talent on this unit's hero save (0 for enemies / no save). */
@@ -437,10 +456,12 @@ export class Battle {
     ) {
       amount *= 0.94;
     }
-    // a Warden's Hauberk shelters everyone near its wearer
+    // a Warden's Hauberk (or a full mail set) shelters everyone near its wearer
     if (
       target.team === "hero" &&
-      this.livingHeroes().some((h) => h !== target && this.armorHookOf(h) === "allyAura" && Math.hypot(h.x - target.x, h.y - target.y) < 90)
+      this.livingHeroes().some(
+        (h) => h !== target && (this.armorHookOf(h) === "allyAura" || this.armorSetHookOf(h) === "allyAura") && Math.hypot(h.x - target.x, h.y - target.y) < 90,
+      )
     ) {
       amount *= 0.94;
     }
@@ -1937,6 +1958,56 @@ export class Battle {
         this.zones.push({ x: hero.x, y: hero.y, radius: 90, time: 0, duration: 5, kind: "frost", power: 0.4, dps: 3 + attrs.vit * 0.8, from: hero });
         this.fx.ring(hero.x, hero.y, 90, "#a8c9d8", { width: 4, life: 0.6 });
         audio.play("spStoneskin");
+        break;
+      }
+      // --- armor skills: the worn body piece's family answers ---
+      case "armorSurge": {
+        // cloth: a rush of focus — shave seconds off every other cooldown
+        const shave = 3 + this.bodyForgeOf(hero);
+        for (const ab of hero.abilities) {
+          if (ab !== state && !ab.ult && ab.timer > 0) ab.timer = Math.max(0, ab.timer - shave);
+        }
+        this.fx.ring(hero.x, hero.y, 60, "#b48ae8", { width: 3, life: 0.5 });
+        this.fx.burst(hero.x, hero.y - 20, "#d4baf5", 14, 130, { glow: true, gravity: -70 });
+        audio.play("spWard");
+        break;
+      }
+      case "armorTumble": {
+        // leather: roll clear — shed every hunter and sprint
+        const forge = this.bodyForgeOf(hero);
+        hero.effects.push(makeEffect("haste", 2 + forge * 0.3, 1.6, hero));
+        hero.effects.push(makeEffect("guard", 1.2, 0.4, hero));
+        for (const enemy of this.livingEnemies()) {
+          if (enemy.aggro === hero) enemy.aggro = null;
+          if (enemy.attackTarget === hero) enemy.attackTarget = null;
+        }
+        hero.lunge = 1;
+        hero.lungeDir = dir;
+        this.fx.burst(hero.x, hero.y - 6, "#c9b490", 12, 110, { gravity: 60 });
+        this.fx.ring(hero.x, hero.y, 36, "#8ed081", { width: 2.5, life: 0.3 });
+        audio.play("spRush");
+        break;
+      }
+      case "armorRally": {
+        // mail: a steadying shout — mend this hero and allies close by
+        const frac = 0.1 + this.bodyForgeOf(hero) * 0.02;
+        for (const ally of this.livingHeroes()) {
+          if (ally !== hero && Math.hypot(ally.x - hero.x, ally.y - hero.y) > 130) continue;
+          this.heal(ally, ally.stats.maxHp * frac, true, hero);
+        }
+        this.fx.ring(hero.x, hero.y, 130, "#9fd4e8", { width: 4, life: 0.6 });
+        audio.play("spSecondwind");
+        break;
+      }
+      case "armorBrace": {
+        // plate: plant your feet — greatly reduced harm for a few seconds
+        const forge = this.bodyForgeOf(hero);
+        hero.effects = hero.effects.filter((e) => e.kind !== "guard");
+        hero.effects.push(makeEffect("guard", 3 + forge * 0.35, 0.55 + forge * 0.05, hero));
+        hero.moveTarget = null;
+        this.fx.ring(hero.x, hero.y, 46, "#c9d2dd", { width: 4, life: 0.5 });
+        this.fx.burst(hero.x, hero.y - 10, "#e8edf2", 10, 90, { glow: true });
+        audio.play("spShieldslam");
         break;
       }
       default:

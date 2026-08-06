@@ -1,9 +1,21 @@
 import { audio } from "./audio";
 import {
   ABILITIES,
+  ALL_GEAR,
   ARMORS,
+  ARMOR_ACTIVES,
   ARMOR_FAMILY_TIER,
+  type ArmorDef,
   armorById,
+  armorSetOf,
+  BOOTS,
+  FORGE_MAX,
+  forgeCost,
+  HELMS,
+  heroGearOf,
+  pieceLabel,
+  SET_BONUSES,
+  slotOf,
   ADV_CALLING_LEVEL,
   ADV_SWITCH_COST,
   advCallingById,
@@ -523,7 +535,7 @@ export class Menus {
     const unspent = save.heroes.reduce((sum, h, i) => sum + (h.recruited ? save.unspent[i] : 0), 0);
     const shopDeal =
       save.heroes.some((h) => h.recruited && h.weaponTier + 1 < WEAPON_TIERS.length && WEAPON_TIERS[h.weaponTier + 1].cost <= save.gold) ||
-      ARMORS.some((a) => a.cost > 0 && !save.armory.includes(a.id) && a.cost <= save.gold) ||
+      ALL_GEAR.some((a) => a.cost > 0 && !save.armory.includes(a.id) && a.cost <= save.gold) ||
       ABILITIES.some((a) => !save.unlockedSpells.includes(a.id) && (SPELL_COSTS[a.id] ?? 100) <= save.gold);
     const recruitReady = save.heroes.some((h, i) => !h.recruited && heroArrived(save, i) && (RECRUIT_COST[i] ?? Infinity) <= save.gold);
     const btn = (id: string, icon: string, label: string, extra = "") =>
@@ -1419,6 +1431,7 @@ export class Menus {
       ["ability2", "Cast ability 2"],
       ["ability3", "Cast ability 3"],
       ["ability4", "Cast the ULTIMATE"],
+      ["ability5", "Cast the ARMOR SKILL"],
     ];
     const page = el(`
       <div class="page">
@@ -1767,7 +1780,7 @@ export class Menus {
         <div class="guide-list">
           <div class="shop-note"><strong>${ico("coin")} Gold</strong> — every foe you slay and stage you clear pays gold. Even defeats salvage half the spoils.</div>
           <div class="shop-note"><strong>🍺 The Tavern</strong> — recruit new heroes to the band. Anyone hired can be rotated in or out of your fighting party of ${PARTY_CAP} on the Party screen.</div>
-          <div class="shop-note"><strong>${ico("shield")} The Armory</strong> — weapons upgrade in tiers, but armor is a WARDROBE: named pieces with real identities (a cloak that slips the first hit of a wave, plate that starts each fight shielded). Buy from the Armorer's Rack, dress heroes on their Equip screen — and the great foes each guard a RELIC piece for whoever fells them first.</div>
+          <div class="shop-note"><strong>${ico("shield")} The Armory</strong> — weapons upgrade in tiers, but armor is a WARDROBE across THREE slots: body, helm, and boots. The body piece grants its family's battle skill (cloth Surge, leather Tumble, mail Rally, plate Brace — the extra button in battle); wear two or three pieces of one family and the SET answers with more. The Forge reworks any owned piece up to +3, and the great foes each guard a RELIC piece for whoever fells them first.</div>
           <div class="shop-note"><strong>${ico("spark")} The Spell Shop</strong> — unlock a spell once for the whole band, then assign it to any hero whose attributes meet its bar. Each hero carries up to ${MAX_EQUIPPED} spells.</div>
           <div class="shop-note"><strong>${ico("banner")} Callings</strong> — at band level ${CALLING_UNLOCK_LEVEL} each hero may swear an oath their stats have earned: an always-on passive, regalia, and an ULTIMATE that charges as they play their role. At level ${ADV_CALLING_LEVEL} every oath deepens down one of two paths. Stats never lock — but drop below an oath's bar and it sleeps.</div>
           <div class="shop-note"><strong>${ico("skull")} Bosses</strong> — the great foes hunt whoever HURTS them most. Pour damage in and a boss turns on you; your warrior holds its anger just by standing in its face, and taunts trump everything. Marked ground means MOVE.</div>
@@ -1967,6 +1980,8 @@ export class Menus {
   /** One gesture from gold to dressed: pick the wearer right at the counter. */
   private askWhoWears(pieceId: string): void {
     const piece = armorById(pieceId)!;
+    const slot = slotOf(piece);
+    const wornOf = (h: (typeof this.save.heroes)[number]) => (slot === "body" ? h.armor : slot === "helm" ? h.helm : h.boots);
     const pop = el(`
       <div class="levelup-pop">
         <div class="levelup-card">
@@ -1976,7 +1991,7 @@ export class Menus {
             ${this.save.heroes
               .map((h, i) => ({ h, i }))
               .filter(({ h }) => h.recruited)
-              .map(({ h, i }) => `<button class="toggle-btn wear-opt" data-wear="${i}">${HEROES[i].name}${h.armor ? "" : " ◇"}</button>`)
+              .map(({ h, i }) => `<button class="toggle-btn wear-opt" data-wear="${i}">${HEROES[i].name}${wornOf(h) ? "" : " ◇"}</button>`)
               .join("")}
           </div>
           <div class="levelup-actions"><button class="big-btn" data-wear="store">Just store it</button></div>
@@ -1987,7 +2002,10 @@ export class Menus {
       const pick = (event.target as HTMLElement).closest("[data-wear]")?.getAttribute("data-wear");
       if (!pick) return;
       if (pick !== "store") {
-        this.save.heroes[Number(pick)].armor = pieceId;
+        const h = this.save.heroes[Number(pick)];
+        if (slot === "body") h.armor = pieceId;
+        else if (slot === "helm") h.helm = pieceId;
+        else h.boots = pieceId;
         persist(this.save);
         audio.play("clink");
         this.showToast(`${HEROES[Number(pick)].name} dons the ${piece.name}`);
@@ -2126,43 +2144,90 @@ export class Menus {
       body.appendChild(card);
     }
 
-    // the armorer's rack: named pieces, each a decision — no ladders here
+    // the armorer's rack: named pieces, each a decision — now in three fittings
     const rack = el(`
       <div class="hero-card">
         <div class="hero-name">The Armorer's Rack</div>
-        <div class="hero-meta">Every piece has its own character. Buy a copy, then dress a hero on their Equip screen.</div>
+        <div class="hero-meta">Every piece has its own character. Body pieces grant their family's battle skill; matching helm and boots complete a set. Buy a copy, then dress a hero on their Equip screen.</div>
         <div class="armor-rack"></div>
       </div>
     `);
     const rackList = rack.querySelector(".armor-rack")!;
-    for (const piece of ARMORS) {
-      const owned = save.armory.filter((x) => x === piece.id).length;
-      if (piece.cost === 0 && owned === 0) {
+    const wornBy = (piece: ArmorDef) =>
+      HEROES.filter((_, hi) => {
+        const h = save.heroes[hi];
+        const s = slotOf(piece);
+        return (s === "body" ? h.armor : s === "helm" ? h.helm : h.boots) === piece.id;
+      }).map((h) => h.name);
+    const rackSections: [string, ArmorDef[]][] = [
+      ["Body", ARMORS],
+      ["Helms", HELMS],
+      ["Boots", BOOTS],
+    ];
+    for (const [label, catalog] of rackSections) {
+      rackList.appendChild(el(`<div class="spell-section">${label}</div>`));
+      for (const piece of catalog) {
+        const owned = save.armory.filter((x) => x === piece.id).length;
+        if (piece.cost === 0 && owned === 0) {
+          rackList.appendChild(
+            el(`<div class="curio-card unfound"><span class="curio-icon">?</span><span class="curio-text"><strong>A great foe's relic</strong><em>Fell one of the road's masters for the first time to claim it.</em></span></div>`),
+          );
+          continue;
+        }
+        const wearers = wornBy(piece);
         rackList.appendChild(
-          el(`<div class="curio-card unfound"><span class="curio-icon">?</span><span class="curio-text"><strong>A great foe's relic</strong><em>Fell one of the road's masters for the first time to claim it.</em></span></div>`),
+          el(`
+            <div class="curio-card ${piece.boss ? "rare" : ""}">
+              <span class="curio-icon">${ico(piece.icon)}</span>
+              <span class="curio-text">
+                <strong>${pieceLabel(piece, save.forge)} <span class="armor-fam">${piece.family}</span>${owned > 1 ? ` <span class="curio-count">×${owned}</span>` : ""}</strong>
+                <em>${piece.blurb}</em>
+                ${wearers.length ? `<em class="curio-worn">worn by ${wearers.join(" & ")}</em>` : owned ? `<em class="curio-worn">in the armory, unworn</em>` : ""}
+              </span>
+              ${
+                piece.cost > 0 && owned === 0
+                  ? `<button class="big-btn buy-btn ${save.gold < piece.cost ? "cant" : ""}" data-armorbuy="${piece.id}">${ico("coin")} ${piece.cost}</button>`
+                  : piece.cost === 0
+                    ? '<span class="rare-tag">RELIC</span>'
+                    : `<button class="big-btn buy-btn ${save.gold < piece.cost ? "cant" : ""}" data-armorbuy="${piece.id}">${ico("coin")} ${piece.cost}</button>`
+              }
+            </div>
+          `),
         );
-        continue;
       }
-      const wearers = HEROES.filter((_, hi) => save.heroes[hi].armor === piece.id).map((h) => h.name);
-      rackList.appendChild(
-        el(`
-          <div class="curio-card ${piece.boss ? "rare" : ""}">
-            <span class="curio-icon">${ico(piece.icon)}</span>
-            <span class="curio-text">
-              <strong>${piece.name} <span class="armor-fam">${piece.family}</span>${owned > 1 ? ` <span class="curio-count">×${owned}</span>` : ""}</strong>
-              <em>${piece.blurb}</em>
-              ${wearers.length ? `<em class="curio-worn">worn by ${wearers.join(" & ")}</em>` : owned ? `<em class="curio-worn">in the armory, unworn</em>` : ""}
-            </span>
-            ${
-              piece.cost > 0
-                ? `<button class="big-btn buy-btn ${save.gold < piece.cost ? "cant" : ""}" data-armorbuy="${piece.id}">${ico("coin")} ${piece.cost}</button>`
-                : '<span class="rare-tag">RELIC</span>'
-            }
-          </div>
-        `),
-      );
     }
     body.appendChild(rack);
+
+    // the forge: upgrades bind to the piece and sharpen everything it gives
+    const ownedPieces = [...new Set(save.armory)].map((id) => armorById(id)).filter((p): p is ArmorDef => !!p);
+    if (ownedPieces.length) {
+      const forge = el(`
+        <div class="hero-card tinker-bench">
+          <div class="hero-name">The Forge</div>
+          <div class="hero-meta">The smith can rework any owned piece up to +${FORGE_MAX} — every bonus it gives grows a quarter stronger per mark.</div>
+          <div class="tinker-rows"></div>
+        </div>
+      `);
+      const rows = forge.querySelector(".tinker-rows")!;
+      for (const piece of ownedPieces) {
+        const lvl = save.forge[piece.id] ?? 0;
+        const pips = "●".repeat(lvl) + "○".repeat(FORGE_MAX - lvl);
+        const next = lvl < FORGE_MAX ? forgeCost(piece, lvl + 1) : 0;
+        rows.appendChild(
+          el(`
+            <div class="tinker-row">
+              <span class="tinker-item">${ico(piece.icon)} ${pieceLabel(piece, save.forge)} <span class="forge-pips">${pips}</span></span>
+              ${
+                lvl < FORGE_MAX
+                  ? `<button class="big-btn buy-btn ${save.gold < next ? "cant" : ""}" data-forge="${piece.id}">Forge +${lvl + 1} — ${next}g</button>`
+                  : '<span class="gear-max">Masterwork</span>'
+              }
+            </div>
+          `),
+        );
+      }
+      body.appendChild(forge);
+    }
 
     // Tinker's bench: duplicate trinkets aren't dead weight — fuse or sell them
     const counts = new Map<string, number>();
@@ -2204,6 +2269,21 @@ export class Menus {
         save.armory.push(id);
         persist(save);
         this.askWhoWears(piece.id);
+        return;
+      }
+      const forgeBtn = (event.target as HTMLElement).closest("[data-forge]");
+      if (forgeBtn) {
+        const id = forgeBtn.getAttribute("data-forge")!;
+        const piece = armorById(id)!;
+        const lvl = save.forge[id] ?? 0;
+        if (lvl >= FORGE_MAX) return;
+        if (!this.spend(forgeCost(piece, lvl + 1))) return;
+        save.forge[id] = lvl + 1;
+        persist(save);
+        audio.play(lvl + 1 >= FORGE_MAX ? "levelup" : "clink");
+        navigator.vibrate?.([12, 20, 30]);
+        this.showToast(`${piece.name} reforged to +${lvl + 1}${lvl + 1 >= FORGE_MAX ? " — masterwork!" : ""}`);
+        this.renderShop("armory");
         return;
       }
       const fuseBtn = (event.target as HTMLElement).closest("[data-fuse]");
@@ -2538,7 +2618,7 @@ export class Menus {
     const stats = deriveStats(
       hero.attrs,
       hero.weaponTier,
-      hero.armor,
+      heroGearOf(hero, save.forge),
       hero.talents,
       hero.trinket,
       oathHolds ? hero.calling : null,
@@ -2676,7 +2756,7 @@ export class Menus {
         return c && callingEligible(c, hero.attrs) ? hero.calling : null;
       };
       const effAdv = () => (effCalling() ? hero.advCalling : null);
-      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, hero.armor, hero.talents, hero.trinket, effCalling(), effAdv());
+      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv());
       hero.attrs[key] += 1;
       save.unspent[index] -= 1;
       const before = unlocked.length;
@@ -2697,7 +2777,7 @@ export class Menus {
         audio.play("click");
       }
       persist(save);
-      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, hero.armor, hero.talents, hero.trinket, effCalling(), effAdv());
+      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv());
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, statsBefore, statsAfter);
     });
@@ -2717,7 +2797,7 @@ export class Menus {
         const c = callingById(hero.calling);
         return c && callingEligible(c, hero.attrs) ? hero.calling : null;
       };
-      const before = deriveStats(hero.attrs, hero.weaponTier, hero.armor, hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null);
+      const before = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null);
       for (let p = 0; p < pts; p++) {
         let bestK = ATTR_KEYS[0];
         let bestScore = -1;
@@ -2740,7 +2820,7 @@ export class Menus {
       persist(save);
       audio.play("levelup");
       this.showToast(`${def.name}'s training follows their nature — ${pts} point${pts === 1 ? "" : "s"} spent`);
-      const after = deriveStats(hero.attrs, hero.weaponTier, hero.armor, hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null);
+      const after = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null);
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, before, after);
     });
@@ -2922,13 +3002,6 @@ export class Menus {
     const oathGuided = sheetHolds && weapon !== dominantWeapon(hero.attrs);
     const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
     const nextW = hero.weaponTier + 1 < WEAPON_TIERS.length ? WEAPON_TIERS[hero.weaponTier + 1] : null;
-    const wornArmor = armorById(hero.armor);
-    // pieces free to wear: owned copies not already on someone else's back
-    const wardrobe = ARMORS.filter((p) => {
-      const copies = save.armory.filter((x) => x === p.id).length;
-      const used = save.heroes.filter((h, hi) => hi !== index && h.armor === p.id).length;
-      return copies > used;
-    });
     const trinket = trinketById(hero.trinket);
     const dominant = ATTR_KEYS.reduce((best, k) => (hero.attrs[k] > hero.attrs[best] ? k : best), ATTR_KEYS[0]);
     const page = el(`
@@ -2959,27 +3032,7 @@ export class Menus {
                   : `<div class="gear-max">Finest weapon in the realm</div>`
               }
             </div>
-            <div class="equip-slot">
-              <div class="equip-slot-head">${ico("shield")} Armor — <strong>${wornArmor ? wornArmor.name : "Traveler's Garb"}</strong> <span class="loadout-hint ${!wornArmor && wardrobe.length ? "urgent" : ""}">${wardrobe.length ? "tap a piece below to wear it" : "buy pieces at the Village Armory"}</span></div>
-              ${wornArmor ? `<div class="equip-blurb">${wornArmor.blurb}${wornArmor.boss ? ' <span class="rare-tag">RELIC</span>' : ""}</div>` : `<div class="equip-blurb">Road-worn and honest — the Armorer's Rack at the Village sells better.</div>`}
-              <div class="trinket-options armor-options">
-                <button class="toggle-btn trinket-opt ${hero.armor === null ? "on" : ""}" data-armor="none">◇ Garb</button>
-                ${wardrobe
-                  .map((p) => {
-                    const cur = deriveStats(hero.attrs, hero.weaponTier, hero.armor, hero.talents, hero.trinket, sheetHolds ? hero.calling : null, sheetHolds ? hero.advCalling : null);
-                    const alt = deriveStats(hero.attrs, hero.weaponTier, p.id, hero.talents, hero.trinket, sheetHolds ? hero.calling : null, sheetHolds ? hero.advCalling : null);
-                    const bits: string[] = [];
-                    const dHp = alt.maxHp - cur.maxHp;
-                    const dAr = Math.round((alt.armor - cur.armor) * 100);
-                    const dSp = Math.round(((alt.speed - cur.speed) / cur.speed) * 100);
-                    if (dHp) bits.push(`<i class="${dHp > 0 ? "up" : "dn"}">${dHp > 0 ? "+" : ""}${dHp}hp</i>`);
-                    if (dAr) bits.push(`<i class="${dAr > 0 ? "up" : "dn"}">${dAr > 0 ? "+" : ""}${dAr}%ar</i>`);
-                    if (dSp) bits.push(`<i class="${dSp > 0 ? "up" : "dn"}">${dSp > 0 ? "+" : ""}${dSp}%mv</i>`);
-                    return `<button class="toggle-btn trinket-opt ${hero.armor === p.id ? "on" : ""}" data-armor="${p.id}" title="${p.blurb}">${ico(p.icon)} ${p.name}${p.boss ? " ✦" : ""}${bits.length ? ` <span class="delta-chips">${bits.join("")}</span>` : ""}</button>`;
-                  })
-                  .join("")}
-              </div>
-            </div>
+            <div class="gear-slots"></div>
             <div class="equip-slot">
               <div class="equip-slot-head">${ico("gem")} Trinket — <strong>${trinket ? `${trinket.icon} ${trinket.name}` : "none"}</strong></div>
               ${trinket ? `<div class="equip-blurb">${trinket.blurb}${trinket.rarity === "rare" ? ' <span class="rare-tag">RARE</span>' : ""}</div>` : ""}
@@ -3018,6 +3071,77 @@ export class Menus {
       figT += 0.09;
       drawHeroFigure(fig, index, save, figT);
     }, 90);
+
+    // three gear slots: body carries the family skill; helm and boots complete a set
+    const gearHolder = page.querySelector(".gear-slots")!;
+    const gearNow = () => heroGearOf(hero, save.forge);
+    const statsWith = (gear: ReturnType<typeof gearNow>) =>
+      deriveStats(hero.attrs, hero.weaponTier, gear, hero.talents, hero.trinket, sheetHolds ? hero.calling : null, sheetHolds ? hero.advCalling : null);
+    const buildSlot = (kind: "body" | "helm" | "boots") => {
+      const catalog = kind === "body" ? ARMORS : kind === "helm" ? HELMS : BOOTS;
+      const wornId = kind === "body" ? hero.armor : kind === "helm" ? hero.helm : hero.boots;
+      const worn = armorById(wornId);
+      const dataKey = kind === "body" ? "armor" : kind;
+      const pool = catalog.filter((p) => {
+        const copies = save.armory.filter((x) => x === p.id).length;
+        const used = save.heroes.filter((h, hi) => hi !== index && (kind === "body" ? h.armor : kind === "helm" ? h.helm : h.boots) === p.id).length;
+        return copies > used;
+      });
+      const title = kind === "body" ? "Armor" : kind === "helm" ? "Helm" : "Boots";
+      const sectionIcon = kind === "body" ? "shield" : kind === "helm" ? "moon" : "arrow";
+      const skill = kind === "body" && worn ? ARMOR_ACTIVES[worn.family] : null;
+      const cur = statsWith(gearNow());
+      const options = pool
+        .map((p) => {
+          const alt = statsWith({ ...gearNow(), [kind === "body" ? "body" : kind]: p.id });
+          const bits: string[] = [];
+          const dHp = alt.maxHp - cur.maxHp;
+          const dAr = Math.round((alt.armor - cur.armor) * 100);
+          const dSp = Math.round(((alt.speed - cur.speed) / cur.speed) * 100);
+          if (dHp) bits.push(`<i class="${dHp > 0 ? "up" : "dn"}">${dHp > 0 ? "+" : ""}${dHp}hp</i>`);
+          if (dAr) bits.push(`<i class="${dAr > 0 ? "up" : "dn"}">${dAr > 0 ? "+" : ""}${dAr}%ar</i>`);
+          if (dSp) bits.push(`<i class="${dSp > 0 ? "up" : "dn"}">${dSp > 0 ? "+" : ""}${dSp}%mv</i>`);
+          return `<button class="toggle-btn trinket-opt ${wornId === p.id ? "on" : ""}" data-${dataKey}="${p.id}" title="${p.blurb}">${ico(p.icon)} ${pieceLabel(p, save.forge)}${p.boss ? " ✦" : ""}${bits.length ? ` <span class="delta-chips">${bits.join("")}</span>` : ""}</button>`;
+        })
+        .join("");
+      gearHolder.appendChild(
+        el(`
+          <div class="equip-slot">
+            <div class="equip-slot-head">${ico(sectionIcon)} ${title} — <strong>${worn ? pieceLabel(worn, save.forge) : kind === "body" ? "Traveler's Garb" : "none"}</strong> <span class="loadout-hint ${kind === "body" && !worn && pool.length ? "urgent" : ""}">${pool.length ? "tap a piece below to wear it" : "the Village Armory sells more"}</span></div>
+            ${
+              worn
+                ? `<div class="equip-blurb">${worn.blurb}${worn.boss ? ' <span class="rare-tag">RELIC</span>' : ""}${skill ? ` · grants <strong>${skill.name}</strong> in battle` : ""}</div>`
+                : kind === "body"
+                  ? `<div class="equip-blurb">Road-worn and honest — a body piece also grants its family's battle skill.</div>`
+                  : ""
+            }
+            <div class="trinket-options armor-options">
+              <button class="toggle-btn trinket-opt ${wornId === null ? "on" : ""}" data-${dataKey}="none">◇ ${kind === "body" ? "Garb" : "None"}</button>
+              ${options}
+            </div>
+          </div>
+        `),
+      );
+    };
+    buildSlot("body");
+    buildSlot("helm");
+    buildSlot("boots");
+    // the family-set meter: dress head to toe in one family and it answers
+    const wornSet = armorSetOf(gearNow());
+    gearHolder.appendChild(
+      el(`
+        <div class="equip-slot set-meter">
+          <div class="equip-slot-head">${ico("banner")} Family set — <strong>${wornSet ? `${wornSet.family} ${wornSet.tier}/3` : "none"}</strong> ${wornSet ? "" : '<span class="loadout-hint">wear 2+ pieces of one family</span>'}</div>
+          ${
+            wornSet
+              ? `<div class="equip-blurb">2 pieces: ${SET_BONUSES[wornSet.family].two}${
+                  wornSet.tier >= 3 ? ` · 3 pieces: ${SET_BONUSES[wornSet.family].three}` : ` · <em>a third piece adds: ${SET_BONUSES[wornSet.family].three}</em>`
+                }</div>`
+              : ""
+          }
+        </div>
+      `),
+    );
 
     // loadout slots
     const slotRow = page.querySelector(".slot-row")!;
@@ -3065,7 +3189,7 @@ export class Menus {
     }
 
     // trinket choices: none + every distinct loot piece not worn by someone else
-    const options = page.querySelector(".trinket-options")!;
+    const options = page.querySelector(".trinket-options:not(.armor-options)")!;
     const takenElsewhere = save.heroes.filter((_, hi) => hi !== index).map((h) => h.trinket);
     const pool = [...new Set(save.inventory)].filter((id) => {
       const copies = save.inventory.filter((x) => x === id).length;
@@ -3144,6 +3268,26 @@ export class Menus {
         persist(save);
         audio.play("clink");
         this.showToast(id === "none" ? `${def.name} travels light` : `${def.name} dons the ${armorById(id)!.name}`);
+        this.renderEquipment(index);
+        return;
+      }
+      const helmBtn = target.closest("[data-helm]");
+      if (helmBtn) {
+        const id = helmBtn.getAttribute("data-helm")!;
+        hero.helm = id === "none" ? null : id;
+        persist(save);
+        audio.play("clink");
+        this.showToast(id === "none" ? `${def.name} goes bare-headed` : `${def.name} dons the ${armorById(id)!.name}`);
+        this.renderEquipment(index);
+        return;
+      }
+      const bootsBtn = target.closest("[data-boots]");
+      if (bootsBtn) {
+        const id = bootsBtn.getAttribute("data-boots")!;
+        hero.boots = id === "none" ? null : id;
+        persist(save);
+        audio.play("clink");
+        this.showToast(id === "none" ? `${def.name} trusts their own soles` : `${def.name} laces the ${armorById(id)!.name}`);
         this.renderEquipment(index);
         return;
       }

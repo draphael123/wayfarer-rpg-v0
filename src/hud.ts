@@ -93,13 +93,18 @@ export class Hud {
     audio.play("click");
   }
 
-  /** Hotkey: cast the selected hero's Nth ability (3 = the ultimate slot). */
+  /** Hotkey: cast the selected hero's Nth ability (3 = ultimate, 4 = armor skill). */
   hotkeyAbility(slot: number): void {
     if (this.overlayActive() || this.tutorial) return;
     const hero = this.selected && this.selected.alive ? this.selected : this.battle.livingHeroes()[0];
     if (!hero) return;
     this.selected = hero;
-    const ability = slot === 3 ? (hero.abilities.find((a) => a.ult) ?? hero.abilities[3]) : hero.abilities[slot];
+    const ability =
+      slot === 3
+        ? (hero.abilities.find((a) => a.ult) ?? hero.abilities[3])
+        : slot === 4
+          ? hero.abilities.find((a) => a.armorSkill)
+          : hero.abilities[slot];
     if (!ability) return;
     if (ability.timer > 0) {
       audio.play("click");
@@ -1048,19 +1053,31 @@ export class Hud {
     this.stanceChips = [];
     const heroes = this.battle.heroes();
     const count = Math.max(1, heroes.length);
-    const clusterW = Math.min(300, this.width / count);
-    const rowX0 = (this.width - clusterW * count) / 2;
+    // Battleheart rule: the selected hero's cluster stretches to seat every
+    // ability button; the others fold to compact portrait cards. (Equal-width
+    // clusters could never fit a full row for a full band on 16:9 screens.)
+    const effSel = this.selected && this.selected.alive ? this.selected : (this.battle.livingHeroes()[0] ?? heroes[0]);
+    const compactW = Math.min(104, this.width / count);
+    const bs = 46;
+    const selBtns = Math.max(1, effSel?.abilities.length ?? 1);
+    const selNeed = 8 + 52 + 7 + selBtns * (bs + 6) + 6;
+    const selW = Math.max(compactW, Math.min(this.width - compactW * (count - 1), Math.max(230, selNeed)));
+    const widths = heroes.map((h) => (h === effSel ? selW : compactW));
+    const rowX0 = (this.width - widths.reduce((a, b) => a + b, 0)) / 2;
+    let clusterX = rowX0;
     for (let i = 0; i < heroes.length; i++) {
       const hero = heroes[i];
+      const cw = widths[i];
+      if (i > 0) clusterX += widths[i - 1];
       const def = HEROES[hero.heroIndex];
       const shakeAmt = this.portraitShake[hero.id] ?? 0;
       const shakeX = shakeAmt > 0 ? Math.sin(this.battle.time * 60) * shakeAmt * 10 : 0;
-      const x0 = rowX0 + i * clusterW + 8 + shakeX;
+      const x0 = clusterX + 8 + shakeX;
       const py = top + 12;
       const ps = 52;
 
       // cluster card
-      roundRect(ctx, rowX0 + i * clusterW + 3, top + 7, clusterW - 6, HUD_H - 14, 10);
+      roundRect(ctx, clusterX + 3, top + 7, cw - 6, HUD_H - 14, 10);
       ctx.fillStyle = "rgba(255, 245, 225, 0.032)";
       ctx.fill();
       ctx.strokeStyle = "rgba(255, 235, 180, 0.06)";
@@ -1234,18 +1251,18 @@ export class Hud {
         this.stanceChips.push({ x: chipX - 6, y: chipY - 6, w: cs + 12, h: cs + 12, hero });
       }
 
-      // ability buttons
-      const bs = 46;
+      // ability buttons: only the selected hero unfolds their full row
+      if (hero !== effSel) continue;
       const bx0 = x0 + ps + 7;
       for (let a = 0; a < hero.abilities.length; a++) {
         const ability = hero.abilities[a];
         const bx = bx0 + a * (bs + 6);
         const by = py + 4;
-        if (bx + bs > rowX0 + (i + 1) * clusterW - 2) break;
+        if (bx + bs > clusterX + cw - 2) break;
         this.drawAbilityButton(ctx, bx, by, bs, hero, ability, this.readyFlash[hero.id * 10 + a] ?? 0);
-        // key label for keyboard players, only on the selected hero's bar
-        if (FINE_POINTER && this.selected === hero) {
-          const bind = this.save.keybinds?.[ability.ult ? "ability4" : `ability${a + 1}`];
+        // key label for keyboard players
+        if (FINE_POINTER) {
+          const bind = this.save.keybinds?.[ability.ult ? "ability4" : ability.armorSkill ? "ability5" : `ability${a + 1}`];
           if (bind && bind.length === 1) {
             ctx.fillStyle = "rgba(12, 9, 18, 0.85)";
             roundRect(ctx, bx - 3, by - 3, 13, 13, 4);
@@ -1394,7 +1411,9 @@ export class Hud {
       ? oath
         ? `ULTIMATE · ${oath.chargeHint}`
         : "ULTIMATE"
-      : `cooldown ${def.cooldown}s${def.targeting === "instant" ? "" : " · drag to aim"}`;
+      : hold.ability.armorSkill
+        ? `ARMOR SKILL · cooldown ${def.cooldown}s`
+        : `cooldown ${def.cooldown}s${def.targeting === "instant" ? "" : " · drag to aim"}`;
     const w = 210;
     const h = 44 + lines.length * 14;
     const x = Math.max(8, Math.min(this.width - w - 8, hold.x + hold.w / 2 - w / 2));

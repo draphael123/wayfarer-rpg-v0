@@ -1,6 +1,6 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { ARMORS, BOSS_STAGES, DIFFICULTIES, HEROES, STAGES, TRINKETS } from "./data";
+import { ALL_GEAR, ARMORS, BOSS_STAGES, DIFFICULTIES, HEROES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { drawHeroPortrait, Menus } from "./menus";
@@ -230,7 +230,7 @@ function rollLoot(): void {
   const rare = BOSS_STAGES.includes(currentStage);
   const roll = Math.random();
   // real spoils: armor off the fallen, caches of coin — not only charms
-  const unownedArmor = ARMORS.filter((a) => a.cost > 0 && !save.armory.includes(a.id) && a.cost <= 220 + currentStage * 60);
+  const unownedArmor = ALL_GEAR.filter((a) => a.cost > 0 && !save.armory.includes(a.id) && a.cost <= 220 + currentStage * 60);
   if (!rare && roll < 0.28 && unownedArmor.length) {
     const pick = unownedArmor[Math.floor(Math.random() * unownedArmor.length)];
     rolledLoot = { id: pick.id, icon: "🛡️", name: pick.name, rare: false, kind: "armor" };
@@ -515,6 +515,7 @@ window.addEventListener("keydown", (event) => {
       return;
     }
   }
+  if (key === binds.ability5) hud.hotkeyAbility(4); // the armor's family skill
 });
 
 // When a victory/defeat overlay appears, settling XP waits for the button —

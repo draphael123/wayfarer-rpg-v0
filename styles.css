@@ -2559,6 +2559,23 @@ body.big-text .page { zoom: 1.1; }
 
 .armor-options .trinket-opt svg { width: 12px; height: 12px; }
 
+/* three gear slots + the family-set meter on the hero sheet */
+.gear-slots { display: flex; flex-direction: column; gap: 10px; }
+
+.set-meter { border-color: rgba(255, 233, 163, 0.3); background: rgba(255, 233, 163, 0.045); }
+
+.set-meter .equip-slot-head strong { text-transform: capitalize; }
+
+.forge-pips {
+  margin-left: 6px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: #ffd76b;
+  vertical-align: middle;
+}
+
+.armor-rack .spell-section { margin-top: 6px; }
+
 /* ---------------------------------------------------------- act two */
 
 .act-tabs { display: flex; gap: 8px; width: 100%; margin-bottom: 8px; }

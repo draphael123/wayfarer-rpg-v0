@@ -69,7 +69,7 @@ function defaultHero(index: number): HeroSave {
     .filter((a) => STARTING_SPELLS.includes(a.id))
     .slice(0, MAX_EQUIPPED)
     .map((a) => a.id);
-  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, talents: {}, trinket: null, calling: null, advCalling: null };
+  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null };
 }
 
 /** Out of the box: 1-4 picks a hero, QWER casts their abilities (R = ultimate). */
@@ -82,6 +82,7 @@ export const DEFAULT_KEYBINDS: Record<string, string> = {
   ability2: "w",
   ability3: "e",
   ability4: "r",
+  ability5: "f", // the armor's family skill
 };
 
 function emptyLifetime() {
@@ -115,6 +116,7 @@ export function defaultSave(): SaveData {
     colorSafe: false,
     bigText: false,
     keybinds: { ...DEFAULT_KEYBINDS },
+    forge: {},
   };
 }
 
@@ -179,6 +181,8 @@ export function loadSave(): SaveData {
     if (!parsed.unlockedSpells.includes("bellow")) parsed.unlockedSpells.push("bellow");
         if (hero.armor) parsed.armory.push(hero.armor);
       }
+      if (hero.helm === undefined) hero.helm = null;
+      if (hero.boots === undefined) hero.boots = null;
       if (!hero.talents || typeof hero.talents !== "object") hero.talents = {};
       if (hero.trinket === undefined) hero.trinket = null;
       if (hero.calling === undefined) hero.calling = null;
@@ -196,6 +200,7 @@ export function loadSave(): SaveData {
     }
     if (!Array.isArray(parsed.inventory)) parsed.inventory = [];
     if (!Array.isArray(parsed.armory)) parsed.armory = [];
+    if (!parsed.forge || typeof parsed.forge !== "object") parsed.forge = {};
     if (typeof parsed.difficulty !== "number" || parsed.difficulty < 0 || parsed.difficulty > 3) parsed.difficulty = 1;
     if (typeof parsed.seenIntro !== "boolean") parsed.seenIntro = parsed.unlockedStage > 0;
     if (typeof parsed.soundVol !== "number" || parsed.soundVol < 0 || parsed.soundVol > 1) parsed.soundVol = 1;

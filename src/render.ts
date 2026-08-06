@@ -1,5 +1,5 @@
 import type { Battle } from "./battle";
-import { ARMOR_FAMILY_TIER, armorById, callingById, callingEligible, deriveStats, HEROES } from "./data";
+import { ARMOR_FAMILY_TIER, armorById, callingById, callingEligible, deriveStats, heroGearOf, HEROES } from "./data";
 import type { SaveData, StageDef, Unit } from "./types";
 
 const OUTLINE = "#241b2e";
@@ -1534,7 +1534,7 @@ export function drawTitleDiorama(ctx: CanvasRenderingContext2D, save: SaveData, 
       x: ux,
       y: uy,
       radius: 13,
-      stats: deriveStats(hs.attrs, hs.weaponTier, hs.armor, hs.talents, hs.trinket, active, active ? hs.advCalling : null),
+      stats: deriveStats(hs.attrs, hs.weaponTier, heroGearOf(hs, save.forge), hs.talents, hs.trinket, active, active ? hs.advCalling : null),
       hp: 1,
       attackTimer: 0,
       moveTarget: null,
@@ -1595,7 +1595,7 @@ export function drawHeroFigure(
   const hero = save.heroes[heroIndex];
   const oathDef = callingById(hero.calling);
   const activeOath = oathDef && callingEligible(oathDef, hero.attrs) ? hero.calling : null;
-  const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armor, hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null);
+  const stats = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null);
   const radius = 13;
   const scale = canvas.height / (radius * 3.7 * 1.55);
   const unit = {
@@ -1673,12 +1673,17 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   const wornPiece = armorById(gear?.armor ?? null);
   const aTier = wornPiece ? ARMOR_FAMILY_TIER[wornPiece.family] : 0;
   const plateTint = wornPiece?.tint ?? "#aab4c2";
+  const helmPiece = armorById(gear?.helm ?? null);
+  const bootsPiece = armorById(gear?.boots ?? null);
+  const BOOT_TINTS: Record<string, string> = { cloth: "#5d5378", leather: "#6e5236", mail: "#7e8794", plate: "#98a2b2" };
+  const bootColor = bootsPiece ? (bootsPiece.tint ?? BOOT_TINTS[bootsPiece.family]) : null;
+  const bodyForge = gear?.armor ? (save.forge?.[gear.armor] ?? 0) : 0;
 
   // back leg, back arm behind body
   if (!robed) {
     const bfx = cx - f * 2 - f * pose.walk * stride;
     limb(ctx, cx - f * 2, hipY, bfx, gy - 1, legW, "#3a2f47");
-    boot(ctx, bfx, gy - 1, "#2b2136");
+    boot(ctx, bfx, gy - 1, bootColor ?? "#2b2136");
   }
   // free back arm swings opposite the stride
   const bhx = cx - f * bodyW * 0.55 - f * pose.walk * H * 0.06;
@@ -1736,7 +1741,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     // front leg
     const ffx = cx + f * 2 + f * pose.walk * stride;
     limb(ctx, cx + f * 2, hipY, ffx, gy - 1, legW, "#4a3d5c");
-    boot(ctx, ffx, gy - 1, "#33283f");
+    boot(ctx, ffx, gy - 1, bootColor ?? "#33283f");
 
     // tunic body (trapezoid, slightly leaning into facing)
     const tunic = new Path2D();
@@ -1818,29 +1823,110 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.fill();
   }
 
+  // a forged piece wears its marks: gilt trim at +2, a living gleam at masterwork
+  if (bodyForge >= 2 && !robed) {
+    ctx.strokeStyle = "rgba(255, 215, 107, 0.85)";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(cx - bodyW * 0.5, hipY + 1);
+    ctx.lineTo(cx + bodyW * 0.5, hipY + 1);
+    ctx.stroke();
+  }
+  if (bodyForge >= 3) {
+    const tw = (time * 2.1 + unit.id * 1.3) % (Math.PI * 2);
+    const glint = Math.max(0, Math.sin(tw)) ** 6;
+    if (glint > 0.05) {
+      ctx.save();
+      ctx.globalAlpha = glint * 0.9;
+      ctx.strokeStyle = "#fff3c0";
+      ctx.lineWidth = 1.4;
+      const gx = cx + f * bodyW * 0.28;
+      const gyy = shoulderY + H * 0.06;
+      ctx.beginPath();
+      ctx.moveTo(gx - 3.5, gyy);
+      ctx.lineTo(gx + 3.5, gyy);
+      ctx.moveTo(gx, gyy - 3.5);
+      ctx.lineTo(gx, gyy + 3.5);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   // head (big, chibi)
   const faceX = cx + f * 1.5;
   const head = new Path2D();
   head.arc(faceX, headY, headR, 0, Math.PI * 2);
   shaded(ctx, head, def.skin, f, faceX, headY, headR, 3);
-  if (!robed && aTier >= 3) {
-    // plate helm with a nose guard (tinted by the plate's making)
+  if (!robed && (helmPiece?.family === "plate" || (!helmPiece && aTier >= 3))) {
+    // plate helm with a nose guard (tinted by the piece's making)
+    const helmTint = helmPiece?.tint ?? plateTint;
     ctx.beginPath();
     ctx.arc(cx + f * 0.5, headY - headR * 0.1, headR * 1.04, Math.PI * 0.9, Math.PI * 2.1);
     ctx.closePath();
-    outlined(ctx, plateTint, 2.2);
-    ctx.fillStyle = plateTint;
+    outlined(ctx, helmTint, 2.2);
+    ctx.fillStyle = helmTint;
     ctx.fillRect(cx + f * headR * 0.3 - 1.6, headY - headR * 0.35, 3.2, headR * 0.75);
     ctx.strokeStyle = OUTLINE;
     ctx.lineWidth = 1.4;
     ctx.strokeRect(cx + f * headR * 0.3 - 1.6, headY - headR * 0.35, 3.2, headR * 0.75);
-    // plume
+    // plume (the Winged Helm earns wings instead)
+    if (helmPiece?.id === "wingedHelm") {
+      ctx.beginPath();
+      ctx.moveTo(cx - f * 1, headY - headR * 0.95);
+      ctx.lineTo(cx - f * headR * 1.05, headY - headR * 1.45);
+      ctx.lineTo(cx - f * headR * 0.75, headY - headR * 0.8);
+      ctx.closePath();
+      outlined(ctx, "#e8e0cc", 1.6);
+      ctx.beginPath();
+      ctx.moveTo(cx + f * headR * 0.55, headY - headR * 0.85);
+      ctx.lineTo(cx + f * headR * 1.35, headY - headR * 1.3);
+      ctx.lineTo(cx + f * headR * 0.85, headY - headR * 0.62);
+      ctx.closePath();
+      outlined(ctx, "#e8e0cc", 1.6);
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(cx - f * 1, headY - headR * 1.05);
+      ctx.quadraticCurveTo(cx - f * headR * 0.9, headY - headR * 1.7, cx - f * headR * 1.35, headY - headR * 1.2);
+      ctx.quadraticCurveTo(cx - f * headR * 0.8, headY - headR * 1.05, cx - f * 1, headY - headR * 0.85);
+      ctx.closePath();
+      outlined(ctx, def.accent, 1.8);
+    }
+  } else if (!robed && helmPiece?.family === "mail") {
+    // chain coif: ringed steel hugging the crown and chin
     ctx.beginPath();
-    ctx.moveTo(cx - f * 1, headY - headR * 1.05);
-    ctx.quadraticCurveTo(cx - f * headR * 0.9, headY - headR * 1.7, cx - f * headR * 1.35, headY - headR * 1.2);
-    ctx.quadraticCurveTo(cx - f * headR * 0.8, headY - headR * 1.05, cx - f * 1, headY - headR * 0.85);
+    ctx.arc(cx + f * 0.5, headY - headR * 0.05, headR * 1.02, Math.PI * 0.8, Math.PI * 2.2);
+    ctx.quadraticCurveTo(cx - f * headR * 0.4, headY + headR * 0.85, cx - f * headR * 1.0, headY + headR * 0.45);
     ctx.closePath();
-    outlined(ctx, def.accent, 1.8);
+    outlined(ctx, helmPiece.tint ?? "#8f98a6", 2);
+    ctx.strokeStyle = "rgba(20,14,30,0.35)";
+    ctx.lineWidth = 1;
+    for (let r = 0.35; r <= 0.85; r += 0.25) {
+      ctx.beginPath();
+      ctx.arc(cx + f * 0.5, headY - headR * 0.05, headR * r + headR * 0.14, Math.PI * 1.05, Math.PI * 1.95);
+      ctx.stroke();
+    }
+  } else if (!robed && helmPiece?.family === "leather") {
+    // snug hunter's cap with a short brim
+    ctx.beginPath();
+    ctx.arc(cx + f * 0.5, headY - headR * 0.18, headR * 0.98, Math.PI * 1.0, Math.PI * 2.0);
+    ctx.closePath();
+    outlined(ctx, "#6e5236", 2);
+    ctx.strokeStyle = "#57402a";
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(cx - f * headR * 0.85, headY - headR * 0.28);
+    ctx.lineTo(cx + f * headR * 1.12, headY - headR * 0.28);
+    ctx.stroke();
+  } else if (!robed && helmPiece?.family === "cloth") {
+    // woven circlet with a small stone at the brow
+    ctx.strokeStyle = helmPiece.id === "pilgrimCowl" ? "#e0d6b8" : "#b48ae8";
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(faceX, headY - headR * 0.1, headR * 0.99, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(faceX + f * headR * 0.02, headY - headR * 0.72, 1.8, 0, Math.PI * 2);
+    outlined(ctx, "#fff0c0", 1.2);
   } else if (robed) {
     // deep cream hood framing the face, with an inner shadow so the face pops
     ctx.beginPath();
