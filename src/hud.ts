@@ -758,6 +758,24 @@ export class Hud {
       roundRect(ctx, x, y + 11, w * frac, 3, 1.5);
       ctx.fill();
     }
+    // poise: the amber bar that promises a window
+    if (this.battle.bossStaggerMax > 0) {
+      const sfrac = Math.min(1, this.battle.bossStagger / this.battle.bossStaggerMax);
+      roundRect(ctx, x, y + 22, w, 4, 2);
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fill();
+      if (sfrac > 0) {
+        roundRect(ctx, x, y + 22, w * sfrac, 4, 2);
+        ctx.fillStyle = sfrac > 0.85 ? `rgba(255, 233, 163, ${0.7 + Math.abs(Math.sin(this.battle.time * 6)) * 0.3})` : "#e0b23e";
+        ctx.fill();
+      }
+      if (boss.effects.some((e) => e.kind === "stun")) {
+        ctx.fillStyle = "#ffe9a3";
+        ctx.font = "800 10px 'Trebuchet MS', Verdana, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("STAGGERED — strike now!", this.width / 2, y + 36);
+      }
+    }
     // phase markers (Alpha 60/30, Gorehulk 66/33)
     if (this.battle.bossRef?.enemyKind === "alpha" || this.battle.bossRef?.enemyKind === "warlord") {
       for (const mark of this.battle.bossRef.enemyKind === "alpha" ? [0.6, 0.3] : [0.66, 0.33]) {

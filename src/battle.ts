@@ -52,6 +52,9 @@ export class Battle {
   /** Recent damage each hero (by id) has dealt to bosses; decays in seconds.
    *  Pour damage in and the boss turns on YOU — that's how you peel it off the healer. */
   threat: Record<number, number> = {};
+  /** Boss poise: hero hits fill it; full = STAGGERED (stun + vulnerability), then it deepens. */
+  bossStagger = 0;
+  bossStaggerMax = 0;
   waveBanner = 0;
   breakTimer = 1.2;
   time = 0;
@@ -285,6 +288,8 @@ export class Battle {
     if (bossWave && !this.tutorialMode) {
       this.bossRef = this.units.find((u) => u.alive && BOSS_KINDS.includes(u.enemyKind ?? "")) ?? null;
       if (this.bossRef) {
+        this.bossStagger = 0;
+        this.bossStaggerMax = this.bossRef.enemyKind === "warlord" ? 340 : this.bossRef.enemyKind === "alpha" ? 280 : 240;
         this.cinematic = 2.6;
         this.waveBanner = 0;
         audio.play(this.bossRef.enemyKind === "warlord" ? "warhorn" : this.bossRef.enemyKind === "alpha" ? "howl" : "roar");
@@ -467,6 +472,10 @@ export class Battle {
       this.tally(source.heroIndex).dealt += amount;
       if (BOSS_KINDS.includes(target.enemyKind ?? "")) {
         this.threat[source.id] = (this.threat[source.id] ?? 0) + amount * this.threatMult(source);
+        if (target === this.bossRef && this.bossStaggerMax > 0 && !this.effect(target, "stun")) {
+          this.bossStagger += amount * (this.effect(target, "vulnerable") ? 0.9 : 0.5);
+          if (this.bossStagger >= this.bossStaggerMax) this.staggerBoss(target);
+        }
       }
     }
     if (target.team === "hero" && target.heroIndex >= 0) {
@@ -2096,6 +2105,26 @@ export class Battle {
       }
     }
 
+    // DEVOUR: between pounces it feeds on the fallen pack unless you deny it
+    if (alpha.phase >= 2 && alpha.hp < alpha.stats.maxHp * 0.9 && !alpha.leap && alpha.supportTimer > 2.5) {
+      const corpse = this.units.find(
+        (u) => !u.alive && u.team === "enemy" && u.enemyKind === "wolf" && u.deathTime < 6 && unitDist(alpha, u) < 400,
+      );
+      if (corpse) {
+        if (unitDist(alpha, corpse) > 30) {
+          this.moveToward(alpha, corpse, dt, 24, 1.1);
+          return;
+        }
+        alpha.castGlow = 0.4;
+        this.heal(alpha, alpha.stats.maxHp * 0.045 * dt, false, null);
+        if (Math.floor((this.time - dt) * 2) !== Math.floor(this.time * 2)) {
+          this.fx.floatText(alpha.x, alpha.y - alpha.radius * 2.6, "devouring…", "#ff8a70", 12);
+          this.fx.burst(corpse.x, corpse.y - 8, "#c9c2b8", 3, 50, { gravity: 60 });
+        }
+        corpse.deathTime += dt * 3; // the body goes fast
+        return;
+      }
+    }
     // between pounces: normal wolf brawling, steered by threat
     const taunt = this.effect(alpha, "taunt");
     let target: Unit | null = taunt && taunt.source && taunt.source.alive ? taunt.source : null;
@@ -2106,7 +2135,8 @@ export class Battle {
     alpha.aggro = target;
     const dist = unitDist(alpha, target);
     if (dist > alpha.stats.range + target.radius - 4) {
-      this.moveToward(alpha, target, dt, alpha.stats.range + target.radius - 8);
+      // blood scent: wounded prey makes it run
+      this.moveToward(alpha, target, dt, alpha.stats.range + target.radius - 8, target.hp < target.stats.maxHp * 0.4 ? 1.3 : 1);
       return;
     }
     alpha.facing = target.x >= alpha.x ? 1 : -1;
@@ -2292,14 +2322,37 @@ export class Battle {
     }
   }
 
+  /** Poise breaks: the boss reels — your window, and it deepens each time. */
+  private staggerBoss(boss: Unit): void {
+    this.bossStagger = 0;
+    this.bossStaggerMax = Math.round(this.bossStaggerMax * 1.4);
+    boss.effects.push(makeEffect("stun", 2.5, 1, null));
+    boss.effects.push(makeEffect("vulnerable", 2.5, 0.25, null));
+    this.fx.floatText(boss.x, boss.y - boss.radius * 3, "STAGGERED!", "#ffe9a3", 22);
+    this.fx.ring(boss.x, boss.y, boss.radius * 3.4, "#ffe9a3", { width: 6, life: 0.7 });
+    this.fx.burst(boss.x, boss.y - 16, "#ffe9a3", 18, 160, { glow: true });
+    this.fx.addShake(9);
+    this.hitstop = Math.max(this.hitstop, 0.1);
+    this.zoomPunch = Math.max(this.zoomPunch, 0.9);
+    audio.play("staggerBreak");
+  }
+
   /** The pounce lands: the slam happens where the paws come down. */
   private landPounce(alpha: Unit, x: number, y: number, radius: number): void {
     alpha.lungeDir = { x: alpha.facing, y: 0 };
     alpha.lunge = 1;
+    let struck = 0;
     for (const hero of this.livingHeroes()) {
       if (Math.hypot(hero.x - x, hero.y - y) < radius + hero.radius * 0.5) {
         this.damage(hero, alpha.stats.damage * 1.7, alpha);
+        struck++;
       }
+    }
+    // a pounce that finds only snow costs the Alpha dearly — dodging is a weapon
+    if (struck === 0 && alpha === this.bossRef && this.bossStaggerMax > 0) {
+      this.bossStagger += this.bossStaggerMax * 0.4;
+      this.fx.floatText(x, y - 20, "off balance!", "#ffe9a3", 15);
+      if (this.bossStagger >= this.bossStaggerMax) this.staggerBoss(alpha);
     }
     this.fx.burst(x, y, "rgba(190,175,150,0.8)", 14, 120, { gravity: -20, size: 4.5 });
     this.fx.ring(x, y, radius + 14, "#c9c2e8", { width: 4, life: 0.4 });

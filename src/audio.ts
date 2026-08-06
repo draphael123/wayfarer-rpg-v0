@@ -44,6 +44,7 @@ type SfxName =
   | "clink"
   | "page"
   | "tankard"
+  | "staggerBreak"
   | "hitHeavy"
   | "spSunder"
   | "spOverpower"
@@ -523,6 +524,13 @@ class AudioKit {
         this.tone(220, 0.08, "square", 0.1, -40);
         this.noise(0.12, 0.06, 900, 0.05);
         this.tone(330, 0.1, "sine", 0.06, 20, 0.1);
+        break;
+      case "staggerBreak":
+        // poise shattering like river ice
+        this.noise(0.3, 0.18, 1600);
+        this.tone(880, 0.1, "square", 0.12, -300);
+        this.tone(220, 0.5, "sawtooth", 0.14, -60, 0.08);
+        this.tone(1320, 0.4, "triangle", 0.1, -400, 0.14);
         break;
       case "relic":
         // something old changes hands
