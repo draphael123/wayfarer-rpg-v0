@@ -127,6 +127,16 @@ export function heroArrived(save: { unlockedStage: number }, index: number): boo
 
 export const ABILITIES: AbilityDef[] = [
   {
+    id: "bellow",
+    name: "Bellow",
+    gate: { attr: "str", value: 6 },
+    targeting: "instant",
+    cooldown: 12,
+    color: "#e0904b",
+    icon: "warcry",
+    blurb: "A challenge roared in every direction: nearby foes turn on YOU, and you harden to meet them.",
+  },
+  {
     id: "cleave",
     name: "Cleave",
     gate: { attr: "str", value: 6 },
@@ -614,6 +624,7 @@ function armorPieceMods(id: string | null | undefined) {
 
 /** Gold cost of each ability in the spell shop. */
 export const SPELL_COSTS: Record<string, number> = {
+  bellow: 60,
   avalanche: 340,
   hailknives: 300,
   windlash: 340,

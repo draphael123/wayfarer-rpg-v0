@@ -44,7 +44,7 @@ export class Battle {
   /** How far the band has marched through the level, in world pixels — the scenery scrolls by this. */
   travel = 0;
   /** One-off roadside sights that drift past during marches and park where the band stops. */
-  landmarks: { type: number; x: number; y: number }[] = [];
+  landmarks: { type: number; x: number; y: number; alpha: number }[] = [];
   /** True while the band is walking to the next encounter (the old wavebreak). */
   get marching(): boolean {
     return this.state === "wavebreak" && this.waveIndex >= 0;
@@ -1503,6 +1503,19 @@ export class Battle {
         audio.play("ultShadows");
         break;
       }
+      case "bellow": {
+        for (const enemy of this.livingEnemies()) {
+          if (unitDist(hero, enemy) < 150 + enemy.radius) {
+            enemy.effects = enemy.effects.filter((e) => e.kind !== "taunt");
+            enemy.effects.push(makeEffect("taunt", 3, 1, hero));
+          }
+        }
+        hero.effects.push(makeEffect("guard", 3, 0.2, hero));
+        this.fx.ring(hero.x, hero.y, 150, "#e0904b", { width: 4, life: 0.5 });
+        this.fx.floatText(hero.x, hero.y - 40, "OVER HERE!", "#e0904b", 15);
+        audio.play("warcry");
+        break;
+      }
       case "avalanche": {
         for (const enemy of this.livingEnemies()) {
           if (unitDist(hero, enemy) < 130 + enemy.radius) {
@@ -1683,6 +1696,14 @@ export class Battle {
       this.updatePresentation(dt);
       return;
     }
+    // sights the band has passed drift on and fade once the fighting starts
+    if (this.state === "fighting") {
+      for (const lm of this.landmarks) {
+        lm.x -= dt * 60;
+        lm.alpha = Math.max(0, lm.alpha - dt * 0.5);
+      }
+      this.landmarks = this.landmarks.filter((lm) => lm.alpha > 0 && lm.x > -120);
+    }
     // stragglers crash in on their own schedule
     for (let i = this.pendingSpawns.length - 1; i >= 0; i--) {
       if (this.time >= this.pendingSpawns[i].at) {
@@ -1736,8 +1757,9 @@ export class Battle {
           const seed = this.stage.id * 7.3 + this.waveIndex * 3.1;
           this.landmarks.push({
             type: Math.floor((Math.sin(seed * 127.1) * 43758.5453 % 1 + 1) % 1 * 5),
-            x: this.field.right + 160,
+            x: this.field.right + 120,
             y: this.field.top + 4 + ((Math.sin(seed * 311.7) * 12345.678 % 1 + 1) % 1) * 26,
+            alpha: 1,
           });
         }
       }

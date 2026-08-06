@@ -223,14 +223,25 @@ function endBattleToMap(): void {
   else menus.renderMap();
 }
 
-let rolledLoot: { id: string; icon: string; name: string; rare: boolean } | null = null;
+let rolledLoot: { id: string; icon: string; name: string; rare: boolean; kind: "trinket" | "armor" | "gold"; amount?: number } | null = null;
 
 function rollLoot(): void {
   if (rolledLoot) return;
   const rare = BOSS_STAGES.includes(currentStage);
-  const pool = TRINKETS.filter((t) => t.rarity === (rare ? "rare" : "common"));
-  const pick = pool[Math.floor(Math.random() * pool.length)];
-  rolledLoot = { id: pick.id, icon: pick.icon, name: pick.name, rare };
+  const roll = Math.random();
+  // real spoils: armor off the fallen, caches of coin — not only charms
+  const unownedArmor = ARMORS.filter((a) => a.cost > 0 && !save.armory.includes(a.id) && a.cost <= 220 + currentStage * 60);
+  if (!rare && roll < 0.28 && unownedArmor.length) {
+    const pick = unownedArmor[Math.floor(Math.random() * unownedArmor.length)];
+    rolledLoot = { id: pick.id, icon: "🛡️", name: pick.name, rare: false, kind: "armor" };
+  } else if (!rare && roll < 0.42) {
+    const amount = 40 + Math.round(Math.random() * (30 + currentStage * 18));
+    rolledLoot = { id: "gold", icon: "💰", name: `a cache of ${amount} gold`, rare: false, kind: "gold", amount };
+  } else {
+    const pool = TRINKETS.filter((t) => t.rarity === (rare ? "rare" : "common"));
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    rolledLoot = { id: pick.id, icon: pick.icon, name: pick.name, rare, kind: "trinket" };
+  }
   if (hud) hud.pendingLoot = rolledLoot;
 }
 
@@ -265,7 +276,9 @@ function settleVictory(): void {
   rollLoot();
   const drop = rolledLoot!;
   const rare = drop.rare;
-  save.inventory.push(drop.id);
+  if (drop.kind === "armor") save.armory.push(drop.id);
+  else if (drop.kind === "gold") save.gold += drop.amount ?? 0;
+  else save.inventory.push(drop.id);
   if (currentStage === save.unlockedStage && currentStage < STAGES.length - 1) {
     save.unlockedStage++;
     menus.travelFrom = currentStage;

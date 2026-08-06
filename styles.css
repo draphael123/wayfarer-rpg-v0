@@ -2580,3 +2580,20 @@ body.big-text .page { zoom: 1.1; }
 .delta-chips i.dn { color: #ff9a85; background: rgba(220, 90, 70, 0.12); }
 
 button.hero-points { font: inherit; cursor: pointer; }
+
+/* ---------------------------------------------------------- spell sections */
+
+.spell-section {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #b9aed0;
+  border-bottom: 1px solid rgba(255, 235, 180, 0.14);
+  padding: 8px 2px 4px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.spell-section em { font-style: normal; color: #8d84a3; text-transform: none; letter-spacing: 0; }

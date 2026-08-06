@@ -3421,7 +3421,9 @@ export function drawDecals(ctx: CanvasRenderingContext2D, battle: Battle): void 
     }
   }
   for (const lm of battle.landmarks) {
+    ctx.globalAlpha = lm.alpha;
     drawLandmark(ctx, lm.type, lm.x, lm.y, battle.time, battle.stage.id >= 6);
+    ctx.globalAlpha = 1;
   }
   drawBossDressing(ctx, battle);
 }

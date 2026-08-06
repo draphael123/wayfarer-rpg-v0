@@ -2883,7 +2883,7 @@ export class Menus {
               }
             </div>
             <div class="equip-slot">
-              <div class="equip-slot-head">${ico("shield")} Armor — <strong>${wornArmor ? wornArmor.name : "Traveler's Garb"}</strong></div>
+              <div class="equip-slot-head">${ico("shield")} Armor — <strong>${wornArmor ? wornArmor.name : "Traveler's Garb"}</strong> <span class="loadout-hint ${!wornArmor && wardrobe.length ? "urgent" : ""}">${wardrobe.length ? "tap a piece below to wear it" : "buy pieces at the Village Armory"}</span></div>
               ${wornArmor ? `<div class="equip-blurb">${wornArmor.blurb}${wornArmor.boss ? ' <span class="rare-tag">RELIC</span>' : ""}</div>` : `<div class="equip-blurb">Road-worn and honest — the Armorer's Rack at the Village sells better.</div>`}
               <div class="trinket-options armor-options">
                 <button class="toggle-btn trinket-opt ${hero.armor === null ? "on" : ""}" data-armor="none">◇ Garb</button>
@@ -3008,7 +3008,12 @@ export class Menus {
     }
 
     const grid = page.querySelector(".spell-grid")!;
-    for (const ability of ABILITIES) {
+    let lastAttr = "";
+    for (const ability of [...ABILITIES].sort((a, b) => ATTR_KEYS.indexOf(a.gate.attr) - ATTR_KEYS.indexOf(b.gate.attr) || a.gate.value - b.gate.value)) {
+      if (ability.gate.attr !== lastAttr) {
+        lastAttr = ability.gate.attr;
+        grid.appendChild(el(`<div class="spell-section">${ATTR_NAMES[ability.gate.attr]} <em>${hero.attrs[ability.gate.attr]} trained</em></div>`));
+      }
       const gateOk = unlocked.includes(ability.id);
       const owned = save.unlockedSpells.includes(ability.id);
       const usable = gateOk && owned;

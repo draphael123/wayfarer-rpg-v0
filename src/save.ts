@@ -59,7 +59,7 @@ export function peekSlot(n: number): SlotPeek {
 }
 
 /** Spells the band owns from the start — enough for the founding duo to function. */
-const STARTING_SPELLS = ["cleave", "mend"];
+const STARTING_SPELLS = ["cleave", "bellow", "mend"];
 
 function defaultHero(index: number): HeroSave {
   const base = HEROES[index].baseAttrs;
@@ -175,6 +175,8 @@ export function loadSave(): SaveData {
                 ? "scoutJerkin"
                 : null;
         if (!Array.isArray(parsed.armory)) parsed.armory = [];
+    // every warrior knows how to bellow — older saves learn it free
+    if (!parsed.unlockedSpells.includes("bellow")) parsed.unlockedSpells.push("bellow");
         if (hero.armor) parsed.armory.push(hero.armor);
       }
       if (!hero.talents || typeof hero.talents !== "object") hero.talents = {};
