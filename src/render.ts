@@ -847,6 +847,37 @@ export function drawTelegraphs(ctx: CanvasRenderingContext2D, battle: Battle): v
 export function drawZones(ctx: CanvasRenderingContext2D, battle: Battle): void {
   for (const zone of battle.zones) {
     const fade = Math.min(1, (zone.duration - zone.time) / 0.8, zone.time / 0.25 + 0.4);
+    if (zone.kind === "sanctuary") {
+      // consecrated ground: warm glow, slow halo ring, drifting motes
+      ctx.globalAlpha = 0.4 * fade;
+      const holy = ctx.createRadialGradient(zone.x, zone.y, 4, zone.x, zone.y, zone.radius);
+      holy.addColorStop(0, "#fff6d0");
+      holy.addColorStop(1, "rgba(242, 231, 160, 0)");
+      ctx.fillStyle = holy;
+      ctx.beginPath();
+      ctx.ellipse(zone.x, zone.y, zone.radius, zone.radius * 0.55, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.75 * fade;
+      ctx.strokeStyle = "#f2e7a0";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 8]);
+      ctx.lineDashOffset = -battle.time * 18;
+      ctx.beginPath();
+      ctx.ellipse(zone.x, zone.y, zone.radius * 0.92, zone.radius * 0.52, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#fff6d0";
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + battle.time * 0.7;
+        const rise = ((battle.time * 14 + i * 17) % 30);
+        ctx.globalAlpha = (1 - rise / 30) * 0.8 * fade;
+        ctx.beginPath();
+        ctx.arc(zone.x + Math.cos(a) * zone.radius * 0.5, zone.y + Math.sin(a) * zone.radius * 0.28 - rise, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      continue;
+    }
     ctx.globalAlpha = 0.45 * fade;
     const grad = ctx.createRadialGradient(zone.x, zone.y, 4, zone.x, zone.y, zone.radius);
     grad.addColorStop(0, "#e4f4ff");
@@ -1019,7 +1050,7 @@ export function drawHeroFigure(
 ): void {
   const ctx = canvas.getContext("2d")!;
   const hero = save.heroes[heroIndex];
-  const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket);
+  const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, hero.calling);
   const radius = 13;
   const scale = canvas.height / (radius * 3.7 * 1.55);
   const unit = {
@@ -1028,6 +1059,7 @@ export function drawHeroFigure(
     team: "hero",
     heroIndex,
     enemyKind: null,
+    calling: hero.calling,
     x: canvas.width / 2 / scale,
     y: canvas.height / scale - radius * 0.9,
     radius,

@@ -1880,3 +1880,111 @@ html, body {
 .embark-info em { font-style: normal; font-size: 11.5px; color: #a89fc0; }
 
 .embark-btn { flex: none; display: inline-flex; align-items: center; gap: 7px; }
+
+/* --------------------------------------------------------------- callings */
+
+.calling-tag { font-weight: 700; }
+
+.calling-btn.beckons {
+  border-color: #ffe9a3;
+  color: #ffe9a3;
+  animation: slotPulse 1.2s ease-in-out infinite;
+}
+
+.calling-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.calling-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 13px;
+  background: rgba(10, 7, 18, 0.42);
+  border: 1.5px solid color-mix(in srgb, var(--chip, #6b6478) 45%, transparent);
+}
+
+.calling-card.sworn {
+  background: color-mix(in srgb, var(--chip, #6b6478) 12%, rgba(10, 7, 18, 0.42));
+  border-color: var(--chip, #6b6478);
+}
+
+.calling-card.locked { opacity: 0.62; }
+
+.calling-head { display: flex; align-items: center; gap: 10px; }
+
+.calling-crest {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.32);
+  color: var(--chip, #cfc7de);
+  font-size: 19px;
+}
+
+.calling-title { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.calling-title strong { font-size: 15px; letter-spacing: 0.02em; }
+.calling-title em { font-style: italic; font-size: 11px; color: #a89fc0; }
+
+.sworn-badge {
+  flex: none;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #17111f;
+  background: var(--chip, #6b6478);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.calling-req { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.req-chip {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 154, 133, 0.5);
+  color: #ff9a85;
+}
+
+.req-chip.met { border-color: rgba(142, 232, 139, 0.55); color: #8ee88b; }
+
+.calling-passive { font-size: 12px; color: #cfc7de; line-height: 1.45; }
+
+.calling-sig {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.swear-btn { margin-top: 2px; }
+
+.big-slot.signature {
+  border-style: double;
+  border-width: 3px;
+  cursor: default;
+}
+
+.sig-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--chip, #a89fc0);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.callings-unlocked { color: #ffe9a3; font-weight: 700; }

@@ -1,6 +1,11 @@
 import { audio } from "./audio";
 import {
   ABILITIES,
+  CALLINGS,
+  CALLING_SWITCH_COST,
+  CALLING_UNLOCK_LEVEL,
+  callingById,
+  callingEligible,
   DIFFICULTIES,
   trinketById,
   MAX_LEVEL,
@@ -616,6 +621,11 @@ export class Menus {
             <div class="levelup-title">LEVEL UP!</div>
             <div class="levelup-line">The band reaches <strong>level ${info.level}</strong></div>
             <div class="levelup-line">+${info.gained * POINTS_PER_LEVEL} attribute point${info.gained * POINTS_PER_LEVEL === 1 ? "" : "s"} for every hero${talentsGained > 0 ? ` · +${talentsGained} talent point${talentsGained === 1 ? "" : "s"}` : ""}</div>
+            ${
+              info.level - info.gained < CALLING_UNLOCK_LEVEL && info.level >= CALLING_UNLOCK_LEVEL
+                ? '<div class="levelup-line callings-unlocked">Callings unlocked — each hero may now swear an oath on the Party screen</div>'
+                : ""
+            }
             <div class="levelup-actions">
               <button class="big-btn primary" data-act="lv-spend">Spend points</button>
               <button class="big-btn" data-act="lv-later">Later</button>
@@ -1348,7 +1358,8 @@ export class Menus {
     const save = this.save;
     const def = HEROES[index];
     const hero = save.heroes[index];
-    const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier);
+    const stats = deriveStats(hero.attrs, hero.weaponTier, hero.armorTier, hero.talents, hero.trinket, hero.calling);
+    const sworn = callingById(hero.calling);
     const weapon = dominantWeapon(hero.attrs);
     const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
     const inParty = hero.active;
@@ -1362,8 +1373,8 @@ export class Menus {
             <canvas width="64" height="64"></canvas>
           </div>
           <div>
-            <div class="hero-name">${def.name} <em>${def.title}</em></div>
-            <div class="hero-meta">${WEAPON_LABEL[weapon]} · ${WEAPON_TIERS[hero.weaponTier].name} / ${ARMOR_TIERS[hero.armorTier].name}</div>
+            <div class="hero-name">${def.name} <em>${sworn ? sworn.epithet : def.title}</em></div>
+            <div class="hero-meta">${sworn ? `<span class="calling-tag" style="color:${sworn.color}">${sworn.name}</span> · ` : ""}${WEAPON_LABEL[weapon]} · ${WEAPON_TIERS[hero.weaponTier].name} / ${ARMOR_TIERS[hero.armorTier].name}</div>
           </div>
           <button class="toggle-btn party-toggle ${inParty ? "in" : ""}" data-act="toggle-party">
             ${inParty ? `${ico("banner")} In party` : `${ico("moon")} Benched`}
@@ -1389,6 +1400,11 @@ export class Menus {
         <div class="attr-rows"></div>
         <div class="card-actions">
           <button class="toggle-btn talents-btn" data-act="talents">${ico("star")} Talents</button>
+          <button class="toggle-btn calling-btn ${!sworn && save.level >= CALLING_UNLOCK_LEVEL ? "beckons" : ""}"
+            data-act="calling" ${!sworn && save.level < CALLING_UNLOCK_LEVEL ? "disabled" : ""}
+            ${sworn ? `style="border-color:${sworn.color};color:${sworn.color}"` : ""}>
+            ${sworn ? `${ico(sworn.crest)} ${sworn.name}` : save.level >= CALLING_UNLOCK_LEVEL ? "Choose a Calling" : `Calling at band lv ${CALLING_UNLOCK_LEVEL}`}
+          </button>
           <button class="toggle-btn respec" data-act="respec">Respec (free)</button>
         </div>
       </div>
@@ -1483,7 +1499,98 @@ export class Menus {
       this.renderTalents(index);
     });
 
+    card.querySelector('[data-act="calling"]')!.addEventListener("click", () => {
+      if (!hero.calling && save.level < CALLING_UNLOCK_LEVEL) return;
+      audio.play("click");
+      this.renderCalling(index);
+    });
+
     return card;
+  }
+
+  // ------------------------------------------------------------------ callings
+
+  renderCalling(index: number): void {
+    this.root.innerHTML = "";
+    this.show();
+    const save = this.save;
+    const def = HEROES[index];
+    const hero = save.heroes[index];
+    const page = el(`
+      <div class="page hero-sheet">
+        <div class="map-header">
+          <div>
+            <div class="map-title">${def.name}'s Calling</div>
+            <div class="map-level">${
+              hero.calling
+                ? `Sworn — switching costs ${CALLING_SWITCH_COST}g`
+                : "Swear one oath — your first is free, and stats never lock"
+            } · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div>
+          </div>
+          <button class="big-btn party-btn" data-act="back">Party</button>
+        </div>
+        <div class="calling-grid"></div>
+      </div>
+    `);
+    const grid = page.querySelector(".calling-grid")!;
+    for (const c of CALLINGS) {
+      const eligible = callingEligible(c, hero.attrs);
+      const isSworn = hero.calling === c.id;
+      const card = el(`
+        <div class="calling-card ${isSworn ? "sworn" : ""} ${eligible ? "" : "locked"}" style="--chip:${c.color}">
+          <div class="calling-head">
+            <span class="calling-crest">${ico(c.crest)}</span>
+            <div class="calling-title"><strong>${c.name}</strong><em>${c.epithet}</em></div>
+            ${isSworn ? '<span class="sworn-badge">Sworn</span>' : ""}
+          </div>
+          <div class="calling-req">${c.entry
+            .map((e) => `<span class="req-chip ${hero.attrs[e.attr] >= e.value ? "met" : ""}">${ATTR_NAMES[e.attr]} ${e.value}</span>`)
+            .join("")}</div>
+          <div class="calling-passive">${c.passive}</div>
+          <div class="calling-sig">
+            <span class="spell-ico"></span>
+            <span class="spell-info"><strong>${c.signature.name}</strong><em>${c.signature.blurb}</em></span>
+          </div>
+          ${
+            isSworn
+              ? ""
+              : `<button class="big-btn ${eligible ? "primary" : ""} swear-btn" data-swear="${c.id}" ${eligible ? "" : "disabled"}>
+                  ${eligible ? (hero.calling ? `Switch — ${CALLING_SWITCH_COST}g` : "Swear the oath") : "Attributes too low"}
+                </button>`
+          }
+        </div>
+      `);
+      const holder = card.querySelector(".spell-ico")!;
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 60;
+      canvas.style.width = canvas.style.height = "30px";
+      const cctx = canvas.getContext("2d")!;
+      cctx.scale(2, 2);
+      drawAbilityGlyph(cctx, c.signature.icon, 15, 15, 9, c.color);
+      holder.appendChild(canvas);
+      grid.appendChild(card);
+    }
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const swear = target.closest("[data-swear]");
+      if (swear) {
+        const id = swear.getAttribute("data-swear")!;
+        const c = callingById(id)!;
+        if (!callingEligible(c, hero.attrs)) return;
+        if (hero.calling && !this.spend(CALLING_SWITCH_COST)) return;
+        hero.calling = id;
+        persist(save);
+        audio.play("levelup");
+        this.showToast(`${def.name} swears the ${c.name}'s oath — ${c.signature.name} joins the battle bar`);
+        this.renderCalling(index);
+        return;
+      }
+      if (target.closest('[data-act="back"]')) {
+        audio.play("click");
+        this.renderParty();
+      }
+    });
+    this.root.appendChild(page);
   }
 
   // ------------------------------------------------------------------ equipment
@@ -1593,6 +1700,26 @@ export class Menus {
         holder.appendChild(canvas);
       }
       slotRow.appendChild(slot);
+    }
+    // sworn calling's signature rides along as a bonus fourth slot
+    const swornCalling = callingById(hero.calling);
+    if (swornCalling) {
+      const sigSlot = el(`
+        <div class="big-slot filled signature" style="--chip:${swornCalling.color}">
+          <span class="big-slot-ico"></span>
+          <span class="big-slot-name">${swornCalling.signature.name}</span>
+          <span class="sig-tag">${ico(swornCalling.crest)} ${swornCalling.name}</span>
+        </div>
+      `);
+      const sigHolder = sigSlot.querySelector(".big-slot-ico")!;
+      const sigCanvas = document.createElement("canvas");
+      sigCanvas.width = sigCanvas.height = 68;
+      sigCanvas.style.width = sigCanvas.style.height = "34px";
+      const sigCtx = sigCanvas.getContext("2d")!;
+      sigCtx.scale(2, 2);
+      drawAbilityGlyph(sigCtx, swornCalling.signature.icon, 17, 17, 10, swornCalling.color);
+      sigHolder.appendChild(sigCanvas);
+      slotRow.appendChild(sigSlot);
     }
 
     // trinket choices: none + every distinct loot piece not worn by someone else

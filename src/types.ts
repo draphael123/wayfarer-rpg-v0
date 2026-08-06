@@ -58,6 +58,7 @@ export interface Unit {
   team: Team;
   heroIndex: number; // -1 for enemies
   enemyKind: EnemyKind | null;
+  calling: string | null; // sworn calling (heroes only)
   x: number;
   y: number;
   radius: number;
@@ -125,9 +126,9 @@ export interface GroundZone {
   radius: number;
   time: number;
   duration: number;
-  kind: "frost";
-  power: number; // slow fraction
-  dps: number;
+  kind: "frost" | "sanctuary";
+  power: number; // frost: slow fraction · sanctuary: unused
+  dps: number; // frost: damage/s to enemies · sanctuary: healing/s to heroes
   from: Unit;
 }
 
@@ -162,6 +163,7 @@ export interface HeroSave {
   armorTier: number; // 0-3
   talents: Record<string, number>; // talent id -> rank
   trinket: string | null;
+  calling: string | null; // sworn calling id (band level 5+), null = unsworn
 }
 
 export interface SaveData {

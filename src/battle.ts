@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { DIFFICULTIES, ENEMIES, HEROES, abilityById, deriveStats, partyRoster, talentMods, trinketMods } from "./data";
+import { DIFFICULTIES, ENEMIES, HEROES, abilityById, callingById, cooldownReduction, deriveStats, partyRoster, talentMods, trinketMods } from "./data";
 import type { FxSystem } from "./fx";
 import type {
   AbilityState,
@@ -84,17 +84,20 @@ export class Battle {
         y: midY - spread + t * spread * 2,
       };
       const heroSave = save.heroes[i];
-      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier, heroSave.talents, heroSave.trinket);
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroSave.armorTier, heroSave.talents, heroSave.trinket, heroSave.calling);
       const abilities: AbilityState[] = heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d)
         .map((def) => ({ def, timer: 0 }));
+      const sworn = callingById(heroSave.calling);
+      if (sworn) abilities.push({ def: sworn.signature, timer: 0 });
       this.units.push({
         id: nextUnitId++,
         name: HEROES[i].name,
         team: "hero",
         heroIndex: i,
         enemyKind: null,
+        calling: heroSave.calling,
         x: pos.x,
         y: pos.y,
         radius: 15,
@@ -161,6 +164,7 @@ export class Battle {
       team: "enemy",
       heroIndex: -1,
       enemyKind: kind,
+      calling: null,
       x,
       y,
       radius: def.radius,
@@ -274,6 +278,8 @@ export class Battle {
     const haste = this.effect(unit, "haste");
     if (haste) interval /= haste.power;
     if (unit.team === "enemy") interval /= this.enemyHaste;
+    // Ranger skirmisher: faster shots while nothing is in their face
+    if (unit.calling === "ranger" && !this.nearestEnemyWithin(unit, 70)) interval /= 1.15;
     return interval;
   }
 
@@ -291,6 +297,8 @@ export class Battle {
     if (vulnerable) amount *= 1 + vulnerable.power;
     const guard = this.effect(target, "guard");
     if (guard) amount *= 1 - guard.power;
+    // Vanguard holds the line: sturdier while an enemy is at arm's reach
+    if (target.calling === "vanguard" && this.nearestEnemyWithin(target, 60)) amount *= 0.9;
     amount = Math.max(1, Math.round(amount * (0.9 + Math.random() * 0.2)));
     const shield = this.effect(target, "shield");
     if (shield) {
@@ -624,12 +632,145 @@ export class Battle {
         audio.play("shield");
         break;
       }
+      // ----- calling signatures -----
+      case "challenge": {
+        for (const enemy of this.livingEnemies()) {
+          if (Math.hypot(enemy.x - hero.x, enemy.y - hero.y) < 150) {
+            enemy.effects = enemy.effects.filter((e) => e.kind !== "taunt");
+            enemy.effects.push(makeEffect("taunt", 4, 1, hero));
+            enemy.alert = 0.5;
+          }
+        }
+        hero.effects.push(makeEffect("guard", 3.5, 0.25, hero));
+        this.fx.ring(hero.x, hero.y, 150, "#e0a34b", { width: 4, life: 0.5 });
+        this.fx.burst(hero.x, hero.y - 22, "#e0a34b", 14, 140, { glow: true });
+        this.fx.addShake(4);
+        audio.play("warcry");
+        break;
+      }
+      case "whirlwind": {
+        const dmg = hero.stats.damage * 1.25;
+        let hitAny = false;
+        for (const enemy of this.livingEnemies()) {
+          const d = Math.hypot(enemy.x - hero.x, enemy.y - hero.y);
+          if (d < 72 + enemy.radius) {
+            this.damage(enemy, dmg, hero, { spell: true, color: "#ff9a85" });
+            if (enemy.alive) {
+              const away = this.normalize({ x: enemy.x - hero.x, y: enemy.y - hero.y });
+              const shoved = this.clampToField({ x: enemy.x + away.x * 26, y: enemy.y + away.y * 26 }, enemy.radius);
+              enemy.x = shoved.x;
+              enemy.y = shoved.y;
+            }
+            hitAny = true;
+          }
+        }
+        this.fx.slash(hero.x, hero.y - 12, 0, 58, "#ff9a85", Math.PI * 2);
+        this.fx.slash(hero.x, hero.y - 12, Math.PI, 44, "#ffd0c5", Math.PI * 2);
+        this.fx.ring(hero.x, hero.y, 86, "#d1543f", { width: 4, life: 0.4 });
+        this.fx.addShake(hitAny ? 6 : 3);
+        hero.lunge = 0.8;
+        audio.play("slash");
+        break;
+      }
+      case "volley": {
+        if (!aim) {
+          cast = false;
+          break;
+        }
+        const at = this.clampToField(aim, 0);
+        const dmg = 8 + attrs.dex * 2.0;
+        for (const enemy of this.livingEnemies()) {
+          if (Math.hypot(enemy.x - at.x, enemy.y - at.y) < 80 + enemy.radius) {
+            this.damage(enemy, dmg, hero, { spell: true, color: "#cfe8b0" });
+            if (enemy.alive) enemy.effects.push(makeEffect("slow", 1.2, 0.3, hero));
+          }
+        }
+        // arrowfall
+        for (let i = 0; i < 12; i++) {
+          const ax = at.x + (Math.random() - 0.5) * 130;
+          const ay = at.y + (Math.random() - 0.5) * 60;
+          this.fx.burst(ax, ay - 6, "#e8d9b0", 2, 60, { gravity: 240, life: 0.35 });
+        }
+        this.fx.ring(at.x, at.y, 88, "#a8d080", { width: 4, life: 0.45 });
+        this.fx.pool(at.x, at.y, 90, "168,208,128", 0.6);
+        hero.lungeDir = dir;
+        hero.lunge = 0.6;
+        audio.play("shoot");
+        break;
+      }
+      case "barrage": {
+        const targets = this.livingEnemies()
+          .map((e) => ({ e, d: Math.hypot(e.x - hero.x, e.y - hero.y) }))
+          .filter((t) => t.d < 280)
+          .sort((a, b) => a.d - b.d)
+          .slice(0, 3);
+        if (!targets.length) {
+          cast = false;
+          break;
+        }
+        const dmg = (8 + attrs.int * 2.2) * (0.5 + hero.stats.spellPower * 0.5);
+        for (const { e } of targets) {
+          this.damage(e, dmg, hero, { spell: true, color: "#b79aee" });
+          this.fx.burst(e.x, e.y - 14, "#b79aee", 10, 120, { glow: true });
+          // bolt streak from caster to victim
+          const steps = 6;
+          for (let s = 1; s < steps; s++) {
+            const t = s / steps;
+            this.fx.burst(hero.x + (e.x - hero.x) * t, hero.y - 18 + (e.y - 4 - hero.y) * t, "#d8c5ff", 1, 20, { glow: true, life: 0.25 });
+          }
+        }
+        this.fx.burst(hero.x, hero.y - 24, "#b79aee", 8, 90, { glow: true });
+        audio.play("bolt");
+        break;
+      }
+      case "sanctuary": {
+        if (!aim) {
+          cast = false;
+          break;
+        }
+        const at = this.clampToField(aim, 0);
+        this.zones.push({
+          x: at.x,
+          y: at.y,
+          radius: 78,
+          time: 0,
+          duration: 5,
+          kind: "sanctuary",
+          power: 0,
+          dps: 6 + attrs.spi * 1.6,
+          from: hero,
+        });
+        this.fx.ring(at.x, at.y, 82, "#f2e7a0", { width: 4, life: 0.6 });
+        this.fx.burst(at.x, at.y - 10, "#f2e7a0", 16, 100, { glow: true, gravity: -60 });
+        this.fx.pool(at.x, at.y, 95, "242,231,160", 1.1);
+        audio.play("heal");
+        break;
+      }
+      case "blink": {
+        const dist = aim ? Math.min(170, Math.hypot(aim.x - hero.x, aim.y - hero.y)) : 130;
+        const from = { x: hero.x, y: hero.y };
+        const to = this.clampToField({ x: hero.x + dir.x * dist, y: hero.y + dir.y * dist }, hero.radius);
+        this.fx.burst(from.x, from.y - 14, "#9adeee", 12, 110, { glow: true });
+        hero.x = to.x;
+        hero.y = to.y;
+        hero.moveTarget = null;
+        // shed every hunter
+        for (const enemy of this.livingEnemies()) {
+          if (enemy.aggro === hero) enemy.aggro = null;
+          if (enemy.attackTarget === hero) enemy.attackTarget = null;
+          enemy.effects = enemy.effects.filter((e) => !(e.kind === "taunt" && e.source === hero));
+        }
+        this.fx.burst(to.x, to.y - 14, "#9adeee", 14, 120, { glow: true });
+        this.fx.ring(to.x, to.y, 40, "#9adeee", { width: 3, life: 0.35 });
+        audio.play("shield");
+        break;
+      }
       default:
         cast = false;
     }
     if (cast) {
       this.castCounts[id] = (this.castCounts[id] ?? 0) + 1;
-      const cdr = hero.heroIndex >= 0 ? talentMods(save.heroes[hero.heroIndex].talents).cdr : 0;
+      const cdr = hero.heroIndex >= 0 ? cooldownReduction(save.heroes[hero.heroIndex]) : 0;
       state.timer = state.def.cooldown * (1 - cdr);
       hero.castGlow = 0.4;
     }
@@ -767,10 +908,21 @@ export class Battle {
         unit.effects.splice(i, 1);
       }
     }
-    // frost zones apply slow continuously
+    // ground zones: frost chills enemies, sanctuaries mend heroes
     let inFrost = false;
     for (const zone of this.zones) {
-      if (unit.team === "enemy" && Math.hypot(unit.x - zone.x, unit.y - zone.y) < zone.radius + unit.radius) {
+      const inside = Math.hypot(unit.x - zone.x, unit.y - zone.y) < zone.radius + unit.radius;
+      if (!inside) continue;
+      if (zone.kind === "sanctuary") {
+        if (unit.team === "hero" && unit.hp < unit.stats.maxHp) {
+          this.heal(unit, zone.dps * dt, false, zone.from);
+          if (Math.floor((this.time - dt) * 1.1) !== Math.floor(this.time * 1.1)) {
+            this.fx.burst(unit.x, unit.y - 16, "#f2e7a0", 2, 40, { gravity: -70, glow: true });
+          }
+        }
+        continue;
+      }
+      if (unit.team === "enemy") {
         inFrost = true;
         unit.hp -= zone.dps * dt;
         if (unit.hp <= 0) {
@@ -853,6 +1005,20 @@ export class Battle {
         } else {
           hero.channelBeam = 1;
           this.heal(target, rate * dt, false, hero);
+          // Chaplain's grace: the channel spills onto another wounded ally nearby
+          if (hero.calling === "chaplain") {
+            let spill: Unit | null = null;
+            let worst = 0.92;
+            for (const ally of this.livingHeroes()) {
+              if (ally === target || ally === hero) continue;
+              const frac = ally.hp / ally.stats.maxHp;
+              if (frac < worst && Math.hypot(ally.x - target.x, ally.y - target.y) < 150) {
+                worst = frac;
+                spill = ally;
+              }
+            }
+            if (spill) this.heal(spill, rate * 0.3 * dt, false, hero);
+          }
           if (Math.floor((this.time - dt) * 1.25) !== Math.floor(this.time * 1.25)) {
             this.fx.floatText(target.x, target.y - target.radius - 14, `+${Math.round(rate * 0.8)}`, "#8ee88b", 12);
             this.fx.burst(target.x, target.y - 14, "#bff0b0", 2, 40, { gravity: -60, glow: true });
@@ -1149,6 +1315,10 @@ export class Battle {
       // Executioner: finish wounded foes
       if (this.heroTalentRank(attacker, "executioner") > 0 && target.hp < target.stats.maxHp * 0.25) {
         dmg *= 2;
+      }
+      // Reaver: red-handed against the already-bleeding
+      if (attacker.calling === "reaver" && target.hp < target.stats.maxHp * 0.4) {
+        dmg *= 1.2;
       }
     }
     if (!ranged) {

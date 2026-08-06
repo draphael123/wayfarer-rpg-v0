@@ -4,6 +4,7 @@ import type {
   AttrKey,
   DerivedStats,
   EnemyKind,
+  HeroSave,
   StageDef,
   WeaponKind,
 } from "./types";
@@ -229,27 +230,166 @@ export function dominantWeapon(attrs: Attributes): WeaponKind {
   return "sword";
 }
 
+// ------------------------------------------------------------------ callings
+//
+// Callings are a prestige layer ON TOP of the classless build: entry is gated
+// by the stats you chose, nothing about stats/spells/respec ever locks.
+
+export interface CallingDef {
+  id: string;
+  name: string;
+  epithet: string; // shown under the hero's name once sworn
+  crest: string; // ico() name for menu chrome
+  color: string;
+  entry: { attr: AttrKey; value: number }[];
+  passive: string; // menu description of the always-on perk
+  signature: AbilityDef; // 4th battle ability, exclusive to the calling
+}
+
+export const CALLING_UNLOCK_LEVEL = 5;
+export const CALLING_SWITCH_COST = 150;
+
+const sig = (id: string, name: string, targeting: AbilityDef["targeting"], cooldown: number, color: string, blurb: string): AbilityDef => ({
+  id,
+  name,
+  gate: { attr: "str", value: 0 }, // callings gate by oath, not stats
+  targeting,
+  cooldown,
+  color,
+  icon: id,
+  blurb,
+});
+
+export const CALLINGS: CallingDef[] = [
+  {
+    id: "vanguard",
+    name: "Vanguard",
+    epithet: "Shield of the Band",
+    crest: "shield",
+    color: "#e0a34b",
+    entry: [{ attr: "vit", value: 8 }],
+    passive: "+5% armor, and +10% more while an enemy is at arm's reach.",
+    signature: sig("challenge", "Challenge", "instant", 14, "#e0a34b", "Bellow a challenge: nearby foes must attack you; you brace, taking less damage."),
+  },
+  {
+    id: "reaver",
+    name: "Reaver",
+    epithet: "Red-Handed",
+    crest: "sword",
+    color: "#d1543f",
+    entry: [{ attr: "str", value: 8 }],
+    passive: "+8% melee damage, +20% more against foes below 40% health.",
+    signature: sig("whirlwind", "Whirlwind", "instant", 12, "#d1543f", "Spin in a circle of steel, striking and shoving everything adjacent."),
+  },
+  {
+    id: "ranger",
+    name: "Ranger",
+    epithet: "of the Long Watch",
+    crest: "bow",
+    color: "#7ba05a",
+    entry: [{ attr: "dex", value: 8 }],
+    passive: "+8% move, +6% ranged damage, attack faster while nothing is in your face.",
+    signature: sig("volley", "Volley", "point", 14, "#a8d080", "Rain arrows on a spot, wounding and briefly slowing everything under them."),
+  },
+  {
+    id: "arcanist",
+    name: "Arcanist",
+    epithet: "Ember-Eyed",
+    crest: "spark",
+    color: "#9a7bd8",
+    entry: [{ attr: "int", value: 8 }],
+    passive: "Spells recharge 10% faster and hit 8% harder.",
+    signature: sig("barrage", "Arcane Barrage", "instant", 13, "#b79aee", "Hurl three seeking bolts at the nearest enemies."),
+  },
+  {
+    id: "chaplain",
+    name: "Chaplain",
+    epithet: "Lantern-Bearer",
+    crest: "plus",
+    color: "#e8d9a0",
+    entry: [{ attr: "spi", value: 8 }],
+    passive: "+10% healing; your channel spills 30% onto another wounded ally nearby.",
+    signature: sig("sanctuary", "Sanctuary", "point", 16, "#f2e7a0", "Consecrate ground that steadily mends every ally standing on it."),
+  },
+  {
+    id: "trickster",
+    name: "Trickster",
+    epithet: "Twice-Shadowed",
+    crest: "moon",
+    color: "#7bc8d8",
+    entry: [
+      { attr: "dex", value: 6 },
+      { attr: "int", value: 6 },
+    ],
+    passive: "+6% move and abilities recharge 6% faster.",
+    signature: sig("blink", "Blink", "ray", 11, "#9adeee", "Vanish and reappear a short dash away, shedding every foe hunting you."),
+  },
+];
+
+export function callingById(id: string | null | undefined): CallingDef | null {
+  return CALLINGS.find((c) => c.id === id) ?? null;
+}
+
+export function callingEligible(calling: CallingDef, attrs: Attributes): boolean {
+  return calling.entry.every((e) => attrs[e.attr] >= e.value);
+}
+
+function callingStatMods(calling?: string | null) {
+  const m = { meleeDmg: 0, rangedDmg: 0, hpPct: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, startShield: 0 };
+  switch (calling) {
+    case "vanguard":
+      m.armorFlat = 0.05;
+      break;
+    case "reaver":
+      m.meleeDmg = 0.08;
+      break;
+    case "ranger":
+      m.moveSpeed = 0.08;
+      m.rangedDmg = 0.06;
+      break;
+    case "arcanist":
+      m.cdr = 0.1;
+      m.spellPower = 0.08;
+      break;
+    case "chaplain":
+      m.healPower = 0.1;
+      break;
+    case "trickster":
+      m.moveSpeed = 0.06;
+      m.cdr = 0.06;
+      break;
+  }
+  return m;
+}
+
+/** Total ability-cooldown reduction from talents, trinket, and calling. */
+export function cooldownReduction(hero: HeroSave): number {
+  return Math.min(0.5, talentMods(hero.talents).cdr + trinketMods(hero.trinket).cdr + callingStatMods(hero.calling).cdr);
+}
+
 export function deriveStats(
   attrs: Attributes,
   weaponTier = 0,
   armorTier = 0,
   talents?: Record<string, number>,
   trinket?: string | null,
+  calling?: string | null,
 ): DerivedStats {
   const t = talentMods(talents);
   const k = trinketMods(trinket);
+  const c = callingStatMods(calling);
   const mods = {
-    meleeDmg: t.meleeDmg + k.meleeDmg,
-    rangedDmg: t.rangedDmg + k.rangedDmg,
-    hpPct: t.hpPct + k.hpPct,
-    armorFlat: t.armorFlat + k.armorFlat,
-    cdr: Math.min(0.5, t.cdr + k.cdr),
-    atkSpeed: t.atkSpeed + k.atkSpeed,
-    moveSpeed: t.moveSpeed + k.moveSpeed,
-    crit: t.crit + k.crit,
-    spellPower: t.spellPower + k.spellPower,
-    healPower: t.healPower + k.healPower,
-    startShield: t.startShield + k.startShield,
+    meleeDmg: t.meleeDmg + k.meleeDmg + c.meleeDmg,
+    rangedDmg: t.rangedDmg + k.rangedDmg + c.rangedDmg,
+    hpPct: t.hpPct + k.hpPct + c.hpPct,
+    armorFlat: t.armorFlat + k.armorFlat + c.armorFlat,
+    cdr: Math.min(0.5, t.cdr + k.cdr + c.cdr),
+    atkSpeed: t.atkSpeed + k.atkSpeed + c.atkSpeed,
+    moveSpeed: t.moveSpeed + k.moveSpeed + c.moveSpeed,
+    crit: t.crit + k.crit + c.crit,
+    spellPower: t.spellPower + k.spellPower + c.spellPower,
+    healPower: t.healPower + k.healPower + c.healPower,
+    startShield: t.startShield + k.startShield + c.startShield,
   };
   const weapon = dominantWeapon(attrs);
   const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + ARMOR_HP_BONUS[armorTier]);

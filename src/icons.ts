@@ -93,6 +93,74 @@ export function drawAbilityGlyph(
       ctx.closePath();
       ctx.stroke();
       break;
+    case "challenge":
+      // planted banner
+      ctx.moveTo(cx - r * 0.3, cy + r);
+      ctx.lineTo(cx - r * 0.3, cy - r);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.3, cy - r);
+      ctx.lineTo(cx + r, cy - r * 0.55);
+      ctx.lineTo(cx - r * 0.3, cy - r * 0.1);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    case "whirlwind":
+      for (let i = 0; i < 3; i++) {
+        const a0 = (i / 3) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * (0.45 + i * 0.28), a0, a0 + Math.PI * 1.1);
+        ctx.stroke();
+      }
+      break;
+    case "volley":
+      for (const off of [-0.7, 0, 0.7]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + off * r, cy + r);
+        ctx.lineTo(cx + off * r * 0.5, cy - r * 0.6);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx + off * r * 0.5 - r * 0.22, cy - r * 0.25);
+        ctx.lineTo(cx + off * r * 0.5, cy - r * 0.6);
+        ctx.lineTo(cx + off * r * 0.5 + r * 0.22, cy - r * 0.25);
+        ctx.stroke();
+      }
+      break;
+    case "barrage":
+      for (const [ox, oy, rr] of [[-0.55, 0.4, 0.3], [0.15, -0.45, 0.38], [0.6, 0.45, 0.26]] as [number, number, number][]) {
+        ctx.beginPath();
+        ctx.arc(cx + ox * r, cy + oy * r, rr * r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    case "sanctuary":
+      // sheltering dome over a spark
+      ctx.arc(cx, cy + r * 0.5, r, Math.PI, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 1.05, cy + r * 0.5);
+      ctx.lineTo(cx + r * 1.05, cy + r * 0.5);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy - r * 0.05, r * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case "blink":
+      // fading afterimage arrow
+      ctx.globalAlpha = 0.45;
+      ctx.beginPath();
+      ctx.moveTo(cx - r, cy - r * 0.6);
+      ctx.lineTo(cx - r * 0.25, cy);
+      ctx.lineTo(cx - r, cy + r * 0.6);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.1, cy - r * 0.6);
+      ctx.lineTo(cx + r * 0.65, cy);
+      ctx.lineTo(cx - r * 0.1, cy + r * 0.6);
+      ctx.closePath();
+      ctx.fill();
+      break;
     default:
       ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2);
       ctx.fill();
@@ -117,6 +185,8 @@ const PATHS: Record<string, string> = {
   banner: '<path d="M6 3.5v17"/><path d="M6 4.5h11.5L14.5 8.5l3 4H6"/>',
   arrow: '<line x1="4" y1="12" x2="19" y2="12"/><path d="M13.5 6.5L19 12l-5.5 5.5"/>',
   skull: '<path d="M12 3.5a7 7 0 00-7 7c0 2.6 1.4 4.4 3 5.5V19a1.5 1.5 0 001.5 1.5h5A1.5 1.5 0 0016 19v-3c1.6-1.1 3-2.9 3-5.5a7 7 0 00-7-7z"/><circle cx="9.3" cy="11" r="1.4" fill="currentColor" stroke="none"/><circle cx="14.7" cy="11" r="1.4" fill="currentColor" stroke="none"/><line x1="12" y1="16.5" x2="12" y2="18"/>',
+  bow: '<path d="M6 4c6 2.5 6 13.5 0 16"/><line x1="6" y1="4" x2="6" y2="20"/><line x1="10.5" y1="12" x2="20" y2="12"/><path d="M16.5 8.5L20 12l-3.5 3.5"/>',
+  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
   home: '<path d="M4.5 11L12 4l7.5 7"/><path d="M6.5 10v9h11v-9"/><path d="M10 19v-5h4v5"/>',
 };
 
