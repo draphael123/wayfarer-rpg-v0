@@ -4958,6 +4958,13 @@ export class Battle {
     return best;
   }
 
+  /** A direct attack order is a commitment, not an invitation to an endless
+   * chase. Ranged and support enemies may seek space before engagement, but
+   * once a hero pursues them they hold their ground and answer the pressure. */
+  private isPursued(enemy: Unit): boolean {
+    return this.livingHeroes().some((hero) => hero.attackTarget === enemy);
+  }
+
   private updateEnemy(enemy: Unit, dt: number): void {
     // jog onto the field first
     if (this.descending ? enemy.y > this.field.bottom - enemy.radius : enemy.x > this.field.right - enemy.radius) {
@@ -5103,8 +5110,9 @@ export class Battle {
     const def = enemy.enemyKind ? ENEMIES[enemy.enemyKind] : null;
     const dist = unitDist(enemy, target);
 
-    // snipers back away from close threats while reloading
-    if (def && def.range > 100 && dist < 95 && enemy.attackTimer > 0.35) {
+    // Unpressured snipers may adjust their line once. A committed attack order
+    // pins them in the exchange so they cannot kite a pursuing hero forever.
+    if (def && def.range > 100 && dist < 95 && enemy.attackTimer > 0.35 && !this.isPursued(enemy)) {
       const away = this.normalize({ x: enemy.x - target.x, y: enemy.y - target.y });
       const to = this.clampToField({ x: enemy.x + away.x * 60, y: enemy.y + away.y * 60 }, enemy.radius);
       this.moveToward(enemy, to, dt, 4);
@@ -5466,7 +5474,7 @@ export class Battle {
     if (!target) return;
     st.aggro = target;
     // between hunts it prowls the field's edge instead of joining the line
-    if (!exposed && !pending && st.supportTimer > 3.5) {
+    if (!exposed && !pending && st.supportTimer > 3.5 && !this.isPursued(st)) {
       const laneY = st.id % 2 === 0 ? this.field.top + 18 : this.field.bottom - 18;
       const lurk = this.clampToField({ x: Math.max(this.field.left + 80, target.x + 90), y: laneY }, st.radius);
       if (Math.hypot(lurk.x - st.x, lurk.y - st.y) > 26) {
@@ -5519,9 +5527,16 @@ export class Battle {
     // aloft: orbit the band's midst, untouchable by blades
     const t = this.nearestHero(h);
     if (!t) return;
-    h.phase += dt * 1.3;
-    const orbit = this.clampToField({ x: t.x + Math.cos(h.phase) * 175, y: t.y + Math.sin(h.phase) * 60 }, h.radius);
-    this.moveToward(h, orbit, dt, 8, 1.1);
+    const pursued = this.isPursued(h);
+    if (pursued) {
+      // A chased bird wheels to face its pursuer and dives promptly instead of
+      // towing melee heroes around the arena while remaining untouchable.
+      h.supportTimer = Math.min(h.supportTimer, 0.8);
+    } else {
+      h.phase += dt * 1.3;
+      const orbit = this.clampToField({ x: t.x + Math.cos(h.phase) * 175, y: t.y + Math.sin(h.phase) * 60 }, h.radius);
+      this.moveToward(h, orbit, dt, 8, 1.1);
+    }
     h.facing = t.x >= h.x ? 1 : -1;
     const pending = this.telegraphs.find((tg) => tg.owner === h);
     if (!pending && h.supportTimer <= 0 && !this.effect(h, "stun")) {
@@ -5584,7 +5599,7 @@ export class Battle {
     const near = this.nearestHero(d);
     if (!near) return;
     const dist = unitDist(d, near);
-    if (dist < 190) {
+    if (dist < 190 && !this.isPursued(d)) {
       const away = this.normalize({ x: d.x - near.x, y: d.y - near.y });
       this.moveToward(d, this.clampToField({ x: d.x + away.x * 60, y: d.y + away.y * 60 }, d.radius), dt, 4, 0.9);
       d.facing = near.x >= d.x ? 1 : -1;
@@ -5633,7 +5648,7 @@ export class Battle {
     }
     if (!nearest) return;
     const dist = unitDist(gunner, nearest);
-    if (dist < 165) {
+    if (dist < 165 && !this.isPursued(gunner)) {
       const away = this.normalize({ x: gunner.x - nearest.x, y: gunner.y - nearest.y });
       this.moveToward(gunner, this.clampToField({ x: gunner.x + away.x * 70, y: gunner.y + away.y * 70 }, gunner.radius), dt, 4, 0.9);
       gunner.facing = nearest.x >= gunner.x ? 1 : -1;
@@ -5651,7 +5666,7 @@ export class Battle {
   private updateConchSeer(seer: Unit, dt: number): void {
     seer.supportTimer -= dt;
     const nearest = this.nearestHero(seer);
-    if (nearest && unitDist(seer, nearest) < 135) {
+    if (nearest && unitDist(seer, nearest) < 135 && !this.isPursued(seer)) {
       const away = this.normalize({ x: seer.x - nearest.x, y: seer.y - nearest.y });
       this.moveToward(seer, this.clampToField({ x: seer.x + away.x * 70, y: seer.y + away.y * 70 }, seer.radius), dt, 4, 0.9);
     }
@@ -5690,7 +5705,7 @@ export class Battle {
     shaman.supportTimer -= dt;
     // drift to stay behind the front line
     const nearest = this.nearestHero(shaman);
-    if (nearest && unitDist(shaman, nearest) < 130) {
+    if (nearest && unitDist(shaman, nearest) < 130 && !this.isPursued(shaman)) {
       const away = this.normalize({ x: shaman.x - nearest.x, y: shaman.y - nearest.y });
       const to = this.clampToField({ x: shaman.x + away.x * 70, y: shaman.y + away.y * 70 }, shaman.radius);
       this.moveToward(shaman, to, dt, 4);
@@ -5759,7 +5774,7 @@ export class Battle {
   private updateBonecaller(caller: Unit, dt: number): void {
     caller.supportTimer -= dt;
     const nearest = this.nearestHero(caller);
-    if (nearest && unitDist(caller, nearest) < 140) {
+    if (nearest && unitDist(caller, nearest) < 140 && !this.isPursued(caller)) {
       const away = this.normalize({ x: caller.x - nearest.x, y: caller.y - nearest.y });
       const to = this.clampToField({ x: caller.x + away.x * 70, y: caller.y + away.y * 70 }, caller.radius);
       this.moveToward(caller, to, dt, 4);
