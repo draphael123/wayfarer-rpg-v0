@@ -2761,6 +2761,8 @@ body.reduced-motion .forge-sparks i { animation: none; }
 .act-tabs { display: flex; gap: 8px; width: 100%; margin-bottom: 8px; }
 
 .act-tabs .shop-tab { flex: 1; }
+.act-tabs .shop-tab.locked { opacity: 0.62; filter: saturate(0.55); border-style: dashed; }
+.act-tabs .shop-tab.locked:hover { opacity: 0.82; }
 
 .finale-page .chron-grid { grid-template-columns: repeat(2, 1fr); }
 

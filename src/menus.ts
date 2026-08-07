@@ -861,15 +861,13 @@ export class Menus {
     const maxIdx = Math.min(save.unlockedStage, STAGES.length - 1);
     this.selectedStage = Math.min(this.selectedStage ?? maxIdx, maxIdx);
     this.mapAct = (this.selectedStage ?? 0) >= 12 ? 2 : (this.selectedStage ?? 0) >= 6 ? 1 : 0;
-    if (save.unlockedStage >= 6) {
-      page.querySelector(".world-map")!.appendChild(
-        el(`<div class="act-tabs">
-          <button class="shop-tab ${this.mapAct === 0 ? "on" : ""}" data-mapact="0">⛰ The South Road</button>
-          <button class="shop-tab ${this.mapAct === 1 ? "on" : ""}" data-mapact="1">❄ The Winterreach</button>
-          ${save.unlockedStage >= 12 ? `<button class="shop-tab ${this.mapAct === 2 ? "on" : ""}" data-mapact="2">≋ Stormbreak Coast</button>` : ""}
-        </div>`),
-      );
-    }
+    page.querySelector(".world-map")!.appendChild(
+      el(`<div class="act-tabs" aria-label="Campaign worlds">
+        <button class="shop-tab ${this.mapAct === 0 ? "on" : ""}" data-mapact="0">⛰ The South Road</button>
+        <button class="shop-tab ${this.mapAct === 1 ? "on" : ""} ${save.unlockedStage < 6 ? "locked" : ""}" data-mapact="1" aria-disabled="${save.unlockedStage < 6}">${save.unlockedStage < 6 ? "🔒" : "❄"} The Winterreach</button>
+        <button class="shop-tab ${this.mapAct === 2 ? "on" : ""} ${save.unlockedStage < 12 ? "locked" : ""}" data-mapact="2" aria-disabled="${save.unlockedStage < 12}">${save.unlockedStage < 12 ? "🔒" : "≋"} Stormbreak Coast</button>
+      </div>`),
+    );
     page.querySelector(".world-map")!.appendChild(this.buildWorldMap());
     const caption = page.querySelector(".stage-caption")!;
     caption.appendChild(this.buildScoutCard(this.selectedStage));
@@ -888,7 +886,13 @@ export class Menus {
       const mapActBtn = (event.target as HTMLElement).closest("[data-mapact]");
       if (mapActBtn) {
         audio.play("click");
-        this.mapAct = Number(mapActBtn.getAttribute("data-mapact")) as 0 | 1 | 2;
+        const requestedAct = Number(mapActBtn.getAttribute("data-mapact")) as 0 | 1 | 2;
+        const requiredStage = requestedAct === 2 ? 12 : requestedAct === 1 ? 6 : 0;
+        if (this.save.unlockedStage < requiredStage) {
+          this.showToast(requestedAct === 2 ? "Stormbreak Coast unlocks after The Hollow Crown." : "The Winterreach unlocks after Gorehulk's Hollow.");
+          return;
+        }
+        this.mapAct = requestedAct;
         this.selectedStage = this.mapAct === 2
           ? Math.max(12, Math.min(this.save.unlockedStage, 17))
           : this.mapAct === 1
