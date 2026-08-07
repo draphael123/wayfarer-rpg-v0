@@ -2316,6 +2316,96 @@ function drawDisciplineCastSilhouette(
   ctx.restore();
 }
 
+/** Priority foes announce their job through a compact ground heraldry mark.
+ * It is deliberately made from the same painted lines as attack telegraphs:
+ * readable at combat scale, but still part of the world rather than a badge. */
+function drawEnemyRoleTell(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  if (!unit.enemyKind || Object.prototype.hasOwnProperty.call(BOSS_PHASES, unit.enemyKind)) return;
+  const def = ENEMIES[unit.enemyKind];
+  const intent = unit.castGlow > 0.12 || unit.windup > 0;
+  if (!def.priority && !intent) return;
+  const role = def.role ?? "vanguard";
+  const pulse = 1 + Math.sin(time * 7 + unit.id) * (intent ? 0.08 : 0.03);
+  const radius = unit.radius * (def.priority ? 1.55 : 1.3) * pulse;
+  const y = unit.y + 2;
+  ctx.save();
+  ctx.translate(unit.x, y);
+  ctx.globalAlpha = intent ? 0.72 : 0.28;
+  ctx.strokeStyle = def.trim;
+  ctx.fillStyle = def.trim;
+  ctx.lineWidth = intent ? 2.5 : 1.6;
+  ctx.lineCap = "round";
+
+  ctx.beginPath();
+  ctx.ellipse(0, 0, radius, radius * 0.38, 0, Math.PI * 0.12, Math.PI * 0.88);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(0, 0, radius, radius * 0.38, 0, Math.PI * 1.12, Math.PI * 1.88);
+  ctx.stroke();
+
+  if (role === "tank") {
+    ctx.beginPath();
+    ctx.moveTo(-radius * 0.34, -radius * 0.12);
+    ctx.lineTo(0, -radius * 0.26);
+    ctx.lineTo(radius * 0.34, -radius * 0.12);
+    ctx.lineTo(radius * 0.25, radius * 0.18);
+    ctx.lineTo(0, radius * 0.29);
+    ctx.lineTo(-radius * 0.25, radius * 0.18);
+    ctx.closePath();
+    ctx.stroke();
+  } else if (role === "assassin" || role === "hunter") {
+    const direction = unit.facing;
+    ctx.beginPath();
+    ctx.moveTo(-direction * radius * 0.42, radius * 0.2);
+    ctx.lineTo(direction * radius * 0.35, 0);
+    ctx.lineTo(-direction * radius * 0.42, -radius * 0.2);
+    ctx.stroke();
+    if (role === "assassin") {
+      ctx.beginPath();
+      ctx.moveTo(-direction * radius * 0.18, radius * 0.18);
+      ctx.lineTo(direction * radius * 0.5, 0);
+      ctx.lineTo(-direction * radius * 0.18, -radius * 0.18);
+      ctx.stroke();
+    }
+  } else if (role === "support" || role === "summoner") {
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.22, 0, Math.PI * 2);
+    ctx.stroke();
+    const motes = role === "summoner" ? 3 : 4;
+    for (let i = 0; i < motes; i++) {
+      const angle = time * (role === "summoner" ? -1 : 1) + (i / motes) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(Math.cos(angle) * radius * 0.48, Math.sin(angle) * radius * 0.18, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (role === "artillery") {
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.3, 0, Math.PI * 2);
+    ctx.moveTo(-radius * 0.52, 0);
+    ctx.lineTo(radius * 0.52, 0);
+    ctx.moveTo(0, -radius * 0.25);
+    ctx.lineTo(0, radius * 0.25);
+    ctx.stroke();
+  } else if (role === "controller" || role === "disruptor") {
+    ctx.rotate(Math.PI / 4);
+    ctx.strokeRect(-radius * 0.25, -radius * 0.25, radius * 0.5, radius * 0.5);
+    if (role === "disruptor") {
+      ctx.beginPath();
+      ctx.moveTo(-radius * 0.38, radius * 0.15);
+      ctx.lineTo(-radius * 0.08, -radius * 0.08);
+      ctx.lineTo(radius * 0.08, radius * 0.08);
+      ctx.lineTo(radius * 0.38, -radius * 0.15);
+      ctx.stroke();
+    }
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(-radius * 0.38, radius * 0.18);
+    ctx.lineTo(radius * 0.42, -radius * 0.18);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /** How far into dusk this battle is (0-1) — set by drawUnits, stretches every shadow. */
 let shadowDusk = 0;
 /** Which stage the current battle is on — regional dress for enemies keys off it. */
@@ -6225,6 +6315,7 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
+    if (unit.team === "enemy") drawEnemyRoleTell(ctx, unit, battle.time);
     drawCombatMotion(ctx, unit, save.reducedMotion);
     const lean = (moving ? unit.facing * 0.055 : 0) - unit.facing * Math.min(0.1, unit.hitFlash * 0.7) + (lowHp ? unit.facing * 0.03 : 0);
     if (squash > 0.01 || stretch > 0.01 || Math.abs(lean) > 0.01) {

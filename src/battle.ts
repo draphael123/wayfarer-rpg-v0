@@ -5148,6 +5148,16 @@ export class Battle {
     owner.castGlow = 0.85;
     const duration = this.telegraphTime * (boss ? 1.08 : 0.92) + (kind === "beam" || kind === "bloodmoon" ? 0.28 : 0);
     const weakest = [...heroes].sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0];
+    const isolated = [...heroes].sort((a, b) => {
+      const aNearest = Math.min(...heroes.filter((hero) => hero !== a).map((hero) => unitDist(a, hero)), 999);
+      const bNearest = Math.min(...heroes.filter((hero) => hero !== b).map((hero) => unitDist(b, hero)), 999);
+      return bNearest - aNearest;
+    })[0];
+    const backliner = [...heroes].sort((a, b) => {
+      const aScore = a.stats.healPower * 3 + a.stats.range * 0.08 - a.stats.armor * 18;
+      const bScore = b.stats.healPower * 3 + b.stats.range * 0.08 - b.stats.armor * 18;
+      return bScore - aScore;
+    })[0];
     let clustered = heroes[0];
     let clusteredCount = 0;
     for (const hero of heroes) {
@@ -5157,6 +5167,17 @@ export class Battle {
         clusteredCount = nearby;
       }
     }
+    // Regular foes share a regional attack language, but aim it according to
+    // their fixed combat role. That makes a hound, seer, and cantor ask three
+    // different questions even when all three belong to the same element.
+    const role = ENEMIES[owner.enemyKind!]?.role ?? "vanguard";
+    const roleTarget = role === "assassin" || role === "hunter"
+      ? isolated
+      : role === "artillery" || role === "support" || role === "summoner"
+        ? backliner
+        : role === "disruptor"
+          ? [...heroes].sort((a, b) => b.abilities.filter((ability) => ability.timer <= 0).length - a.abilities.filter((ability) => ability.timer <= 0).length)[0]
+          : clustered;
     const addCircle = (target: Vec, radius: number, label: string, delay = 0) => {
       this.telegraphs.push({ x: target.x, y: target.y, radius, time: -delay, duration, owner, kind, label });
     };
@@ -5164,17 +5185,17 @@ export class Battle {
     if (kind === "eruption") {
       const heartBroken = owner.enemyKind === "cindermaw" && this.remainingObjectives("furnaceHeart") === 0;
       const count = boss ? Math.min(heroes.length, Math.max(2, owner.phase + 1) - (heartBroken ? 1 : 0)) : 1;
-      for (let i = 0; i < count; i++) addCircle(heroes[(i + owner.id) % heroes.length], boss ? 68 : 48, "ERUPT", i * 0.16);
+      for (let i = 0; i < count; i++) addCircle(boss ? heroes[(i + owner.id) % heroes.length] : roleTarget, boss ? 68 : 48, "ERUPT", i * 0.16);
       if (boss && (owner.phase >= 3 || (owner.enemyKind === "kilntyrant" && owner.phase >= 2))) {
         addCircle(owner, owner.enemyKind === "kilntyrant" ? 82 : 96, "VENT", 0.28);
       }
     } else if (kind === "roots") {
       const rootsClose = owner.enemyKind === "rootboundmatriarch" && owner.phase >= 2;
       const anchors = owner.enemyKind === "verdantcolossus" ? this.remainingObjectives("rootAnchor") : 0;
-      const targets = boss ? heroes.slice(0, owner.phase >= 3 || rootsClose ? heroes.length : 2) : [clustered];
+      const targets = boss ? heroes.slice(0, owner.phase >= 3 || rootsClose ? heroes.length : 2) : [roleTarget];
       targets.forEach((hero, index) => addCircle(hero, boss ? 66 + anchors * 3 : 50, anchors ? "ANCHOR ROOTS" : "ROOTS", index * 0.12));
     } else if (kind === "eclipse") {
-      addCircle(clustered, boss ? 126 : 66, "ECLIPSE");
+      addCircle(boss ? clustered : roleTarget, boss ? 126 : 66, "ECLIPSE");
       if (boss && (owner.phase >= 3 || (owner.enemyKind === "dunerevenant" && owner.phase >= 2))) {
         const other = heroes.find((hero) => hero !== clustered) ?? clustered;
         addCircle(other, 88, "FALSE MOON", 0.32);
@@ -5184,7 +5205,7 @@ export class Battle {
       const cy = (this.field.top + this.field.bottom) / 2;
       this.telegraphs.push({
         x: cx,
-        y: clustered.y,
+        y: boss ? clustered.y : roleTarget.y,
         radius: boss ? 52 : 34,
         time: 0,
         duration,
@@ -5207,11 +5228,29 @@ export class Battle {
           angle: Math.PI / 2,
           length: this.field.bottom - this.field.top,
         });
+        // The final Seraph phase turns the old cross into a broken halo. The
+        // diagonal arrives later, leaving readable seams rather than a wall of
+        // simultaneous damage.
+        if (owner.enemyKind === "reliquaryseraph" && owner.phase >= 3) {
+          this.telegraphs.push({
+            x: cx,
+            y: cy,
+            radius: 40,
+            time: -0.48,
+            duration,
+            owner,
+            kind,
+            label: "FALLEN HALO",
+            angle: Math.PI / 4,
+            length: Math.hypot(this.field.right - this.field.left, this.field.bottom - this.field.top),
+          });
+        }
       }
     } else if (kind === "shatter") {
-      addCircle(clustered, boss ? 128 : 64, "SHATTER");
-      if (boss && (owner.phase >= 3 || (owner.enemyKind === "tempestroc" && owner.phase >= 2))) {
-        addCircle(weakest, owner.enemyKind === "tempestroc" ? 78 : 90, "AFTERSHOCK", 0.38);
+      addCircle(boss ? clustered : roleTarget, boss ? 128 : 64, "SHATTER");
+      if (boss && (owner.phase >= 3 || (owner.enemyKind === "skybreaker" && owner.phase >= 2) || (owner.enemyKind === "tempestroc" && owner.phase >= 2))) {
+        const radius = owner.enemyKind === "tempestroc" ? 78 : owner.enemyKind === "skybreaker" && owner.phase === 2 ? 76 : 90;
+        addCircle(weakest, radius, owner.enemyKind === "skybreaker" ? "FALLING PEAK" : "AFTERSHOCK", owner.enemyKind === "skybreaker" ? 0.52 : 0.38);
       }
     } else if (kind === "bloodmoon") {
       const dx = weakest.x - owner.x;
@@ -6784,9 +6823,12 @@ export class Battle {
       if (mark.kind === "bloodmoon") owner.effects.push(makeEffect("vulnerable", 2.2, 0.3, null));
       const signatureOpenings: Partial<Record<LateBossKind, { pattern: Telegraph["kind"]; label: string; time: number; power: number; stun?: number }>> = {
         kilntyrant: { pattern: "eruption", label: "FURNACE STALLED", time: 2.4, power: 0.3 },
+        cindermaw: { pattern: "eruption", label: "FURNACE VENTED", time: 2.6, power: 0.32 },
         rootboundmatriarch: { pattern: "roots", label: "HEARTROOT OPEN", time: 3, power: 0.36 },
         dunerevenant: { pattern: "eclipse", label: "TRUE SHAPE FOUND", time: 2.6, power: 0.34 },
+        reliquaryseraph: { pattern: "beam", label: "VERDICT OVERTURNED", time: 2.2, power: 0.28 },
         tempestroc: { pattern: "shatter", label: "WINGS GROUNDED", time: 2.2, power: 0.28, stun: 1.1 },
+        skybreaker: { pattern: "shatter", label: "CRYSTAL CORE EXPOSED", time: 2.4, power: 0.3, stun: 0.7 },
         redhuntsman: { pattern: "bloodmoon", label: "THE HUNT STARVES", time: 2.8, power: 0.38 },
         lastpilgrim: { pattern: "void", label: "THE ROAD HOLDS", time: 2.8, power: 0.34 },
       };
