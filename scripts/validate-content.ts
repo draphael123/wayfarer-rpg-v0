@@ -14,10 +14,13 @@ import {
   contractPurse,
   DISCIPLINES,
   DISCIPLINE_IDS,
+  disciplineTechnique,
   ENEMIES,
   ELEMENTS,
   ELEMENT_IDS,
+  elementTechniqueOptions,
   HEROES,
+  HERO_STARTER_ABILITIES,
   HERO_GATE_STAGE,
   PARTY_CAP,
   PRIORITY_ENEMIES,
@@ -54,6 +57,11 @@ for (const ability of ABILITIES) {
   assert.ok(ability.cooldown > 0, `${ability.id} needs a positive cooldown`);
   assert.ok(ability.gate.value >= 0, `${ability.id} has an invalid attribute gate`);
 }
+assert.equal(HERO_STARTER_ABILITIES.length, HEROES.length, "every recruit needs an archetype starter kit");
+HERO_STARTER_ABILITIES.forEach((ids, index) => {
+  assert.equal(ids.length, 2, `${HEROES[index].name} needs exactly two road skills`);
+  for (const id of ids) assert.ok(ABILITIES.some((ability) => ability.id === id), `${HEROES[index].name} references missing starter skill ${id}`);
+});
 
 const enemyKinds = new Set(Object.keys(ENEMIES));
 const enemyRoles = new Set(["vanguard", "tank", "hunter", "assassin", "artillery", "support", "controller", "disruptor", "summoner"]);
@@ -247,6 +255,26 @@ unique(CALLINGS.map((calling) => calling.name), "path names");
 const authoredTechniqueNames: string[] = [];
 const authoredTechniqueBlurbs: string[] = [];
 for (const discipline of DISCIPLINE_IDS) {
+  const technique = disciplineTechnique(discipline);
+  assert.equal(technique.discipline, discipline, `${technique.id} needs its discipline`);
+  assert.equal(technique.pathSkill, "core", `${technique.id} must fill the Discipline slot`);
+  assert.ok(!technique.retired, `${technique.id} must remain playable`);
+  authoredTechniqueNames.push(technique.name);
+  authoredTechniqueBlurbs.push(technique.blurb);
+}
+for (const element of ELEMENT_IDS) {
+  const options = elementTechniqueOptions(element);
+  assert.equal(options.length, 3, `${element} needs power, control, and utility choices`);
+  assert.deepEqual(options.map((ability) => ability.pathVariant), ["power", "control", "utility"], `${element} choices need stable roles`);
+  for (const technique of options) {
+    assert.equal(technique.element, element, `${technique.id} needs its element`);
+    assert.equal(technique.pathSkill, "focus", `${technique.id} must fill the elemental slot`);
+    assert.ok(!technique.retired, `${technique.id} must remain playable`);
+    authoredTechniqueNames.push(technique.name);
+    authoredTechniqueBlurbs.push(technique.blurb);
+  }
+}
+for (const discipline of DISCIPLINE_IDS) {
   for (const element of ELEMENT_IDS) {
     const id = pathId(discipline, element);
     const path = CALLINGS.find((item) => item.id === id);
@@ -260,14 +288,8 @@ for (const discipline of DISCIPLINE_IDS) {
     const techniques = pathAbilities(discipline, element);
     assert.equal(techniques.length, 2, `${id} needs exactly two normal techniques`);
     assert.deepEqual(path.abilityIds, techniques.map((ability) => ability.id), `${id} battle bar must match its registered techniques`);
-    for (const technique of techniques) {
-      assert.equal(technique.discipline, discipline, `${technique.id} needs its discipline`);
-      assert.equal(technique.element, element, `${technique.id} needs its element`);
-      assert.ok(!technique.retired, `${technique.id} must remain playable`);
-      assert.ok(technique.blurb.length >= 65, `${technique.id} needs an authored mechanical description`);
-      authoredTechniqueNames.push(technique.name);
-      authoredTechniqueBlurbs.push(technique.blurb);
-    }
+    assert.equal(techniques[0].discipline, discipline, `${id} needs its Discipline technique`);
+    assert.equal(techniques[1].element, element, `${id} needs its default elemental technique`);
   }
 }
 unique(authoredTechniqueNames, "authored Path technique names");

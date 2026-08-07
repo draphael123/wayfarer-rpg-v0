@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { BOSS_PHASES, DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, boonMods, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, talentMods, trinketById, trinketMods, SET_BONUSES } from "./data";
+import { BOSS_PHASES, DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, boonMods, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, resolvedPathAbilities, talentMods, trinketById, trinketMods, SET_BONUSES } from "./data";
 import { isLateBossKind, isLateFoeKind, type LateBossKind, type LateEnemyKind } from "./late-content";
 
 // Battleheart pacing: cooldowns run 2.5× longer, so each cast must matter more.
@@ -204,17 +204,12 @@ export class Battle {
       const oath = sworn && callingEligible(sworn, heroSave.attrs) ? sworn : null;
       const advanced = oath ? heroSave.advCalling : null;
       const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroGearOf(heroSave, save.forge), heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced, heroSave.boons, heroSave.masteredElements);
-      const pathIds: readonly string[] = oath?.abilityIds ?? [];
-      const pathDefs = pathIds
-        .map((id) => abilityById(id))
-        .filter((def): def is NonNullable<typeof def> => !!def);
-      const normalDefs = pathDefs.filter((def) => def.pathSkill !== "ultimate");
+      const normalDefs = oath ? [...resolvedPathAbilities(oath.discipline, oath.element, heroSave.equipped)] : [];
       const abilities: AbilityState[] = (normalDefs.length ? normalDefs : heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d))
         .map((def) => ({ def, timer: 0 }));
-      const pathUltimate = pathDefs.find((def) => def.pathSkill === "ultimate");
-      if (oath) abilities.push({ def: pathUltimate ?? oath.signature, timer: 1, ult: true });
+      if (oath) abilities.push({ def: oath.signature, timer: 1, ult: true });
       // Ordinary armor is passive-only. A future legendary may explicitly
       // carry an active without reopening the old family-skill system.
       const bodyPiece = armorById(heroSave.armor);
@@ -1921,7 +1916,9 @@ export class Battle {
             ? attrs.spi
             : attrs.int;
     const tierRank = tier === "core" ? 0 : tier === "focus" ? 1 : 2;
-    const damage = (5 + roleStat * 1.25 + hero.stats.damage * 0.55) * [0.72, 1, 1.45][tierRank];
+    const variant = state.def.pathVariant;
+    const variantScale = variant === "power" ? 1.18 : variant === "control" ? 0.9 : variant === "utility" ? 0.76 : 1;
+    const damage = (5 + roleStat * 1.25 + hero.stats.damage * 0.55) * [0.72, 1, 1.45][tierRank] * variantScale;
     const color = ELEMENT_COLORS[element];
     const enemies = this.livingEnemies();
     const castOrigin = { x: hero.x, y: hero.y };
@@ -2183,6 +2180,24 @@ export class Battle {
     }
 
     this.applyPathSignature(hero, discipline, element, tier, damage, castOrigin, signatureCenter, hitTargets, supportedAllies, signatureEvents, overflowWard);
+
+    // Elemental techniques share an Attunement, but their intent stays
+    // immediately readable: power hits harder, control buys room, utility
+    // protects the caster. Discipline still determines delivery and targets.
+    if (variant === "control") {
+      for (const target of hitTargets) {
+        if (!target.alive) continue;
+        const bossScale = BOSS_KINDS.includes(target.enemyKind ?? "") ? 0.55 : 1;
+        this.refreshPathEffect(target, "slow", 2.4 * bossScale, 0.22 * bossScale, hero);
+      }
+      this.fx.floatText(hero.x, hero.y - hero.radius * 2.6 - 36, "CONTROL", color, 10);
+    } else if (variant === "utility") {
+      this.refreshPathEffect(hero, "shield", 5, Math.max(8, damage * 0.42), hero);
+      this.refreshPathEffect(hero, "haste", 2.5, 1.14, hero);
+      this.fx.floatText(hero.x, hero.y - hero.radius * 2.6 - 36, "WARD", color, 10);
+    } else if (variant === "power" && hitTargets.some((target) => target === this.bossRef)) {
+      this.bossStagger += 5;
+    }
 
     if (hitCount > 0) {
       this.hitstop = Math.max(this.hitstop, tier === "ultimate" ? 0.08 : 0.035);

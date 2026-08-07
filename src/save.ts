@@ -7,15 +7,16 @@ import {
   CALLING_MASTERY_LEVELS,
   disciplineById,
   elementById,
+  HERO_STARTER_ABILITIES,
   HEROES,
   LEGACY_ADVANCED_BRANCH,
   LEGACY_CALLING_PATHS,
   MAX_EQUIPPED,
   MAX_LEVEL,
-  pathAbilities,
   pathId,
   POINTS_PER_LEVEL,
   rollBoonPair,
+  resolvedPathAbilities,
   STAGES,
   trinketById,
   xpForLevel,
@@ -87,15 +88,15 @@ export function peekSlot(n: number): SlotPeek {
 }
 
 /** Spells the band owns from the start — enough for the founding duo to function. */
-const STARTING_SPELLS = ["cleave", "bellow", "mend"];
+const STARTING_SPELLS = [...new Set(HERO_STARTER_ABILITIES.flat())];
 
 function defaultHero(index: number): HeroSave {
   const base = HEROES[index].baseAttrs;
   const attrs: Attributes = { ...base };
   const founder = index === 0 || index === 3;
-  const equipped = STARTING_SPELLS
+  const equipped = (HERO_STARTER_ABILITIES[index] ?? [])
     .map((id) => abilityById(id))
-    .filter((ability): ability is NonNullable<typeof ability> => !!ability && attrs[ability.gate.attr] >= ability.gate.value)
+    .filter((ability): ability is NonNullable<typeof ability> => !!ability)
     .slice(0, MAX_EQUIPPED)
     .map((ability) => ability.id);
   return { attrs, level: 1, xp: 0, boons: [], equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null, discipline: null, element: null, callingLevels: {}, masteredCallings: [], advancedCallings: {}, elementLevels: {}, masteredElements: [] };
@@ -429,13 +430,15 @@ export function loadSave(): SaveData {
         const directChoice = migrateAdvancedId(hero.calling, rawAdvanced);
         if (directChoice) migratedChoices[hero.calling] = directChoice;
         hero.advCalling = migratedChoices[hero.calling] ?? null;
-        const required = pathAbilities(hero.discipline!, hero.element!);
-        const requiredIds = new Set(required.map((ability) => ability.id));
-        const kept = hero.equipped.filter((id) => requiredIds.has(id));
-        hero.equipped = [...new Set([...kept, ...required.map((ability) => ability.id)])].slice(0, MAX_EQUIPPED);
+        const required = resolvedPathAbilities(hero.discipline!, hero.element!, hero.equipped);
+        hero.equipped = required.map((ability) => ability.id);
         for (const ability of required) if (!parsed.unlockedSpells.includes(ability.id)) parsed.unlockedSpells.push(ability.id);
       } else {
         hero.advCalling = null;
+        if (!hero.equipped.length) {
+          hero.equipped = (HERO_STARTER_ABILITIES[i] ?? []).filter((id) => !!abilityById(id)).slice(0, MAX_EQUIPPED);
+        }
+        for (const id of hero.equipped) if (!parsed.unlockedSpells.includes(id)) parsed.unlockedSpells.push(id);
       }
       hero.advancedCallings = migratedChoices;
       // pre-variant saves at plate tier default to the classic juggernaut look
@@ -605,7 +608,7 @@ export function respecHero(save: SaveData, index: number): void {
   const hero = save.heroes[index];
   const path = callingById(hero.calling);
   if (path) {
-    hero.equipped = pathAbilities(path.discipline, path.element).map((ability) => ability.id);
+    hero.equipped = resolvedPathAbilities(path.discipline, path.element, hero.equipped).map((ability) => ability.id);
   } else {
     hero.equipped = hero.equipped.filter((id) => {
       const ability = abilityById(id);

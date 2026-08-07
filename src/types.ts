@@ -114,6 +114,8 @@ export interface AbilityDef {
   element?: DamageElement;
   discipline?: DisciplineId;
   pathSkill?: "core" | "focus" | "ultimate";
+  /** Element techniques share a theme but offer a distinct combat purpose. */
+  pathVariant?: "power" | "control" | "utility";
   retired?: boolean;
 }
 

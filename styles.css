@@ -4517,6 +4517,22 @@ button.hero-points { font: inherit; cursor: pointer; }
 .path-bar-doctrine > div b { color: #847d6d; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; }
 .path-bar-doctrine > div span { color: #d9cfb8; font-size: 10px; font-weight: 800; }
 .path-bar-doctrine .big-btn { margin-top: auto; }
+.element-technique-picker { margin-top: 12px; padding: 15px; background: linear-gradient(145deg, #211f1a, #171713); border: 1px solid #565043; border-top: 3px solid var(--path-color); border-radius: 3px 12px 3px 12px; }
+.element-technique-head { display: grid; grid-template-columns: auto 1fr; gap: 3px 11px; align-items: baseline; }
+.element-technique-head > span { color: var(--path-color); font-size: 8px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.element-technique-head > strong { color: #eee2c4; font: 800 15px/1.2 Cinzel, Palatino, Georgia, serif; }
+.element-technique-head > p { grid-column: 1 / -1; margin: 3px 0 9px; color: #9f9786; font-size: 10px; line-height: 1.4; }
+.element-technique-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.element-technique-option { min-width: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding: 11px; color: #cfc6b2; text-align: left; cursor: pointer; background: #191914; border: 1px solid #49473d; border-left: 3px solid color-mix(in srgb, var(--chip) 62%, #49473d); border-radius: 3px 8px 3px 8px; }
+.element-technique-option:hover { background: color-mix(in srgb, var(--chip) 7%, #191914); border-color: color-mix(in srgb, var(--chip) 50%, #49473d); }
+.element-technique-option.selected { background: color-mix(in srgb, var(--chip) 11%, #191914); border-color: var(--chip); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chip) 25%, transparent); }
+.element-technique-option small { color: var(--chip); font-size: 8px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.element-technique-option strong { grid-column: 1 / -1; color: #eee3ca; font: 800 12px/1.2 Cinzel, Palatino, Georgia, serif; }
+.element-technique-option em { grid-column: 1 / -1; min-height: 28px; color: #9f9786; font-size: 9px; font-style: normal; line-height: 1.35; }
+.element-technique-option b { grid-column: 2; grid-row: 1; color: #8f887a; font-size: 8px; text-transform: uppercase; }
+.element-technique-option.selected b { color: var(--chip); }
+.recruit-kit { display: flex; gap: 7px; margin-top: 5px; color: #a79f8d; font-size: 9px; }
+.recruit-kit b { color: var(--accent, #d8b968); text-transform: uppercase; letter-spacing: .06em; }
 .path-bar-empty { max-width: 560px; margin: 28px auto; padding: 34px; color: #aaa391; text-align: center; background: #211f1a; border: 1px solid #5f5949; border-radius: 3px 14px 3px 14px; }
 .path-bar-empty > span { display: block; margin-bottom: 10px; color: #b99a61; }
 .path-bar-empty > span svg { width: 32px; height: 32px; }
@@ -4551,6 +4567,7 @@ button.hero-points { font: inherit; cursor: pointer; }
   .path-reveal-heading { grid-template-columns: 46px minmax(0, 1fr); }
   .path-sigil { width: 44px; height: 48px; }
   .path-current-mark { grid-column: 1 / -1; justify-self: start; }
+  .element-technique-options { grid-template-columns: 1fr; }
   .path-progress-grid, .promotion-ledger { grid-template-columns: 1fr; }
   .path-section-label { grid-template-columns: auto 1fr; }
   .path-section-label em { grid-column: 1 / -1; }

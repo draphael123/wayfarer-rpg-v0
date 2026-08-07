@@ -21,8 +21,11 @@ import {
   advCallingById,
   DISCIPLINES,
   ELEMENTS,
+  elementTechniqueOptions,
+  HERO_STARTER_ABILITIES,
   pathId,
   pathAbilities,
+  resolvedPathAbilities,
   elementById,
   CALLING_SWITCH_COST,
   CALLING_MASTERY_LEVELS,
@@ -119,7 +122,7 @@ function abilityById(id: string) {
 }
 
 function heroPathAbilities(hero: SaveData["heroes"][number]) {
-  return hero.discipline && hero.element ? [...pathAbilities(hero.discipline, hero.element)] : [];
+  return hero.discipline && hero.element ? [...resolvedPathAbilities(hero.discipline, hero.element, hero.equipped)] : [];
 }
 
 function enemyWaymark(kind: EnemyKind, compact = false): string {
@@ -3410,6 +3413,8 @@ export class Menus {
       const hero = save.heroes[i];
       const cost = RECRUIT_COST[i];
       const arrived = heroArrived(save, i);
+      const starterAbilities = (HERO_STARTER_ABILITIES[i] ?? []).map(abilityById).filter(Boolean);
+      const starterNames = starterAbilities.map((ability) => ability.name).join(" and ");
       if (!arrived && !hero.recruited) {
         body.appendChild(
           el(`
@@ -3435,6 +3440,7 @@ export class Menus {
             <div>
               <div class="hero-name">${def.name} <em>${def.title}</em></div>
               <div class="hero-meta">${hero.recruited ? "Already rides with the band." : `A wanderer for hire — ${ATTR_NAMES[bestAttr(i)]} comes naturally.`}</div>
+              <div class="recruit-kit"><b>Arrives battle-ready</b><span>${starterNames}</span></div>
             </div>
             ${
               hero.recruited
@@ -3480,10 +3486,15 @@ export class Menus {
       const cost = RECRUIT_COST[i] ?? 0;
       if (!this.spend(cost)) return;
       audio.play("tankard");
-      this.save.heroes[i].recruited = true;
-      this.save.heroes[i].active = partyRoster(this.save).length < PARTY_CAP;
+      const recruit = this.save.heroes[i];
+      const starters = (HERO_STARTER_ABILITIES[i] ?? []).filter((id) => !!abilityById(id)).slice(0, MAX_EQUIPPED);
+      recruit.recruited = true;
+      recruit.active = partyRoster(this.save).length < PARTY_CAP;
+      if (!recruit.calling) recruit.equipped = starters;
+      for (const id of starters) if (!this.save.unlockedSpells.includes(id)) this.save.unlockedSpells.push(id);
       persist(this.save);
-      this.showToast(`${HEROES[i].name} ${HEROES[i].title} joins the band!`);
+      const kit = starters.map((id) => abilityById(id).name).join(" and ");
+      this.showToast(`${HEROES[i].name} joins with ${kit} ready.`);
       this.renderShop("tavern");
     });
   }
@@ -4878,6 +4889,7 @@ export class Menus {
     const granted = heroPathAbilities(hero);
     const remembered = hero.equipped.filter((id) => granted.some((ability) => ability.id === id));
     const techniques = [...remembered.map(abilityById), ...granted.filter((ability) => !remembered.includes(ability.id))].slice(0, MAX_EQUIPPED);
+    const elementChoices = hero.element ? [...elementTechniqueOptions(hero.element)] : [];
     const normalized = techniques.map((ability) => ability.id);
     if (path && normalized.join("|") !== hero.equipped.join("|")) {
       hero.equipped = normalized;
@@ -4886,13 +4898,12 @@ export class Menus {
     const page = el(`
       <div class="page hero-sheet loadout-page spell-loadout-page path-bar-page">
         <div class="map-header"><div class="equip-title"><div><div class="map-title">${def.name}'s Battle Bar</div>
-          <div class="map-level">${path ? "Two techniques · one ultimate · every slot comes from the current Path" : `Road skills now · elemental Paths open at level ${CALLING_UNLOCK_LEVEL}`}</div></div></div></div>
+          <div class="map-level">${path ? "One Discipline technique · one chosen elemental technique · one Path ultimate" : `Road skills now · elemental Paths open at level ${CALLING_UNLOCK_LEVEL}`}</div></div></div></div>
         ${path && techniques.length === MAX_EQUIPPED ? `
           <div class="spell-workbench path-bar-workbench" style="--path-color:${path.color}">
             <section class="battlebar-panel path-battlebar-panel">
               <div class="picker-head"><span>${ico("spark")} Ready for battle</span><small>Q · W · R by default</small></div>
               <div class="battlebar-slots"></div>
-              <button class="toggle-btn path-swap" data-swap-techniques>${ico("arrow")} Swap technique order</button>
             </section>
             <aside class="path-bar-doctrine">
               <span class="path-bar-kicker">Current Path</span>
@@ -4902,7 +4913,13 @@ export class Menus {
               <div><b>Attunement</b><span>${ELEMENTS.find((choice) => choice.id === hero.element)?.name ?? "Uncharted"}</span></div>
               <button class="big-btn" data-open-path>Review or change Path</button>
             </aside>
-          </div>` : roadSkills.length ? `
+          </div>
+          <section class="element-technique-picker" style="--path-color:${path.color}">
+            <div class="element-technique-head"><span>Elemental slot · W</span><strong>Choose a ${elementById(hero.element)?.name ?? "Path"} technique</strong><p>Power deals the most damage. Control creates breathing room. Utility protects and accelerates the caster.</p></div>
+            <div class="element-technique-options">
+              ${elementChoices.map((ability) => `<button class="element-technique-option ${techniques[1]?.id === ability.id ? "selected" : ""}" data-element-technique="${ability.id}" style="--chip:${ability.color}"><small>${ability.pathVariant}</small><strong>${ability.name}</strong><em>${ability.blurb}</em><b>${techniques[1]?.id === ability.id ? "Equipped" : "Choose"}</b></button>`).join("")}
+            </div>
+          </section>` : roadSkills.length ? `
           <div class="spell-workbench path-bar-workbench road-skill-workbench">
             <section class="battlebar-panel path-battlebar-panel">
               <div class="picker-head"><span>${ico("spark")} Road skills</span><small>Q · W by default</small></div>
@@ -4925,8 +4942,9 @@ export class Menus {
     if (path && techniques.length === MAX_EQUIPPED) {
       const slots = page.querySelector(".battlebar-slots")!;
       const entries = [
-        ...techniques.map((ability, at) => ({ ability, label: `Technique ${at + 1}`, key: at === 0 ? "Q" : "W", ultimate: false })),
-        { ability: path.signature, label: "Ultimate", key: "R", ultimate: true },
+        { ability: techniques[0], label: "Discipline", key: "Q", ultimate: false },
+        { ability: techniques[1], label: "Element", key: "W", ultimate: false },
+        { ability: path.signature, label: "Path ultimate", key: "R", ultimate: true },
       ];
       for (const entry of entries) {
         const slot = el(`<article class="battlebar-slot filled path-fixed-slot ${entry.ultimate ? "signature" : ""}" style="--chip:${entry.ability.color}"><span class="slot-number">${entry.key}</span><span class="spell-ico"></span><span><small>${entry.label}</small><strong>${entry.ability.name}</strong><em>${entry.ability.blurb}</em></span><b>${entry.ultimate ? "Charge" : "Ready"}</b></article>`);
@@ -4955,11 +4973,15 @@ export class Menus {
     }
     page.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
-      if (target.closest("[data-swap-techniques]") && techniques.length === MAX_EQUIPPED) {
-        hero.equipped = [techniques[1].id, techniques[0].id];
+      const elemental = target.closest("[data-element-technique]");
+      if (elemental && path && techniques.length === MAX_EQUIPPED) {
+        const selected = elemental.getAttribute("data-element-technique");
+        if (!selected || !elementChoices.some((ability) => ability.id === selected)) return;
+        hero.equipped = [techniques[0].id, selected];
+        if (!save.unlockedSpells.includes(selected)) save.unlockedSpells.push(selected);
         persist(save);
         audio.play("click");
-        this.showToast("Technique order swapped.");
+        this.showToast(`${abilityById(selected).name} equipped to W.`);
         this.renderSpells(index);
         return;
       }

@@ -534,6 +534,18 @@ for (const a of ABILITIES) {
   a.retired = true;
 }
 
+/** Every companion knows two personal road techniques before choosing a Path. */
+export const HERO_STARTER_ABILITIES: readonly (readonly [string, string])[] = [
+  ["cleave", "bellow"],
+  ["pierce", "twinshot"],
+  ["fireball", "missiles"],
+  ["mend", "blessing"],
+  ["frostwake", "mend"],
+  ["shieldslam", "secondwind"],
+  ["bellow", "shieldslam"],
+  ["hailknives", "frostwake"],
+];
+
 export function abilityById(id: string): AbilityDef | undefined {
   return ABILITIES.find((a) => a.id === id);
 }
@@ -901,7 +913,7 @@ export interface CallingDef {
   color: string;
   entry: { attr: AttrKey; value: number }[];
   passive: string; // menu description of the always-on perk
-  abilityIds: readonly [string, string]; // the two normal skills fixed to this path
+  abilityIds: readonly [string, string]; // default Discipline technique + first elemental choice
   signature: AbilityDef; // charge-based ultimate, exclusive to the calling
   chargeHint: string; // how the ultimate meter fills
   family: string; // picker grouping (Iron, Blade, Hunt, Elemental, Faith & Shadow, Song & Craft)
@@ -2702,30 +2714,125 @@ const ELEMENT_ABILITY_ICONS: Record<ElementId, string> = {
   shadow: "smokebomb",
 };
 
-const PATH_ABILITY_SETS = new Map<string, readonly [AbilityDef, AbilityDef]>();
+const DISCIPLINE_TECHNIQUE_COPY: Record<DisciplineId, { name: string; blurb: string }> = {
+  knight: { name: "Hold the Line", blurb: "Challenge nearby foes, batter their formation, and brace against the answer." },
+  rogue: { name: "Opening Cut", blurb: "Cross the gap to a vulnerable foe, strike, and disappear from its attention." },
+  archer: { name: "Pinning Shot", blurb: "Drive a precise shot downrange and punish the first enemy caught in its path." },
+  priest: { name: "Guiding Light", blurb: "Mend one ally while judging the nearest threat beneath the same light." },
+  mage: { name: "Arcane Pulse", blurb: "Collapse raw force at a chosen point and slow everything caught inside." },
+};
 
-function buildPathAbilities(discipline: DisciplineDef, element: ElementDef): readonly [AbilityDef, AbilityDef] {
-  const id = pathId(discipline.id, element.id);
+const DISCIPLINE_TECHNIQUES = new Map<DisciplineId, AbilityDef>();
+for (const discipline of DISCIPLINES) {
   const loadout = DISCIPLINE_LOADOUT[discipline.id];
-  const lore = PATH_LORE[discipline.id][element.id];
-  const [core, focus] = lore.techniques;
+  const copy = DISCIPLINE_TECHNIQUE_COPY[discipline.id];
   const gate: AbilityDef["gate"] = { attr: discipline.id === "knight" ? "vit" : discipline.id === "rogue" || discipline.id === "archer" ? "dex" : discipline.id === "priest" ? "spi" : "int", value: 0 };
-  return [
-    { id: `${id}-core`, name: core.name, gate, targeting: loadout.coreTarget, cooldown: 12, color: element.color, icon: loadout.coreIcon, blurb: core.blurb, element: element.id, discipline: discipline.id, pathSkill: "core" },
-    { id: `${id}-focus`, name: focus.name, gate, targeting: loadout.focusTarget, cooldown: 18, color: element.color, icon: loadout.focusIcon, blurb: focus.blurb, element: element.id, discipline: discipline.id, pathSkill: "focus" },
-  ];
+  const ability: AbilityDef = {
+    id: `discipline-${discipline.id}`,
+    name: copy.name,
+    gate,
+    targeting: loadout.coreTarget,
+    cooldown: 12,
+    color: discipline.color,
+    icon: loadout.coreIcon,
+    blurb: copy.blurb,
+    discipline: discipline.id,
+    pathSkill: "core",
+  };
+  DISCIPLINE_TECHNIQUES.set(discipline.id, ability);
+  ABILITIES.push(ability);
 }
 
-for (const discipline of DISCIPLINES) {
-  for (const element of ELEMENTS) {
-    const skills = buildPathAbilities(discipline, element);
-    PATH_ABILITY_SETS.set(pathId(discipline.id, element.id), skills);
-    ABILITIES.push(...skills);
-  }
+const ELEMENT_TECHNIQUE_COPY: Record<ElementId, readonly [
+  { name: string; blurb: string },
+  { name: string; blurb: string },
+  { name: string; blurb: string },
+]> = {
+  flame: [
+    { name: "Emberbrand", blurb: "Power: concentrate flame into a punishing strike that feeds on existing burns." },
+    { name: "Cinder Ring", blurb: "Control: spread fire through a formation and leave wounded enemies burning." },
+    { name: "Phoenix Step", blurb: "Utility: answer with quick flame, then gain a brief ward and burst of momentum." },
+  ],
+  frost: [
+    { name: "Ice Lance", blurb: "Power: focus winter into a piercing blow that rewards a prepared chill." },
+    { name: "Permafrost Seal", blurb: "Control: deepen frost across a group and arrest its advance." },
+    { name: "Rimeguard", blurb: "Utility: cast quickly, harden your footing, and raise a protective rim of ice." },
+  ],
+  storm: [
+    { name: "Thunderbolt", blurb: "Power: discharge stored storm into one decisive impact." },
+    { name: "Static Field", blurb: "Control: spread conductive pressure through clustered enemies." },
+    { name: "Gale Step", blurb: "Utility: ride the current into faster movement and a shorter recovery." },
+  ],
+  earth: [
+    { name: "Stonebreaker", blurb: "Power: bring concentrated weight down on armor and brittle ground." },
+    { name: "Grasping Fault", blurb: "Control: split the field and slow enemies crossing the broken earth." },
+    { name: "Earthen Aegis", blurb: "Utility: shape a quick defense from the ground beneath your feet." },
+  ],
+  venom: [
+    { name: "Viper Strike", blurb: "Power: drive a precise dose into an already exposed target." },
+    { name: "Miasma Cloud", blurb: "Control: poison a formation and make its recovery unreliable." },
+    { name: "Antidote Draft", blurb: "Utility: move quickly through your own toxins behind a temporary ward." },
+  ],
+  radiant: [
+    { name: "Sunlance", blurb: "Power: focus daylight into a searing line of judgment." },
+    { name: "Hallowed Ground", blurb: "Control: consecrate a contested space and expose what remains inside." },
+    { name: "Dawn Ward", blurb: "Utility: raise a fast shield and steady your next action." },
+  ],
+  blood: [
+    { name: "Crimson Rend", blurb: "Power: pay blood to deliver a heavier strike against the wounded." },
+    { name: "Hemorrhage Rite", blurb: "Control: open several wounds and turn a formation's pain against it." },
+    { name: "Blood Pact", blurb: "Utility: trade a small price for speed, protection, and a quick recovery." },
+  ],
+  shadow: [
+    { name: "Gloam Bolt", blurb: "Power: collapse shadow onto an exposed enemy." },
+    { name: "Void Sigil", blurb: "Control: draw enemies toward a dark center and disrupt their pursuit." },
+    { name: "Veilstep", blurb: "Utility: slip from attention behind a brief veil of protection." },
+  ],
+};
+
+const ELEMENT_TECHNIQUES = new Map<ElementId, readonly [AbilityDef, AbilityDef, AbilityDef]>();
+for (const element of ELEMENTS) {
+  const variants = (["power", "control", "utility"] as const).map((variant, index) => {
+    const copy = ELEMENT_TECHNIQUE_COPY[element.id][index];
+    return {
+      id: `element-${element.id}-${variant}`,
+      name: copy.name,
+      gate: { attr: "int", value: 0 },
+      targeting: variant === "power" ? "ray" : variant === "control" ? "point" : "instant",
+      cooldown: variant === "power" ? 20 : variant === "control" ? 18 : 14,
+      color: element.color,
+      icon: ELEMENT_ABILITY_ICONS[element.id],
+      blurb: copy.blurb,
+      element: element.id,
+      pathSkill: "focus",
+      pathVariant: variant,
+    } satisfies AbilityDef;
+  }) as [AbilityDef, AbilityDef, AbilityDef];
+  ELEMENT_TECHNIQUES.set(element.id, variants);
+  ABILITIES.push(...variants);
+}
+
+export function disciplineTechnique(discipline: DisciplineId): AbilityDef {
+  return DISCIPLINE_TECHNIQUES.get(discipline)!;
+}
+
+export function elementTechniqueOptions(element: ElementId): readonly [AbilityDef, AbilityDef, AbilityDef] {
+  return ELEMENT_TECHNIQUES.get(element)!;
 }
 
 export function pathAbilities(discipline: DisciplineId, element: ElementId): readonly [AbilityDef, AbilityDef] {
-  return PATH_ABILITY_SETS.get(pathId(discipline, element))!;
+  return [disciplineTechnique(discipline), elementTechniqueOptions(element)[0]];
+}
+
+export function resolvedPathAbilities(
+  discipline: DisciplineId,
+  element: ElementId,
+  equipped: readonly string[] | undefined,
+): readonly [AbilityDef, AbilityDef] {
+  const core = disciplineTechnique(discipline);
+  const choices = elementTechniqueOptions(element);
+  const chosen = choices.find((ability) => equipped?.includes(ability.id)) ?? choices[0];
+  return [core, chosen];
 }
 
 export const CALLINGS: CallingDef[] = DISCIPLINES.flatMap((discipline) =>
