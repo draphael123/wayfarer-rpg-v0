@@ -87,3 +87,19 @@ inactive companions behind the active band, buys exactly one level, charges the
 displayed amount, grants the expected talent and attribute progression, and disappears when the pupil
 catches the active party. It must never raise an active hero or create a new
 highest-level hero.
+
+## Path and Specialization checks
+
+- Compare the same element on at least three Disciplines. Confirm that its name,
+  targeting, resource loop, and party job read as different solutions rather
+  than a damage spell, control spell, and recolored heal.
+- On a level-20 hero, compare both Specializations. Each branch should change a
+  decision in the three-button combat loop, not merely raise a stat.
+- Advance ten levels while a Specialization is active. Its mastery bar should
+  reach ten, mark the Legacy technique mastered, and add that technique to the
+  Battle Bar picker on a different Path.
+- Equip the mastered Legacy technique on W after changing element. Confirm it
+  retains the old Discipline's geometry but applies the new Path's elemental
+  condition. Q and the Path ultimate must remain unchanged.
+- Verify Warrior Fury and Necromancer Remains appear on the combat portrait,
+  rise from their intended actions, and are spent by their focus techniques.

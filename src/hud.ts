@@ -1360,6 +1360,20 @@ export class Hud {
         ctx.restore();
       }
 
+      if (hero.discipline === "warrior" || hero.discipline === "necromancer") {
+        const resource = Math.max(0, Math.min(100, hero.pathResource ?? 0));
+        const rx = x0 + ps - 7, ry = py + 7;
+        ctx.fillStyle = "rgba(18,14,24,0.9)";
+        ctx.beginPath(); ctx.arc(rx, ry, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = heroOath?.color ?? "#d9c08a";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(rx, ry, 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * resource / 100); ctx.stroke();
+        ctx.fillStyle = "#f3ead7";
+        ctx.font = "800 7px 'Trebuchet MS', Verdana, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(hero.discipline === "warrior" ? "F" : "R", rx, ry + 2.5);
+      }
+
       // active effects march along the portrait's bottom edge
       if (hero.alive) {
         const shown = hero.effects.filter((e) => e.time > 0).slice(0, 4);

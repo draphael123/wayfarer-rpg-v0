@@ -39,18 +39,26 @@ Every hero still grows through five freely trained attributes — Strength,
 Dexterity, Intellect, Vitality, and Spirit — but their battle identity comes
 from two readable choices:
 
-- A **discipline** determines how they fight: Knight, Rogue, Archer, Priest, or
-  Mage. It controls weapon, range, movement, and party role.
+- A **discipline** determines how they fight: Knight, Warrior, Rogue, Archer,
+  Priest, Mage, or Necromancer. It controls weapon, range, movement, resource,
+  and party role. Warriors build and spend Fury through committed greatsword
+  swings; Necromancers collect Remains and turn them into short-lived servants.
 - An **attunement** determines what their power does: Flame, Frost, Storm,
   Earth, Venom, Radiant, Blood, or Shadow.
-- The pairing becomes a named path. An Earth Knight is a Stonewarden; a Shadow
-  Rogue is a Nightblade; a Radiant Mage is a Luminary. Every pairing has two
-  normal techniques, a passive, and a charged ultimate.
+- The pairing becomes one of **56 named Paths**. An Earth Knight is a
+  Stonewarden; a Shadow Rogue is a Nightblade; a Radiant Mage is a Luminary.
+  Every pairing has two normal techniques, a passive, and a charged ultimate.
+  Elemental techniques are authored for their role: Radiant Warriors protect
+  through heavy impacts, Radiant Necromancers call ancestors, and Radiant
+  Priests redirect danger and support allies rather than sharing a generic heal.
 
-Heroes choose a path at level 5. Ten levels spent with an attunement unlock its
-Elemental Legacy for use with another discipline. At level 20, a mastered path
-can take one of two promotions. Armor remains passive, so combat stays focused
-on exactly two techniques plus one ultimate.
+Heroes choose a Path at level 5. Ten levels spent with an attunement unlock its
+Elemental Legacy for use with another discipline. At level 20, a seasoned Path
+chooses one of two combat-changing Specializations. Ten active levels in that
+Specialization master its **Legacy technique**, which can then occupy the W slot
+on another Path; it keeps the mastered fighting geometry but answers with the
+new Path's current element. Armor remains passive, so combat stays focused on
+exactly two techniques plus one ultimate.
 
 Enemies can have one discoverable elemental weakness and one resistance. These
 are tactical advantages rather than hard counters: there are no elemental

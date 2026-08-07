@@ -131,6 +131,102 @@ html, body {
   padding: 0;
   overflow: hidden;
 }
+
+/* Path braid: the three strands explain why a build exists. It borrows the
+   road ledger's ruled materials and spends its one flourish on the actual
+   Discipline → Attunement → Specialization relationship. */
+.path-braid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px minmax(0, 1fr) 42px minmax(0, 1fr);
+  align-items: stretch;
+  margin: 14px 0 18px;
+  border: 1px solid rgba(208, 185, 126, .3);
+  background: rgba(13, 18, 14, .72);
+  box-shadow: inset 3px 0 #b79a58;
+}
+.path-braid > span {
+  position: relative;
+  padding: 11px 13px 12px 17px;
+  min-width: 0;
+}
+.path-braid > span::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  background: var(--strand);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--strand), transparent 35%);
+}
+.path-braid small,
+.path-braid b { display: block; }
+.path-braid small {
+  color: #a99d7d;
+  font: 800 9px/1.2 var(--font-ui, sans-serif);
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.path-braid b {
+  margin-top: 4px;
+  color: #efe4c8;
+  font: 700 14px/1.25 var(--font-display, serif);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.path-braid > i {
+  position: relative;
+  overflow: hidden;
+}
+.path-braid > i::before,
+.path-braid > i::after {
+  content: "";
+  position: absolute;
+  left: -9px;
+  width: 58px;
+  height: 2px;
+  background: #88784f;
+  transform-origin: center;
+}
+.path-braid > i::before { top: 42%; transform: rotate(13deg); }
+.path-braid > i::after { top: 58%; transform: rotate(-13deg); }
+
+.spec-legacy {
+  margin-top: 12px;
+  padding: 10px 11px;
+  border: 1px solid rgba(183, 154, 88, .25);
+  background: rgba(10, 15, 12, .5);
+}
+.spec-legacy b,
+.spec-legacy em { display: block; }
+.spec-legacy b { color: #dfc98e; font-size: 12px; }
+.spec-legacy em { margin-top: 3px; color: #aaa18b; font-size: 10px; font-style: normal; }
+.spec-legacy > i {
+  display: block;
+  height: 3px;
+  margin-top: 8px;
+  background: rgba(255,255,255,.08);
+  overflow: hidden;
+}
+.spec-legacy > i > u {
+  display: block;
+  height: 100%;
+  background: #b79a58;
+  text-decoration: none;
+}
+.spec-legacy.mastered { border-color: rgba(141, 201, 125, .5); }
+.spec-legacy.mastered > i > u { background: #8dc97d; }
+.legacy-technique-picker { border-top-color: rgba(183, 154, 88, .55); }
+.legacy-option small { color: #d8bd79; }
+
+@media (max-width: 720px) {
+  .path-braid { grid-template-columns: 1fr; }
+  .path-braid > i { height: 18px; }
+  .path-braid > i::before,
+  .path-braid > i::after { left: calc(50% - 24px); }
+  .path-braid > i::before { top: 7px; }
+  .path-braid > i::after { top: 11px; }
+}
 .travel-kit > summary {
   list-style: none;
   display: flex;

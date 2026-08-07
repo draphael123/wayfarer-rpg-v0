@@ -52,4 +52,12 @@ assert(repaired.autoBattle === false, "invalid auto-battle preferences should be
 assert(repaired.tutorialHints === true, "invalid tutorial preferences should be repaired");
 assert(repaired.completedTutorials.length === 1 && repaired.completedTutorials[0] === "basics", "lesson completion should be deduplicated and bounded");
 
+const preSpecialization = defaultSave() as ReturnType<typeof defaultSave> & { heroes: Array<Record<string, unknown>> };
+delete preSpecialization.heroes[0].specializationLevels;
+delete preSpecialization.heroes[0].masteredSpecializations;
+values.set("wayband-save-v1", JSON.stringify(preSpecialization));
+const specializationMigrated = loadSave();
+assert(!!specializationMigrated.heroes[0].specializationLevels, "older heroes should gain specialization progress safely");
+assert(Array.isArray(specializationMigrated.heroes[0].masteredSpecializations), "older heroes should gain a mastered-specialization ledger");
+
 console.log("Recovery diagnostics: OK");

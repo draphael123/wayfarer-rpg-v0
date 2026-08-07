@@ -25,7 +25,12 @@ import {
   PRIORITY_ENEMIES,
   pathAbilities,
   pathId,
+  resolvedPathAbilities,
+  roleElementTechniqueOptions,
   STAGES,
+  SPECIALIZATION_MASTERY_LEVELS,
+  SPECIALIZATION_TECHNIQUES,
+  specializationKey,
   TALENTS,
   talentMods,
   TRINKETS,
@@ -249,11 +254,23 @@ assert.ok(gambitBranch.every((talent) => !/gold|coin/i.test(`${talent.name} ${ta
 const fieldcraft = talentMods({ scavenger: 3 });
 assert.ok(fieldcraft.cdr >= 0.06 && fieldcraft.moveSpeed >= 0.06, "Fieldcraft must change both technique tempo and positioning");
 unique(CALLINGS.map((calling) => calling.id), "calling ids");
-assert.equal(DISCIPLINE_IDS.length, 5, "the path system needs five readable combat disciplines");
+assert.equal(DISCIPLINE_IDS.length, 7, "the path system needs seven readable combat disciplines");
 assert.equal(ELEMENT_IDS.length, 8, "the path system needs eight elemental attunements");
 assert.equal(DISCIPLINES.length, DISCIPLINE_IDS.length, "every discipline id needs presentation data");
 assert.equal(ELEMENTS.length, ELEMENT_IDS.length, "every element id needs presentation data");
 assert.equal(CALLINGS.length, DISCIPLINE_IDS.length * ELEMENT_IDS.length, "every discipline and element must form a playable path");
+assert.equal(SPECIALIZATION_TECHNIQUES.length, DISCIPLINE_IDS.length * 2, "every discipline needs two portable specialization techniques");
+unique(SPECIALIZATION_TECHNIQUES.map((ability) => ability.id), "specialization technique ids");
+unique(SPECIALIZATION_TECHNIQUES.map((ability) => ability.legacySpec!), "specialization mastery ids");
+for (const discipline of DISCIPLINE_IDS) {
+  for (const branch of ["ascendant", "paragon"] as const) {
+    const spec = specializationKey(discipline, branch);
+    const ability = SPECIALIZATION_TECHNIQUES.find((entry) => entry.legacySpec === spec);
+    assert.ok(ability, `${spec} needs a portable Legacy technique`);
+    assert.ok(ability.blurb.includes("Legacy:"), `${spec} must explain its portability`);
+  }
+}
+assert.equal(SPECIALIZATION_MASTERY_LEVELS, 10, "specializations should take ten active levels to master");
 unique(CALLINGS.map((calling) => calling.name), "path names");
 const authoredTechniqueNames: string[] = [];
 const authoredTechniqueBlurbs: string[] = [];
@@ -278,6 +295,7 @@ for (const element of ELEMENT_IDS) {
   }
 }
 for (const discipline of DISCIPLINE_IDS) {
+  const roleTechniqueNames: string[] = [];
   for (const element of ELEMENT_IDS) {
     const id = pathId(discipline, element);
     const path = CALLINGS.find((item) => item.id === id);
@@ -285,15 +303,20 @@ for (const discipline of DISCIPLINE_IDS) {
     assert.equal(path.discipline, discipline, `${id} discipline drifted`);
     assert.equal(path.element, element, `${id} element drifted`);
     assert.equal(path.advanced?.length, 2, `${id} needs exactly two level-20 promotions`);
+    assert.ok(path.advanced!.every((promotion) => /Master this specialization/.test(promotion.ultNote)), `${id} promotions must explain specialization mastery`);
     assert.equal(path.signature.pathSkill, "ultimate", `${id} needs a path ultimate`);
     assert.equal(path.signature.element, element, `${id} ultimate needs its element`);
     assert.ok(path.signature.blurb.length >= 70, `${id} ultimate needs an authored combat description`);
+    const roleOptions = roleElementTechniqueOptions(discipline, element);
+    assert.equal(roleOptions.length, 3, `${id} needs power, control, and utility choices`);
+    roleTechniqueNames.push(...roleOptions.map((ability) => ability.name));
     const techniques = pathAbilities(discipline, element);
     assert.equal(techniques.length, 2, `${id} needs exactly two normal techniques`);
     assert.deepEqual(path.abilityIds, techniques.map((ability) => ability.id), `${id} battle bar must match its registered techniques`);
     assert.equal(techniques[0].discipline, discipline, `${id} needs its Discipline technique`);
     assert.equal(techniques[1].element, element, `${id} needs its default elemental technique`);
   }
+  unique(roleTechniqueNames, `${discipline} role-technique names`);
 }
 unique(authoredTechniqueNames, "authored Path technique names");
 unique(authoredTechniqueBlurbs, "authored Path technique descriptions");
@@ -414,6 +437,26 @@ masterySave.heroes[0].calling = pathId("mage", "earth");
 masterySave.heroes[0].discipline = "mage";
 assert.ok(masterySave.heroes[0].masteredCallings.includes(firstPath), "switching paths must preserve prior Path Mastery");
 assert.ok(masterySave.heroes[0].masteredElements.includes("earth"), "switching disciplines must preserve the mastered element");
+const specializationSave = defaultSave();
+const specializationHero = specializationSave.heroes[0];
+specializationHero.level = 20;
+specializationHero.calling = pathId("warrior", "flame");
+specializationHero.discipline = "warrior";
+specializationHero.element = "flame";
+specializationHero.advCalling = `${specializationHero.calling}-ascendant`;
+grantHeroXp(specializationSave, 0, 99999);
+const weaponmasterSpec = specializationKey("warrior", "ascendant");
+assert.ok(specializationHero.masteredSpecializations.includes(weaponmasterSpec), "ten active specialization levels must unlock its Legacy technique");
+const weaponmasterLegacy = SPECIALIZATION_TECHNIQUES.find((ability) => ability.legacySpec === weaponmasterSpec)!;
+specializationHero.calling = pathId("mage", "frost");
+specializationHero.discipline = "mage";
+specializationHero.element = "frost";
+specializationHero.equipped = [disciplineTechnique("mage").id, weaponmasterLegacy.id];
+assert.equal(
+  resolvedPathAbilities("mage", "frost", specializationHero.equipped, specializationHero.masteredSpecializations)[1].id,
+  weaponmasterLegacy.id,
+  "a mastered specialization technique must remain equipped after changing Path",
+);
 storage.set(slotKey(), "{broken json");
 assert.equal(loadSave().unlockedStage, 0, "corrupt saves must recover to a new campaign");
 assert.equal(storage.get(rejectedSaveKey()), "{broken json", "unreadable save text must be retained for manual recovery");

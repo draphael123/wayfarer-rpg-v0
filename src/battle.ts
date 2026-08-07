@@ -50,10 +50,12 @@ const ELEMENT_POOL_COLORS: Record<ElementId, string> = {
  * without adding another button, meter, or status icon to the HUD. */
 const PATH_SIGNATURE_CUES: Record<DisciplineId, Record<ElementId, string>> = {
   knight: { flame: "HEARTH WARD", frost: "STILL GATE", storm: "STORMWALL", earth: "SHARED STONE", venom: "CORRODING GUARD", radiant: "DAWN AEGIS", blood: "BLOOD DEBT", shadow: "NIGHTWALL" },
+  warrior: { flame: "BURN HARVEST", frost: "SHATTER HEW", storm: "FURY CURRENT", earth: "FAULT CLEAVE", venom: "BLIGHT HARVEST", radiant: "SUNDERING WARD", blood: "RED FEAST", shadow: "NIGHT REPRISE" },
   rogue: { flame: "EMBER TRAIL", frost: "MIRROR SHATTER", storm: "STORMSTEP", earth: "RIVEN FLOOR", venom: "MORTAL DOSE", radiant: "SUNWARD", blood: "DEBT PAID", shadow: "BLACKOUT" },
   archer: { flame: "ASHEN WAKE", frost: "WINTER'S MEASURE", storm: "CROSSWIND", earth: "STONEPIERCE", venom: "THORNMARK", radiant: "FIRST RAY", blood: "HEARTSEEKER", shadow: "MOONLESS STEP" },
   priest: { flame: "HEARTH AURA", frost: "QUIET MERCY", storm: "THUNDER CHOIR", earth: "DEEP FOUNDATION", venom: "BITTER PURGE", radiant: "AURORA WARD", blood: "BLOOD COVENANT", shadow: "LAST LANTERN" },
   mage: { flame: "DETONATION", frost: "ABSOLUTE ZERO", storm: "CURRENT FIELD", earth: "WORLDSPINE", venom: "RUIN BLOOMS", radiant: "LIVING STAR", blood: "SCARLET EQUATION", shadow: "VOID DRAW" },
+  necromancer: { flame: "ASH SERVANT", frost: "PALE GUARD", storm: "SPIRIT CIRCUIT", earth: "BONE RAMPART", venom: "MORTAL BLOOM", radiant: "ANCESTOR'S HAND", blood: "RED THRALL", shadow: "OPEN GRAVES" },
 };
 
 export interface FieldRect {
@@ -204,7 +206,7 @@ export class Battle {
       const oath = sworn && callingEligible(sworn, heroSave.attrs) ? sworn : null;
       const advanced = oath ? heroSave.advCalling : null;
       const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroGearOf(heroSave, save.forge), heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced, heroSave.masteredElements);
-      const normalDefs = oath ? [...resolvedPathAbilities(oath.discipline, oath.element, heroSave.equipped)] : [];
+      const normalDefs = oath ? [...resolvedPathAbilities(oath.discipline, oath.element, heroSave.equipped, heroSave.masteredSpecializations)] : [];
       const abilities: AbilityState[] = (normalDefs.length ? normalDefs : heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d))
@@ -225,6 +227,7 @@ export class Battle {
         discipline: oath?.discipline ?? heroSave.discipline ?? null,
         element: oath?.element ?? heroSave.element ?? null,
         ultCharge: 0,
+        pathResource: oath?.discipline === "warrior" || oath?.discipline === "necromancer" ? 0 : undefined,
         entered: true,
         x: pos.x,
         y: pos.y,
@@ -1261,9 +1264,16 @@ export class Battle {
         ally.effects.push(makeEffect("haste", 2, 1.12, killer));
       }
     }
-    // Necromancer: death is a wellspring
+    // Necromancer: every nearby death leaves Remains. Liches immediately turn
+    // a portion of that deathly momentum back into technique recovery.
     for (const necro of this.livingHeroes()) {
-      if (necro.calling === "necromancer" && Math.hypot(necro.x - unit.x, necro.y - unit.y) < 340) this.gainUlt(necro, 6);
+      if (necro.discipline !== "necromancer" || Math.hypot(necro.x - unit.x, necro.y - unit.y) >= 380) continue;
+      necro.pathResource = Math.min(100, (necro.pathResource ?? 0) + (BOSS_KINDS.includes(unit.enemyKind ?? "") ? 50 : 20));
+      this.gainUlt(necro, 7);
+      if (necro.advCalling?.endsWith("-paragon")) {
+        for (const ability of necro.abilities) if (!ability.ult) ability.timer = Math.max(0, ability.timer - 1.5);
+      }
+      this.fx.floatText(necro.x, necro.y - necro.radius * 3, "+REMAINS", "#b7a5d6", 10);
     }
     if (!impactPlayed) audio.play("thud");
     if (
@@ -1495,7 +1505,7 @@ export class Battle {
   }
 
   /** The shared element rule is only the foundation. This second layer gives
-   * every one of the forty Paths a discipline-specific way to exploit it. */
+   * every one of the fifty-six Paths a discipline-specific way to exploit it. */
   private applyPathSignature(
     source: Unit,
     discipline: DisciplineId,
@@ -1609,6 +1619,52 @@ export class Battle {
               }
               triggered = true;
             }
+            break;
+        }
+        break;
+      }
+      case "warrior": {
+        switch (element) {
+          case "flame":
+            for (const target of livingHits) this.refreshPathEffect(target, "burn", 3.5 + rank, Math.max(2, power * (0.05 + rank * 0.02)), source);
+            triggered = hitTargets.length > 0;
+            break;
+          case "frost":
+            for (const target of livingHits) {
+              if (this.effect(target, "slow")) {
+                if (target === this.bossRef && this.bossStaggerMax > 0) this.bossStagger += [6, 14, 28][rank];
+                else this.refreshPathEffect(target, "stun", [0.25, 0.55, 0.9][rank], 1, source);
+              }
+              this.refreshPathEffect(target, "slow", 3 + rank, 0.25 + rank * 0.08, source);
+            }
+            triggered = hitTargets.length > 0;
+            break;
+          case "storm":
+            if (hitTargets.length) this.refreshPathEffect(source, "haste", 2.5 + rank, 1.12 + rank * 0.1, source);
+            triggered = hitTargets.length > 0;
+            break;
+          case "earth":
+            for (const target of livingHits) this.refreshPathEffect(target, "vulnerable", 3 + rank, 0.08 + rank * 0.05, source);
+            if (hitTargets.length) this.refreshPathEffect(source, "guard", 2.5 + rank, 0.14 + rank * 0.06, source);
+            triggered = hitTargets.length > 0;
+            break;
+          case "venom":
+            for (const target of livingHits) this.refreshPathEffect(target, "vulnerable", 4 + rank, 0.12 + rank * 0.05, source);
+            triggered = hitTargets.length > 0;
+            break;
+          case "radiant": {
+            const ally = leastHealthyAlly();
+            if (ally && hitTargets.length) ward(ally, power * (0.18 + rank * 0.11));
+            triggered = hitTargets.length > 0;
+            break;
+          }
+          case "blood":
+            if (fallenHits.length) this.heal(source, power * (0.18 + rank * 0.08), true, source);
+            triggered = hitTargets.length > 0;
+            break;
+          case "shadow":
+            for (const target of livingHits) this.damage(target, power * [0.12, 0.2, 0.3][rank], source, { spell: true, color, element, secondary: true });
+            triggered = hitTargets.length > 0;
             break;
         }
         break;
@@ -1906,6 +1962,56 @@ export class Battle {
         }
         break;
       }
+      case "necromancer": {
+        switch (element) {
+          case "flame":
+            for (const target of livingHits) this.refreshPathEffect(target, "burn", 4 + rank, Math.max(2, power * [0.05, 0.075, 0.1][rank]), source);
+            triggered = eventCount > 0 || hitTargets.length > 0;
+            break;
+          case "frost":
+            for (const target of livingHits) this.refreshPathEffect(target, "slow", 3 + rank, 0.28 + rank * 0.08, source);
+            if (hitTargets.length) ward(leastHealthyAlly() ?? source, power * [0.12, 0.22, 0.34][rank]);
+            triggered = hitTargets.length > 0;
+            break;
+          case "storm": {
+            const first = livingHits[0];
+            const next = first ? enemies.find((enemy) => enemy !== first && within(first, enemy, 100 + rank * 20)) : null;
+            if (next) this.damage(next, power * [0.18, 0.28, 0.4][rank], source, { spell: true, color, element, secondary: true });
+            if (hitTargets.length) this.refreshPathEffect(source, "haste", 2.5 + rank, 1.1 + rank * 0.08, source);
+            triggered = hitTargets.length > 0;
+            break;
+          }
+          case "earth":
+            if (hitTargets.length) for (const ally of allies.filter((ally) => within(center, ally, 110 + rank * 24))) ward(ally, power * [0.1, 0.18, 0.28][rank]);
+            triggered = hitTargets.length > 0;
+            break;
+          case "venom":
+            for (const target of livingHits) this.refreshPathEffect(target, "vulnerable", 4 + rank, 0.1 + rank * 0.05, source);
+            triggered = hitTargets.length > 0;
+            break;
+          case "radiant": {
+            const ally = leastHealthyAlly();
+            if (ally && hitTargets.length) this.heal(ally, power * [0.18, 0.3, 0.46][rank], true, source);
+            triggered = hitTargets.length > 0;
+            break;
+          }
+          case "blood":
+            if (hitTargets.length) this.heal(source, power * [0.12, 0.22, 0.34][rank], true, source);
+            triggered = hitTargets.length > 0;
+            break;
+          case "shadow":
+            for (const target of livingHits) {
+              const toward = this.normalize({ x: center.x - target.x, y: center.y - target.y });
+              const moved = this.clampToField({ x: target.x + toward.x * [18, 38, 62][rank], y: target.y + toward.y * [18, 38, 62][rank] }, target.radius);
+              target.x = moved.x;
+              target.y = moved.y;
+            }
+            if (rank > 0) for (const enemy of enemies) if (enemy.aggro === source) enemy.aggro = null;
+            triggered = hitTargets.length > 0;
+            break;
+        }
+        break;
+      }
     }
 
     if (triggered) {
@@ -1925,6 +2031,8 @@ export class Battle {
     const attrs = save.heroes[hero.heroIndex].attrs;
     const roleStat = discipline === "knight"
       ? Math.max(attrs.str, attrs.vit)
+      : discipline === "warrior"
+        ? attrs.str
       : discipline === "rogue"
         ? Math.max(attrs.dex, attrs.str)
         : discipline === "archer"
@@ -2014,6 +2122,44 @@ export class Battle {
         hero.lungeDir = aim ? this.normalize({ x: aim.x - hero.x, y: aim.y - hero.y }) : { x: hero.facing, y: 0 };
         this.fx.slash(hero.x, hero.y - 12, Math.atan2(hero.lungeDir.y, hero.lungeDir.x), radius * 0.62, color, Math.PI * 1.45);
         this.fx.ring(hero.x, hero.y, radius, color, { width: 4 + tierRank, life: 0.45 + tierRank * 0.1 });
+        break;
+      }
+      case "warrior": {
+        if (!enemies.length) return false;
+        payBloodPrice();
+        const fury = hero.pathResource ?? 0;
+        const spend = tier === "core" ? 0 : tier === "focus" ? Math.min(60, fury) : fury;
+        const direction = this.normalize({ x: (aim?.x ?? hero.x + hero.facing * 100) - hero.x, y: (aim?.y ?? hero.y) - hero.y });
+        const radius = [88, 122, 176][tierRank] + spend * 0.22;
+        const arc = tier === "core" ? Math.PI * 0.9 : tier === "focus" ? Math.PI * 1.35 : Math.PI * 2;
+        let total = 0;
+        for (const enemy of enemies) {
+          const delta = { x: enemy.x - hero.x, y: enemy.y - hero.y };
+          const dist = Math.hypot(delta.x, delta.y);
+          if (dist > radius + enemy.radius) continue;
+          const dot = dist < 1 ? 1 : (delta.x * direction.x + delta.y * direction.y) / dist;
+          if (tier !== "ultimate" && dot < Math.cos(arc / 2)) continue;
+          const multiplier = (1 + spend / 120) * (hero.advCalling?.endsWith("-paragon") && hero.hp < hero.stats.maxHp * 0.55 ? 1.22 : 1);
+          hit(enemy, multiplier);
+          total += damage * multiplier;
+          if (enemy === this.bossRef && this.bossStaggerMax > 0) this.bossStagger += [5, 12, 24][tierRank] + spend * 0.12;
+        }
+        if (!hitTargets.length) return false;
+        if (tier === "core") hero.pathResource = Math.min(100, fury + 14 + hitTargets.length * 8);
+        else hero.pathResource = Math.max(0, fury - spend);
+        if (hero.advCalling?.endsWith("-ascendant")) {
+          this.refreshPathEffect(hero, "guard", 3.5 + tierRank, 0.18 + tierRank * 0.07, hero);
+          if (tier === "ultimate") for (const ally of this.livingHeroes()) this.refreshPathEffect(ally, "shield", 6, damage * 0.32, hero);
+        } else if (hero.advCalling?.endsWith("-paragon") && total > 0) {
+          this.refreshPathEffect(hero, "haste", 3 + tierRank, 1.18 + tierRank * 0.08, hero);
+          if (tier !== "core") this.heal(hero, total * 0.12, true, hero);
+        }
+        hero.lungeDir = direction;
+        hero.lunge = 1.25;
+        signatureCenter = { x: hero.x + direction.x * radius * 0.5, y: hero.y + direction.y * radius * 0.5 };
+        this.fx.slash(hero.x, hero.y - 12, Math.atan2(direction.y, direction.x), radius * 0.72, color, arc);
+        this.fx.ring(hero.x, hero.y, radius, color, { width: 5 + tierRank, life: 0.5 + tierRank * 0.12 });
+        this.fx.floatText(hero.x, hero.y - hero.radius * 3.8, `FURY ${Math.round(hero.pathResource ?? 0)}`, color, 10);
         break;
       }
       case "rogue": {
@@ -2194,9 +2340,88 @@ export class Battle {
         this.fx.burst(center.x, center.y - 10, color, 14 + tierRank * 8, 120 + tierRank * 35, { glow: true, gravity: element === "earth" ? 220 : 30 });
         break;
       }
+      case "necromancer": {
+        if (!enemies.length) return false;
+        payBloodPrice();
+        const remains = hero.pathResource ?? 0;
+        const spend = tier === "core" ? 0 : tier === "focus" ? Math.min(50, remains) : remains;
+        const nearest = enemies.sort((a, b) => unitDist(hero, a) - unitDist(hero, b))[0];
+        const center = this.clampToField(aim ?? { x: nearest.x, y: nearest.y }, 0);
+        signatureCenter = center;
+        const radius = [92, 126, 190][tierRank] + spend * 0.18;
+        const candidates = enemies
+          .filter((enemy) => Math.hypot(enemy.x - center.x, enemy.y - center.y) < radius + enemy.radius)
+          .sort((a, b) => PRIORITY_ENEMIES.has(a.enemyKind!) === PRIORITY_ENEMIES.has(b.enemyKind!) ? a.hp - b.hp : PRIORITY_ENEMIES.has(a.enemyKind!) ? -1 : 1);
+        const servantCount = tier === "core" ? 1 : tier === "focus" ? 2 + Math.floor(spend / 25) : 4 + Math.floor(spend / 20);
+        const targets = candidates.slice(0, Math.max(1, servantCount));
+        for (const [index, target] of targets.entries()) {
+          const multiplier = (tier === "core" ? 0.9 : 0.82) * (1 + spend / 125) * (hero.advCalling?.endsWith("-paragon") ? 1.16 : 1);
+          hit(target, multiplier);
+          const side = index % 2 ? -1 : 1;
+          const sx = hero.x + side * (26 + index * 8);
+          const sy = hero.y - 24 - (index % 3) * 10;
+          this.fx.tracer(sx, sy, target.x, target.y - 12, color, 0.55, 3.5);
+          this.fx.burst(sx, sy, color, 8, 70, { glow: true, gravity: -40, life: 0.5 });
+        }
+        if (!targets.length) return false;
+        if (tier !== "core") hero.pathResource = Math.max(0, remains - spend);
+        if (hero.advCalling?.endsWith("-ascendant")) {
+          const ally = this.livingHeroes().sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0] ?? hero;
+          this.refreshPathEffect(ally, "shield", 5 + tierRank, damage * (0.25 + servantCount * 0.05), hero);
+          this.refreshPathEffect(ally, "guard", 3.5 + tierRank, 0.1 + tierRank * 0.05, hero);
+        }
+        this.fx.pool(center.x, center.y, radius, ELEMENT_POOL_COLORS[element], 0.75 + tierRank * 0.2);
+        this.fx.ring(center.x, center.y, radius, color, { width: 4 + tierRank, life: 0.6 });
+        this.fx.floatText(hero.x, hero.y - hero.radius * 3.8, `REMAINS ${Math.round(hero.pathResource ?? 0)}`, color, 10);
+        break;
+      }
     }
 
     this.applyPathSignature(hero, discipline, element, tier, damage, castOrigin, signatureCenter, hitTargets, supportedAllies, signatureEvents, overflowWard);
+
+    // Level-20 specializations alter the loop, not merely the stat sheet. The
+    // first branch masters control/teamcraft; the second converts the same Path
+    // into a riskier offensive engine.
+    const ascendant = hero.advCalling?.endsWith("-ascendant") === true;
+    const paragon = hero.advCalling?.endsWith("-paragon") === true;
+    if (ascendant) {
+      if (discipline === "knight" && hitTargets.length) {
+        for (const ally of this.livingHeroes().filter((ally) => ally !== hero && unitDist(hero, ally) < 125)) {
+          this.refreshPathEffect(ally, "guard", 3.5 + tierRank, 0.12 + tierRank * 0.05, hero);
+        }
+      } else if (discipline === "rogue") {
+        this.refreshPathEffect(hero, "shrouded", 2.2 + tierRank, 1, hero);
+        for (const enemy of enemies) if (enemy.aggro === hero || enemy.attackTarget === hero) { enemy.aggro = null; enemy.attackTarget = null; }
+      } else if (discipline === "archer" && hitTargets.length) {
+        const quarry = hitTargets[0];
+        if (quarry.alive) this.refreshPathEffect(quarry, "vulnerable", 4 + tierRank, 0.1 + tierRank * 0.05, hero);
+        if (quarry === this.bossRef && this.bossStaggerMax > 0) this.bossStagger += 5 + tierRank * 6;
+      } else if (discipline === "priest" && supportedAllies.length) {
+        for (const ally of supportedAllies) this.refreshPathEffect(ally, "shield", 6, damage * (0.22 + tierRank * 0.1), hero);
+      } else if (discipline === "mage" && hitTargets.length) {
+        for (const target of hitTargets) if (target.alive) this.refreshPathEffect(target, "slow", 3 + tierRank, 0.28 + tierRank * 0.07, hero);
+      }
+      if (tier === "ultimate") this.fx.floatText(hero.x, hero.y - hero.radius * 4.2, "SPECIALIZATION · EXALTED", color, 11);
+    } else if (paragon) {
+      if (discipline === "knight") {
+        for (const target of hitTargets) if (target.alive && this.effect(target, "taunt")) this.damage(target, damage * (0.18 + tierRank * 0.08), hero, { spell: true, color, element, secondary: true });
+      } else if (discipline === "rogue" && hitTargets.some((target) => !target.alive)) {
+        for (const ability of hero.abilities) if (!ability.ult) ability.timer = Math.max(0, ability.timer - 3);
+      } else if (discipline === "archer" && hitTargets.length) {
+        this.refreshPathEffect(hero, "haste", 3 + tierRank, 1.18 + tierRank * 0.08, hero);
+        const away = this.normalize({ x: hero.x - signatureCenter.x, y: hero.y - signatureCenter.y });
+        const moved = this.clampToField({ x: hero.x + away.x * (24 + tierRank * 18), y: hero.y + away.y * (24 + tierRank * 18) }, hero.radius);
+        hero.x = moved.x; hero.y = moved.y;
+      } else if (discipline === "priest" && hitTargets.length) {
+        const weakest = this.livingHeroes().sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0];
+        if (weakest) this.heal(weakest, damage * hitTargets.length * (0.12 + tierRank * 0.05), true, hero);
+      } else if (discipline === "mage" && hitTargets.length) {
+        const price = Math.min(hero.hp - 1, hero.stats.maxHp * (0.025 + tierRank * 0.015));
+        if (price > 0) hero.hp -= price;
+        for (const target of hitTargets) if (target.alive) this.damage(target, damage * (0.16 + tierRank * 0.08), hero, { spell: true, color, element, secondary: true });
+      }
+      if (tier === "ultimate") this.fx.floatText(hero.x, hero.y - hero.radius * 4.2, "SPECIALIZATION · UNBOUND", color, 11);
+    }
 
     // Elemental techniques share an Attunement, but their intent stays
     // immediately readable: power hits harder, control buys room, utility
@@ -2230,6 +2455,141 @@ export class Battle {
     return true;
   }
 
+  /** A mastered specialization contributes one portable W-slot technique.
+   * Its geometry comes from the mastered Discipline, while the hero's current
+   * Attunement supplies the condition and visual language. */
+  private castLegacyTechnique(hero: Unit, state: AbilityState, save: SaveData, aim: Vec | null, allyTarget: Unit | null): boolean {
+    const spec = state.def.legacySpec;
+    const element = hero.element;
+    if (!spec || !element) return false;
+    const split = spec.lastIndexOf("-");
+    const discipline = spec.slice(0, split) as DisciplineId;
+    const branch = spec.slice(split + 1) as "ascendant" | "paragon";
+    const attrs = save.heroes[hero.heroIndex].attrs;
+    const color = ELEMENT_COLORS[element];
+    const power = 16 + Math.max(attrs.str, attrs.dex, attrs.int, attrs.spi, attrs.vit) * 2.1 + hero.stats.damage * 0.55;
+    const enemies = this.livingEnemies();
+    const hit = (target: Unit, multiplier = 1) => {
+      const amount = power * multiplier;
+      this.damage(target, amount, hero, { spell: true, color, element });
+      if (target.alive) this.applyPathElement(hero, target, element, "focus", amount, true);
+    };
+    const center = this.clampToField(aim ?? { x: hero.x + hero.facing * 90, y: hero.y }, 0);
+
+    if (discipline === "knight") {
+      if (branch === "ascendant") {
+        const ally = allyTarget ?? this.mostWoundedAlly() ?? hero;
+        this.refreshPathEffect(ally, "shield", 7, power * 0.9, hero);
+        this.refreshPathEffect(ally, "guard", 5, 0.22, hero);
+        for (const enemy of enemies) if (unitDist(enemy, ally) < 105) this.refreshPathEffect(enemy, "taunt", 3, 1, hero);
+        this.fx.ring(ally.x, ally.y, 105, color, { width: 5, life: 0.6 });
+      } else {
+        const dir = this.normalize({ x: center.x - hero.x, y: center.y - hero.y });
+        const from = { x: hero.x, y: hero.y };
+        const to = this.clampToField({ x: hero.x + dir.x * 150, y: hero.y + dir.y * 150 }, hero.radius);
+        for (const enemy of enemies) if (this.distToRay(from, dir, 150, enemy) < enemy.radius + 28) hit(enemy, 0.9);
+        hero.x = to.x; hero.y = to.y;
+        this.refreshPathEffect(hero, "guard", 3, 0.18, hero);
+        this.fx.tracer(from.x, from.y - 12, to.x, to.y - 12, color, 0.45, 5);
+      }
+    } else if (discipline === "warrior") {
+      const radius = branch === "ascendant" ? 115 : 145;
+      let struck = 0;
+      for (const enemy of enemies) if (unitDist(hero, enemy) < radius + enemy.radius) {
+        hit(enemy, branch === "ascendant" ? 1.15 : 0.92);
+        if (enemy === this.bossRef && this.bossStaggerMax > 0) this.bossStagger += branch === "ascendant" ? 24 : 10;
+        struck++;
+      }
+      if (!struck) return false;
+      if (branch === "ascendant") this.refreshPathEffect(hero, "guard", 3.5, 0.2, hero);
+      else { this.refreshPathEffect(hero, "haste", 5, 1.35, hero); hero.hp = Math.max(1, hero.hp - hero.stats.maxHp * 0.05); }
+      this.fx.slash(hero.x, hero.y - 12, 0, radius * 0.7, color, Math.PI * 2);
+    } else if (discipline === "rogue") {
+      const from = { x: hero.x, y: hero.y };
+      if (branch === "ascendant") {
+        const to = this.clampToField(center, hero.radius);
+        hero.x = to.x; hero.y = to.y;
+        this.refreshPathEffect(hero, "shrouded", 3, 1, hero);
+        this.refreshPathEffect(hero, "guard", 2.5, 0.28, hero);
+        for (const enemy of enemies) if (enemy.aggro === hero || enemy.attackTarget === hero) { enemy.aggro = null; enemy.attackTarget = null; }
+        this.fx.tracer(from.x, from.y - 12, to.x, to.y - 12, color, 0.45, 4);
+      } else {
+        let struck = 0;
+        for (const enemy of enemies) if (Math.hypot(enemy.x - center.x, enemy.y - center.y) < 100 + enemy.radius) {
+          hit(enemy, 0.72); this.refreshPathEffect(enemy, "vulnerable", 5, 0.2, hero); struck++;
+        }
+        if (!struck) return false;
+        this.fx.pool(center.x, center.y, 104, ELEMENT_POOL_COLORS[element], 0.9);
+      }
+    } else if (discipline === "archer") {
+      if (branch === "ascendant") {
+        const dir = this.normalize({ x: center.x - hero.x, y: center.y - hero.y });
+        const target = enemies.filter((enemy) => this.distToRay(hero, dir, 520, enemy) < enemy.radius + 18).sort((a, b) => unitDist(hero, a) - unitDist(hero, b))[0];
+        if (!target) return false;
+        const distance = unitDist(hero, target);
+        hit(target, 1 + Math.min(0.8, distance / 600));
+        if (target.alive) this.refreshPathEffect(target, "vulnerable", 6, 0.18, hero);
+        this.fx.tracer(hero.x, hero.y - 14, target.x, target.y - 12, color, 0.55, 5);
+      } else {
+        const away = this.normalize({ x: hero.x - center.x, y: hero.y - center.y });
+        const moved = this.clampToField({ x: hero.x + away.x * 70, y: hero.y + away.y * 70 }, hero.radius);
+        hero.x = moved.x; hero.y = moved.y;
+        let struck = 0;
+        for (const enemy of enemies) if (Math.hypot(enemy.x - center.x, enemy.y - center.y) < 115 + enemy.radius) { hit(enemy, 0.78); struck++; }
+        if (!struck) return false;
+        this.refreshPathEffect(hero, "haste", 4, 1.25, hero);
+        this.fx.ring(center.x, center.y, 115, color, { width: 4, life: 0.55 });
+      }
+    } else if (discipline === "priest") {
+      if (branch === "ascendant") {
+        const ally = allyTarget ?? this.mostWoundedAlly() ?? hero;
+        this.heal(ally, power * 0.8, true, hero);
+        this.refreshPathEffect(ally, "shield", 8, power * 0.9, hero);
+        this.refreshPathEffect(ally, "guard", 5, 0.2, hero);
+        this.fx.beam(ally.x, ally.y, 100, 13, color, 0.55);
+      } else {
+        let dealt = 0;
+        for (const enemy of enemies) if (Math.hypot(enemy.x - center.x, enemy.y - center.y) < 105 + enemy.radius) { hit(enemy, 0.75); dealt += power * 0.75; }
+        if (!dealt) return false;
+        const ally = this.mostWoundedAlly() ?? hero;
+        this.heal(ally, dealt * 0.35, true, hero);
+        this.fx.beam(center.x, center.y, 120, 14, color, 0.55);
+      }
+    } else if (discipline === "mage") {
+      let struck = 0;
+      const radius = branch === "ascendant" ? 110 : 145;
+      if (branch === "paragon") hero.hp = Math.max(1, hero.hp - hero.stats.maxHp * 0.07);
+      for (const enemy of enemies) if (Math.hypot(enemy.x - center.x, enemy.y - center.y) < radius + enemy.radius) {
+        hit(enemy, branch === "ascendant" ? 0.72 : 1.15);
+        if (branch === "ascendant" && enemy.alive) this.refreshPathEffect(enemy, "slow", 4, 0.35, hero);
+        struck++;
+      }
+      if (!struck) return false;
+      this.fx.pool(center.x, center.y, radius, ELEMENT_POOL_COLORS[element], 1);
+      this.fx.ring(center.x, center.y, radius, color, { width: 6, life: 0.65 });
+    } else if (discipline === "necromancer") {
+      if (branch === "ascendant") {
+        const ally = allyTarget ?? this.mostWoundedAlly() ?? hero;
+        this.refreshPathEffect(ally, "shield", 8, power, hero);
+        const threat = enemies.sort((a, b) => unitDist(ally, a) - unitDist(ally, b))[0];
+        if (threat) hit(threat, 0.7);
+        this.fx.ring(ally.x, ally.y, 72, color, { width: 4, life: 0.6 });
+      } else {
+        const remains = hero.pathResource ?? 0;
+        let struck = 0;
+        for (const enemy of enemies) if (Math.hypot(enemy.x - center.x, enemy.y - center.y) < 120 + enemy.radius) { hit(enemy, 0.75 + remains / 160); struck++; }
+        if (!struck) return false;
+        hero.pathResource = Math.max(0, remains - 35);
+        this.fx.pool(center.x, center.y, 124, ELEMENT_POOL_COLORS[element], 1);
+      }
+    } else return false;
+
+    hero.castGlow = 0.65;
+    this.fx.floatText(hero.x, hero.y - hero.radius * 3.8, "MASTERED LEGACY", color, 11);
+    audio.play(element === "radiant" ? "heal" : discipline === "warrior" || discipline === "knight" ? "slash" : "bolt");
+    return true;
+  }
+
   private finishAbilityCast(hero: Unit, state: AbilityState, save: SaveData): void {
     const id = state.def.id;
     this.castCounts[id] = (this.castCounts[id] ?? 0) + 1;
@@ -2254,6 +2614,13 @@ export class Battle {
   castAbility(hero: Unit, state: AbilityState, save: SaveData, aim: Vec | null, allyTarget: Unit | null): boolean {
     if (hero.team === "hero" && (this.state !== "fighting" || this.cinematic > 0)) return false;
     if (!hero.alive || state.timer > 0 || this.effect(hero, "stun") || this.effect(hero, "silence")) return false;
+    if (state.def.legacySpec) {
+      this.castingSpell = hero.team === "hero";
+      const cast = this.castLegacyTechnique(hero, state, save, aim, allyTarget);
+      this.castingSpell = false;
+      if (cast) this.finishAbilityCast(hero, state, save);
+      return cast;
+    }
     if (state.def.pathSkill) {
       this.castingSpell = hero.team === "hero";
       const cast = this.castPathAbility(hero, state, save, aim, allyTarget);
@@ -3568,7 +3935,7 @@ export class Battle {
     if (bosses.length) {
       for (const hero of this.livingHeroes()) {
         if (!bosses.some((bz) => unitDist(hero, bz) < 110)) continue;
-        const rate = hero.calling === "vanguard" ? 30 : hero.stats.weapon === "sword" ? 14 : 0;
+        const rate = hero.calling === "vanguard" ? 30 : hero.stats.weapon === "sword" || hero.stats.weapon === "greatsword" ? 14 : 0;
         if (rate) this.threat[hero.id] = (this.threat[hero.id] ?? 0) + rate * dt;
       }
     }
@@ -4010,7 +4377,7 @@ export class Battle {
   /** How loudly a hero registers to bosses: shield-bearers ring loudest, menders barely. */
   private threatMult(hero: Unit): number {
     if (hero.calling === "vanguard") return 2.6;
-    if (hero.stats.weapon === "sword") return 1.5; // any front-liner holds attention
+    if (hero.stats.weapon === "sword" || hero.stats.weapon === "greatsword") return 1.5; // any front-liner holds attention
     if (hero.stats.healPower >= 8) return 0.5;
     return 1;
   }
@@ -6230,7 +6597,7 @@ export class Battle {
       const coastalCaster = attacker.enemyKind === "saltwitch" || attacker.enemyKind === "stormcaller" || attacker.enemyKind === "conchseer";
       const lateCaster = ["cinderkin", "furnacecantor", "sporeseer", "gloomwing", "mirageseer", "censerwraith", "shardling", "briarwitch", "nullwalker", "waylostarcher"].includes(attacker.enemyKind ?? "");
       const weapon = attacker.team === "hero" ? attacker.stats.weapon : attacker.enemyKind === "shaman" || attacker.enemyKind === "bonecaller" || coastalCaster || lateCaster ? "staff" : "bow";
-      const isArcane = weapon === "staff";
+      const isArcane = weapon === "staff" || weapon === "tome";
       const isHoly = weapon === "stave";
       const missile = {
         x: attacker.x + attacker.facing * 10,
@@ -6273,6 +6640,9 @@ export class Battle {
       audio.play(isArcane || isHoly ? "bolt" : "shoot");
     } else {
       this.damage(target, dmg, attacker, crit ? { color: "#ffd76b", element: attackElement } : { element: attackElement });
+      if (attacker.team === "hero" && attacker.discipline === "warrior") {
+        attacker.pathResource = Math.min(100, (attacker.pathResource ?? 0) + (crit ? 14 : 8));
+      }
       if (crit) this.fx.floatText(target.x, target.y - target.radius - 30, "crit!", "#ffd76b", 12);
       // Storm Eels punish a packed formation. High tide carries the arc farther and leaves a brief stun.
       if (attacker.enemyKind === "stormeel" && target.team === "hero") {

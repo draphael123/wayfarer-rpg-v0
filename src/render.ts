@@ -2369,6 +2369,18 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
       ctx.moveTo(sx, shoulderY + 1);
       ctx.lineTo(sx, hipY + H * 0.1);
       ctx.stroke();
+    } else if (unit.discipline === "warrior") {
+      // A broad back harness keeps the two-handed silhouette readable even
+      // while the blade crosses the body during a swing.
+      ctx.strokeStyle = pathColor;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(cx - f * bodyW * 0.65, shoulderY - H * 0.16);
+      ctx.lineTo(cx + f * bodyW * 0.5, hipY + H * 0.18);
+      ctx.stroke();
+      ctx.fillStyle = "#6a4b34";
+      roundRect(ctx, cx - bodyW * 0.5, hipY + H * 0.08, bodyW, H * 0.08, 2);
+      ctx.fill();
     } else if (unit.discipline === "rogue") {
       ctx.strokeStyle = pathColor;
       ctx.lineWidth = 4;
@@ -2398,6 +2410,21 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
       ctx.beginPath();
       ctx.ellipse(cx, headY - headR * 1.15, headR * 0.95, headR * 0.26, 0, 0, Math.PI * 2);
       ctx.stroke();
+    } else if (unit.discipline === "necromancer") {
+      // Three restrained grave-lights orbit the tome instead of reusing the
+      // Mage's rune folio; their count echoes stored Remains.
+      for (let spirit = 0; spirit < 3; spirit++) {
+        const angle = pathTime * 0.82 + spirit * (Math.PI * 2 / 3);
+        const sx = cx + Math.cos(angle) * bodyW;
+        const sy = shoulderY + H * 0.13 + Math.sin(angle) * H * 0.18;
+        ctx.globalAlpha = 0.42 + Math.min(0.45, (unit.pathResource ?? 0) / 220);
+        ctx.fillStyle = pathColor;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 4);
+        ctx.quadraticCurveTo(sx + 5, sy, sx, sy + 6);
+        ctx.quadraticCurveTo(sx - 5, sy, sx, sy - 4);
+        ctx.fill();
+      }
     } else {
       ctx.fillStyle = pathColor;
       ctx.font = `700 ${Math.max(7, H * 0.13)}px Georgia, serif`;
@@ -2957,12 +2984,14 @@ function drawHeroWeapon(
   // blade metals sharpen with tier; mythril glows faintly
   const metal = ["#c9ccd2", "#d8dee8", "#e8eef8", "#cfe8ff"][wTier] ?? "#d8dee8";
   const glow = wTier >= 3;
-  if (unit.stats.weapon === "sword") {
+  if (unit.stats.weapon === "sword" || unit.stats.weapon === "greatsword") {
+    const heavy = unit.stats.weapon === "greatsword";
     // arm rotates from rest through a big arc on swing
-    const angle = f * (-0.6 + swing * 1.85);
+    const angle = f * (-0.6 + swing * (heavy ? 2.15 : 1.85));
     const handX = shX + Math.cos(angle) * H * 0.22;
     const handY = shY + Math.sin(angle) * H * 0.22 + H * 0.06;
-    limb(ctx, shX, shY, handX, handY, armW * 0.9, skin);
+    limb(ctx, shX, shY, handX, handY, armW * (heavy ? 1.05 : 0.9), skin);
+    if (heavy) limb(ctx, shX - f * H * 0.05, shY + H * 0.08, handX - f * H * 0.075, handY + H * 0.07, armW * 0.95, skin);
     hand(ctx, handX, handY, skin);
     // ghost trail of the blade sweeping through its arc
     if (swing > 0.15) {
@@ -2978,7 +3007,7 @@ function drawHeroWeapon(
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(0, -6);
-        ctx.lineTo(0, -H * 0.55);
+        ctx.lineTo(0, -H * (heavy ? 0.72 : 0.55));
         ctx.stroke();
         ctx.globalAlpha = 1;
         ctx.restore();
@@ -2989,11 +3018,13 @@ function drawHeroWeapon(
     ctx.rotate(angle + f * 0.35 - f * Math.PI / 2);
     // blade — broad enough to mean it
     ctx.beginPath();
-    ctx.moveTo(-3.4, -4);
-    ctx.lineTo(-2.2, -H * 0.52);
-    ctx.lineTo(0, -H * 0.6);
-    ctx.lineTo(2.2, -H * 0.52);
-    ctx.lineTo(3.4, -4);
+    const bladeHalf = heavy ? 5.2 : 3.4;
+    const bladeLength = heavy ? 0.78 : 0.6;
+    ctx.moveTo(-bladeHalf, -4);
+    ctx.lineTo(-bladeHalf * 0.65, -H * (bladeLength - 0.08));
+    ctx.lineTo(0, -H * bladeLength);
+    ctx.lineTo(bladeHalf * 0.65, -H * (bladeLength - 0.08));
+    ctx.lineTo(bladeHalf, -4);
     ctx.closePath();
     if (glow) {
       ctx.shadowColor = "#9fd0ff";
@@ -3109,6 +3140,33 @@ function drawHeroWeapon(
     ctx.arc(0, discY, 4.4, 0, Math.PI * 2);
     outlined(ctx, "#ffe9a3", 1.8);
     ctx.shadowBlur = 0;
+    ctx.restore();
+  } else if (unit.stats.weapon === "tome") {
+    const raise = Math.max(swing, castGlow * 2.2);
+    const handX = shX + f * H * 0.16;
+    const handY = shY + H * 0.09;
+    limb(ctx, shX, shY, handX, handY, armW * 0.82, skin);
+    hand(ctx, handX, handY, skin);
+    ctx.save();
+    ctx.translate(handX + f * H * 0.08, handY - H * (0.08 + raise * 0.04));
+    ctx.scale(f, 1);
+    ctx.rotate(-0.12 + Math.sin(time * 1.8) * 0.025);
+    const bookW = H * 0.28, bookH = H * 0.2;
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 5 + raise * 10;
+    roundRect(ctx, -bookW / 2, -bookH / 2, bookW, bookH, 2.5);
+    outlined(ctx, "#51405f", 2);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "#d9cde5";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(0, -bookH / 2 + 2);
+    ctx.lineTo(0, bookH / 2 - 2);
+    ctx.stroke();
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(-bookW * 0.22, 0, 2 + raise, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   } else {
     // staff raised on cast

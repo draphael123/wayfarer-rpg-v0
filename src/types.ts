@@ -79,9 +79,9 @@ export type AttrKey = "str" | "dex" | "int" | "vit" | "spi";
 
 export type Attributes = Record<AttrKey, number>;
 
-export type WeaponKind = "sword" | "bow" | "staff" | "stave";
+export type WeaponKind = "sword" | "greatsword" | "bow" | "staff" | "stave" | "tome";
 
-export type DisciplineId = "knight" | "rogue" | "archer" | "priest" | "mage";
+export type DisciplineId = "knight" | "warrior" | "rogue" | "archer" | "priest" | "mage" | "necromancer";
 
 export type ElementId = "flame" | "frost" | "storm" | "earth" | "venom" | "radiant" | "blood" | "shadow";
 
@@ -116,6 +116,8 @@ export interface AbilityDef {
   pathSkill?: "core" | "focus" | "ultimate";
   /** Element techniques share a theme but offer a distinct combat purpose. */
   pathVariant?: "power" | "control" | "utility";
+  /** A level-20 specialization technique that can travel to another Path once mastered. */
+  legacySpec?: string;
   retired?: boolean;
 }
 
@@ -149,6 +151,7 @@ export interface Unit {
   discipline: DisciplineId | null;
   element: ElementId | null;
   ultCharge: number; // 0-100, fills from the calling's role actions
+  pathResource?: number; // Warrior Fury or Necromancer Remains (0-100)
   entered: boolean; // enemies flip this crashing onto the field (spawn presentation)
   x: number;
   y: number;
@@ -301,6 +304,8 @@ export interface HeroSave {
   callingLevels: Record<string, number>; // levels earned while each calling was active
   masteredCallings: string[]; // ten-level passives retained after switching
   advancedCallings: Record<string, string>; // chosen promotion retained per mastered calling
+  specializationLevels: Record<string, number>; // levels earned while each level-20 specialization was active
+  masteredSpecializations: string[]; // specialization ids whose Legacy technique may travel to another Path
   elementLevels: Partial<Record<ElementId, number>>;
   masteredElements: ElementId[];
 }

@@ -16,6 +16,8 @@ import {
   pathId,
   POINTS_PER_LEVEL,
   resolvedPathAbilities,
+  SPECIALIZATION_MASTERY_LEVELS,
+  specializationKey,
   STAGES,
   trinketById,
   xpForLevel,
@@ -98,7 +100,7 @@ function defaultHero(index: number): HeroSave {
     .filter((ability): ability is NonNullable<typeof ability> => !!ability)
     .slice(0, MAX_EQUIPPED)
     .map((ability) => ability.id);
-  return { attrs, level: 1, xp: 0, equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null, discipline: null, element: null, callingLevels: {}, masteredCallings: [], advancedCallings: {}, elementLevels: {}, masteredElements: [] };
+  return { attrs, level: 1, xp: 0, equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null, discipline: null, element: null, callingLevels: {}, masteredCallings: [], advancedCallings: {}, specializationLevels: {}, masteredSpecializations: [], elementLevels: {}, masteredElements: [] };
 }
 
 /** Out of the box: 1-4 picks a hero, Q/W cast chosen abilities, R casts the ultimate. */
@@ -424,11 +426,19 @@ export function loadSave(): SaveData {
           if (nextChoice) migratedChoices[nextPath] = nextChoice;
         }
       }
+      hero.specializationLevels = cleanNumberRecord(hero.specializationLevels, MAX_LEVEL);
+      hero.masteredSpecializations = cleanStrings(hero.masteredSpecializations, 32).filter((id) => {
+        const [discipline, branch] = id.split("-");
+        return !!disciplineById(discipline) && (branch === "ascendant" || branch === "paragon");
+      });
+      for (const [id, progress] of Object.entries(hero.specializationLevels)) {
+        if (progress >= SPECIALIZATION_MASTERY_LEVELS && !hero.masteredSpecializations.includes(id)) hero.masteredSpecializations.push(id);
+      }
       if (hero.calling) {
         const directChoice = migrateAdvancedId(hero.calling, rawAdvanced);
         if (directChoice) migratedChoices[hero.calling] = directChoice;
         hero.advCalling = migratedChoices[hero.calling] ?? null;
-        const required = resolvedPathAbilities(hero.discipline!, hero.element!, hero.equipped);
+        const required = resolvedPathAbilities(hero.discipline!, hero.element!, hero.equipped, hero.masteredSpecializations);
         hero.equipped = required.map((ability) => ability.id);
         for (const ability of required) if (!parsed.unlockedSpells.includes(ability.id)) parsed.unlockedSpells.push(ability.id);
       } else {
@@ -580,6 +590,18 @@ export function grantHeroXp(save: SaveData, index: number, amount: number): numb
       if (hero.elementLevels[path.element]! >= CALLING_MASTERY_LEVELS && !hero.masteredElements.includes(path.element)) {
         hero.masteredElements.push(path.element);
       }
+      if (hero.advCalling) {
+        const branch = hero.advCalling.endsWith("-ascendant") ? "ascendant" : hero.advCalling.endsWith("-paragon") ? "paragon" : null;
+        if (branch) {
+          hero.specializationLevels ??= {};
+          hero.masteredSpecializations ??= [];
+          const spec = specializationKey(path.discipline, branch);
+          hero.specializationLevels[spec] = (hero.specializationLevels[spec] ?? 0) + 1;
+          if (hero.specializationLevels[spec] >= SPECIALIZATION_MASTERY_LEVELS && !hero.masteredSpecializations.includes(spec)) {
+            hero.masteredSpecializations.push(spec);
+          }
+        }
+      }
     }
     save.unspent[index] += POINTS_PER_LEVEL;
   }
@@ -601,7 +623,7 @@ export function respecHero(save: SaveData, index: number): void {
   const hero = save.heroes[index];
   const path = callingById(hero.calling);
   if (path) {
-    hero.equipped = resolvedPathAbilities(path.discipline, path.element, hero.equipped).map((ability) => ability.id);
+    hero.equipped = resolvedPathAbilities(path.discipline, path.element, hero.equipped, hero.masteredSpecializations).map((ability) => ability.id);
   } else {
     hero.equipped = hero.equipped.filter((id) => {
       const ability = abilityById(id);

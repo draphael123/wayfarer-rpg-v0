@@ -881,8 +881,10 @@ export function unlockedAbilities(
 export function dominantWeapon(attrs: Attributes, calling?: string | null): WeaponKind {
   const discipline = callingById(calling)?.discipline;
   if (discipline === "knight" || discipline === "rogue") return "sword";
+  if (discipline === "warrior") return "greatsword";
   if (discipline === "archer") return "bow";
   if (discipline === "priest") return "stave";
+  if (discipline === "necromancer") return "tome";
   if (discipline === "mage") return "staff";
   if (attrs.spi > attrs.str && attrs.spi > attrs.dex && attrs.spi > attrs.int) return "stave";
   if (attrs.int > attrs.str && attrs.int >= attrs.dex) return "staff";
@@ -940,15 +942,17 @@ export interface ElementDef {
   passive: string;
 }
 
-export const DISCIPLINE_IDS: readonly DisciplineId[] = ["knight", "rogue", "archer", "priest", "mage"];
+export const DISCIPLINE_IDS: readonly DisciplineId[] = ["knight", "warrior", "rogue", "archer", "priest", "mage", "necromancer"];
 export const ELEMENT_IDS: readonly ElementId[] = ["flame", "frost", "storm", "earth", "venom", "radiant", "blood", "shadow"];
 
 export const DISCIPLINES: readonly DisciplineDef[] = [
   { id: "knight", name: "Knight", epithet: "Hold the line", weapon: "sword", crest: "shield", color: "#d59a4b", passive: "+10% health and +4% armor.", chargeHint: "Charges by taking damage and guarding allies" },
+  { id: "warrior", name: "Warrior", epithet: "Commit to the blow", weapon: "greatsword", crest: "sword", color: "#c56f46", passive: "+12% melee damage and heavy attacks build Fury for Path techniques.", chargeHint: "Charges through heavy hits, stagger, and finishing enemies" },
   { id: "rogue", name: "Rogue", epithet: "Choose the opening", weapon: "sword", crest: "sword", color: "#b86a8f", passive: "+8% move speed and +5% critical chance.", chargeHint: "Charges by dealing damage and striking vulnerable foes" },
   { id: "archer", name: "Archer", epithet: "Own the distance", weapon: "bow", crest: "bow", color: "#7fa65b", passive: "+8% ranged damage and +6% move speed.", chargeHint: "Charges by dealing ranged damage" },
   { id: "priest", name: "Priest", epithet: "Keep the band standing", weapon: "stave", crest: "sun", color: "#d7c77a", passive: "+10% healing and a small starting shield.", chargeHint: "Charges by healing and protecting allies" },
   { id: "mage", name: "Mage", epithet: "Rewrite the field", weapon: "staff", crest: "spark", color: "#8f78cf", passive: "+10% spell power and 5% faster cooldowns.", chargeHint: "Charges by dealing spell damage" },
+  { id: "necromancer", name: "Necromancer", epithet: "Make death answer", weapon: "tome", crest: "ghost", color: "#8773a6", passive: "Enemy deaths leave Remains that strengthen summons and curses.", chargeHint: "Charges when enemies die or spectral servants deal damage" },
 ];
 
 export const ELEMENTS: readonly ElementDef[] = [
@@ -1420,10 +1424,12 @@ function callingStatMods(calling?: string | null, advCalling?: string | null, ma
   const path = callingById(calling);
   switch (path?.discipline) {
     case "knight": m.hpPct += 0.1; m.armorFlat += 0.04; break;
+    case "warrior": m.meleeDmg += 0.12; m.hpPct += 0.04; break;
     case "rogue": m.moveSpeed += 0.08; m.crit += 0.05; break;
     case "archer": m.rangedDmg += 0.08; m.moveSpeed += 0.06; break;
     case "priest": m.healPower += 0.1; m.startShield += 10; break;
     case "mage": m.spellPower += 0.1; m.cdr += 0.05; break;
+    case "necromancer": m.spellPower += 0.08; m.startShield += 6; m.cdr += 0.03; break;
   }
   switch (path?.element) {
     case "flame": m.meleeDmg += 0.025; m.rangedDmg += 0.025; m.spellPower += 0.04; break;
@@ -1514,6 +1520,10 @@ export function deriveStats(
     damage = 8 + attrs.str * 2.3;
     range = 34;
     attackCooldown = 1.15;
+  } else if (weapon === "greatsword") {
+    damage = 11 + attrs.str * 2.75 + attrs.vit * 0.35;
+    range = 56;
+    attackCooldown = 1.55;
   } else if (weapon === "bow") {
     damage = 6 + attrs.dex * 1.7;
     range = 300;
@@ -1523,6 +1533,10 @@ export function deriveStats(
     damage = 5 + attrs.spi * 1.1 + attrs.int * 0.5;
     range = 260;
     attackCooldown = 1.4;
+  } else if (weapon === "tome") {
+    damage = 6 + attrs.int * 1.65 + attrs.spi * 0.55;
+    range = 275;
+    attackCooldown = 1.55;
   } else {
     damage = 7 + attrs.int * 2.0;
     range = 280;
@@ -1531,7 +1545,7 @@ export function deriveStats(
   attackCooldown *= 1 - Math.min(0.45, attrs.dex * 0.018);
   if (advCalling === "hawkeye") range *= 1.15;
   damage += WEAPON_DAMAGE_BONUS[weaponTier];
-  damage *= 1 + (weapon === "sword" ? mods.meleeDmg : mods.rangedDmg);
+  damage *= 1 + (weapon === "sword" || weapon === "greatsword" ? mods.meleeDmg : mods.rangedDmg);
   return {
     maxHp: Math.round(maxHp * (1 + mods.hpPct)) + trinketFlatHp(trinket),
     damage,
@@ -2282,6 +2296,33 @@ interface PathLore {
   ];
 }
 
+/** The two added Disciplines do not inherit Mage or Knight copy. Their eight
+ * Attunements change the resource loop itself: Warriors spend Fury through
+ * different finishers; Necromancers spend Remains on different servants and
+ * death rites. */
+const ADDED_PATH_LORE: Record<"warrior" | "necromancer", Record<ElementId, PathLore>> = {
+  warrior: {
+    flame: { name: "Cindermaul", epithet: "the Furnace Unchained", passive: "Fury finishers consume existing burns in a wide detonation.", ultimate: "Furnace Wheel", ultimateBlurb: "Spend every spark of Fury on a sweeping furnace blow that detonates burning enemies.", techniques: [{ name: "Kindling Blow", blurb: "A committed cleave that builds Fury and brands everything at the blade's edge." }, { name: "Furnace Swing", blurb: "Spend Fury on a broad sweep; burning enemies erupt into nearby ranks." }] },
+    frost: { name: "Glacier Reaver", epithet: "the Falling Shelf", passive: "Heavy blows bank Frost; Fury finishers shatter chilled enemies instead of merely slowing them.", ultimate: "Calving Edge", ultimateBlurb: "Break the frozen line like a falling glacier, shattering prepared enemies and boss poise.", techniques: [{ name: "Rime Hew", blurb: "Plant a cold heavy strike that builds Fury and brittle pressure." }, { name: "Glacier Splitter", blurb: "Spend Fury to shatter chilled targets and stagger great foes." }] },
+    storm: { name: "Thunderbrand", epithet: "Weight Behind Lightning", passive: "Fury removes the greatsword's recovery, turning committed swings into a gathering storm.", ultimate: "Skywheel", ultimateBlurb: "Release a chain of accelerating sweeps whose final impact throws lightning through the field.", techniques: [{ name: "Storm Hew", blurb: "A heavy strike that stores momentum as Fury and conductive pressure." }, { name: "Thunderwheel", blurb: "Spend Fury to swing without recovery and arc lightning beyond the blade." }] },
+    earth: { name: "Worldbreaker", epithet: "the Walking Fault", passive: "Fury finishers create faults that break armor and hold your footing.", ultimate: "Continental Divide", ultimateBlurb: "Drive the greatsword through the road, splitting a fault that crushes armor and boss poise.", techniques: [{ name: "Bedrock Blow", blurb: "A planted hit that cannot be interrupted and builds Fury from impact." }, { name: "Fault Cleaver", blurb: "Spend Fury to open a slowing fault and expose armored enemies." }] },
+    venom: { name: "Blight Cleaver", epithet: "the Rusted Harvest", passive: "Every broad hit spreads corrosion; Fury harvests all accumulated poison at once.", ultimate: "Green Reaping", ultimateBlurb: "Reap the poisoned formation, multiplying corrosion before a final execution sweep.", techniques: [{ name: "Venom Hew", blurb: "Coat a wide blade arc in poison and build Fury for every enemy marked." }, { name: "Blight Harvest", blurb: "Spend Fury to deepen and spread vulnerability through clustered enemies." }] },
+    radiant: { name: "Sunforged", epithet: "the Great Bell of Noon", passive: "Heavy impacts shed protective sparks toward the weakest ally.", ultimate: "Noonday Sundering", ultimateBlurb: "Ring the battlefield with a radiant blow that judges enemies and wards the band.", techniques: [{ name: "Dawn Hammer", blurb: "Build Fury with a bright impact that sends a ward to the weakest ally." }, { name: "Sunwheel", blurb: "Spend Fury on a judgment sweep whose damage returns as party wards." }] },
+    blood: { name: "Red Berserker", epithet: "No Measure Left", passive: "Missing health increases Fury gain; finishers restore life from wounded prey.", ultimate: "Last Red Hour", ultimateBlurb: "Spend health and all Fury on a relentless chain that refuses death while it connects.", techniques: [{ name: "Blood Price", blurb: "Pay health for a brutal blow and gain Fury according to the wound." }, { name: "Red Feast", blurb: "Spend Fury to execute wounded enemies and drink back part of the damage." }] },
+    shadow: { name: "Dreadblade", epithet: "the Swing You Never Saw", passive: "Heavy attacks leave delayed shadow echoes; Fury calls every echo home.", ultimate: "Afterimage Massacre", ultimateBlurb: "Cut once through the field, then let a host of delayed black blades repeat the blow.", techniques: [{ name: "Gloam Hew", blurb: "Build Fury and leave a delayed echo at the end of the swing." }, { name: "Night Reprise", blurb: "Spend Fury to repeat recent heavy strikes from their shadow positions." }] },
+  },
+  necromancer: {
+    flame: { name: "Ashcaller", epithet: "Shepherd of Cinders", passive: "Remains become burning revenants that rush a target and explode.", ultimate: "March of Ash", ultimateBlurb: "Spend every Remain on a procession of revenants that detonate through the enemy line.", techniques: [{ name: "Cinder Servant", blurb: "Raise a brief burning spirit; without Remains, cast a smaller ash curse." }, { name: "Funeral Pyre", blurb: "Spend Remains to ignite corpses and burning enemies in chained explosions." }] },
+    frost: { name: "Pale Shepherd", epithet: "Keeper of the Quiet Host", passive: "Remains become guarding shades whose attacks accumulate brittle frost.", ultimate: "White Procession", ultimateBlurb: "Call a pale host that freezes pursuit and stands between the band and death.", techniques: [{ name: "Rime Servant", blurb: "Raise a frost shade that slows its quarry and intercepts pressure." }, { name: "Ossuary Winter", blurb: "Spend Remains to freeze prepared enemies and raise a brief party guard." }] },
+    storm: { name: "Spirit Binder", epithet: "Conductor of the Dead", passive: "Spectral attacks chain between conductive enemies and quicken their master.", ultimate: "Thousand-Volt Séance", ultimateBlurb: "Open the storm veil and let every stored spirit arc through the enemy formation.", techniques: [{ name: "Spark Wraith", blurb: "Raise a fast wraith whose attacks chain lightning and build Remains pressure." }, { name: "Séance Circuit", blurb: "Spend Remains to chain spirit lightning and accelerate allied techniques." }] },
+    earth: { name: "Ossuary Sage", epithet: "Architect of Bone", passive: "Remains become durable bone-and-stone sentinels that shelter nearby allies.", ultimate: "Cathedral of Ribs", ultimateBlurb: "Spend the grave's full store to raise a sheltering ossuary around the band.", techniques: [{ name: "Grave Sentinel", blurb: "Raise a sturdy servant that guards the nearest wounded ally." }, { name: "Bone Rampart", blurb: "Spend Remains on a warding fault that blocks pressure and breaks boss poise." }] },
+    venom: { name: "Plaguecaller", epithet: "Gardener of the Last Breath", passive: "Deaths seed plague clouds; servants spread vulnerability instead of raw damage.", ultimate: "Garden of Corpses", ultimateBlurb: "Spend every Remain to bloom a contagious grave garden across the battlefield.", techniques: [{ name: "Carrion Familiar", blurb: "Raise a plague spirit that marks targets for the party." }, { name: "Mortal Bloom", blurb: "Spend Remains to spread poison from corpses and vulnerable enemies." }] },
+    radiant: { name: "Ancestor", epithet: "Speaker for the Honored", passive: "Remains call ancestral guardians whose attacks heal the weakest ally.", ultimate: "The Honored Return", ultimateBlurb: "Invite the full ancestral host to fight, heal, and ward beside the living band.", techniques: [{ name: "Ancestral Guide", blurb: "Call a bright ancestor that attacks threats and tends the wounded." }, { name: "Memory Rite", blurb: "Spend Remains to turn damage dealt into healing and excess healing into wards." }] },
+    blood: { name: "Hemomancer", epithet: "Maker of Red Thralls", passive: "Health can replace missing Remains, creating stronger but costly thralls.", ultimate: "Crimson Host", ultimateBlurb: "Pay blood and Remains to call a ravenous host whose damage returns as life.", techniques: [{ name: "Red Thrall", blurb: "Spend a Remain—or your own health—to raise a life-draining spirit." }, { name: "Sanguine Command", blurb: "Sacrifice health to empower every active spirit and harvest wounded prey." }] },
+    shadow: { name: "Necromancer", epithet: "Keeper of Empty Names", passive: "Remains become numerous skeleton shades while curses erase hostile attention.", ultimate: "Night Without End", ultimateBlurb: "Spend every Remain to loose the nameless dead and hide the band beneath their passing.", techniques: [{ name: "Raise Shade", blurb: "Raise a classic skeletal shade that hunts the nearest priority enemy." }, { name: "Open Graves", blurb: "Spend Remains to call several shades and pull exposed enemies together." }] },
+  },
+};
+
 /** Authored identities keep each combination feeling like a class, not a color swap. */
 const PATH_LORE: Record<DisciplineId, Record<ElementId, PathLore>> = {
   knight: {
@@ -2350,6 +2391,7 @@ const PATH_LORE: Record<DisciplineId, Record<ElementId, PathLore>> = {
       ],
     },
   },
+  warrior: ADDED_PATH_LORE.warrior,
   rogue: {
     flame: {
       name: "Ashknife", epithet: "Smoke Between Sparks", passive: "Every Path dash leaves a burning trail at the place you abandoned.", ultimate: "Kindling Coup",
@@ -2606,14 +2648,15 @@ const PATH_LORE: Record<DisciplineId, Record<ElementId, PathLore>> = {
       ],
     },
     shadow: {
-      name: "Necromancer", epithet: "Keeper of Empty Names", passive: "Path fields pull exposed enemies inward and hide your position beneath protective gloom.", ultimate: "Night Without End",
-      ultimateBlurb: "Open a night without end that draws the enemy formation into one exposed center while your own name vanishes from pursuit.",
+      name: "Voidmancer", epithet: "Keeper of the Last Horizon", passive: "Path fields pull exposed enemies inward and hide your position beneath protective gloom.", ultimate: "Event Horizon",
+      ultimateBlurb: "Collapse the last horizon, drawing the enemy formation into one exposed center while your own name vanishes from pursuit.",
       techniques: [
         { name: "Gloam Bolt", blurb: "Burst shadow at a target point, exposing foes while their formation is drawn inward." },
         { name: "Void Sigil", blurb: "Inscribe a wide void that pulls enemies together and erases hostile attention from you." },
       ],
     },
   },
+  necromancer: ADDED_PATH_LORE.necromancer,
 };
 
 const DISCIPLINE_LOADOUT: Record<DisciplineId, {
@@ -2623,18 +2666,32 @@ const DISCIPLINE_LOADOUT: Record<DisciplineId, {
   focusIcon: string;
 }> = {
   knight: { coreTarget: "instant", focusTarget: "ray", coreIcon: "shieldslam", focusIcon: "groundbreaker" },
+  warrior: { coreTarget: "instant", focusTarget: "ray", coreIcon: "cleave", focusIcon: "groundbreaker" },
   rogue: { coreTarget: "ray", focusTarget: "instant", coreIcon: "rush", focusIcon: "smokebomb" },
   archer: { coreTarget: "ray", focusTarget: "point", coreIcon: "pierce", focusIcon: "volley" },
   priest: { coreTarget: "ally", focusTarget: "point", coreIcon: "mend", focusIcon: "sanctuary" },
   mage: { coreTarget: "ray", focusTarget: "point", coreIcon: "missiles", focusIcon: "gravity" },
+  necromancer: { coreTarget: "point", focusTarget: "point", coreIcon: "gravecall", focusIcon: "shadows" },
 };
 
 const PROMOTION_ROLES: Record<DisciplineId, readonly [string, string]> = {
   knight: ["Bastion", "Avenger"],
+  warrior: ["Weaponmaster", "Berserker"],
   rogue: ["Phantom", "Saboteur"],
   archer: ["Deadeye", "Wayfinder"],
   priest: ["Hierophant", "Oracle"],
   mage: ["Archon", "Runebinder"],
+  necromancer: ["Grave Shepherd", "Lich"],
+};
+
+const PROMOTION_PROMISES: Record<DisciplineId, readonly [string, string]> = {
+  knight: ["Intercepts danger aimed at nearby allies; core techniques spread guard and Path ultimates fortify the whole formation.", "Turns damage endured into retaliation; focus techniques charge farther and Path ultimates punish every taunted foe."],
+  warrior: ["Measured heavy blows cannot be interrupted and convert Fury into boss stagger and controlled cleaves.", "Missing health accelerates Fury; finishers steal life and Path ultimates become relentless execution chains."],
+  rogue: ["The first hostile blow misses; movement techniques erase pursuit and leave a protective elemental decoy.", "Elemental conditions become traps and kill zones; striking exposed priority foes refreshes techniques."],
+  archer: ["Holding position builds Focus, increasing range, boss stagger, and damage against a marked quarry.", "Movement builds Momentum; techniques reposition, ricochet, and leave elemental control behind."],
+  priest: ["Overhealing becomes wards and the first fatal blow against a protected ally is prevented.", "Damage dealt by Path techniques heals the weakest ally; priority enemies receive harsher judgment."],
+  mage: ["Elemental conditions combine into stronger reactions and Path fields grow into reliable control zones.", "Spells may overchannel for larger radius and force at the cost of health and longer recovery."],
+  necromancer: ["Remains call durable guardians that intercept pressure and return elemental answers.", "Remains feed curses and spectral volleys; kills refund cooldown and empower the next death rite."],
 };
 
 const ELEMENT_ABILITY_ICONS: Record<ElementId, string> = {
@@ -2650,17 +2707,19 @@ const ELEMENT_ABILITY_ICONS: Record<ElementId, string> = {
 
 const DISCIPLINE_TECHNIQUE_COPY: Record<DisciplineId, { name: string; blurb: string }> = {
   knight: { name: "Hold the Line", blurb: "Challenge nearby foes, batter their formation, and brace against the answer." },
+  warrior: { name: "Committed Swing", blurb: "Carve a heavy arc, build Fury for every enemy struck, and punish clustered armor." },
   rogue: { name: "Opening Cut", blurb: "Cross the gap to a vulnerable foe, strike, and disappear from its attention." },
   archer: { name: "Pinning Shot", blurb: "Drive a precise shot downrange and punish the first enemy caught in its path." },
   priest: { name: "Guiding Light", blurb: "Mend one ally while judging the nearest threat beneath the same light." },
   mage: { name: "Arcane Pulse", blurb: "Collapse raw force at a chosen point and slow everything caught inside." },
+  necromancer: { name: "Raise Servant", blurb: "Call a short-lived spectral servant; enemy deaths leave Remains that strengthen the rite." },
 };
 
 const DISCIPLINE_TECHNIQUES = new Map<DisciplineId, AbilityDef>();
 for (const discipline of DISCIPLINES) {
   const loadout = DISCIPLINE_LOADOUT[discipline.id];
   const copy = DISCIPLINE_TECHNIQUE_COPY[discipline.id];
-  const gate: AbilityDef["gate"] = { attr: discipline.id === "knight" ? "vit" : discipline.id === "rogue" || discipline.id === "archer" ? "dex" : discipline.id === "priest" ? "spi" : "int", value: 0 };
+  const gate: AbilityDef["gate"] = { attr: discipline.id === "knight" ? "vit" : discipline.id === "warrior" ? "str" : discipline.id === "rogue" || discipline.id === "archer" ? "dex" : discipline.id === "priest" ? "spi" : "int", value: 0 };
   const ability: AbilityDef = {
     id: `discipline-${discipline.id}`,
     name: copy.name,
@@ -2675,6 +2734,67 @@ for (const discipline of DISCIPLINES) {
   };
   DISCIPLINE_TECHNIQUES.set(discipline.id, ability);
   ABILITIES.push(ability);
+}
+
+export type SpecializationBranch = "ascendant" | "paragon";
+export const SPECIALIZATION_MASTERY_LEVELS = 10;
+
+const SPECIALIZATION_TECHNIQUE_COPY: Record<DisciplineId, Record<SpecializationBranch, { name: string; targeting: AbilityDef["targeting"]; icon: string; blurb: string }>> = {
+  knight: {
+    ascendant: { name: "Intercession", targeting: "ally", icon: "shieldslam", blurb: "Legacy: rush protection to an ally, intercept pressure, and express your current element as a warding reaction." },
+    paragon: { name: "Answering Charge", targeting: "ray", icon: "rush", blurb: "Legacy: charge through a threat and turn your current element into retaliation." },
+  },
+  warrior: {
+    ascendant: { name: "Masterstroke", targeting: "ray", icon: "cleave", blurb: "Legacy: a measured two-handed arc that heavily staggers and carries your current element." },
+    paragon: { name: "Unbound Fury", targeting: "instant", icon: "warcry", blurb: "Legacy: trade safety for speed, then release your current element around you." },
+  },
+  rogue: {
+    ascendant: { name: "Ghostwalk", targeting: "ray", icon: "smokebomb", blurb: "Legacy: slip to a chosen point, erase hostile attention, and leave an elemental decoy." },
+    paragon: { name: "Prepared Ruin", targeting: "point", icon: "caltrops", blurb: "Legacy: plant an elemental trap that exposes the first enemies entering it." },
+  },
+  archer: {
+    ascendant: { name: "Patient Mark", targeting: "ray", icon: "pierce", blurb: "Legacy: mark a priority target; the farther the shot travels, the harder the band can punish it." },
+    paragon: { name: "Rolling Volley", targeting: "point", icon: "volley", blurb: "Legacy: reposition and loose an elemental volley into the space you just opened." },
+  },
+  priest: {
+    ascendant: { name: "Saving Grace", targeting: "ally", icon: "mend", blurb: "Legacy: prevent the next crisis on one ally and shape the ward through your current element." },
+    paragon: { name: "Condemnation", targeting: "point", icon: "radiance", blurb: "Legacy: judge enemies at a target point; damage dealt returns as healing to the weakest ally." },
+  },
+  mage: {
+    ascendant: { name: "Elemental Rewrite", targeting: "point", icon: "gravity", blurb: "Legacy: intensify conditions at a point and trigger the reaction belonging to your current element." },
+    paragon: { name: "Overchannel", targeting: "point", icon: "missiles", blurb: "Legacy: accept a longer recovery for a greatly enlarged elemental cast." },
+  },
+  necromancer: {
+    ascendant: { name: "Grave Escort", targeting: "ally", icon: "gravecall", blurb: "Legacy: call an ancestral shade to guard an ally and answer attackers with your current element." },
+    paragon: { name: "Death's Dividend", targeting: "point", icon: "shadows", blurb: "Legacy: consume deathly momentum in an elemental curse; kills partially refresh it." },
+  },
+};
+
+export function specializationKey(discipline: DisciplineId, branch: SpecializationBranch): string {
+  return `${discipline}-${branch}`;
+}
+
+export const SPECIALIZATION_TECHNIQUES: readonly AbilityDef[] = DISCIPLINES.flatMap((discipline) =>
+  (["ascendant", "paragon"] as const).map((branch) => {
+    const copy = SPECIALIZATION_TECHNIQUE_COPY[discipline.id][branch];
+    return {
+      id: `legacy-${discipline.id}-${branch}`,
+      name: copy.name,
+      gate: { attr: "str", value: 0 },
+      targeting: copy.targeting,
+      cooldown: branch === "ascendant" ? 18 : 20,
+      color: discipline.color,
+      icon: copy.icon,
+      blurb: copy.blurb,
+      legacySpec: specializationKey(discipline.id, branch),
+    } satisfies AbilityDef;
+  }),
+);
+ABILITIES.push(...SPECIALIZATION_TECHNIQUES);
+
+export function specializationTechnique(id: string | null | undefined): AbilityDef | null {
+  if (!id) return null;
+  return SPECIALIZATION_TECHNIQUES.find((ability) => ability.legacySpec === id || ability.id === id) ?? null;
 }
 
 const ELEMENT_TECHNIQUE_COPY: Record<ElementId, readonly [
@@ -2754,18 +2874,49 @@ export function elementTechniqueOptions(element: ElementId): readonly [AbilityDe
   return ELEMENT_TECHNIQUES.get(element)!;
 }
 
+/** Give the shared three mechanical variants the vocabulary and tactical promise
+ * of the current Path. IDs remain stable for saves, while the battle bar reads as
+ * Cindermaul, Ashcaller, or Dawn Paladin rather than three color-swapped spells. */
+export function roleElementTechniqueOptions(
+  discipline: DisciplineId,
+  element: ElementId,
+): readonly [AbilityDef, AbilityDef, AbilityDef] {
+  const base = elementTechniqueOptions(element);
+  const lore = PATH_LORE[discipline][element];
+  const elementName = elementById(element)?.name ?? element;
+  const disciplineName = DISCIPLINES.find((entry) => entry.id === discipline)?.name ?? discipline;
+  const utilityPromises: Record<DisciplineId, string> = {
+    knight: `Plant a ${elementName} guard that draws pressure away from the band and shares protection with nearby allies.`,
+    warrior: `Temper the greatsword with ${elementName}, converting momentum into Fury, guard, and a faster next commitment.`,
+    rogue: `Use ${elementName} to break pursuit, change angles, and prepare the next execution without becoming a stationary caster.`,
+    archer: `Claim a ${elementName} firing lane, sharpening focus while repositioning beyond the enemy front.`,
+    priest: `Invoke ${elementName} as battlefield support: reshape danger and empower the ally best suited to answer it.`,
+    mage: `Stabilize a ${elementName} field that changes spacing, tempo, and the shape of the next spell.`,
+    necromancer: `Bind ${elementName} into stored Remains, strengthening the next servant or death rite instead of casting a simple heal.`,
+  };
+  return [
+    { ...base[0], name: lore.techniques[0].name, blurb: lore.techniques[0].blurb },
+    { ...base[1], name: lore.techniques[1].name, blurb: lore.techniques[1].blurb },
+    { ...base[2], name: `${elementName} ${disciplineName} Rite`, blurb: utilityPromises[discipline] },
+  ];
+}
+
 export function pathAbilities(discipline: DisciplineId, element: ElementId): readonly [AbilityDef, AbilityDef] {
-  return [disciplineTechnique(discipline), elementTechniqueOptions(element)[0]];
+  return [disciplineTechnique(discipline), roleElementTechniqueOptions(discipline, element)[0]];
 }
 
 export function resolvedPathAbilities(
   discipline: DisciplineId,
   element: ElementId,
   equipped: readonly string[] | undefined,
+  masteredSpecializations: readonly string[] = [],
 ): readonly [AbilityDef, AbilityDef] {
   const core = disciplineTechnique(discipline);
-  const choices = elementTechniqueOptions(element);
-  const chosen = choices.find((ability) => equipped?.includes(ability.id)) ?? choices[0];
+  const choices = roleElementTechniqueOptions(discipline, element);
+  const portable = SPECIALIZATION_TECHNIQUES.find((ability) =>
+    equipped?.includes(ability.id) && !!ability.legacySpec && masteredSpecializations.includes(ability.legacySpec),
+  );
+  const chosen = portable ?? choices.find((ability) => equipped?.includes(ability.id)) ?? choices[0];
   return [core, chosen];
 }
 
@@ -2774,6 +2925,7 @@ export const CALLINGS: CallingDef[] = DISCIPLINES.flatMap((discipline) =>
     const id = pathId(discipline.id, element.id);
     const lore = PATH_LORE[discipline.id][element.id];
     const [firstPromotion, secondPromotion] = PROMOTION_ROLES[discipline.id];
+    const [firstPromise, secondPromise] = PROMOTION_PROMISES[discipline.id];
     const [coreSkill, focusSkill] = pathAbilities(discipline.id, element.id);
     return {
       id,
@@ -2792,7 +2944,7 @@ export const CALLINGS: CallingDef[] = DISCIPLINES.flatMap((discipline) =>
         id: `${id}-ultimate`,
         name: lore.ultimate,
         gate: { attr: "str", value: 0 },
-        targeting: discipline.id === "archer" || discipline.id === "mage" ? "point" : discipline.id === "priest" ? "ally" : "instant",
+        targeting: discipline.id === "archer" || discipline.id === "mage" || discipline.id === "necromancer" ? "point" : discipline.id === "priest" ? "ally" : "instant",
         cooldown: 1,
         color: element.color,
         icon: ELEMENT_ABILITY_ICONS[element.id],
@@ -2802,8 +2954,8 @@ export const CALLINGS: CallingDef[] = DISCIPLINES.flatMap((discipline) =>
         pathSkill: "ultimate",
       },
       advanced: [
-        { id: `${id}-ascendant`, name: `${element.adjective} ${firstPromotion}`, epithet: "the Exalted Path", passive: `Deepens the defensive and teamcraft side of ${lore.name}.`, ultNote: `${lore.ultimate} protects allies as its power unfolds.` },
-        { id: `${id}-paragon`, name: `${element.adjective} ${secondPromotion}`, epithet: "the Unbound Path", passive: `Deepens the aggressive and mobile side of ${lore.name}.`, ultNote: `${lore.ultimate} strikes harder and reaches farther.` },
+        { id: `${id}-ascendant`, name: `${element.adjective} ${firstPromotion}`, epithet: "the Exalted Path", passive: firstPromise, ultNote: `${lore.ultimate} gains the ${firstPromotion}'s defining rule. Master this specialization over ${SPECIALIZATION_MASTERY_LEVELS} levels to carry ${SPECIALIZATION_TECHNIQUE_COPY[discipline.id].ascendant.name} to another Path.` },
+        { id: `${id}-paragon`, name: `${element.adjective} ${secondPromotion}`, epithet: "the Unbound Path", passive: secondPromise, ultNote: `${lore.ultimate} gains the ${secondPromotion}'s defining rule. Master this specialization over ${SPECIALIZATION_MASTERY_LEVELS} levels to carry ${SPECIALIZATION_TECHNIQUE_COPY[discipline.id].paragon.name} to another Path.` },
       ],
     } satisfies CallingDef;
   }),

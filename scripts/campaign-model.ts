@@ -17,7 +17,7 @@ import type { AttrKey, DisciplineId, ElementId, HeroSave, SaveData, StageDef } f
 
 /**
  * Authored reference identities for deterministic reports.  These deliberately
- * cover all five disciplines and all eight elements instead of giving every
+ * cover all seven disciplines and all eight elements instead of giving every
  * hero whichever legacy spell happens to pass an attribute gate first.
  */
 export const REFERENCE_PATHS: readonly { discipline: DisciplineId; element: ElementId }[] = [

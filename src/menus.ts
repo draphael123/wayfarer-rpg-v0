@@ -21,11 +21,14 @@ import {
   advCallingById,
   DISCIPLINES,
   ELEMENTS,
-  elementTechniqueOptions,
+  roleElementTechniqueOptions,
   HERO_STARTER_ABILITIES,
   pathId,
   pathAbilities,
   resolvedPathAbilities,
+  SPECIALIZATION_MASTERY_LEVELS,
+  SPECIALIZATION_TECHNIQUES,
+  specializationKey,
   elementById,
   CALLING_SWITCH_COST,
   CALLING_MASTERY_LEVELS,
@@ -95,10 +98,12 @@ export interface MenuCallbacks {
 /** Each discipline receives three focused trees, mirroring Diablo's class identity. */
 const DISCIPLINE_TALENT_TREES: Record<DisciplineId, readonly TalentTree[]> = {
   knight: ["might", "bulwark", "faith"],
+  warrior: ["might", "bulwark", "swiftness"],
   rogue: ["precision", "swiftness", "fortune"],
   archer: ["precision", "sorcery", "fortune"],
   priest: ["faith", "bulwark", "sorcery"],
   mage: ["sorcery", "swiftness", "faith"],
+  necromancer: ["sorcery", "faith", "fortune"],
 };
 
 const TALENT_TREE_PROMISES: Record<TalentTree, string> = {
@@ -121,9 +126,11 @@ const NATURAL_DISCIPLINE: Record<AttrKey, DisciplineId> = {
 
 const WEAPON_LABEL: Record<string, string> = {
   sword: "Blade",
+  greatsword: "Greatsword",
   bow: "Bow",
   staff: "Staff",
   stave: "Stave",
+  tome: "Tome",
 };
 
 function abilityById(id: string) {
@@ -131,7 +138,7 @@ function abilityById(id: string) {
 }
 
 function heroPathAbilities(hero: SaveData["heroes"][number]) {
-  return hero.discipline && hero.element ? [...resolvedPathAbilities(hero.discipline, hero.element, hero.equipped)] : [];
+  return hero.discipline && hero.element ? [...resolvedPathAbilities(hero.discipline, hero.element, hero.equipped, hero.masteredSpecializations)] : [];
 }
 
 function enemyWaymark(kind: EnemyKind, compact = false): string {
@@ -1036,8 +1043,8 @@ export class Menus {
           <div class="title-waymarks" aria-label="Eight elemental Attunements: ${ELEMENTS.map((element) => element.name).join(", ")}">
             ${ELEMENTS.map((element) => `<span class="title-waymark" style="--element:${element.color}" title="${element.name}">${ico(element.icon)}<em>${element.name}</em></span>`).join("")}
           </div>
-          <div class="title-path-equation" aria-label="Five Disciplines multiplied by eight Attunements create forty Paths">
-            <b>5 Disciplines</b><i>×</i><b>8 Attunements</b><i>→</i><strong>40 Paths</strong>
+          <div class="title-path-equation" aria-label="Seven Disciplines multiplied by eight Attunements create fifty-six Paths">
+            <b>7 Disciplines</b><i>×</i><b>8 Attunements</b><i>→</i><strong>56 Paths</strong>
           </div>
         </div>
         <div class="campfire-scene" aria-hidden="true">
@@ -3036,7 +3043,7 @@ export class Menus {
           <div class="shop-note"><strong>🍺 The Tavern</strong> — recruit new heroes to the band. Anyone hired can be rotated in or out of your fighting party of ${PARTY_CAP} on the Party screen.</div>
           <div class="shop-note"><strong>${ico("shield")} The Armory</strong> — weapons upgrade in tiers, but armor is a WARDROBE across THREE slots: body, helm, and boots. Every piece changes passive stats or combat traits; wear two or three pieces of one family and the SET answers with more. The Forge reworks any owned piece up to +3, and the great foes each guard a RELIC piece for whoever fells them first.</div>
           <div class="shop-note"><strong>${ico("spark")} The Technique Archive</strong> — a Path grants exactly two techniques and one ultimate. Retired arts no longer appear in the archive or battle bar.</div>
-          <div class="shop-note"><strong>${ico("banner")} Paths</strong> — at level ${CALLING_UNLOCK_LEVEL}, pair one of five combat Disciplines with a Waymark Attunement. Practice an element for ${CALLING_MASTERY_LEVELS} levels to preserve its Elemental Legacy. At level ${ADV_CALLING_LEVEL}, a seasoned Path can take one of two Promotions.</div>
+          <div class="shop-note"><strong>${ico("banner")} Paths</strong> — at level ${CALLING_UNLOCK_LEVEL}, pair one of seven combat Disciplines with a Waymark Attunement. Practice an element for ${CALLING_MASTERY_LEVELS} levels to preserve its Elemental Legacy. At level ${ADV_CALLING_LEVEL}, choose one of two Specializations; train it for ${SPECIALIZATION_MASTERY_LEVELS} more levels to carry its Legacy technique into another Path.</div>
           <div class="shop-note"><strong>${ico("skull")} Bosses</strong> — the great foes hunt whoever HURTS them most. Pour damage in and a boss turns on you; your warrior holds its anger just by standing in its face, and taunts trump everything. Marked ground means MOVE.</div>
           <div class="shop-note"><strong>⌨ Keyboard</strong> — on a computer: 1–4 picks a hero, Q/W uses their two techniques, and R unleashes the ultimate. Aimed techniques follow the mouse; click casts, Esc cancels. Rebind in Settings.</div>
           <div class="shop-note"><strong>${ico("star")} Talents</strong> — every 2 band levels, each hero earns a talent point for the Strength, Dexterity, and Magic trees. Find them on the Party screen.</div>
@@ -4320,6 +4327,13 @@ export class Menus {
           ${isCurrent ? '<span class="path-current-mark">Current Path</span>' : ""}
         </div>
         <div class="path-doctrine"><span>Passive</span><strong>${path.passive}</strong><em>${discipline.name} Discipline · ${element.name} Attunement</em></div>
+        <div class="path-braid" aria-label="Path braid">
+          <span style="--strand:${discipline.color}"><small>Discipline</small><b>${discipline.name}</b></span>
+          <i aria-hidden="true"></i>
+          <span style="--strand:${element.color}"><small>Attunement</small><b>${element.name}</b></span>
+          <i aria-hidden="true"></i>
+          <span style="--strand:${advancement ? path.color : "#756f61"}"><small>Specialization</small><b>${advancement ? advCallingById(advancement)?.adv.name ?? "Chosen" : `Level ${ADV_CALLING_LEVEL}`}</b></span>
+        </div>
         <div class="path-arsenal">
           ${techniques.map((ability, at) => `<article class="path-technique"><span class="path-glyph" data-path-glyph="${at}"></span><div><small>Technique ${at + 1}</small><strong>${ability.name}</strong><em>${ability.blurb}</em></div></article>`).join("")}
           <article class="path-technique ultimate"><span class="path-glyph" data-path-glyph="2"></span><div><small>Ultimate</small><strong>${path.signature.name}</strong><em>${path.signature.blurb}</em><b>${path.chargeHint}</b></div></article>
@@ -4332,7 +4346,12 @@ export class Menus {
           <div class="path-section-label"><span>Level ${ADV_CALLING_LEVEL}</span><strong>Promotion</strong><em>${promotionReady ? "Choose the final shape of this Path." : isCurrent ? `Requires level ${ADV_CALLING_LEVEL} and Path Mastery.` : "Set this as the current Path before promoting."}</em></div>
           <div class="promotion-ledger">${(path.advanced ?? []).map((promotion) => {
             const chosen = advancement === promotion.id;
-            return `<article class="promotion-card ${chosen ? "chosen" : ""} ${promotionReady ? "" : "locked"}"><span>${chosen ? "Chosen" : "Branch"}</span><strong>${promotion.name}</strong><em>${promotion.epithet}</em><p>${promotion.passive}</p><small>${promotion.ultNote}</small>${chosen || !promotionReady ? "" : `<button class="big-btn adv-btn" data-advance="${promotion.id}">${hero.advCalling ? `Change Promotion · ${ADV_SWITCH_COST}g` : "Take Promotion"}</button>`}</article>`;
+            const branch = promotion.id.endsWith("-ascendant") ? "ascendant" : "paragon";
+            const spec = specializationKey(path.discipline, branch);
+            const specProgress = Math.min(SPECIALIZATION_MASTERY_LEVELS, hero.specializationLevels?.[spec] ?? 0);
+            const specMastered = hero.masteredSpecializations?.includes(spec);
+            const legacy = SPECIALIZATION_TECHNIQUES.find((ability) => ability.legacySpec === spec);
+            return `<article class="promotion-card ${chosen ? "chosen" : ""} ${promotionReady ? "" : "locked"}"><span>${chosen ? "Chosen specialization" : "Specialization"}</span><strong>${promotion.name}</strong><em>${promotion.epithet}</em><p>${promotion.passive}</p><small>${promotion.ultNote}</small><div class="spec-legacy ${specMastered ? "mastered" : ""}"><b>${legacy?.name ?? "Legacy technique"}</b><em>${specMastered ? "MASTERED · may occupy W on another Path" : chosen ? `${specProgress}/${SPECIALIZATION_MASTERY_LEVELS} specialization levels` : "Choose this specialization to begin mastery"}</em><i><u style="width:${(specProgress / SPECIALIZATION_MASTERY_LEVELS) * 100}%"></u></i></div>${chosen || !promotionReady ? "" : `<button class="big-btn adv-btn" data-advance="${promotion.id}">${hero.advCalling ? `Change Promotion · ${ADV_SWITCH_COST}g` : "Take Promotion"}</button>`}</article>`;
           }).join("")}</div>
         </div>
         <button class="big-btn primary path-confirm ${isCurrent ? "is-current" : ""} ${changing && save.gold < CALLING_SWITCH_COST ? "cant" : ""}" data-set-path="${path.id}" ${isCurrent ? "disabled" : ""}>
@@ -4850,8 +4869,9 @@ export class Menus {
     }).slice(0, MAX_EQUIPPED);
     const granted = heroPathAbilities(hero);
     const remembered = hero.equipped.filter((id) => granted.some((ability) => ability.id === id));
-    const techniques = [...remembered.map(abilityById), ...granted.filter((ability) => !remembered.includes(ability.id))].slice(0, MAX_EQUIPPED);
-    const elementChoices = hero.element ? [...elementTechniqueOptions(hero.element)] : [];
+    const techniques = [...remembered.flatMap((id) => granted.filter((ability) => ability.id === id)), ...granted.filter((ability) => !remembered.includes(ability.id))].slice(0, MAX_EQUIPPED);
+    const elementChoices = hero.discipline && hero.element ? [...roleElementTechniqueOptions(hero.discipline, hero.element)] : [];
+    const legacyChoices = SPECIALIZATION_TECHNIQUES.filter((ability) => !!ability.legacySpec && hero.masteredSpecializations?.includes(ability.legacySpec));
     const normalized = techniques.map((ability) => ability.id);
     if (path && normalized.join("|") !== hero.equipped.join("|")) {
       hero.equipped = normalized;
@@ -4881,7 +4901,8 @@ export class Menus {
             <div class="element-technique-options">
               ${elementChoices.map((ability) => `<button class="element-technique-option ${techniques[1]?.id === ability.id ? "selected" : ""}" data-element-technique="${ability.id}" style="--chip:${ability.color}"><small>${ability.pathVariant}</small><strong>${ability.name}</strong><em>${ability.blurb}</em><b>${techniques[1]?.id === ability.id ? "Equipped" : "Choose"}</b></button>`).join("")}
             </div>
-          </section>` : roadSkills.length ? `
+          </section>
+          ${legacyChoices.length ? `<section class="element-technique-picker legacy-technique-picker" style="--path-color:${path.color}"><div class="element-technique-head"><span>Mastered specialization · W</span><strong>Carry a Legacy technique</strong><p>A mastered specialization technique keeps its original combat geometry but answers with ${elementById(hero.element)?.name ?? "your current element"}. Equipping one replaces the elemental W technique, never the Discipline skill or ultimate.</p></div><div class="element-technique-options">${legacyChoices.map((ability) => `<button class="element-technique-option legacy-option ${techniques[1]?.id === ability.id ? "selected" : ""}" data-legacy-technique="${ability.id}" style="--chip:${ability.color}"><small>portable Legacy</small><strong>${ability.name}</strong><em>${ability.blurb}</em><b>${techniques[1]?.id === ability.id ? "Equipped" : "Carry"}</b></button>`).join("")}</div></section>` : ""}` : roadSkills.length ? `
           <div class="spell-workbench path-bar-workbench road-skill-workbench">
             <section class="battlebar-panel path-battlebar-panel">
               <div class="picker-head"><span>${ico("spark")} Road skills</span><small>Q · W by default</small></div>
@@ -4905,7 +4926,7 @@ export class Menus {
       const slots = page.querySelector(".battlebar-slots")!;
       const entries = [
         { ability: techniques[0], label: "Discipline", key: "Q", ultimate: false },
-        { ability: techniques[1], label: "Element", key: "W", ultimate: false },
+        { ability: techniques[1], label: techniques[1].legacySpec ? "Mastered Legacy" : "Element", key: "W", ultimate: false },
         { ability: path.signature, label: "Path ultimate", key: "R", ultimate: true },
       ];
       for (const entry of entries) {
@@ -4943,7 +4964,19 @@ export class Menus {
         if (!save.unlockedSpells.includes(selected)) save.unlockedSpells.push(selected);
         persist(save);
         audio.play("click");
-        this.showToast(`${abilityById(selected).name} equipped to W.`);
+        this.showToast(`${elementChoices.find((ability) => ability.id === selected)?.name ?? "Technique"} equipped to W.`);
+        this.renderSpells(index);
+        return;
+      }
+      const legacy = target.closest("[data-legacy-technique]");
+      if (legacy && path && techniques.length === MAX_EQUIPPED) {
+        const selected = legacy.getAttribute("data-legacy-technique");
+        const ability = legacyChoices.find((choice) => choice.id === selected);
+        if (!ability) return;
+        hero.equipped = [techniques[0].id, ability.id];
+        persist(save);
+        audio.play("levelup");
+        this.showToast(`${ability.name} carried into the ${path.name} Path.`);
         this.renderSpells(index);
         return;
       }
