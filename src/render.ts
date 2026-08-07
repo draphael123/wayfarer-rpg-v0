@@ -1,5 +1,16 @@
 import type { Battle } from "./battle";
 import { ARMOR_FAMILY_TIER, armorById, callingById, callingEligible, deriveStats, heroGearOf, HEROES } from "./data";
+import {
+  drawLateRoadAtmosphere,
+  drawLateRoadSetDressing,
+  drawLateRoadSkyline,
+  lateRoadDarkness,
+  lateRoadGrade,
+  lateRoadIsNight,
+} from "./late-road";
+import { isLateBossKind } from "./late-content";
+import { drawLateEnemy } from "./late-sprites";
+import { drawLateTelegraph } from "./late-telegraphs";
 import type { SaveData, StageDef, Unit } from "./types";
 
 const OUTLINE = "#241b2e";
@@ -665,7 +676,7 @@ export function drawBackground(
   opts: BgOpts = {},
 ): void {
   const p = stage.palette;
-  const night = stage.id === 4 || stage.id === 5 || stage.id === 9 || stage.id === 11;
+  const night = stage.id === 4 || stage.id === 5 || stage.id === 9 || stage.id === 11 || lateRoadIsNight(stage.id);
   const camX = opts.camX ?? 0;
   const camY = opts.camY ?? 0;
   const dusk = opts.dusk ?? 0;
@@ -799,6 +810,7 @@ export function drawBackground(
   drawWinterSkyline(ctx, stage, w, horizon, time, px);
   // Stormbreak is landmark-led: every battlefield has a recognizable horizon.
   drawCoastSkyline(ctx, stage, w, horizon, time, px);
+  drawLateRoadSkyline(ctx, stage, w, horizon, time, px);
 
   // tree / rock silhouettes on the ridge — they stream past at the near-hill rate
   for (let i = 0; i < (cave ? 0 : stage.id >= 12 ? 3 : 9); i++) {
@@ -983,6 +995,7 @@ export function drawBackground(
       ctx.fill();
     }
   }
+  drawLateRoadAtmosphere(ctx, stage, w, h, horizon, time);
   ctx.restore();
 
   // stage set-dressing: each region gets its own furniture (drawn behind units),
@@ -997,6 +1010,7 @@ export function drawBackground(
     ctx.translate(kd0 * span - soff, 0);
     for (let k = kd0; k * span - soff < camX + w + OVERSCAN; k++) {
       drawSetDressing(ctx, stage, w, h, horizon, time, seg + k);
+      drawLateRoadSetDressing(ctx, stage, w, h, horizon, time, seg + k);
       ctx.translate(span, 0);
     }
     ctx.restore();
@@ -1015,7 +1029,7 @@ export function drawBackground(
     5: { color: "rgba(255,130,60,0.8)", glow: true }, // embers
   };
   const mote = MOTES[stage.id] ?? MOTES[0];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < (stage.id >= 18 ? 0 : 12); i++) {
     const speed = 12 + hash01(i) * 20;
     const rise = stage.id === 3 || stage.id === 5 ? time * 9 * (0.6 + hash01(i * 9)) : 0;
     const mx = ((hash01(i * 31) * w + time * speed) % (w + 30)) - 15;
@@ -1544,8 +1558,25 @@ export function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number
 
 // ------------------------------------------------------------------ zones
 
-export function drawTelegraphs(ctx: CanvasRenderingContext2D, battle: Battle): void {
+export function drawTelegraphs(ctx: CanvasRenderingContext2D, battle: Battle, colorIndependent = false): void {
   for (const mark of battle.telegraphs) {
+    if (colorIndependent && mark.owner.team === "enemy") {
+      // A steady double boundary keeps danger readable without relying on hue,
+      // flicker, or animation. The inner telegraph still communicates its kind.
+      ctx.save();
+      ctx.globalAlpha = 0.92;
+      ctx.setLineDash([]);
+      ctx.lineWidth = 7;
+      ctx.strokeStyle = "rgba(15, 11, 22, 0.9)";
+      ctx.beginPath();
+      ctx.ellipse(mark.x, mark.y, mark.radius + 3, mark.radius * 0.55 + 3, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = "rgba(255, 246, 218, 0.96)";
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (drawLateTelegraph(ctx, mark, battle.time)) continue;
     const t = mark.time / mark.duration;
     if (mark.kind === "lightning") {
       const pulse = 0.45 + Math.sin(battle.time * 18) * 0.18;
@@ -1570,6 +1601,48 @@ export function drawTelegraphs(ctx: CanvasRenderingContext2D, battle: Battle): v
       ctx.lineTo(mark.x + 4, mark.y - 7);
       ctx.lineTo(mark.x, mark.y + 10);
       ctx.stroke();
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    if (mark.kind === "cannon") {
+      // Enemy artillery: a blunt amber danger ring and iron shot reticle. Unlike
+      // the friendly meteor, nothing travels across the sky into this marker.
+      const urgency = 0.42 + t * 0.5;
+      const squeeze = 1 - t * 0.42;
+      ctx.globalAlpha = urgency;
+      ctx.fillStyle = "rgba(183, 92, 37, 0.16)";
+      ctx.beginPath();
+      ctx.ellipse(mark.x, mark.y, mark.radius, mark.radius * 0.55, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#e49a4f";
+      ctx.lineWidth = 4 + t * 2;
+      ctx.setLineDash([14, 5, 3, 5]);
+      ctx.lineDashOffset = battle.time * 18;
+      ctx.beginPath();
+      ctx.ellipse(mark.x, mark.y, mark.radius, mark.radius * 0.55, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = "#ffc36a";
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.ellipse(mark.x, mark.y, mark.radius * squeeze, mark.radius * 0.55 * squeeze, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      // Cannonball + fuse makes the source readable even when many marks overlap.
+      ctx.fillStyle = "#2b2930";
+      ctx.strokeStyle = "#f0b25f";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(mark.x, mark.y + 1, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(mark.x + 5, mark.y - 5);
+      ctx.quadraticCurveTo(mark.x + 11, mark.y - 13, mark.x + 15, mark.y - 8);
+      ctx.stroke();
+      ctx.fillStyle = "#ffd76b";
+      ctx.beginPath();
+      ctx.arc(mark.x + 15, mark.y - 8, 2.4 + Math.sin(battle.time * 20) * 0.6, 0, Math.PI * 2);
+      ctx.fill();
       ctx.globalAlpha = 1;
       continue;
     }
@@ -1782,6 +1855,7 @@ export function drawZones(ctx: CanvasRenderingContext2D, battle: Battle): void {
 const hpGhosts = new WeakMap<Unit, number>();
 
 let colorSafeBars = false;
+let enemyHealthBarsVisible = true;
 
 /** Colorblind-friendly mode: hero health reads blue instead of green. */
 export function setColorSafe(on: boolean): void {
@@ -1789,6 +1863,7 @@ export function setColorSafe(on: boolean): void {
 }
 
 function drawHealthBar(ctx: CanvasRenderingContext2D, unit: Unit, top: number): void {
+  if (unit.team === "enemy" && !enemyHealthBarsVisible) return;
   const w = Math.max(28, unit.radius * 2.2);
   const x = unit.x - w / 2;
   const y = top;
@@ -2062,12 +2137,14 @@ export function drawTitleDiorama(ctx: CanvasRenderingContext2D, save: SaveData, 
       enemyKind: null,
       calling: active,
       advCalling: active ? hs.advCalling : null,
+      discipline: active ? hs.discipline : null,
+      element: active ? hs.element : null,
       ultCharge: 0,
       entered: true,
       x: ux,
       y: uy,
       radius: 13,
-      stats: deriveStats(hs.attrs, hs.weaponTier, heroGearOf(hs, save.forge), hs.talents, hs.trinket, active, active ? hs.advCalling : null, hs.boons),
+      stats: deriveStats(hs.attrs, hs.weaponTier, heroGearOf(hs, save.forge), hs.talents, hs.trinket, active, active ? hs.advCalling : null, hs.boons, hs.masteredElements),
       hp: 1,
       attackTimer: 0,
       moveTarget: null,
@@ -2128,7 +2205,7 @@ export function drawHeroFigure(
   const hero = save.heroes[heroIndex];
   const oathDef = callingById(hero.calling);
   const activeOath = oathDef && callingEligible(oathDef, hero.attrs) ? hero.calling : null;
-  const stats = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null, hero.boons);
+  const stats = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null, hero.boons, hero.masteredElements);
   const radius = 13;
   const scale = canvas.height / (radius * 3.7 * 1.55);
   const unit = {
@@ -2139,6 +2216,8 @@ export function drawHeroFigure(
     enemyKind: null,
     calling: activeOath,
     advCalling: activeOath ? hero.advCalling : null,
+    discipline: activeOath ? hero.discipline : null,
+    element: activeOath ? hero.element : null,
     entered: true,
     x: canvas.width / 2 / scale,
     y: canvas.height / scale - radius * 0.9,
@@ -2224,7 +2303,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   limb(ctx, cx - f * bodyW * 0.3, shoulderY + 3, bhx, bhy, legW * 0.85, def.skin);
   hand(ctx, bhx, bhy, def.skin);
 
-  // calling regalia: a cape in the oath's color billows out behind
+  // path regalia: a cape in the attunement color billows out behind
   const oath = callingById(unit.calling);
   if (oath && !robed) {
     const sway = Math.sin(unit.bobPhase * 0.8) * 2 - f * pose.walk * 4;
@@ -2251,7 +2330,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     robe.closePath();
     shaded(ctx, robe, "#efe6d0", f, cx, (shoulderY + gy) / 2, H * 0.32, 3);
     // accent stole draped down the front — breaks up the snowman silhouette
-    // (a sworn oath dyes the stole in its color)
+    // (an active Path dyes the stole in its attunement color)
     ctx.save();
     ctx.clip(robe);
     ctx.fillStyle = oath?.color ?? def.accent;
@@ -2291,7 +2370,7 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
     ctx.fillStyle = "#c9a95c";
     ctx.fillRect(cx + f * 1.5 - 1.6, hipY - 0.5, 3.2, 2.2);
   }
-  // oath clasp pinned at the shoulder
+  // Waymark clasp pinned at the shoulder
   if (oath) {
     const px2 = cx + f * bodyW * 0.32;
     const py2 = shoulderY + 1;
@@ -2973,6 +3052,9 @@ const ENEMY_COLORS: Record<string, { body: string; shade: string; trim: string }
   bellkeeper: { body: "#526b70", shade: "#394f54", trim: "#b59458" },
   reefhound: { body: "#467b82", shade: "#315c63", trim: "#b2d2c7" },
   stormcaller: { body: "#506a8b", shade: "#394e6b", trim: "#b7e5df" },
+  wreckgunner: { body: "#5e6868", shade: "#3e4a4c", trim: "#c68d55" },
+  stormeel: { body: "#397884", shade: "#245661", trim: "#a9f2ff" },
+  conchseer: { body: "#735f79", shade: "#51465a", trim: "#e0c79d" },
   bellwidow: { body: "#526e75", shade: "#385158", trim: "#d2ae67" },
   stormjaw: { body: "#315f69", shade: "#20464f", trim: "#9ed2c7" },
 };
@@ -3365,8 +3447,299 @@ function drawKelpbound(ctx: CanvasRenderingContext2D, unit: Unit, time: number):
   ctx.lineCap = "butt";
 }
 
-/** THE WINTER WYRM — a serpent of old ice wearing the mountain like a shell.
- *  Its body follows the head's memory; its heart glows brightest when bared. */
+/** Wreck Gunner: the weapon is the silhouette — a barnacled deck cannon with
+ *  its drowned crewman chained behind it. */
+function drawWreckGunner(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const c = ENEMY_COLORS.wreckgunner;
+  const pose = poseOf(unit, time);
+  const r = unit.radius;
+  const x = pose.cx;
+  const gy = pose.groundY - pose.bounce * 0.45;
+  const f = pose.f;
+  const recoil = pose.swing * r * 0.28;
+  drawShadow(ctx, unit, pose.bounce * 0.45);
+
+  ctx.save();
+  ctx.translate(x, gy);
+  ctx.scale(f, 1);
+  ctx.fillStyle = "#60452f";
+  roundRect(ctx, -r * 0.74, -r * 0.55, r * 1.48, r * 0.42, 4);
+  outlined(ctx, "#60452f", 2.2);
+  for (const wx of [-0.48, 0.48]) {
+    ctx.beginPath();
+    ctx.arc(r * wx, -r * 0.08, r * 0.36, 0, Math.PI * 2);
+    outlined(ctx, "#714e32", 2.4);
+    ctx.strokeStyle = "#b68a58";
+    ctx.lineWidth = 1.6;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(r * wx, -r * 0.08);
+      ctx.lineTo(r * wx + Math.cos(a) * r * 0.3, -r * 0.08 + Math.sin(a) * r * 0.3);
+      ctx.stroke();
+    }
+  }
+
+  // Barrel points well beyond the crewman and kicks backward on attack.
+  ctx.save();
+  ctx.translate(-recoil, -r * 0.58);
+  ctx.rotate(-0.1 - pose.swing * 0.08);
+  const barrel = new Path2D();
+  barrel.moveTo(-r * 0.48, -r * 0.2);
+  barrel.lineTo(r * 1.18, -r * 0.3);
+  barrel.lineTo(r * 1.35, r * 0.06);
+  barrel.lineTo(-r * 0.45, r * 0.2);
+  barrel.closePath();
+  shaded(ctx, barrel, "#4b5353", 1, r * 0.35, 0, r, 2.6);
+  ctx.beginPath();
+  ctx.ellipse(r * 1.3, -r * 0.11, r * 0.22, r * 0.27, 0, 0, Math.PI * 2);
+  outlined(ctx, "#242d30", 2.2);
+  ctx.fillStyle = "#171d20";
+  ctx.beginPath();
+  ctx.ellipse(r * 1.32, -r * 0.11, r * 0.12, r * 0.16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#b8aa83";
+  for (const [bx, by, br] of [[0.1, -0.22, 0.08], [0.45, 0.08, 0.06], [0.82, -0.2, 0.07]] as [number, number, number][]) {
+    ctx.beginPath();
+    ctx.arc(r * bx, r * by, r * br, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Hunched drowned artilleryman — small beside the gun, visibly chained to it.
+  const hx = -r * 0.55;
+  const hy = -r * 1.22;
+  const body = new Path2D();
+  body.moveTo(-r * 0.94, -r * 0.38);
+  body.lineTo(-r * 0.88, -r * 1.1);
+  body.quadraticCurveTo(-r * 0.45, -r * 1.36, -r * 0.14, -r * 0.78);
+  body.lineTo(-r * 0.2, -r * 0.38);
+  body.closePath();
+  shaded(ctx, body, c.body, 1, -r * 0.5, -r * 0.75, r * 0.52, 2.4);
+  ctx.beginPath();
+  ctx.arc(hx, hy, r * 0.31, 0, Math.PI * 2);
+  outlined(ctx, "#738080", 2);
+  ctx.beginPath();
+  ctx.arc(hx - r * 0.04, hy - r * 0.1, r * 0.34, Math.PI, Math.PI * 2);
+  ctx.closePath();
+  outlined(ctx, "#3e4a4c", 1.8);
+  ctx.fillStyle = "#a9e5d6";
+  ctx.beginPath();
+  ctx.arc(hx + r * 0.12, hy, 2, 0, Math.PI * 2);
+  ctx.fill();
+  limb(ctx, -r * 0.22, -r * 0.88, r * 0.2, -r * (0.62 + pose.swing * 0.16), r * 0.17, c.body);
+  ctx.strokeStyle = "#c68d55";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let link = 0; link < 5; link++) {
+    const lx = -r * 0.56 + link * r * 0.18;
+    const ly = -r * 0.56 + Math.sin(link) * 2;
+    ctx.ellipse(lx, ly, 3.2, 2, link % 2 ? Math.PI / 2 : 0, 0, Math.PI * 2);
+  }
+  ctx.stroke();
+
+  if (unit.castGlow > 0) {
+    ctx.globalAlpha = Math.min(0.85, unit.castGlow);
+    ctx.fillStyle = "#ffb25f";
+    ctx.shadowColor = "#ff8a48";
+    ctx.shadowBlur = 15;
+    ctx.beginPath();
+    ctx.moveTo(r * 1.5, -r * 0.78);
+    ctx.lineTo(r * 2.0, -r * 0.62);
+    ctx.lineTo(r * 1.5, -r * 0.43);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  flashOverlay(ctx, unit, x, gy - r * 0.75, r * 1.25);
+  drawEffectPips(ctx, unit, x, gy - r * 1.88);
+  drawHealthBar(ctx, unit, gy - r * 1.76);
+}
+
+/** Storm Eel: a single long electric stroke with a hammer-shaped head. */
+function drawStormEel(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const c = ENEMY_COLORS.stormeel;
+  const pose = poseOf(unit, time);
+  const r = unit.radius;
+  const x = pose.cx;
+  const gy = pose.groundY - pose.bounce * 0.35;
+  const f = pose.f;
+  const wriggle = Math.sin(time * 8 + unit.id) * r * 0.22;
+  drawShadow(ctx, unit, pose.bounce * 0.35);
+
+  ctx.save();
+  ctx.translate(x, gy - r * 0.48);
+  ctx.scale(f, 1);
+  ctx.lineCap = "round";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = r * 0.72;
+  ctx.beginPath();
+  ctx.moveTo(-r * 1.75, wriggle * 0.15);
+  ctx.bezierCurveTo(-r * 1.15, -r * 0.62 + wriggle, -r * 0.42, r * 0.5 - wriggle, r * 0.5, 0);
+  ctx.stroke();
+  ctx.strokeStyle = c.body;
+  ctx.lineWidth = r * 0.52;
+  ctx.stroke();
+  ctx.strokeStyle = c.trim;
+  ctx.lineWidth = r * 0.1;
+  ctx.globalAlpha = 0.75;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.lineCap = "butt";
+
+  const hx = r * (0.68 + pose.swing * 0.12);
+  const hy = pose.swing * r * 0.15;
+  ctx.beginPath();
+  ctx.ellipse(hx, hy, r * 0.68, r * 0.5, -0.08, 0, Math.PI * 2);
+  outlined(ctx, c.body, 2.2);
+  ctx.beginPath();
+  ctx.moveTo(hx - r * 0.15, hy - r * 0.3);
+  ctx.lineTo(hx + r * 0.78, hy - r * 0.2);
+  ctx.lineTo(hx + r * 0.9, hy + r * 0.08);
+  ctx.lineTo(hx + r * 0.2, hy + r * 0.12);
+  ctx.closePath();
+  outlined(ctx, "#4f929a", 1.8);
+  ctx.fillStyle = "#eafcff";
+  for (const ox of [0.28, 0.5, 0.7]) {
+    ctx.beginPath();
+    ctx.moveTo(hx + r * ox, hy + r * 0.08);
+    ctx.lineTo(hx + r * (ox + 0.06), hy + r * 0.26);
+    ctx.lineTo(hx + r * (ox + 0.12), hy + r * 0.08);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.shadowColor = c.trim;
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = c.trim;
+  ctx.beginPath();
+  ctx.arc(hx + r * 0.28, hy - r * 0.08, 2.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Two dorsal arcs advertise the chain-shock behavior before it bites.
+  ctx.globalAlpha = 0.5 + Math.abs(Math.sin(time * 10 + unit.id)) * 0.35;
+  ctx.strokeStyle = c.trim;
+  ctx.lineWidth = 1.7;
+  for (const ox of [-0.9, -0.25]) {
+    ctx.beginPath();
+    ctx.moveTo(r * ox, -r * 0.28);
+    ctx.lineTo(r * (ox + 0.16), -r * 0.62);
+    ctx.lineTo(r * (ox + 0.3), -r * 0.24);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  flashOverlay(ctx, unit, x, gy - r * 0.45, r * 1.15);
+  drawEffectPips(ctx, unit, x, gy - r * 1.35);
+  drawHealthBar(ctx, unit, gy - r * 1.22);
+}
+
+/** Conch Seer: an enormous spiral shell carries the silhouette; the oracle is
+ *  only a small, soft creature peering from beneath it. */
+function drawConchSeer(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const c = ENEMY_COLORS.conchseer;
+  const pose = poseOf(unit, time);
+  const r = unit.radius;
+  const x = pose.cx;
+  const gy = pose.groundY - pose.bounce * 0.25;
+  const f = pose.f;
+  const shellPulse = unit.castGlow > 0 ? 1 + unit.castGlow * 0.1 : 1;
+  drawShadow(ctx, unit, pose.bounce * 0.25);
+
+  ctx.save();
+  ctx.translate(x, gy);
+  ctx.scale(f, 1);
+  const foot = new Path2D();
+  foot.moveTo(-r * 0.95, -r * 0.14);
+  foot.quadraticCurveTo(-r * 0.1, -r * 0.55, r * 0.92, -r * 0.18);
+  foot.quadraticCurveTo(r * 1.08, r * 0.02, r * 0.65, r * 0.08);
+  foot.lineTo(-r * 0.92, r * 0.05);
+  foot.closePath();
+  shaded(ctx, foot, c.body, 1, 0, -r * 0.18, r, 2.2);
+
+  // Pearlescent conch consumes most of the sprite and carries a clear spiral.
+  ctx.save();
+  ctx.translate(-r * 0.22, -r * 0.82);
+  ctx.scale(shellPulse, shellPulse);
+  ctx.shadowColor = unit.castGlow > 0 ? "#f3dfbd" : "transparent";
+  ctx.shadowBlur = unit.castGlow > 0 ? 12 : 0;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.92, 0, Math.PI * 2);
+  outlined(ctx, c.trim, 2.6);
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "#9b7f83";
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  for (let i = 0; i <= 28; i++) {
+    const a = i * 0.48;
+    const sr = r * (0.08 + i * 0.024);
+    const sx = Math.cos(a) * sr;
+    const sy = Math.sin(a) * sr;
+    if (i === 0) ctx.moveTo(sx, sy);
+    else ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(r * 0.48, -r * 0.48);
+  ctx.lineTo(r * 1.0, -r * 0.72);
+  ctx.lineTo(r * 0.82, -r * 0.22);
+  ctx.lineTo(r * 1.12, r * 0.08);
+  ctx.lineTo(r * 0.52, r * 0.32);
+  ctx.closePath();
+  outlined(ctx, "#dbc299", 2);
+  ctx.restore();
+
+  // Small head and eye stalks beneath the shell lip.
+  const hx = r * 0.62;
+  const hy = -r * 0.45;
+  ctx.beginPath();
+  ctx.ellipse(hx, hy, r * 0.42, r * 0.34, -0.1, 0, Math.PI * 2);
+  outlined(ctx, c.body, 2);
+  ctx.strokeStyle = c.body;
+  ctx.lineWidth = 3.2;
+  ctx.lineCap = "round";
+  for (const [ox, lift] of [[0.15, 0.7], [0.52, 0.78]] as [number, number][]) {
+    const eyeY = hy - r * lift + Math.sin(time * 2.5 + ox) * 2;
+    ctx.beginPath();
+    ctx.moveTo(hx + r * ox * 0.35, hy - r * 0.12);
+    ctx.lineTo(hx + r * ox, eyeY);
+    ctx.stroke();
+    ctx.fillStyle = "#b9f2ec";
+    ctx.beginPath();
+    ctx.arc(hx + r * ox, eyeY, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.lineCap = "butt";
+  // Tiny shell horn held forward while warding.
+  ctx.strokeStyle = "#e0c79d";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(hx + r * 0.15, hy + r * 0.15);
+  ctx.quadraticCurveTo(hx + r * 0.75, hy - r * (0.12 + unit.castGlow * 0.16), hx + r * 0.94, hy + r * 0.06);
+  ctx.stroke();
+  if (unit.castGlow > 0) {
+    ctx.globalAlpha = Math.min(0.72, unit.castGlow);
+    ctx.strokeStyle = "#f4dfbd";
+    ctx.lineWidth = 2;
+    for (let ring = 0; ring < 2; ring++) {
+      ctx.beginPath();
+      ctx.ellipse(0, -r * 0.75, r * (1.05 + ring * 0.28), r * (0.78 + ring * 0.18), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  flashOverlay(ctx, unit, x, gy - r * 0.72, r * 1.05);
+  drawEffectPips(ctx, unit, x, gy - r * 2.0);
+  drawHealthBar(ctx, unit, gy - r * 1.86);
+}
+
+/** THE WINTER WYRM — a serpent of old ice wearing the mountain like a shell. */
 function drawWyrm(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
   const trail = unit.trail ?? [];
   const f = unit.facing;
@@ -3395,6 +3768,8 @@ function drawWyrm(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
     ctx.quadraticCurveTo(unit.x - f * 46, unit.y + 2 + Math.sin(time * 8) * 3, unit.x - f * 66, unit.y + 8);
     ctx.stroke();
     ctx.globalAlpha = 1;
+    drawEffectPips(ctx, unit, unit.x, unit.y - unit.radius * 2.6);
+    drawHealthBar(ctx, unit, unit.y - unit.radius * 2.35);
     return;
   }
   const bared = unit.effects.some((e) => e.kind === "vulnerable");
@@ -3496,10 +3871,835 @@ function drawWyrm(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
   ctx.quadraticCurveTo(hx + f * hr * 2.0, hy + hr * 0.1 + Math.sin(time * 3) * 4, hx + f * hr * 2.4, hy - hr * 0.2);
   ctx.stroke();
   ctx.globalAlpha = 1;
+  flashOverlay(ctx, unit, hx, hy, hr * 1.45);
+  drawEffectPips(ctx, unit, hx, hy - hr * 2.2);
+  drawHealthBar(ctx, unit, hy - hr * 2.05);
+}
+
+/** MOSSTOOTH — a walking deadfall. The uprooted pine, sagging belly, and
+ *  lopsided moss mantle keep him legible beside ordinary brutes. */
+function drawMosstooth(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const pose = poseOf(unit, time);
+  const r = unit.radius;
+  const x = pose.cx;
+  const gy = pose.groundY - pose.bounce * 0.55;
+  const f = pose.f;
+  const h = r * 3.15;
+  drawShadow(ctx, unit, pose.bounce * 0.55);
+
+  ctx.save();
+  ctx.translate(x, gy);
+  ctx.scale(f, 1);
+
+  // A whole dead pine serves as a club; its branch stubs make a strong outline.
+  const logAngle = -0.62 + pose.swing * 1.15;
+  ctx.save();
+  ctx.translate(-r * 0.25, -h * 0.54);
+  ctx.rotate(logAngle);
+  ctx.lineCap = "round";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = r * 0.42;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.15, r * 0.75);
+  ctx.lineTo(r * 0.1, -h * 0.66);
+  ctx.stroke();
+  ctx.strokeStyle = "#68513a";
+  ctx.lineWidth = r * 0.3;
+  ctx.stroke();
+  ctx.strokeStyle = "#39442a";
+  ctx.lineWidth = r * 0.1;
+  for (const [by, side, len] of [[-0.12, -1, 0.45], [-0.35, 1, 0.55], [-0.55, -1, 0.34]] as [number, number, number][]) {
+    ctx.beginPath();
+    ctx.moveTo(0, h * by);
+    ctx.lineTo(side * r * len, h * by - r * 0.2);
+    ctx.stroke();
+  }
+  ctx.lineCap = "butt";
+  ctx.restore();
+
+  // Stump-like feet and low, dragging legs.
+  limb(ctx, -r * 0.38, -h * 0.28, -r * (0.48 + pose.walk * 0.3), -2, r * 0.42, "#39442a");
+  limb(ctx, r * 0.28, -h * 0.27, r * (0.4 + pose.walk * 0.28), -2, r * 0.46, "#75875a");
+
+  const body = new Path2D();
+  body.moveTo(-r * 1.08, -h * 0.56);
+  body.quadraticCurveTo(-r * 1.28, -h * 0.35, -r * 0.82, -h * 0.08);
+  body.quadraticCurveTo(0, h * 0.08, r * 0.92, -h * 0.07);
+  body.quadraticCurveTo(r * 1.22, -h * 0.38, r * 0.74, -h * 0.64);
+  body.quadraticCurveTo(-r * 0.12, -h * 0.8, -r * 1.08, -h * 0.56);
+  body.closePath();
+  shaded(ctx, body, "#75875a", 1, 0, -h * 0.35, r * 1.2, 3.2);
+
+  // Hanging belly and navel sell mass without another armor silhouette.
+  ctx.beginPath();
+  ctx.ellipse(r * 0.15, -h * 0.25, r * 0.67, r * 0.74, -0.08, 0, Math.PI * 2);
+  outlined(ctx, "#87996a", 2.4);
+  ctx.strokeStyle = "rgba(20,14,30,0.32)";
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.arc(r * 0.15, -h * 0.12, 3, 0, Math.PI);
+  ctx.stroke();
+
+  // Long free arm and root-knuckle.
+  const handX = r * (0.98 + pose.swing * 0.18);
+  const handY = -h * (0.24 + pose.swing * 0.18);
+  limb(ctx, r * 0.72, -h * 0.55, handX, handY, r * 0.38, "#75875a");
+  ctx.beginPath();
+  ctx.arc(handX, handY, r * 0.3, 0, Math.PI * 2);
+  outlined(ctx, "#65774d", 2.2);
+
+  // Moss mantle with dangling roots, deliberately asymmetrical.
+  ctx.fillStyle = "#476337";
+  ctx.beginPath();
+  ctx.moveTo(-r * 1.02, -h * 0.6);
+  ctx.quadraticCurveTo(-r * 0.45, -h * 0.85, r * 0.7, -h * 0.64);
+  ctx.lineTo(r * 0.55, -h * 0.49);
+  ctx.lineTo(r * 0.18, -h * 0.57);
+  ctx.lineTo(-r * 0.15, -h * 0.42);
+  ctx.lineTo(-r * 0.55, -h * 0.53);
+  ctx.lineTo(-r * 0.83, -h * 0.38);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.strokeStyle = "#567641";
+  ctx.lineWidth = 2.2;
+  for (const ox of [-0.72, -0.38, 0.1, 0.46]) {
+    ctx.beginPath();
+    ctx.moveTo(r * ox, -h * 0.56);
+    ctx.quadraticCurveTo(r * (ox + 0.16), -h * 0.42 + Math.sin(time * 1.7 + ox) * 2, r * (ox + 0.05), -h * 0.31);
+    ctx.stroke();
+  }
+
+  // Small, sleepy head sunk between the shoulders; only one horn survived.
+  const hx = r * 0.2;
+  const hy = -h * 0.68;
+  ctx.beginPath();
+  ctx.ellipse(hx, hy, r * 0.55, r * 0.48, 0.08, 0, Math.PI * 2);
+  outlined(ctx, "#75875a", 2.6);
+  ctx.beginPath();
+  ctx.moveTo(hx - r * 0.35, hy - r * 0.28);
+  ctx.quadraticCurveTo(hx - r * 0.92, hy - r * 0.92, hx - r * 0.58, hy - r * 1.2);
+  ctx.lineTo(hx - r * 0.2, hy - r * 0.42);
+  ctx.closePath();
+  outlined(ctx, "#e5ddc8", 1.8);
+  ctx.fillStyle = "#efe8d4";
+  for (const ox of [0.28, 0.58]) {
+    ctx.beginPath();
+    ctx.moveTo(hx + r * ox, hy + r * 0.18);
+    ctx.lineTo(hx + r * (ox + 0.1), hy + r * 0.55);
+    ctx.lineTo(hx + r * (ox + 0.2), hy + r * 0.16);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(hx - r * 0.18, hy - r * 0.05);
+  ctx.lineTo(hx + r * 0.62, hy + r * 0.02);
+  ctx.stroke();
+  ctx.fillStyle = "#e7ddbf";
+  for (const ox of [0.06, 0.47]) {
+    ctx.beginPath();
+    ctx.arc(hx + r * ox, hy + r * 0.02, 2.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // After enraging, the stolen cart wheel remains hooked over his shoulder.
+  if (unit.phase >= 1) {
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(-r * 0.62, -h * 0.58, r * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = "#8a6745";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.62, -h * 0.58);
+      ctx.lineTo(-r * 0.62 + Math.cos(a) * r * 0.46, -h * 0.58 + Math.sin(a) * r * 0.46);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  flashOverlay(ctx, unit, x, gy - h * 0.42, r * 1.35);
+  drawEffectPips(ctx, unit, x, gy - h - 16);
+  drawHealthBar(ctx, unit, gy - h - 11);
+}
+
+/** GOREHULK — iron geometry against Mosstooth's organic bulk: tower shield,
+ *  cleaver-axe, horned helm, and a banner-split cloak. */
+function drawGorehulk(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const pose = poseOf(unit, time);
+  const r = unit.radius;
+  const x = pose.cx;
+  const gy = pose.groundY - pose.bounce * 0.4;
+  const h = r * 3.12;
+  const f = pose.f;
+  drawShadow(ctx, unit, pose.bounce * 0.4);
+
+  ctx.save();
+  ctx.translate(x, gy);
+  ctx.scale(f, 1);
+
+  // Torn command cloak creates a forked, banner-like rear silhouette.
+  const flap = Math.sin(time * 4 + unit.id) * r * 0.08;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.55, -h * 0.72);
+  ctx.lineTo(-r * 1.08 - flap, -h * 0.24);
+  ctx.lineTo(-r * 0.75 - flap, -h * 0.31);
+  ctx.lineTo(-r * 0.9 - flap, -h * 0.05);
+  ctx.lineTo(-r * 0.22, -h * 0.25);
+  ctx.closePath();
+  outlined(ctx, "#762e28", 2.4);
+
+  // Armored legs are deliberately columnar and upright.
+  limb(ctx, -r * 0.3, -h * 0.28, -r * (0.34 + pose.walk * 0.25), -2, r * 0.42, "#403a42");
+  limb(ctx, r * 0.3, -h * 0.28, r * (0.36 + pose.walk * 0.25), -2, r * 0.42, "#5a4a52");
+  ctx.fillStyle = "#343038";
+  roundRect(ctx, -r * 0.72, -r * 0.18, r * 0.72, r * 0.24, 3);
+  ctx.fill();
+  roundRect(ctx, r * 0.03, -r * 0.18, r * 0.72, r * 0.24, 3);
+  ctx.fill();
+
+  const cuirass = new Path2D();
+  cuirass.moveTo(-r * 0.86, -h * 0.69);
+  cuirass.lineTo(r * 0.78, -h * 0.69);
+  cuirass.lineTo(r * 0.64, -h * 0.26);
+  cuirass.lineTo(0, -h * 0.16);
+  cuirass.lineTo(-r * 0.68, -h * 0.28);
+  cuirass.closePath();
+  shaded(ctx, cuirass, "#5a4a52", 1, 0, -h * 0.48, r, 3.2);
+  ctx.strokeStyle = "#9a7770";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -h * 0.65);
+  ctx.lineTo(0, -h * 0.24);
+  ctx.moveTo(-r * 0.62, -h * 0.5);
+  ctx.lineTo(r * 0.58, -h * 0.5);
+  ctx.stroke();
+
+  // Three-tier pauldrons make the shoulders wider than any other humanoid.
+  for (const side of [-1, 1]) {
+    for (let tier = 0; tier < 3; tier++) {
+      ctx.beginPath();
+      ctx.ellipse(side * r * (0.75 + tier * 0.06), -h * (0.69 + tier * 0.035), r * (0.43 - tier * 0.06), r * (0.22 - tier * 0.025), side * 0.15, 0, Math.PI * 2);
+      outlined(ctx, tier === 0 ? "#6c5962" : "#51464f", 2);
+    }
+  }
+
+  // Shieldwall: a literal iron wall carried forward of the body.
+  const shieldX = r * 0.86;
+  const shieldTop = -h * 0.66;
+  ctx.beginPath();
+  ctx.moveTo(shieldX - r * 0.2, shieldTop);
+  ctx.lineTo(shieldX + r * 0.58, shieldTop + r * 0.08);
+  ctx.lineTo(shieldX + r * 0.54, -h * 0.12);
+  ctx.lineTo(shieldX + r * 0.08, -h * 0.03);
+  ctx.lineTo(shieldX - r * 0.22, -h * 0.14);
+  ctx.closePath();
+  outlined(ctx, "#48434a", 3);
+  ctx.strokeStyle = "#a2776e";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(shieldX + r * 0.13, shieldTop + r * 0.14);
+  ctx.lineTo(shieldX + r * 0.15, -h * 0.15);
+  ctx.moveTo(shieldX + r * 0.38, shieldTop + r * 0.16);
+  ctx.lineTo(shieldX + r * 0.38, -h * 0.18);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(shieldX + r * 0.2, -h * 0.39, r * 0.16, 0, Math.PI * 2);
+  outlined(ctx, "#8c655f", 1.8);
+
+  // The executioner's axe tracks the huge sweep windup.
+  const axeAngle = -1.05 + pose.swing * 1.75;
+  const handX = -r * 0.74;
+  const handY = -h * 0.55;
+  limb(ctx, -r * 0.58, -h * 0.62, handX, handY, r * 0.3, "#9a5240");
+  ctx.save();
+  ctx.translate(handX, handY);
+  ctx.rotate(axeAngle);
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.moveTo(0, r * 0.35);
+  ctx.lineTo(0, -h * 0.64);
+  ctx.stroke();
+  ctx.strokeStyle = "#72523b";
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.08, -h * 0.6);
+  ctx.quadraticCurveTo(r * 0.72, -h * 0.67, r * 0.82, -h * 0.38);
+  ctx.lineTo(r * 0.12, -h * 0.31);
+  ctx.closePath();
+  outlined(ctx, "#a7a1a0", 2.4);
+  ctx.restore();
+
+  // Horned execution helm and glowing slit.
+  const hx = -r * 0.02;
+  const hy = -h * 0.78;
+  ctx.beginPath();
+  ctx.arc(hx, hy, r * 0.47, Math.PI, Math.PI * 2);
+  ctx.lineTo(hx + r * 0.42, hy + r * 0.45);
+  ctx.lineTo(hx - r * 0.42, hy + r * 0.45);
+  ctx.closePath();
+  outlined(ctx, "#4b444d", 2.6);
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(hx + side * r * 0.34, hy - r * 0.24);
+    ctx.lineTo(hx + side * r * 0.88, hy - r * 0.72);
+    ctx.lineTo(hx + side * r * 0.5, hy - r * 0.08);
+    ctx.closePath();
+    outlined(ctx, "#d9d0c0", 1.8);
+  }
+  ctx.shadowColor = "#ffd76b";
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = "#ffd76b";
+  ctx.fillRect(hx - r * 0.25, hy + r * 0.03, r * 0.5, 3);
+  ctx.shadowBlur = 0;
+  ctx.restore();
+
+  flashOverlay(ctx, unit, x, gy - h * 0.48, r * 1.3);
+  drawEffectPips(ctx, unit, x, gy - h - 17);
+  drawHealthBar(ctx, unit, gy - h - 12);
+}
+
+/** RIMEHEART — a crown moving inside a glacier. Long ape-like arms, mountain
+ *  shoulders, and a visible heart distinguish him from the smaller Rimeclad. */
+function drawRimeheartBoss(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const pose = poseOf(unit, time);
+  const r = unit.radius;
+  const x = pose.cx;
+  const gy = pose.groundY - pose.bounce * 0.3;
+  const h = r * 3.05;
+  const f = pose.f;
+  const shattered = unit.phase >= 3;
+  drawShadow(ctx, unit, pose.bounce * 0.3);
+
+  ctx.save();
+  ctx.translate(x, gy);
+  ctx.scale(f, 1);
+
+  // Rear glacier peaks make the body a mountain rather than another ogre.
+  ctx.fillStyle = shattered ? "#6f98ac" : "#b9d9e6";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.5;
+  for (const [ox, top, wide] of [[-0.64, -1.04, 0.48], [0.02, -1.24, 0.56], [0.65, -0.96, 0.43]] as [number, number, number][]) {
+    ctx.beginPath();
+    ctx.moveTo(r * (ox - wide), -h * 0.52);
+    ctx.lineTo(r * ox, h * top);
+    ctx.lineTo(r * (ox + wide), -h * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Feet and enormous knuckle-dragging arms establish an ape-like body plan.
+  limb(ctx, -r * 0.4, -h * 0.25, -r * (0.48 + pose.walk * 0.22), -2, r * 0.46, "#557f96");
+  limb(ctx, r * 0.36, -h * 0.25, r * (0.46 + pose.walk * 0.22), -2, r * 0.46, "#6f98ac");
+
+  const torso = new Path2D();
+  torso.moveTo(-r * 1.12, -h * 0.68);
+  torso.quadraticCurveTo(0, -h * 0.94, r * 1.15, -h * 0.66);
+  torso.lineTo(r * 0.68, -h * 0.24);
+  torso.quadraticCurveTo(0, -h * 0.08, -r * 0.68, -h * 0.24);
+  torso.closePath();
+  shaded(ctx, torso, shattered ? "#6f98ac" : "#8fb8cc", 1, 0, -h * 0.48, r * 1.25, 3.2);
+
+  const armSwing = pose.swing * r * 0.46;
+  for (const side of [-1, 1]) {
+    const sx = side * r * 0.92;
+    const ex = side * r * (1.2 + (side > 0 ? pose.swing * 0.18 : 0));
+    const ey = -h * 0.16 - (side > 0 ? armSwing : 0);
+    limb(ctx, sx, -h * 0.62, ex, ey, r * 0.5, side > 0 ? "#8fb8cc" : "#6f98ac");
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, r * 0.42, r * 0.3, side * 0.12, 0, Math.PI * 2);
+    outlined(ctx, side > 0 ? "#9fc4d6" : "#789fb2", 2.4);
+  }
+
+  // Glacier armor plates crack away by phase three.
+  if (!shattered) {
+    ctx.fillStyle = "rgba(217, 242, 250, 0.78)";
+    ctx.strokeStyle = "#eafaff";
+    ctx.lineWidth = 1.8;
+    for (const [ox, oy, pw, ph] of [[-0.62, -0.65, 0.58, 0.32], [0.18, -0.71, 0.66, 0.29], [-0.32, -0.37, 0.52, 0.26]] as [number, number, number, number][]) {
+      ctx.beginPath();
+      ctx.moveTo(r * ox, h * oy);
+      ctx.lineTo(r * (ox + pw), h * (oy + 0.03));
+      ctx.lineTo(r * (ox + pw * 0.78), h * (oy + ph));
+      ctx.lineTo(r * (ox + 0.08), h * (oy + ph * 0.86));
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // The heart is always hinted; after the shatter it becomes the focal point.
+  const pulse = 0.72 + Math.sin(time * (shattered ? 7 : 2.4)) * 0.18;
+  ctx.save();
+  ctx.globalAlpha = shattered ? 1 : 0.48;
+  ctx.shadowColor = shattered ? "#ffb164" : "#bdefff";
+  ctx.shadowBlur = shattered ? 19 : 9;
+  ctx.fillStyle = shattered ? "#ffb164" : "#bdefff";
+  ctx.beginPath();
+  ctx.moveTo(0, -h * 0.48 - r * 0.22 * pulse);
+  ctx.lineTo(r * 0.25 * pulse, -h * 0.48);
+  ctx.lineTo(0, -h * 0.48 + r * 0.28 * pulse);
+  ctx.lineTo(-r * 0.25 * pulse, -h * 0.48);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // Small ancient face beneath a five-point icicle crown.
+  const hx = r * 0.08;
+  const hy = -h * 0.76;
+  ctx.beginPath();
+  ctx.ellipse(hx, hy, r * 0.47, r * 0.42, 0, 0, Math.PI * 2);
+  outlined(ctx, shattered ? "#789fb2" : "#9fc4d6", 2.4);
+  ctx.fillStyle = shattered ? "#ff9d5c" : "#d9f6ff";
+  ctx.shadowColor = ctx.fillStyle;
+  ctx.shadowBlur = 8;
+  for (const ox of [0.05, 0.34]) {
+    ctx.beginPath();
+    ctx.arc(hx + r * ox, hy - r * 0.02, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#dcedf5";
+  ctx.strokeStyle = "#6f98ac";
+  ctx.lineWidth = 1.6;
+  for (let ic = -2; ic <= 2; ic++) {
+    const bx = hx + ic * r * 0.2;
+    const topY = hy - r * (0.42 - Math.abs(ic) * 0.04);
+    ctx.beginPath();
+    ctx.moveTo(bx - r * 0.1, topY);
+    ctx.lineTo(bx, topY - r * (0.72 - Math.abs(ic) * 0.12));
+    ctx.lineTo(bx + r * 0.1, topY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Breath haze points toward his facing and keeps the otherwise static giant alive.
+  ctx.globalAlpha = 0.28 + Math.abs(Math.sin(time * 1.6)) * 0.18;
+  ctx.fillStyle = "#e1f4fa";
+  ctx.beginPath();
+  ctx.ellipse(r * 0.74, hy + r * 0.22, r * 0.36, r * 0.16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  flashOverlay(ctx, unit, x, gy - h * 0.5, r * 1.42);
+  drawEffectPips(ctx, unit, x, gy - h - 20);
+  drawHealthBar(ctx, unit, gy - h - 14);
+}
+
+/** THE BELL WIDOW — an abbess whose drowned vestments have become the bell.
+ *  A bronze halo, flared bell-skirt, and swinging clapper read at combat scale. */
+function drawBellWidow(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const pose = poseOf(unit, time);
+  const r = unit.radius;
+  const x = pose.cx;
+  const gy = pose.groundY - pose.bounce * 0.25;
+  // Taller than every ordinary humanoid: she is a walking belfry, not a large
+  // Bellkeeper. The wide hem and narrow crown read even when effects obscure detail.
+  const h = r * 3.58;
+  const f = pose.f;
+  const lastToll = unit.phase >= 3;
+  const toll = Math.max(unit.castGlow, pose.swing);
+  const idlePendulum = Math.sin(time * 1.45 + unit.id) * r * 0.06;
+  const sway = idlePendulum + Math.sin(toll * Math.PI) * r * 0.26;
+  drawShadow(ctx, unit, pose.bounce * 0.25);
+
+  ctx.save();
+  ctx.translate(x, gy);
+  ctx.scale(f, 1);
+
+  // Funeral streamers trail behind the otherwise rigid bell shape.
+  ctx.strokeStyle = lastToll ? "#d2ae67" : "#35535a";
+  ctx.lineWidth = 4;
+  ctx.lineCap = "round";
+  for (const [ox, len, phase] of [[-0.4, 0.72, 0], [-0.12, 0.88, 1.5], [0.22, 0.64, 3]] as [number, number, number][]) {
+    ctx.beginPath();
+    ctx.moveTo(r * ox, -h * 0.56);
+    ctx.quadraticCurveTo(-r * 0.8 + sway, -h * (0.36 + len * 0.1), -r * 1.0 + Math.sin(time * 2 + phase) * 5, -h * (0.16 + len * 0.08));
+    ctx.stroke();
+  }
+  ctx.lineCap = "butt";
+
+  // The broken bronze bell-frame forms a halo visible above the hood.
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.arc(0, -h * 0.73, r * 0.82, Math.PI * 0.84, Math.PI * 2.12);
+  ctx.stroke();
+  // Iron belfry struts frame the veil and visually connect halo to bell-body.
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 7;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(side * r * 0.6, -h * 0.83);
+    ctx.lineTo(side * r * 0.45, -h * 0.57);
+    ctx.stroke();
+    ctx.strokeStyle = "#8f7046";
+    ctx.lineWidth = 3.4;
+    ctx.stroke();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 7;
+  }
+  ctx.strokeStyle = "#b58c4f";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(0, -h * 0.73, r * 0.82, Math.PI * 0.84, Math.PI * 2.12);
+  ctx.stroke();
+  ctx.fillStyle = "#d2ae67";
+  for (const a of [Math.PI * 0.9, Math.PI * 1.2, Math.PI * 1.5, Math.PI * 1.82, Math.PI * 2.06]) {
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * r * 0.82, -h * 0.73 + Math.sin(a) * r * 0.82, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Bell-shaped vestment: narrow shoulders, enormous flared bronze-edged hem.
+  const robe = new Path2D();
+  robe.moveTo(-r * 0.38, -h * 0.69);
+  robe.quadraticCurveTo(-r * 0.68, -h * 0.48, -r * 1.16, -h * 0.1);
+  robe.quadraticCurveTo(0, h * 0.04, r * 1.18, -h * 0.1);
+  robe.quadraticCurveTo(r * 0.62, -h * 0.48, r * 0.38, -h * 0.69);
+  robe.closePath();
+  shaded(ctx, robe, lastToll ? "#405e63" : "#526e75", 1, 0, -h * 0.35, r * 1.1, 3);
+  ctx.strokeStyle = "#d2ae67";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(-r * 1.15, -h * 0.1);
+  ctx.quadraticCurveTo(0, h * 0.04, r * 1.17, -h * 0.1);
+  ctx.stroke();
+  ctx.strokeStyle = "#8a6b3f";
+  ctx.lineWidth = 1.8;
+  for (const ox of [-0.62, -0.2, 0.2, 0.62]) {
+    ctx.beginPath();
+    ctx.moveTo(r * ox * 0.45, -h * 0.62);
+    ctx.lineTo(r * ox, -h * 0.13);
+    ctx.stroke();
+  }
+
+  // Sleeves hang like two smaller bells; one lifts to conduct a toll.
+  for (const side of [-1, 1]) {
+    const raised = side > 0 ? toll : 0;
+    const sx = side * r * 0.42;
+    const sy = -h * 0.58;
+    const ex = side * r * (0.9 + raised * 0.28);
+    const ey = -h * (0.39 + raised * 0.28);
+    limb(ctx, sx, sy, ex, ey, r * 0.26, "#385158");
+    ctx.beginPath();
+    ctx.moveTo(ex - r * 0.23, ey - r * 0.08);
+    ctx.lineTo(ex + r * 0.23, ey - r * 0.08);
+    ctx.lineTo(ex + r * 0.32, ey + r * 0.28);
+    ctx.lineTo(ex - r * 0.32, ey + r * 0.28);
+    ctx.closePath();
+    outlined(ctx, "#4a666b", 2);
+    ctx.strokeStyle = "#d2ae67";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ex - r * 0.3, ey + r * 0.27);
+    ctx.lineTo(ex + r * 0.3, ey + r * 0.27);
+    ctx.stroke();
+  }
+
+  // White mourning veil around a face that is almost entirely dark water.
+  const hx = 0;
+  const hy = -h * 0.77;
+  ctx.beginPath();
+  ctx.moveTo(hx - r * 0.42, hy + r * 0.44);
+  ctx.quadraticCurveTo(hx - r * 0.6, hy - r * 0.2, hx, hy - r * 0.62);
+  ctx.quadraticCurveTo(hx + r * 0.6, hy - r * 0.2, hx + r * 0.42, hy + r * 0.44);
+  ctx.closePath();
+  outlined(ctx, "#b9c9c8", 2.4);
+  ctx.beginPath();
+  ctx.ellipse(hx + r * 0.05, hy, r * 0.29, r * 0.36, 0, 0, Math.PI * 2);
+  outlined(ctx, "#152a2f", 2);
+  ctx.shadowColor = lastToll ? "#ffd76b" : "#b9f2ec";
+  ctx.shadowBlur = 9;
+  ctx.fillStyle = lastToll ? "#ffd76b" : "#b9f2ec";
+  ctx.beginPath();
+  ctx.arc(hx + r * 0.12, hy, 2.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // The clapper swings independently beneath the robe; it is the visual attack clock.
+  const clapperX = sway * 1.2;
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(0, -h * 0.43);
+  ctx.lineTo(clapperX, -h * 0.08);
+  ctx.stroke();
+  ctx.strokeStyle = "#8f7046";
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(clapperX, -h * 0.07, r * 0.18 + toll * 2, 0, Math.PI * 2);
+  outlined(ctx, "#d2ae67", 2);
+
+  // In the last phase, the drowned bronze splits and the final toll shines
+  // through the cracks instead of merely recoloring the robe.
+  if (lastToll) {
+    ctx.strokeStyle = "#ffd76b";
+    ctx.lineWidth = 2.4;
+    ctx.shadowColor = "#ffb85c";
+    ctx.shadowBlur = 10;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * r * 0.18, -h * 0.51);
+      ctx.lineTo(side * r * 0.38, -h * 0.4);
+      ctx.lineTo(side * r * 0.24, -h * 0.29);
+      ctx.lineTo(side * r * 0.56, -h * 0.17);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  if (toll > 0.08) {
+    ctx.globalAlpha = Math.min(0.7, toll);
+    ctx.strokeStyle = "#f0d28b";
+    ctx.lineWidth = 2.5;
+    for (let ring = 0; ring < 3; ring++) {
+      ctx.beginPath();
+      ctx.ellipse(0, -h * 0.42, r * (1.15 + ring * 0.3), r * (0.55 + ring * 0.12), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  flashOverlay(ctx, unit, x, gy - h * 0.43, r * 1.25);
+  drawEffectPips(ctx, unit, x, gy - h - 20);
+  drawHealthBar(ctx, unit, gy - h - 14);
+}
+
+/** STORMJAW — a low coastal leviathan, half snapping turtle and half reef.
+ *  Its broad shell, enormous jaw, lightning spines, and surfacing heart ensure
+ *  it cannot be mistaken for a scaled ogre. */
+function drawStormjaw(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const pose = poseOf(unit, time);
+  const r = unit.radius;
+  const x = pose.cx;
+  const gy = pose.groundY - pose.bounce * 0.2;
+  const f = pose.f;
+  const open = Math.min(1, pose.swing * 1.4 + unit.castGlow * 0.55);
+  const heartUp = unit.phase >= 3;
+  drawShadow(ctx, unit, pose.bounce * 0.2);
+
+  ctx.save();
+  ctx.translate(x, gy);
+  ctx.scale(f, 1);
+
+  // Heavy tidal tail gives the monster a long horizontal read.
+  ctx.lineCap = "round";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = r * 0.58;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.82, -r * 0.62);
+  ctx.quadraticCurveTo(-r * 1.65, -r * 0.76, -r * 2.02, -r * 0.05 + Math.sin(time * 2.2) * 3);
+  ctx.stroke();
+  ctx.strokeStyle = "#315f69";
+  ctx.lineWidth = r * 0.42;
+  ctx.stroke();
+  ctx.lineCap = "butt";
+
+  // Four sea-cliff legs, broad and jointed enough to establish a true low
+  // quadruped before the shell and effects are drawn over them.
+  for (const [lx, near] of [[-0.75, false], [-0.28, true], [0.4, false], [0.78, true]] as [number, boolean][]) {
+    const step = pose.walk * (near ? 1 : -1) * r * 0.15;
+    const leg = new Path2D();
+    leg.moveTo(r * (lx - 0.27), -r * 0.72);
+    leg.lineTo(r * (lx + 0.12), -r * 0.2);
+    leg.lineTo(r * (lx + 0.4) + step, r * 0.06);
+    leg.lineTo(r * (lx - 0.13) + step, r * 0.02);
+    leg.closePath();
+    shaded(ctx, leg, near ? "#315f69" : "#274f58", 1, r * lx, -r * 0.3, r * 0.52, 2.6);
+    ctx.strokeStyle = "#9ed2c7";
+    ctx.lineWidth = 2;
+    for (let claw = 0; claw < 3; claw++) {
+      const toeX = r * (lx + 0.08 + claw * 0.13) + step;
+      ctx.beginPath();
+      ctx.moveTo(toeX, -r * 0.02);
+      ctx.lineTo(toeX + r * 0.1, r * 0.09);
+      ctx.stroke();
+    }
+  }
+
+  // Reef shell: broad and low, with an eroded coastline edge.
+  const shell = new Path2D();
+  shell.moveTo(-r * 1.18, -r * 0.55);
+  shell.quadraticCurveTo(-r * 0.8, -r * 1.65, r * 0.52, -r * 1.72);
+  shell.quadraticCurveTo(r * 1.12, -r * 1.38, r * 1.1, -r * 0.52);
+  shell.quadraticCurveTo(0, -r * 0.2, -r * 1.18, -r * 0.55);
+  shell.closePath();
+  shaded(ctx, shell, "#315f69", 1, 0, -r, r * 1.3, 3.4);
+  ctx.strokeStyle = "#9ed2c7";
+  ctx.lineWidth = 2;
+  for (const [sx, sy, ex, ey] of [[-0.85, -0.72, -0.2, -1.42], [-0.25, -0.42, 0.18, -1.5], [0.28, -0.38, 0.72, -1.3]] as [number, number, number, number][]) {
+    ctx.beginPath();
+    ctx.moveTo(r * sx, r * sy);
+    ctx.quadraticCurveTo(r * ((sx + ex) / 2 + 0.12), r * ((sy + ey) / 2), r * ex, r * ey);
+    ctx.stroke();
+  }
+  // Barnacles/coral keep the shell from becoming a smooth generic oval.
+  ctx.fillStyle = "#a9c6ac";
+  for (const [bx, by, br] of [[-0.72, -1.15, 0.13], [-0.34, -1.45, 0.09], [0.18, -1.5, 0.12], [0.62, -1.18, 0.1]] as [number, number, number][]) {
+    ctx.beginPath();
+    ctx.arc(r * bx, r * by, r * br, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
+
+  // Conductive dorsal plates flash when the sky has marked the boss.
+  const spineGlow = unit.castGlow > 0 || unit.phase >= 2;
+  for (let i = 0; i < 5; i++) {
+    const sx = r * (-0.58 + i * 0.3);
+    const top = -r * (1.52 + (2 - Math.abs(2 - i)) * 0.13);
+    ctx.beginPath();
+    ctx.moveTo(sx - r * 0.16, -r * 1.25);
+    ctx.lineTo(sx, top);
+    ctx.lineTo(sx + r * 0.17, -r * 1.24);
+    ctx.closePath();
+    outlined(ctx, spineGlow ? "#b9f4ff" : "#6ea49f", 1.8);
+  }
+  if (spineGlow) {
+    ctx.globalAlpha = 0.42 + Math.abs(Math.sin(time * 7)) * 0.28;
+    ctx.strokeStyle = "#b9f4ff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const sx = r * (-0.58 + i * 0.3);
+      const sy = -r * (1.52 + (2 - Math.abs(2 - i)) * 0.13);
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Heart plate rises only in the final phase, matching the fight's promise.
+  if (heartUp) {
+    const pulse = 0.78 + Math.sin(time * 7) * 0.16;
+    ctx.save();
+    ctx.shadowColor = "#ffe9a3";
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = "#ffd76b";
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.15, -r * 0.92 - r * 0.3 * pulse);
+    ctx.lineTo(r * 0.2 * pulse, -r * 0.92);
+    ctx.lineTo(-r * 0.15, -r * 0.92 + r * 0.3 * pulse);
+    ctx.lineTo(-r * 0.45 * pulse, -r * 0.92);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // A plated neck wedges the skull into the shell: no floating round head.
+  const hx = r * 1.22;
+  const hy = -r * 0.78;
+  const neck = new Path2D();
+  neck.moveTo(r * 0.62, -r * 1.28);
+  neck.lineTo(hx + r * 0.12, hy - r * 0.42);
+  neck.lineTo(hx + r * 0.04, hy + r * 0.42);
+  neck.lineTo(r * 0.62, -r * 0.38);
+  neck.closePath();
+  shaded(ctx, neck, "#2b5962", 1, r * 0.9, -r * 0.8, r * 0.7, 2.8);
+
+  // The head is almost all jaw: a long crocodilian upper shelf, separated
+  // lower mandible, black mouth gap, and teeth that remain visible when closed.
+  const upper = new Path2D();
+  upper.moveTo(hx - r * 0.46, hy - r * 0.36);
+  upper.lineTo(hx + r * 0.18, hy - r * 0.58 - open * r * 0.12);
+  upper.lineTo(hx + r * 1.34, hy - r * 0.28 - open * r * 0.22);
+  upper.lineTo(hx + r * 1.48, hy + r * 0.02 - open * r * 0.25);
+  upper.lineTo(hx - r * 0.02, hy + r * 0.16);
+  upper.closePath();
+  shaded(ctx, upper, "#3d7179", 1, hx + r * 0.35, hy, r * 1.05, 3);
+  // Armored brow and nostrils make the long snout readable against dark water.
+  ctx.strokeStyle = "#9ed2c7";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(hx - r * 0.08, hy - r * 0.28 - open * r * 0.08);
+  ctx.lineTo(hx + r * 1.17, hy - r * 0.14 - open * r * 0.16);
+  ctx.stroke();
+  ctx.fillStyle = "#182f35";
+  for (const nx of [1.12, 1.31]) {
+    ctx.beginPath();
+    ctx.arc(hx + r * nx, hy - r * (0.12 + open * 0.14), r * 0.055, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Mouth darkness appears before the mandible so jaw opening reads as motion.
+  ctx.fillStyle = "#17252a";
+  ctx.beginPath();
+  ctx.moveTo(hx - r * 0.02, hy + r * 0.11);
+  ctx.lineTo(hx + r * 1.4, hy + r * (0.04 - open * 0.15));
+  ctx.lineTo(hx + r * 1.05, hy + r * (0.35 + open * 0.38));
+  ctx.lineTo(hx + r * 0.02, hy + r * 0.33);
+  ctx.closePath();
+  ctx.fill();
+  const lower = new Path2D();
+  lower.moveTo(hx - r * 0.04, hy + r * 0.14 + open * r * 0.08);
+  lower.lineTo(hx + r * 1.4, hy + r * (0.13 + open * 0.42));
+  lower.lineTo(hx + r * 1.02, hy + r * (0.46 + open * 0.5));
+  lower.lineTo(hx - r * 0.18, hy + r * 0.42);
+  lower.closePath();
+  outlined(ctx, "#274f58", 2.6);
+  ctx.fillStyle = "#efe8d4";
+  for (let i = 0; i < 8; i++) {
+    const tx = hx + r * (0.08 + i * 0.16);
+    ctx.beginPath();
+    ctx.moveTo(tx, hy + r * 0.1);
+    ctx.lineTo(tx + r * 0.07, hy + r * (0.3 + open * 0.16));
+    ctx.lineTo(tx + r * 0.13, hy + r * 0.1);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.shadowColor = "#b9f4ff";
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = "#c8ffff";
+  ctx.beginPath();
+  ctx.arc(hx + r * 0.34, hy - r * 0.2 - open * r * 0.12, r * 0.11, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Foam gathers at the belly so the beast seems to bring the surf with it.
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = "#d9f3ef";
+  for (let i = 0; i < 6; i++) {
+    const foamX = -r * 0.9 + i * r * 0.38;
+    ctx.beginPath();
+    ctx.arc(foamX, -r * 0.1 + Math.sin(time * 3 + i) * 2, r * (0.06 + (i % 3) * 0.025), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  flashOverlay(ctx, unit, x, gy - r * 0.85, r * 1.6);
+  drawEffectPips(ctx, unit, x, gy - r * 2.35);
+  drawHealthBar(ctx, unit, gy - r * 2.22);
 }
 
 function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
-  const kind = unit.enemyKind!;
+  if (drawLateEnemy(ctx, unit, time)) {
+    const boss = isLateBossKind(unit.enemyKind);
+    const top = unit.y - unit.radius * (boss ? 3.15 : 2.8);
+    drawEffectPips(ctx, unit, unit.x, top - 5);
+    drawHealthBar(ctx, unit, top);
+    return;
+  }
+  // Keep this as a presentation string so bespoke early-return renderers do not
+  // narrow the remaining generic branch into an unwieldy TypeScript union.
+  const kind = String(unit.enemyKind);
   if (kind === "wolf" || kind === "alpha" || kind === "frostwolf" || kind === "reefhound") {
     drawWolf(ctx, unit, time);
     return;
@@ -3516,8 +4716,16 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     drawWyrm(ctx, unit, time);
     return;
   }
+  if (kind === "ogre") { drawMosstooth(ctx, unit, time); return; }
+  if (kind === "warlord") { drawGorehulk(ctx, unit, time); return; }
+  if (kind === "rimeheart") { drawRimeheartBoss(ctx, unit, time); return; }
+  if (kind === "bellwidow") { drawBellWidow(ctx, unit, time); return; }
+  if (kind === "stormjaw") { drawStormjaw(ctx, unit, time); return; }
   if (kind === "brinecrawler") { drawBrinecrawler(ctx, unit, time); return; }
   if (kind === "kelpbound") { drawKelpbound(ctx, unit, time); return; }
+  if (kind === "wreckgunner") { drawWreckGunner(ctx, unit, time); return; }
+  if (kind === "stormeel") { drawStormEel(ctx, unit, time); return; }
+  if (kind === "conchseer") { drawConchSeer(ctx, unit, time); return; }
   if (kind === "warbanner") {
     // Gorehulk's standard: a spear-shaft driven into the dirt, rag snapping
     const bx = unit.x;
@@ -4245,6 +5453,7 @@ function idleFlourishFx(battle: Battle, unit: Unit): void {
 }
 
 export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: SaveData, selected: Unit | null): void {
+  enemyHealthBarsVisible = save.enemyHealthBars;
   regionStage = battle.stage.id;
   // night stages have no sinking sun; everyone else's shadows stretch as the waves wear on
   shadowDusk =
@@ -4892,7 +6101,7 @@ const STAGE_GRADE: Record<number, string> = {
 };
 
 export function drawColorGrade(ctx: CanvasRenderingContext2D, stage: StageDef, w: number, h: number): void {
-  const tint = STAGE_GRADE[stage.id];
+  const tint = STAGE_GRADE[stage.id] ?? lateRoadGrade(stage.id);
   if (!tint) return;
   ctx.save();
   ctx.globalCompositeOperation = "soft-light";
@@ -4913,7 +6122,7 @@ export function drawLighting(
   w: number,
   h: number,
 ): void {
-  const darkness = STAGE_DARKNESS[battle.stage.id] ?? 0;
+  const darkness = STAGE_DARKNESS[battle.stage.id] ?? lateRoadDarkness(battle.stage.id);
   if (darkness <= 0) return;
   if (!lightCanvas) lightCanvas = document.createElement("canvas");
   const iw = Math.ceil(w);

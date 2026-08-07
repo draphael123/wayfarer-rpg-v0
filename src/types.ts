@@ -29,8 +29,25 @@ export type EnemyKind =
   | "bellkeeper"
   | "reefhound"
   | "stormcaller"
+  | "wreckgunner"
+  | "stormeel"
+  | "conchseer"
   | "bellwidow"
-  | "stormjaw";
+  | "stormjaw"
+  | "cinderkin"
+  | "briarback"
+  | "gloomwing"
+  | "reliquaryguard"
+  | "shardling"
+  | "bloodreaver"
+  | "nullwalker"
+  | "cindermaw"
+  | "verdantcolossus"
+  | "nightmother"
+  | "reliquaryseraph"
+  | "skybreaker"
+  | "bloodmoonstag"
+  | "wayeater";
 
 export interface Vec {
   x: number;
@@ -43,7 +60,13 @@ export type Attributes = Record<AttrKey, number>;
 
 export type WeaponKind = "sword" | "bow" | "staff" | "stave";
 
-export type EffectKind = "stun" | "slow" | "taunt" | "shield" | "haste" | "guard" | "burn" | "vulnerable";
+export type DisciplineId = "knight" | "rogue" | "archer" | "priest" | "mage";
+
+export type ElementId = "flame" | "frost" | "storm" | "earth" | "venom" | "radiant" | "blood" | "shadow";
+
+export type DamageElement = "physical" | ElementId;
+
+export type EffectKind = "stun" | "slow" | "silence" | "taunt" | "shield" | "haste" | "guard" | "burn" | "vulnerable";
 
 export interface StatusEffect {
   kind: EffectKind;
@@ -63,6 +86,10 @@ export interface AbilityDef {
   color: string;
   icon: string; // glyph drawn on the button
   blurb: string;
+  element?: DamageElement;
+  discipline?: DisciplineId;
+  pathSkill?: "core" | "focus" | "ultimate";
+  retired?: boolean;
 }
 
 export interface AbilityState {
@@ -92,6 +119,8 @@ export interface Unit {
   enemyKind: EnemyKind | null;
   calling: string | null; // sworn calling (heroes only, null while the oath is dormant)
   advCalling: string | null; // advanced branch (null unless the oath is active and advanced)
+  discipline: DisciplineId | null;
+  element: ElementId | null;
   ultCharge: number; // 0-100, fills from the calling's role actions
   entered: boolean; // enemies flip this crashing onto the field (spawn presentation)
   x: number;
@@ -149,6 +178,7 @@ export interface Projectile {
   color: string;
   heals: boolean;
   life: number;
+  element?: DamageElement;
 }
 
 export interface Telegraph {
@@ -158,7 +188,24 @@ export interface Telegraph {
   time: number;
   duration: number;
   owner: Unit;
-  kind: "pounce" | "sweep" | "meteor" | "lightning";
+  kind:
+    | "pounce"
+    | "sweep"
+    | "meteor"
+    | "lightning"
+    | "cannon"
+    | "eruption"
+    | "roots"
+    | "eclipse"
+    | "beam"
+    | "shatter"
+    | "bloodmoon"
+    | "void";
+  /** Short action verb shown above late-road warnings. */
+  label?: string;
+  /** Direction and reach for lane-shaped attacks such as beams and charges. */
+  angle?: number;
+  length?: number;
 }
 
 export interface GroundZone {
@@ -171,6 +218,7 @@ export interface GroundZone {
   power: number; // frost: slow fraction · sanctuary: burn dps · smoke: damage reduction · gravity: pull px/s
   dps: number; // frost: damage/s to enemies · sanctuary: healing/s to heroes · gravity: damage/s
   from: Unit;
+  element?: DamageElement;
 }
 
 export interface WaveEntry {
@@ -212,9 +260,13 @@ export interface HeroSave {
   trinket: string | null;
   calling: string | null; // sworn calling id (band level 5+), null = unsworn
   advCalling: string | null; // advanced branch id (band level 20+), null = not yet advanced
+  discipline: DisciplineId | null;
+  element: ElementId | null;
   callingLevels: Record<string, number>; // levels earned while each calling was active
   masteredCallings: string[]; // ten-level passives retained after switching
   advancedCallings: Record<string, string>; // chosen promotion retained per mastered calling
+  elementLevels: Partial<Record<ElementId, number>>;
+  masteredElements: ElementId[];
 }
 
 export interface SaveData {
@@ -230,6 +282,8 @@ export interface SaveData {
   soundVol: number; // 0-1 effects loudness
   musicVol: number; // 0-1 music loudness
   speed: number; // combat speed multiplier
+  aimMode: "freeze" | "slow" | "realtime"; // simulation pace while an aimed technique is held
+  telegraphAssist: "standard" | "long" | "extra"; // warning-time aid, independent of difficulty
   bestiary: Partial<Record<EnemyKind, number>>; // kills per enemy kind
   gold: number;
   unlockedSpells: string[]; // ability ids bought in the spell shop (account-wide)
@@ -252,6 +306,10 @@ export interface SaveData {
   pauseOnBlur: boolean; // pause an active fight when the tab loses focus
   colorSafe: boolean; // colorblind-friendly health bars (hero bars go blue)
   bigText: boolean; // larger menu + hint text
+  enemyHealthBars: boolean; // health bars above ordinary enemies
+  autoBattle: boolean; // begin real battles with AUTO tactics enabled
+  tutorialHints: boolean; // contextual coaching during the opening battles
+  completedTutorials: string[]; // replayable field lessons completed by this band
   keybinds: Record<string, string>; // action id -> key (hero1-4, ability1-4)
   pinnedGoal: string | null; // optional player-chosen expedition note
   formation: "line" | "wedge" | "guard"; // opening party arrangement

@@ -98,23 +98,31 @@ export class FxSystem {
   sigils: Sigil[] = [];
   shake = 0;
 
+  private cap<T>(items: T[], max: number): void {
+    if (items.length > max) items.splice(0, items.length - max);
+  }
+
   /** The spell's own mark, flashed over the caster — every cast wears its name. */
   sigil(x: number, y: number, icon: string, color: string): void {
     this.sigils.push({ x, y, icon, color, life: 0.65, maxLife: 0.65 });
+    this.cap(this.sigils, 48);
   }
 
   /** Vertical column of light standing on a ground point. */
   beam(x: number, y: number, height: number, width: number, color: string, life = 0.5): void {
     this.beams.push({ x, y, height, width, life, maxLife: life, color });
+    this.cap(this.beams, 48);
   }
 
   /** Straight glowing line — sniper trails, chain arcs. */
   tracer(x1: number, y1: number, x2: number, y2: number, color: string, life = 0.3, width = 2.5): void {
     this.tracers.push({ x1, y1, x2, y2, life, maxLife: life, color, width });
+    this.cap(this.tracers, 96);
   }
 
   pool(x: number, y: number, r: number, color: string, life = 0.7): void {
     this.pools.push({ x, y, r, life, maxLife: life, color });
+    this.cap(this.pools, 64);
   }
 
   /** Directional cone burst — debris flies away from the attacker. */
@@ -133,6 +141,7 @@ export class FxSystem {
         color, gravity: 260, glow: false,
       });
     }
+    this.cap(this.particles, 480);
   }
 
   ring(x: number, y: number, maxR: number, color: string, opts: { width?: number; life?: number; squash?: number } = {}): void {
@@ -147,10 +156,12 @@ export class FxSystem {
       width: opts.width ?? 3,
       squash: opts.squash ?? 0.55,
     });
+    this.cap(this.rings, 96);
   }
 
   slash(x: number, y: number, angle: number, radius: number, color: string, spread = Math.PI * 0.9): void {
     this.arcs.push({ x, y, angle, spread, radius, life: 0.22, maxLife: 0.22, color });
+    this.cap(this.arcs, 64);
   }
 
   burst(
@@ -178,6 +189,7 @@ export class FxSystem {
         glow: opts.glow ?? false,
       });
     }
+    this.cap(this.particles, 480);
   }
 
   floatText(x: number, y: number, text: string, color: string, size = 15): void {
@@ -193,6 +205,7 @@ export class FxSystem {
       maxLife: 1,
       size,
     });
+    this.cap(this.floaters, 180);
   }
 
   addShake(amount: number): void {

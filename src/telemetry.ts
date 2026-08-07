@@ -12,6 +12,36 @@ interface TelemetryEvent {
   [key: string]: unknown;
 }
 
+export interface RuntimeErrorDetails {
+  name: string;
+  message: string;
+  stack?: string;
+}
+
+const MAX_ERROR_TEXT = 4000;
+
+function clipped(value: string): string {
+  return value.length > MAX_ERROR_TEXT ? `${value.slice(0, MAX_ERROR_TEXT)}...` : value;
+}
+
+/** Turn thrown values (including circular rejection reasons) into safe report text. */
+export function runtimeErrorDetails(reason: unknown): RuntimeErrorDetails {
+  if (reason instanceof Error) {
+    return {
+      name: clipped(reason.name || "Error"),
+      message: clipped(reason.message || "Unknown error"),
+      ...(reason.stack ? { stack: clipped(reason.stack) } : {}),
+    };
+  }
+  if (typeof reason === "string") return { name: "Error", message: clipped(reason) };
+  try {
+    const json = JSON.stringify(reason);
+    return { name: "ThrownValue", message: clipped(json ?? String(reason)) };
+  } catch {
+    return { name: "ThrownValue", message: clipped(String(reason)) };
+  }
+}
+
 function read(): TelemetryEvent[] {
   try {
     const raw = localStorage.getItem(KEY);
@@ -33,8 +63,30 @@ export function logEvent(type: string, data: Record<string, unknown> = {}): void
   }
 }
 
-export function exportTelemetry(): string {
-  return JSON.stringify({ exported: Date.now(), events: read() }, null, 2);
+/** Record a locally-generated incident and return its short report id. */
+export function logRuntimeError(
+  source: string,
+  reason: unknown,
+  context: Record<string, unknown> = {},
+): string {
+  const incident = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  logEvent("runtime_error", {
+    incident,
+    source,
+    ...runtimeErrorDetails(reason),
+    context,
+  });
+  return incident;
+}
+
+export function exportTelemetry(context: Record<string, unknown> = {}): string {
+  const browser = typeof navigator === "undefined"
+    ? undefined
+    : { userAgent: navigator.userAgent, language: navigator.language };
+  const page = typeof location === "undefined"
+    ? undefined
+    : { url: location.href, viewport: `${window.innerWidth}x${window.innerHeight}`, pixelRatio: window.devicePixelRatio };
+  return JSON.stringify({ exported: Date.now(), game: "Wayband", browser, page, context, events: read() }, null, 2);
 }
 
 export function telemetrySummary(): string {

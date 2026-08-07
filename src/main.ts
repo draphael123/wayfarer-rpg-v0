@@ -1,9 +1,10 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { ADV_CALLING_LEVEL, ALL_GEAR, ARMORS, arenaPurse, BOSS_STAGES, CALLING_UNLOCK_LEVEL, contractFulfilled, contractPurse, CONTRACTS, DIFFICULTIES, HEROES, STAGES, TRINKETS } from "./data";
+import { ADV_CALLING_LEVEL, ALL_GEAR, ARMORS, arenaPurse, BOSS_STAGES, CALLING_UNLOCK_LEVEL, contractFulfilled, contractPurse, CONTRACTS, DIFFICULTIES, elementById, HEROES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { drawHeroPortrait, Menus } from "./menus";
+import { RecoveryPanel } from "./recovery";
 import {
   drawBackground,
   drawColorGrade,
@@ -21,7 +22,7 @@ import {
 } from "./render";
 import { defaultSave, grantHeroXp, loadSave, nextSpeed, persist } from "./save";
 import { autopilotTick, runBattleSimulation } from "./simulation";
-import { logEvent } from "./telemetry";
+import { exportTelemetry, logEvent, logRuntimeError } from "./telemetry";
 import { Tutorial } from "./tutorial";
 import type { SaveData, StageDef } from "./types";
 
@@ -50,10 +51,13 @@ let battle: Battle | null = null;
 let hud: Hud | null = null;
 let fx: FxSystem | null = null;
 let tutorial: Tutorial | null = null;
+let tutorialKind = "basics";
+let tutorialReturnTo: "map" | "handbook" = "map";
 let battleSave: SaveData = save; // the save the running battle reads (tutorial uses a throwaway)
 let currentStage = 0;
 let xpGranted = false;
 let activeChallenge: { kind: "arena" | "contract"; id: string; stage: number } | null = null;
+let autoDecisionTimer = 0;
 
 /** Battle fields run nearly two screens wide — the fight itself travels the land. */
 const FIELD_SCREENS = 1.9;
@@ -71,7 +75,11 @@ function fieldRect(): FieldRect {
 function resize(): void {
   const cssW = window.innerWidth;
   const cssH = window.innerHeight;
-  const dpr = Math.min(2.5, window.devicePixelRatio || 1);
+  // Keep high-DPI edges without letting a 4K/retina display allocate a
+  // 50-million-pixel canvas. Twelve million pixels is already crisp at play
+  // distance and avoids a large memory spike on mobile and integrated GPUs.
+  const pixelBudgetDpr = Math.sqrt(12_000_000 / Math.max(1, cssW * cssH));
+  const dpr = Math.max(0.5, Math.min(2, window.devicePixelRatio || 1, pixelBudgetDpr));
   const targetH = 430;
   viewScale = cssH / targetH;
   logicalW = cssW / viewScale;
@@ -115,8 +123,14 @@ const menus = new Menus("ui", save, {
     activeChallenge = { kind, stage: stageIndex, id };
     startBattle(stageIndex, true);
   },
-  startTutorial(kind: string) {
-    startTutorial(kind);
+  startTutorial(kind: string, returnTo: "map" | "handbook") {
+    startTutorial(kind, returnTo);
+  },
+  battleActive() {
+    return battle !== null;
+  },
+  pauseBattle() {
+    if (hud) hud.paused = true;
   },
   resetProgress() {
     save = defaultSave();
@@ -125,6 +139,7 @@ const menus = new Menus("ui", save, {
     audio.setMusic(save.music);
     audio.setSoundVolume(save.soundVol);
     audio.setMusicVolume(save.musicVol);
+    applyComfort(save);
     menus.save = save;
     menus.renderTitle();
   },
@@ -140,6 +155,7 @@ function startBattle(stageIndex: number, keepChallenge = false): void {
     party: save.heroes.filter((h) => h.recruited && h.active).length,
   });
   currentStage = stageIndex;
+  autoDecisionTimer = 0;
   xpGranted = false;
   tutorial = null;
   battleSave = save;
@@ -149,9 +165,17 @@ function startBattle(stageIndex: number, keepChallenge = false): void {
     ? { ...baseStage, name: `${baseStage.name} · Arena`, subtitle: "The crowd calls for the great foe", waves: [baseStage.waves[baseStage.waves.length - 1]], xpReward: Math.round(baseStage.xpReward * 0.55) }
     : null;
   battle = new Battle(arenaStage ?? baseStage, save, fieldRect(), fx);
+  // Every encounter starts from a neutral camera. Without this, a late-stage
+  // zoom or shake could leak into retries and make the next battlefield jump.
+  cam.x = 0;
+  cam.y = 0;
+  cam.zoom = 1;
+  cam.punch = 0;
   hud = new Hud(battle, save, logicalW, logicalH);
-  hud.freshPlayer = save.unlockedStage === 0 && save.level < 3;
+  hud.autopilot = save.autoBattle;
+  hud.freshPlayer = save.tutorialHints && save.unlockedStage === 0 && save.level < 3;
   audio.setMood("battle", stageIndex);
+  menus.beginBattleHistory();
   menus.hide();
 }
 
@@ -164,11 +188,26 @@ const TUTORIAL_STAGE: StageDef = {
   xpReward: 0,
 };
 
-function startTutorial(kind = "basics"): void {
+function startTutorial(kind = "basics", returnTo: "map" | "handbook" = "map"): void {
+  tutorialKind = kind;
+  tutorialReturnTo = returnTo;
   xpGranted = true; // tutorials pay no xp
+  autoDecisionTimer = 0;
   const temp = defaultSave();
   temp.sound = save.sound;
   temp.music = save.music;
+  temp.soundVol = save.soundVol;
+  temp.musicVol = save.musicVol;
+  temp.speed = save.speed;
+  temp.aimMode = save.aimMode;
+  temp.telegraphAssist = save.telegraphAssist;
+  temp.reducedMotion = save.reducedMotion;
+  temp.screenShake = save.screenShake;
+  temp.damageNumbers = save.damageNumbers;
+  temp.colorSafe = save.colorSafe;
+  temp.bigText = save.bigText;
+  temp.enemyHealthBars = save.enemyHealthBars;
+  temp.keybinds = { ...save.keybinds };
   if (kind === "gestures") {
     // Wren + Ezri practice squad with every aimed spell ready
     temp.heroes[0].active = false;
@@ -191,6 +230,7 @@ function startTutorial(kind = "basics"): void {
   tutorial = new Tutorial(battle, hud, kind);
   // lessons keep the calm campfire theme
   audio.setMood("menu");
+  menus.beginBattleHistory(returnTo);
   menus.hide();
 }
 
@@ -211,8 +251,17 @@ function mergeBestiary(): void {
   persist(save);
 }
 
-function endBattleToMap(): void {
-  const returnTo = activeChallenge?.kind ?? null;
+/** Retreat and defeat preserve half the coin already earned in the encounter.
+ *  Replays use the same settlement rule as returning to the map. */
+function bankRetreatSalvage(): void {
+  if (!battle || battle.tutorialMode || activeChallenge || xpGranted || battle.goldEarned <= 0) return;
+  save.gold += Math.round(battle.goldEarned / 2);
+  xpGranted = true;
+  persist(save);
+}
+
+function endBattleToMap(after?: () => void): void {
+  const showFinale = menus.pendingFinale;
   if (battle && !battle.tutorialMode) {
     logEvent("battle_end", {
       stage: currentStage,
@@ -224,10 +273,7 @@ function endBattleToMap(): void {
       casts: battle.castCounts,
     });
   }
-  if (battle && !battle.tutorialMode && !activeChallenge && !xpGranted && battle.goldEarned > 0) {
-    save.gold += Math.round(battle.goldEarned / 2);
-    persist(save);
-  }
+  bankRetreatSalvage();
   mergeBestiary();
   battle = null;
   hud = null;
@@ -236,10 +282,10 @@ function endBattleToMap(): void {
   battleSave = save;
   activeChallenge = null;
   audio.setMood("menu");
-  if (menus.pendingFinale) menus.renderFinale();
-  else if (returnTo === "arena") menus.renderArena();
-  else if (returnTo === "contract") menus.renderContracts();
-  else menus.renderMap();
+  menus.returnFromBattle(() => {
+    if (showFinale) menus.renderFinale();
+    after?.();
+  });
 }
 
 let rolledLoot: { id: string; icon: string; name: string; rare: boolean; kind: "trinket" | "armor" | "gold"; amount?: number } | null = null;
@@ -247,7 +293,20 @@ let rolledLoot: { id: string; icon: string; name: string; rare: boolean; kind: "
 function rollLoot(): void {
   if (rolledLoot) return;
   const rare = BOSS_STAGES.includes(currentStage);
-  const coastBossReward = currentStage === 15 ? "widowsChime" : currentStage === 17 ? "stormjawHeart" : null;
+  const bossReward = new Map<number, string>([
+    [4, "alphaFang"],
+    [5, "gorehornShard"],
+    [11, "heartOfWinter"],
+    [15, "widowsChime"],
+    [17, "stormjawHeart"],
+    [23, "cindermawCoal"],
+    [29, "colossusSeed"],
+    [35, "nightmotherSilk"],
+    [41, "seraphicPinion"],
+    [47, "skybreakerPrism"],
+    [53, "bloodmoonTine"],
+    [59, "lastWaystone"],
+  ]).get(currentStage) ?? null;
   const roll = Math.random();
   // real spoils: armor off the fallen, caches of coin — not only charms
   const unownedArmor = ALL_GEAR.filter((a) => a.cost > 0 && !save.armory.includes(a.id) && a.cost <= 220 + currentStage * 60);
@@ -259,7 +318,7 @@ function rollLoot(): void {
     rolledLoot = { id: "gold", icon: "💰", name: `a cache of ${amount} gold`, rare: false, kind: "gold", amount };
   } else {
     const coastCommons = new Set(["saltglass", "tideknot", "stormcoil", "reeftalon"]);
-    const pool = TRINKETS.filter((t) => coastBossReward ? t.id === coastBossReward : t.rarity === (rare ? "rare" : "common") && (currentStage < 12 || coastCommons.has(t.id)));
+    const pool = TRINKETS.filter((t) => bossReward ? t.id === bossReward : t.rarity === (rare ? "rare" : "common") && (currentStage < 12 || currentStage >= 18 || coastCommons.has(t.id)));
     const pick = pool[Math.floor(Math.random() * pool.length)];
     rolledLoot = { id: pick.id, icon: pick.icon, name: pick.name, rare, kind: "trinket" };
   }
@@ -283,12 +342,15 @@ function settleVictory(): void {
   save.heroes.forEach((h, i) => {
     if (!h.recruited) return;
     const before = h.level;
-    const beforeMasteries = new Set(h.masteredCallings);
+    const beforeMasteries = new Set(h.masteredElements);
     levels += grantHeroXp(save, i, h.active ? xp : xp * 0.5);
-    if (before < CALLING_UNLOCK_LEVEL && h.level >= CALLING_UNLOCK_LEVEL) milestones.push(`${HEROES[i].name} may swear a CALLING`);
-    if (before < ADV_CALLING_LEVEL && h.level >= ADV_CALLING_LEVEL) milestones.push(`${HEROES[i].name}'s oath can DEEPEN`);
-    for (const mastery of h.masteredCallings) {
-      if (!beforeMasteries.has(mastery)) milestones.push(`${HEROES[i].name} mastered the ${mastery} oath — its lesson is now permanent`);
+    if (before < CALLING_UNLOCK_LEVEL && h.level >= CALLING_UNLOCK_LEVEL) milestones.push(`${HEROES[i].name} may choose a PATH`);
+    if (before < ADV_CALLING_LEVEL && h.level >= ADV_CALLING_LEVEL) milestones.push(`${HEROES[i].name}'s path can be PROMOTED`);
+    for (const mastery of h.masteredElements) {
+      if (!beforeMasteries.has(mastery)) {
+        const elementName = elementById(mastery)?.name ?? mastery;
+        milestones.push(`${HEROES[i].name} mastered ${elementName} — its Legacy now travels between disciplines`);
+      }
     }
   });
   persist(save);
@@ -526,7 +588,13 @@ function handleHudAction(action: string): void {
       hud.paused = false;
       break;
     case "retry":
-      if (battle && !battle.tutorialMode) {
+      if (battle.tutorialMode) {
+        startTutorial(tutorialKind, tutorialReturnTo);
+        break;
+      }
+      if (battle.state === "victory") settleVictory();
+      else if (battle.state === "defeat") bankRetreatSalvage();
+      if (battle) {
         logEvent("battle_end", {
           stage: currentStage,
           difficulty: save.difficulty,
@@ -541,6 +609,11 @@ function handleHudAction(action: string): void {
       startBattle(currentStage, activeChallenge !== null);
       break;
     case "map":
+      // Defensive settlement: a result card must never be able to route around
+      // the full victory payout (including if a future overlay exposes Map).
+      if (battle.state === "victory") settleVictory();
+      endBattleToMap();
+      break;
     case "skip-tutorial":
       endBattleToMap();
       break;
@@ -637,10 +710,12 @@ window.addEventListener("keydown", (event) => {
   if (!hud || !battle) return;
   if (event.key === "Escape") {
     if (hud.cancelKeyAim()) return; // Esc first disarms an aimed hotkey
+    if (battle.state === "victory" || battle.state === "defeat") return;
     hud.paused = !hud.paused;
     return;
   }
   if (event.key === "p") {
+    if (battle.state === "victory" || battle.state === "defeat") return;
     hud.paused = !hud.paused;
     return;
   }
@@ -674,8 +749,99 @@ const cam = { x: 0, y: 0, zoom: 1, punch: 0 };
 
 let lastTime = performance.now();
 let rafId = 0;
+let lastDraw = 0;
+let recoveryActive = false;
+let recoveryIncident = "";
+let recoverySource = "";
 
-function frame(now: number): void {
+function runtimeContext(): Record<string, unknown> {
+  const livingHeroes = battle?.units.filter((unit) => unit.team === "hero" && unit.alive).length ?? 0;
+  const livingEnemies = battle?.units.filter((unit) => unit.team === "enemy" && unit.alive).length ?? 0;
+  return {
+    stage: battle ? currentStage : null,
+    stageName: battle?.stage.name ?? null,
+    battleState: battle?.state ?? null,
+    battleTime: battle ? Math.round(battle.time * 10) / 10 : null,
+    wave: battle?.waveIndex ?? null,
+    livingHeroes,
+    livingEnemies,
+    difficulty: save.difficulty,
+    bandLevel: save.level,
+    challenge: activeChallenge?.kind ?? null,
+  };
+}
+
+function resumeFrameLoop(): void {
+  cancelAnimationFrame(rafId);
+  lastTime = performance.now();
+  rafId = requestAnimationFrame(frame);
+}
+
+function completeRecovery(action: "retry" | "leave"): void {
+  try {
+    if (action === "retry") {
+      if (battle?.tutorialMode) startTutorial(tutorialKind, tutorialReturnTo);
+      else if (battle) startBattle(currentStage, activeChallenge !== null);
+    } else if (battle) {
+      endBattleToMap();
+    } else {
+      location.reload();
+      return;
+    }
+    logEvent("runtime_recovery", { incident: recoveryIncident, action });
+    recoveryActive = false;
+    recoveryPanel.hide();
+    resumeFrameLoop();
+  } catch (error) {
+    const followup = logRuntimeError("recovery_action", error, { action, ...runtimeContext() });
+    recoveryPanel.setStatus(`That recovery step also failed (report ${followup}). Download the report or reload the page.`);
+  }
+}
+
+const recoveryPanel = new RecoveryPanel({
+  retry: () => completeRecovery("retry"),
+  leave: () => completeRecovery("leave"),
+  export: () => {
+    logEvent("diagnostics_exported", { incident: recoveryIncident });
+    return exportTelemetry({ incident: recoveryIncident, source: recoverySource, ...runtimeContext() });
+  },
+});
+
+function enterRuntimeRecovery(
+  source: string,
+  error: unknown,
+  extra: Record<string, unknown> = {},
+): void {
+  const inBattle = !!battle;
+  const incident = logRuntimeError(source, error, { ...runtimeContext(), ...extra });
+  if (recoveryActive) return;
+  recoveryActive = true;
+  recoveryIncident = incident;
+  recoverySource = source;
+  cancelAnimationFrame(rafId);
+  if (hud) hud.paused = true;
+  try {
+    audio.setDanger(false);
+    audio.setMarching(false);
+  } catch {
+    // The DOM recovery controls do not depend on the audio subsystem.
+  }
+  recoveryPanel.show({ id: incident, inBattle });
+}
+
+window.addEventListener("error", (event) => {
+  enterRuntimeRecovery("window_error", event.error ?? new Error(event.message || "Unknown window error"), {
+    filename: event.filename,
+    line: event.lineno,
+    column: event.colno,
+  });
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  enterRuntimeRecovery("unhandled_rejection", event.reason);
+});
+
+function runFrame(now: number): void {
   // clamped both ways: a clock hiccup must never run time backwards
   let dt = Math.max(0, Math.min(0.05, (now - lastTime) / 1000));
   lastTime = now;
@@ -693,23 +859,32 @@ function frame(now: number): void {
         simDt *= 0.3;
       }
       // bullet time while aiming a gesture — lining up the shot is the fun part
-      if (hud.drag && hud.drag.mode === "ability") simDt *= 0.22;
+      if (hud.drag && hud.drag.mode === "ability") {
+        simDt *= battleSave.aimMode === "freeze" ? 0 : battleSave.aimMode === "realtime" ? 1 : 0.22;
+      }
       // AUTO: the band runs on the sim's judgment until the player takes over
-      if (hud.autopilot && battle.state === "fighting" && !tutorial) autopilotTick(battle, battleSave);
+      autoDecisionTimer -= simDt;
+      if (hud.autopilot && battle.state === "fighting" && battle.cinematic <= 0 && !tutorial && autoDecisionTimer <= 0) {
+        autopilotTick(battle, battleSave);
+        // Tactical choices do not need a fresh allocation-heavy search on
+        // every display frame; ten decisions a second remains responsive.
+        autoDecisionTimer = 0.1;
+      }
       battle.update(simDt, battleSave);
       syncChallengeReward();
       fx.update(simDt);
       if (tutorial) {
         tutorial.update(simDt);
         if (tutorial.done) {
-          endBattleToMap();
-          requestAnimationFrame(frame);
+          if (!save.completedTutorials.includes(tutorialKind)) save.completedTutorials.push(tutorialKind);
+          persist(save);
+          endBattleToMap(() => menus.showToast("Field lesson complete — your next waymark is ready"));
           return;
         }
       }
     }
     hud.update(dt);
-    if (battle.state === "victory") rollLoot();
+    if (battle.state === "victory" && !activeChallenge) rollLoot();
     audio.setBossMusic(!battle.tutorialMode && !!battle.bossRef?.alive && battle.state === "fighting");
     audio.setMarching(!hud.paused && battle.marching);
 
@@ -717,7 +892,8 @@ function frame(now: number): void {
     const living = battle.units.filter((u) => u.alive);
     let targetX = cam.x;
     let targetY = cam.y;
-    if (battle.cinematic > 0 && battle.bossRef?.alive) {
+    const calm = save.reducedMotion;
+    if (!calm && battle.cinematic > 0 && battle.bossRef?.alive) {
       // the camera crosses the whole field now — it follows the story
       const maxCam = Math.max(0, logicalW * FIELD_SCREENS - logicalW);
       targetX = Math.max(0, Math.min(maxCam, battle.bossRef.x - logicalW / 2));
@@ -754,20 +930,25 @@ function frame(now: number): void {
     }
     cam.x += (targetX - cam.x) * Math.min(1, dt * (battle.cinematic > 0 ? 4 : 2.2));
     cam.y += (targetY - cam.y) * Math.min(1, dt * (battle.cinematic > 0 ? 4 : 2.2));
-    cam.punch = Math.max(0, cam.punch - dt * 3.2);
-    if (battle.zoomPunch > 0) {
-      cam.punch = Math.max(cam.punch, battle.zoomPunch);
+    if (calm || !save.screenShake) {
+      cam.punch = 0;
       battle.zoomPunch = 0;
+      battle.kickX = 0;
+      battle.kickY = 0;
+    } else {
+      cam.punch = Math.max(0, cam.punch - dt * 3.2);
+      if (battle.zoomPunch > 0) {
+        cam.punch = Math.max(cam.punch, battle.zoomPunch);
+        battle.zoomPunch = 0;
+      }
+      // directional hit-kick decays fast
+      battle.kickX *= Math.max(0, 1 - dt * 10);
+      battle.kickY *= Math.max(0, 1 - dt * 10);
     }
-    // directional hit-kick decays fast
-    battle.kickX *= Math.max(0, 1 - dt * 10);
-    battle.kickY *= Math.max(0, 1 - dt * 10);
-    const cineZoom = battle.cinematic > 0 ? 0.1 : 0;
+    const cineZoom = !calm && battle.cinematic > 0 ? 0.1 : 0;
     cam.zoom = 1 + cam.punch * 0.045 + cineZoom;
     hud.cam = cam;
 
-    const calm = save.reducedMotion;
-    if (calm) cam.punch = 0;
     const shakeX = !calm && save.screenShake && fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
     const shakeY = !calm && save.screenShake && fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
 
@@ -790,7 +971,7 @@ function frame(now: number): void {
       drawDecals(ctx, battle);
       drawReflections(ctx, battle, battleSave, logicalW, worldH, horizon, battle.time);
       drawZones(ctx, battle);
-      drawTelegraphs(ctx, battle);
+      drawTelegraphs(ctx, battle, battleSave.colorSafe);
       drawUnits(ctx, battle, battleSave, hud.selected);
       drawProjectiles(ctx, battle);
       fx.draw(ctx);
@@ -803,7 +984,7 @@ function frame(now: number): void {
     drawLighting(ctx, battle, logicalW, worldH);
     drawColorGrade(ctx, battle.stage, logicalW, worldH);
     drawVignette(ctx, logicalW, worldH);
-    // ultimate ceremony: the screen edges flare in the oath's color
+    // ultimate ceremony: the screen edges flare in the path's color
     if (battle.ultFlash) {
       const uf = battle.ultFlash;
       const a = Math.min(1, uf.time / 0.55);
@@ -826,7 +1007,7 @@ function frame(now: number): void {
       audio.setDanger(frailest < 0.28);
       if (frailest < 0.28) {
         const danger = (0.28 - frailest) / 0.28;
-        const pulse = 0.55 + Math.abs(Math.sin(battle.time * 4)) * 0.45;
+        const pulse = calm ? 0.82 : 0.55 + Math.abs(Math.sin(battle.time * 4)) * 0.45;
         const dv = ctx.createRadialGradient(logicalW / 2, worldH * 0.45, Math.min(logicalW, worldH) * 0.45, logicalW / 2, worldH / 2, Math.max(logicalW, worldH) * 0.72);
         dv.addColorStop(0, "rgba(200, 40, 30, 0)");
         dv.addColorStop(1, `rgba(200, 40, 30, ${(0.24 + danger * 0.26) * pulse})`);
@@ -839,9 +1020,26 @@ function frame(now: number): void {
     hud.draw(ctx);
   } else {
     // the band camps behind the menus
-    drawTitleDiorama(ctx, save, logicalW, logicalH, now / 1000);
+    drawTitleDiorama(ctx, save, logicalW, logicalH, save.reducedMotion ? 0 : now / 1000);
   }
 
+}
+
+function frame(now: number): void {
+  if (recoveryActive) return;
+  // Menus, paused battles and calm-motion scenes do not need a 60 Hz redraw.
+  // Keeping them at 30 Hz halves idle canvas work while remaining responsive.
+  if ((!battle || hud?.paused || save.reducedMotion) && now - lastDraw < 1000 / 30) {
+    rafId = requestAnimationFrame(frame);
+    return;
+  }
+  lastDraw = now;
+  try {
+    runFrame(now);
+  } catch (error) {
+    enterRuntimeRecovery("animation_frame", error);
+    return;
+  }
   rafId = requestAnimationFrame(frame);
 }
 

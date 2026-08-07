@@ -80,7 +80,14 @@ type SfxName =
   | "spSecondwind"
   | "spRamwall"
   | "spStoneskin"
-  | "spBastion";
+  | "spBastion"
+  | "bossEruption"
+  | "bossRoots"
+  | "bossEclipse"
+  | "bossBeam"
+  | "bossShatter"
+  | "bossBloodmoon"
+  | "bossVoid";
 
 /** SFX that have recorded versions; each entry lists variants to pick from. */
 // Only the two big produced stingers keep their recordings — everything else
@@ -138,7 +145,8 @@ class AudioKit {
 
   // ---- sample layer
   private samples = new Map<string, AudioBuffer>();
-  private samplesRequested = false;
+  private sampleRequests = new Set<string>();
+  private noiseBuffer: AudioBuffer | null = null;
   private trackNode: { name: string; src: AudioBufferSourceNode; gain: GainNode } | null = null;
 
   // ---- ambience + danger ducking
@@ -199,7 +207,20 @@ class AudioKit {
       "10": { freq: 700, gain: 0.05 },
       "11": { freq: 380, gain: 0.03 },
     };
-    const spec = bedSpec[String(kind)];
+    const regionBeds: Array<{ freq: number; gain: number }> = [
+      { freq: 760, gain: 0.018 }, // South Road: open wind
+      { freq: 430, gain: 0.026 }, // Winterreach: snow hush
+      { freq: 1200, gain: 0.034 }, // Storm Coast: surf and rain
+      { freq: 360, gain: 0.032 }, // Cinderwake: ash and furnace breath
+      { freq: 1700, gain: 0.022 }, // Verdant Wilds: leaves and insects
+      { freq: 520, gain: 0.026 }, // Gloamfen: low, close fog
+      { freq: 980, gain: 0.02 }, // Sunken Reliquary: resonant stone
+      { freq: 2600, gain: 0.028 }, // Shatterpeak: high wind
+      { freq: 650, gain: 0.025 }, // Bloodmoon Weald: uneasy woodland
+      { freq: 220, gain: 0.028 }, // World's End: subsonic void wash
+    ];
+    const region = typeof kind === "number" ? Math.floor(kind / 6) : -1;
+    const spec = bedSpec[String(kind)] ?? regionBeds[region];
     if (spec) {
       const len = Math.floor(ctx.sampleRate * 2);
       const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -251,6 +272,7 @@ class AudioKit {
       }
       return;
     }
+    const region = Math.floor(kind / 6);
     if (kind === 0 || kind === 1) {
       // meadow and forest birdsong
       if (roll < 0.4) {
@@ -283,6 +305,59 @@ class AudioKit {
       } else if (roll < 0.35) {
         this.tone(680, 0.18, "sawtooth", 0.03, -320);
       }
+    } else if (region === 1) {
+      // Winterreach: ice settling and a bell carried over the snow.
+      if (roll < 0.28) {
+        this.tone(1180, 0.5, "sine", 0.04, -160);
+        this.tone(590, 0.8, "sine", 0.025, -40, 0.08);
+      }
+    } else if (region === 2) {
+      // Storm Coast: breakers, rigging, and distant thunder.
+      if (roll < 0.42) this.noise(0.55, 0.07, 700 + Math.random() * 500);
+      else if (roll < 0.5) this.tone(62, 0.8, "sine", 0.055, -12);
+    } else if (region === 3) {
+      // Cinderwake: ember spits over a furnace pulse.
+      if (roll < 0.5) {
+        this.noise(0.05, 0.1, 1100 + Math.random() * 1300);
+        this.tone(55, 0.45, "sine", 0.045, -8, 0.06);
+      }
+    } else if (region === 4) {
+      // Verdant Wilds: layered insect calls and bright canopy birds.
+      if (roll < 0.38) {
+        const note = 1650 + Math.random() * 900;
+        this.tone(note, 0.06, "sine", 0.035, 300);
+        this.tone(note * 0.82, 0.08, "sine", 0.03, -180, 0.13);
+      }
+    } else if (region === 5) {
+      // Gloamfen: small sounds that never quite reveal their source.
+      if (roll < 0.3) {
+        this.noise(0.22, 0.045, 2600, Math.random() * 0.3);
+        this.tone(185, 0.55, "sine", 0.035, -70, 0.12);
+      }
+    } else if (region === 6) {
+      // Sunken Reliquary: water drops wake old bronze and stone.
+      if (roll < 0.34) {
+        this.tone(1040, 0.07, "sine", 0.045, -420);
+        this.tone(260, 1.1, "sine", 0.028, 0, 0.08);
+      }
+    } else if (region === 7) {
+      // Shatterpeak: crystal chimes in thin, violent wind.
+      if (roll < 0.4) {
+        this.noise(0.35, 0.045, 3200);
+        this.tone(1760 + Math.random() * 500, 0.7, "triangle", 0.035, -90, 0.1);
+      }
+    } else if (region === 8) {
+      // Bloodmoon Weald: a heartbeat under the hunt.
+      if (roll < 0.32) {
+        this.tone(62, 0.16, "sine", 0.075, -9);
+        this.tone(58, 0.2, "sine", 0.055, -8, 0.22);
+      }
+    } else if (region === 9) {
+      // World's End: a reversed-feeling harmonic and a distant road groan.
+      if (roll < 0.3) {
+        this.tone(96, 1.2, "sawtooth", 0.035, 90);
+        this.tone(740, 0.8, "sine", 0.025, -420, 0.18);
+      }
     }
   }
 
@@ -295,7 +370,11 @@ class AudioKit {
 
   private desiredTrack(): string {
     if (this.mood === "menu") return "music-menu";
-    if (this.bossActive) return [5, 11, 17].includes(this.stageId) ? "music-mainboss" : "music-miniboss";
+    if (this.bossActive) {
+      if (this.stageId >= 18) return `music-boss-region${Math.floor(this.stageId / 6)}`;
+      return [5, 11, 17].includes(this.stageId) ? "music-mainboss" : "music-miniboss";
+    }
+    if (this.stageId >= 18) return `music-region${Math.floor(this.stageId / 6)}`;
     if (this.stageId >= 12) return "music-coast";
     if (this.stageId >= 6) return "music-winter"; // no sample bears this name: the synth winter theme owns Act 2
     return `music-stage${Math.max(0, Math.min(5, this.stageId))}`;
@@ -337,32 +416,31 @@ class AudioKit {
   /** Call from the first user gesture so the context is allowed to start. */
   unlock(): void {
     this.ensure();
-    this.loadSamples();
     this.syncMusic();
     this.setAmbience(this.mood === "menu" ? "menu" : this.stageId);
     if (!this.trackNode) this.startMusic();
   }
 
-  /** Fetch + decode every sample once; swap the music over as tracks arrive. */
-  private loadSamples(): void {
-    if (this.samplesRequested) return;
-    this.samplesRequested = true;
+  /** Fetch and decode only the recording the current scene actually needs.
+   *  The synth remains the immediate fallback while it arrives. */
+  private loadSample(name: string): void {
+    if (this.samples.has(name) || this.sampleRequests.has(name)) return;
     const ctx = this.ensure();
     if (!ctx) return;
     const overrides = (window as unknown as { __WAYBAND_AUDIO?: Record<string, string> }).__WAYBAND_AUDIO ?? {};
-    for (const name of ALL_SAMPLES) {
-      const url = overrides[name] ?? SAMPLE_FILES[name] ?? `audio/${name}.mp3`;
-      fetch(url)
-        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`))))
-        .then((buf) => ctx.decodeAudioData(buf))
-        .then((audio) => {
-          this.samples.set(name, audio);
-          if (name === this.desiredTrack()) this.syncMusic();
-        })
-        .catch(() => {
-          /* stay on the synth fallback */
-        });
-    }
+    if (!ALL_SAMPLES.includes(name) && !overrides[name]) return;
+    this.sampleRequests.add(name);
+    const url = overrides[name] ?? SAMPLE_FILES[name] ?? `audio/${name}.mp3`;
+    fetch(url)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`))))
+      .then((buf) => ctx.decodeAudioData(buf))
+      .then((audio) => {
+        this.samples.set(name, audio);
+        if (name === this.desiredTrack()) this.syncMusic();
+      })
+      .catch(() => {
+        /* stay on the synth fallback */
+      });
   }
 
   /** Crossfade the looped sample music to whatever the state wants. */
@@ -377,6 +455,7 @@ class AudioKit {
     if (this.trackNode?.name === want) return;
     const buffer = this.samples.get(want);
     if (!buffer) {
+      this.loadSample(want);
       // nothing recorded bears this name (the title theme, the Winterreach) —
       // hand the music back to the live synth bed
       this.stopTrack(0.7);
@@ -459,10 +538,13 @@ class AudioKit {
     const ctx = this.ensure();
     if (!ctx || !this.master) return;
     const t0 = ctx.currentTime + delay;
-    const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
-    const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    if (!this.noiseBuffer || this.noiseBuffer.sampleRate !== ctx.sampleRate) {
+      const len = ctx.sampleRate * 2;
+      this.noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      const data = this.noiseBuffer.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    }
+    const buffer = this.noiseBuffer;
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     const filter = ctx.createBiquadFilter();
@@ -474,7 +556,9 @@ class AudioKit {
     src.connect(filter);
     filter.connect(gain);
     gain.connect(this.sfxOut ?? this.master);
-    src.start(t0);
+    const playDuration = Math.min(dur, buffer.duration);
+    const offset = Math.random() * Math.max(0, buffer.duration - playDuration);
+    src.start(t0, offset, playDuration);
   }
 
   /** Kill-streak chime: each quick kill climbs — kept low and woody now. */
@@ -493,12 +577,13 @@ class AudioKit {
     if (variants) {
       const pick = variants[Math.floor(Math.random() * variants.length)];
       if (this.playSample(pick)) return;
+      this.loadSample(pick);
     }
     switch (name) {
       case "click":
         this.tone(660, 0.06, "square", 0.12, 120);
         break;
-      // ---- ultimate voices: each calling's big moment sounds like itself
+      // ---- ultimate voices: each path's big moment sounds like itself
       case "ultReady":
         this.tone(523, 0.14, "triangle", 0.2, 60);
         this.tone(784, 0.18, "triangle", 0.2, 0, 0.1);
@@ -796,6 +881,43 @@ class AudioKit {
         this.tone(294, 0.5, "sawtooth", 0.11, 20, 0.03);
         this.tone(1046, 0.3, "triangle", 0.09, 0, 0.3);
         break;
+      // ---- late-road bosses: seven silhouettes, seven unmistakable calls
+      case "bossEruption":
+        this.tone(54, 0.9, "sawtooth", 0.22, 32);
+        this.noise(0.55, 0.22, 520, 0.08);
+        for (let i = 0; i < 4; i++) this.noise(0.06, 0.1, 1300 + i * 260, 0.18 + i * 0.06);
+        break;
+      case "bossRoots":
+        this.noise(0.65, 0.16, 440);
+        this.tone(82, 0.8, "triangle", 0.16, 38);
+        this.tone(123, 0.55, "sine", 0.1, -18, 0.14);
+        break;
+      case "bossEclipse":
+        this.noise(0.5, 0.1, 2800);
+        this.tone(740, 0.75, "sine", 0.09, -590);
+        this.tone(92, 0.9, "sawtooth", 0.11, -28, 0.08);
+        break;
+      case "bossBeam":
+        this.tone(392, 0.55, "triangle", 0.12, 520);
+        this.tone(784, 0.5, "sine", 0.1, 0, 0.06);
+        this.noise(0.3, 0.12, 3600, 0.22);
+        break;
+      case "bossShatter":
+        for (let i = 0; i < 6; i++) this.tone(2100 - i * 210, 0.11, "triangle", 0.065, -420, i * 0.035);
+        this.noise(0.28, 0.19, 3900, 0.08);
+        this.tone(70, 0.45, "sine", 0.15, -20, 0.16);
+        break;
+      case "bossBloodmoon":
+        this.tone(64, 0.18, "sine", 0.18, -8);
+        this.tone(58, 0.23, "sine", 0.15, -7, 0.2);
+        this.tone(196, 0.65, "sawtooth", 0.1, 100, 0.28);
+        break;
+      case "bossVoid":
+        this.tone(48, 1.2, "sawtooth", 0.18, 70);
+        this.tone(71, 1.1, "sine", 0.13, -29, 0.02);
+        this.noise(0.8, 0.12, 260, 0.12);
+        this.tone(1170, 0.85, "sine", 0.06, -980, 0.24);
+        break;
       case "slash":
         // steel with WEIGHT: air, edge, and a body thump under it
         this.noise(0.11, 0.2, 1900);
@@ -925,6 +1047,38 @@ class AudioKit {
         else if (s8 === 7 && this.musicStep % 16 === 15) pluck(bar[3] * 2, 0.26, 0.12); // a grace note before the turn
         // now and then a harmonic rings out over the fire
         if (this.musicStep % 32 === 20) this.tone(bar[2] * 4, 2.2, "sine", 0.09, 0, 0.15, g);
+      } else if (this.mood === "battle" && this.stageId >= 18) {
+        // Every six-stage late-road region has its own scale, pulse and timbre.
+        // Bosses keep the regional motif but force it into a denser, lower register,
+        // so the encounter feels climactic without sounding detached from its place.
+        const lateThemes = [
+          { root: 55, scale: [110, 130.8, 146.8, 164.8, 196], wave: "sawtooth" as OscillatorType }, // Cinderwake
+          { root: 73.4, scale: [146.8, 174.6, 220, 246.9, 293.7], wave: "triangle" as OscillatorType }, // Verdant
+          { root: 41.2, scale: [82.4, 98, 116.5, 138.6, 155.6], wave: "sine" as OscillatorType }, // Gloamfen
+          { root: 65.4, scale: [130.8, 164.8, 196, 261.6, 329.6], wave: "triangle" as OscillatorType }, // Reliquary
+          { root: 87.3, scale: [174.6, 220, 261.6, 329.6, 392], wave: "square" as OscillatorType }, // Shatterpeak
+          { root: 55, scale: [110, 130.8, 155.6, 174.6, 207.7], wave: "sawtooth" as OscillatorType }, // Bloodmoon
+          { root: 36.7, scale: [73.4, 87.3, 103.8, 123.5, 146.8], wave: "sine" as OscillatorType }, // World's End
+        ];
+        const theme = lateThemes[Math.min(lateThemes.length - 1, Math.max(0, Math.floor(this.stageId / 6) - 3))];
+        const beat = this.musicStep % 8;
+        const note = theme.scale[(this.musicStep * 3 + Math.floor(this.musicStep / 8)) % theme.scale.length];
+        if (beat === 0 || (this.bossActive && beat === 4)) {
+          this.tone(theme.root, this.bossActive ? 1.7 : 2.8, "sine", this.bossActive ? 0.42 : 0.28, -4, 0, g);
+          this.tone(theme.root * 1.5, 1.5, "triangle", 0.1, 0, 0.03, g);
+        }
+        if (this.bossActive || beat % 2 === 1) {
+          this.tone(note * (this.bossActive ? 1 : 2), this.bossActive ? 0.38 : 0.7, theme.wave, this.bossActive ? 0.18 : 0.13, 0, 0, g);
+        }
+        // Region-specific musical fingerprints layered over the shared road pulse.
+        const lateRegion = Math.floor(this.stageId / 6);
+        if (lateRegion === 3 && beat % 2 === 0) this.noise(0.08, 0.12, 620, 0.02); // forge hammer
+        else if (lateRegion === 4 && beat === 3) this.tone(note * 3, 0.45, "sine", 0.08, 90, 0.08, g); // canopy answer
+        else if (lateRegion === 5 && beat === 6) this.tone(note * 2.01, 1.1, "sine", 0.07, -note, 0, g); // falling shadow
+        else if (lateRegion === 6 && beat % 4 === 2) this.tone(note * 4, 1.35, "triangle", 0.09, -60, 0, g); // bronze bell
+        else if (lateRegion === 7 && beat % 2 === 0) this.noise(0.1, 0.08, 2800, 0.04); // mountain gust
+        else if (lateRegion === 8 && (beat === 0 || beat === 1)) this.tone(58, 0.14, "sine", 0.2, -7, 0, g); // heartbeat
+        else if (lateRegion === 9 && beat === 5) this.tone(note * 1.414, 1.2, "sine", 0.075, -note * 0.7, 0, g); // unstable interval
       } else if (this.mood === "battle" && this.stageId >= 6) {
         // the winter theme: sparse bells over a deep double-drone, a cold fifth
         // shadowing the melody, and — rarely — a horn from across the ice
@@ -962,6 +1116,7 @@ class AudioKit {
   setSound(on: boolean): void {
     this.soundOn = on;
     if (!on) {
+      this.setMarching(false);
       this.stopAmbience();
       this.ambienceKind = null;
     } else {

@@ -19,7 +19,11 @@ import {
   ADV_CALLING_LEVEL,
   ADV_SWITCH_COST,
   advCallingById,
-  CALLINGS,
+  DISCIPLINES,
+  ELEMENTS,
+  pathId,
+  pathAbilities,
+  elementById,
   CALLING_SWITCH_COST,
   CALLING_MASTERY_LEVELS,
   CALLING_UNLOCK_LEVEL,
@@ -27,7 +31,6 @@ import {
   callingEligible,
   CONTRACTS,
   contractPurse,
-  FOUNDATIONAL_CALLING_IDS,
   DIFFICULTIES,
   heroArrived,
   TRINKETS,
@@ -52,6 +55,8 @@ import {
   MAX_EQUIPPED,
   PARTY_CAP,
   RECRUIT_COST,
+  ROAD_TUTELAGE_STAGE,
+  roadTutelageCost,
   SPELL_COSTS,
   STAGES,
   WEAPON_DAMAGE_BONUS,
@@ -62,22 +67,26 @@ import {
   unlockedAbilities,
   xpForLevel,
 } from "./data";
-import type { AttrKey, EnemyKind } from "./types";
+import type { AttrKey, DisciplineId, ElementId, EnemyKind } from "./types";
 
 function bestAttr(index: number): AttrKey {
   const attrs = HEROES[index].baseAttrs;
   return ATTR_KEYS.reduce((best, k) => (attrs[k] > attrs[best] ? k : best), ATTR_KEYS[0]);
 }
 import { drawAbilityGlyph, ico } from "./icons";
+import { lateRoadMapMarkup, LATE_ROAD_REGIONS, type LateRoadRegion } from "./late-road";
+import { drawLateEnemyIcon } from "./late-sprites";
 import { drawHeroFigure, setColorSafe } from "./render";
-import { activeSlot, DEFAULT_KEYBINDS, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
+import { activeSlot, defaultSave, DEFAULT_KEYBINDS, grantHeroXp, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
 import { exportTelemetry, telemetrySummary } from "./telemetry";
 import type { SaveData } from "./types";
 
 export interface MenuCallbacks {
   startStage: (stageIndex: number) => void;
   startChallenge: (kind: "arena" | "contract", stageIndex: number, id: string) => void;
-  startTutorial: (kind: string) => void;
+  startTutorial: (kind: string, returnTo: "map" | "handbook") => void;
+  battleActive: () => boolean;
+  pauseBattle: () => void;
   resetProgress: () => void;
 }
 
@@ -92,21 +101,26 @@ function abilityById(id: string) {
   return ABILITIES.find((a) => a.id === id)!;
 }
 
+function heroPathAbilities(hero: SaveData["heroes"][number]) {
+  return hero.discipline && hero.element ? [...pathAbilities(hero.discipline, hero.element)] : [];
+}
+
+function enemyWaymark(kind: EnemyKind, compact = false): string {
+  const enemy = ENEMIES[kind];
+  const weak = elementById(enemy.weakTo)?.name;
+  const resists = elementById(enemy.resists)?.name;
+  if (!weak && !resists) return "";
+  const copy = [weak ? `weak to ${weak}` : "", resists ? `resists ${resists}` : ""].filter(Boolean).join(" · ");
+  return compact
+    ? `<span class="enemy-waymark compact"><b>Waymark</b> ${copy}</span>`
+    : `<div class="enemy-waymark"><b>Waymark</b><span>${copy}</span></div>`;
+}
+
 function buildIdentity(save: SaveData, index: number): string {
   const hero = save.heroes[index];
   const calling = callingById(hero.calling);
   if (calling && callingEligible(calling, hero.attrs)) return calling.name;
-  const ranked = ATTR_KEYS.slice().sort((a, b) => hero.attrs[b] - hero.attrs[a]);
-  const pair = `${ranked[0]}-${ranked[1]}`;
-  const named: Record<string, string> = {
-    "str-int": "Spellblade", "int-str": "Spellblade",
-    "str-vit": "Iron Vanguard", "vit-str": "Iron Vanguard",
-    "dex-spi": "Wayfinder", "spi-dex": "Wayfinder",
-    "int-spi": "Lantern Sage", "spi-int": "Lantern Sage",
-    "dex-int": "Arcane Ranger", "int-dex": "Arcane Ranger",
-    "vit-spi": "Oath Warden", "spi-vit": "Oath Warden",
-  };
-  return named[pair] ?? ({ str: "Bladebearer", dex: "Pathfinder", int: "Spellwright", vit: "Bulwark", spi: "Lightkeeper" } as Record<AttrKey, string>)[ranked[0]];
+  return hero.level >= CALLING_UNLOCK_LEVEL ? "Path unchosen" : "Roadbound";
 }
 
 type Derived = ReturnType<typeof deriveStats>;
@@ -121,7 +135,7 @@ function flashStatDeltas(card: HTMLElement, before: Derived, after: Derived): vo
     ["Armor", (s) => s.armor * 100, (d) => `${Math.round(d)}%`],
     ["Move", (s) => s.speed, (d) => `${Math.round(d)}`],
     ["Healing", (s) => s.healPower, (d) => `${d.toFixed(1)}/s`],
-    ["Spell power", (s) => s.spellPower, (d) => `${d.toFixed(2)}`],
+    ["Technique power", (s) => s.spellPower, (d) => `${d.toFixed(2)}`],
   ];
   const show = (key: string, text: string, up: boolean) => {
     const cell = card.querySelector(`[data-stat="${key}"]`);
@@ -169,7 +183,7 @@ const STAT_BLURBS: Record<string, string> = {
   Range: "Melee fights up close — ranged strikes from a distance.",
   Move: "How quickly the hero crosses the battlefield.",
   Healing: "Health restored per second while channeling a heal.",
-  "Spell power": "Multiplies the strength of every spell they cast.",
+  "Technique power": "Multiplies the strength of every elemental technique they use.",
 };
 
 /** Front-facing hero bust for menu cards; drawn in 64-unit space and scaled to the canvas. */
@@ -337,6 +351,7 @@ function drawBeastIcon(canvas: HTMLCanvasElement, kind: EnemyKind): void {
     ctx.stroke();
   };
   ctx.clearRect(0, 0, 64, 64);
+  if (drawLateEnemyIcon(ctx, kind)) return;
   if (kind === "wolf" || kind === "alpha" || kind === "frostwolf") {
     ctx.fillStyle = def.body;
     ctx.beginPath();
@@ -466,16 +481,17 @@ export class Menus {
   toast: HTMLElement | null = null;
   travelFrom: number | null = null; // cleared stage to animate the road-march from
   private gearFocus: "weapon" | "body" | "helm" | "boots" | "trinket" = "body";
-  private spellFocus = 0;
-  private pendingSpell: string | null = null; // retained for the legacy spell sheet below
   private figureTimer: number | null = null; // idle animation for the hero-sheet figure
   private justDonned = false; // flash the figure preview on the next sheet render
   private selectedStage: number | null = null; // map node the scout report is showing
-  pendingFinale = false; // set when the Winterreach's king falls
+  pendingFinale = false; // set when the Way-Eater falls at the road's end
   private shopAttr: AttrKey | "all" = "all"; // spell-shop filter
   private shopHideOwned = false;
   private partySel = 0;
   private lastGold: number | null = null; // for the counting-up gold chip
+  private settingsTab: "audio" | "battle" | "access" | "campaign" = "battle";
+  private settingsReturn: "title" | "map" | "party" | "shop" | "tavern" | "records" = "title";
+  private handbookReturn: "title" | "map" | "settings" = "title";
 
   /** Animate the header gold chip counting from its last shown value. */
   private tickGold(page: HTMLElement): void {
@@ -507,54 +523,281 @@ export class Menus {
   hide(): void {
     this.root.innerHTML = "";
     this.root.classList.remove("visible");
+    document.body.classList.remove("menu-open");
   }
 
   /** Wire the hardware/browser back button: each screen registers itself. */
   private navReady = false;
   private navigating = false;
+  private currentRoute = "";
+  private navDepth = 0;
+  private replaceNextNavigation = false;
+  private pendingAfterNavigation: (() => void) | null = null;
+  private battleReturn: { p: string; a?: number; d: number } = { p: "map", d: 1 };
+  private hotkeyCaptureCleanup: (() => void) | null = null;
+
+  private renderRoute(st: { p?: string; a?: number }, fromHistory = true): void {
+    if (st.p !== "hotkeys") {
+      this.hotkeyCaptureCleanup?.();
+      this.hotkeyCaptureCleanup = null;
+    }
+    const wasNavigating = this.navigating;
+    if (fromHistory) this.navigating = true;
+    try {
+      switch (st.p) {
+        case "map": this.renderMap(); break;
+        case "party": this.renderParty(); break;
+        case "shop": this.renderShop("armory"); break;
+        case "tavern": this.renderShop("tavern"); break;
+        case "settings": this.renderSettings(); break;
+        case "handbook": this.renderTutorials(); break;
+        case "reference": this.renderVillageGuide(); break;
+        case "first-run": this.renderFirstRun(); break;
+        case "hotkeys": this.renderHotkeys(); break;
+        case "profiles": this.renderProfiles(); break;
+        case "finale": this.renderFinale(); break;
+        case "bestiary": this.renderBestiary(); break;
+        case "chronicle": this.renderChronicle(); break;
+        case "arena": this.renderArena(); break;
+        case "contracts": this.renderContracts(); break;
+        case "hero": this.renderHeroOverview(st.a ?? 0); break;
+        case "equip": this.renderEquipment(st.a ?? 0); break;
+        case "spells": this.renderSpells(st.a ?? 0); break;
+        case "smithy": this.renderShop("smithy"); break;
+        case "talents": this.renderTalents(st.a ?? 0); break;
+        case "calling": this.renderCalling(st.a ?? 0); break;
+        case "battle": break;
+        default: this.renderTitle();
+      }
+    } finally {
+      this.navigating = wasNavigating;
+    }
+  }
+
   private pushNav(name: string, arg?: number): void {
     if (!this.navReady) {
       this.navReady = true;
       window.addEventListener("popstate", (ev) => {
-        const st = (ev.state ?? {}) as { p?: string; a?: number };
-        this.navigating = true;
-        try {
-          switch (st.p) {
-            case "map": this.renderMap(); break;
-            case "party": this.renderParty(); break;
-            case "shop": this.renderShop("armory"); break;
-            case "bestiary": this.renderBestiary(); break;
-            case "chronicle": this.renderChronicle(); break;
-            case "arena": this.renderArena(); break;
-            case "contracts": this.renderContracts(); break;
-            case "hero": this.renderHeroOverview(st.a ?? 0); break;
-            case "equip": this.renderEquipment(st.a ?? 0); break;
-            case "spells": this.renderSpells(st.a ?? 0); break;
-            case "smithy": this.renderShop("smithy"); break;
-            case "talents": this.renderTalents(st.a ?? 0); break;
-            case "calling": this.renderCalling(st.a ?? 0); break;
-            default: this.renderTitle();
-          }
-        } finally {
-          this.navigating = false;
+        const st = (ev.state ?? {}) as { p?: string; a?: number; d?: number };
+        const targetDepth = Math.max(1, st.d ?? this.navDepth - 1);
+        if (this.callbacks.battleActive() && st.p !== "battle") {
+          this.callbacks.pauseBattle();
+          this.navDepth = targetDepth + 1;
+          this.currentRoute = "battle:";
+          history.pushState({ p: "battle", d: this.navDepth }, "", "");
+          return;
         }
+        // A finished or abandoned encounter can leave a forward/back entry for
+        // its canvas route. There is no battle to render at that point, so skip
+        // the stale entry instead of leaving the current menu looking stuck.
+        if (!this.callbacks.battleActive() && st.p === "battle") {
+          this.navDepth = targetDepth;
+          if (targetDepth > 1) history.back();
+          else {
+            const fallback = { ...this.battleReturn, d: 1 };
+            this.currentRoute = `${fallback.p}:${fallback.a ?? ""}`;
+            history.replaceState(fallback, "", "");
+            this.renderRoute(fallback);
+            const after = this.pendingAfterNavigation;
+            this.pendingAfterNavigation = null;
+            after?.();
+          }
+          return;
+        }
+        this.navDepth = targetDepth;
+        this.currentRoute = `${st.p ?? "title"}:${st.a ?? ""}`;
+        this.renderRoute(st);
+        const after = this.pendingAfterNavigation;
+        this.pendingAfterNavigation = null;
+        after?.();
       });
     }
-    if (!this.navigating) history.pushState({ p: name, a: arg }, "", "");
+    const route = `${name}:${arg ?? ""}`;
+    if (this.navigating) return;
+    if (this.navDepth === 0 || this.replaceNextNavigation) {
+      this.navDepth = Math.max(1, this.navDepth);
+      this.currentRoute = route;
+      history.replaceState({ p: name, a: arg, d: this.navDepth }, "", "");
+      this.replaceNextNavigation = false;
+    } else if (route !== this.currentRoute) {
+      this.currentRoute = route;
+      this.navDepth += 1;
+      history.pushState({ p: name, a: arg, d: this.navDepth }, "", "");
+    }
+  }
+
+  private goBack(fallback: () => void): void {
+    if (this.navDepth > 1) {
+      const routeBeforeBack = this.currentRoute;
+      const depthBeforeBack = this.navDepth;
+      let settled = false;
+      const recoverDuplicateRoute = () => {
+        if (settled) return;
+        settled = true;
+        if (this.currentRoute !== routeBeforeBack) return;
+        this.navDepth = Math.max(1, Math.min(this.navDepth, depthBeforeBack - 1));
+        this.replaceNextNavigation = true;
+        fallback();
+      };
+      // Run immediately after popstate as well as from the timeout below. That
+      // catches a real history move whose preceding entry is a duplicate route.
+      this.pendingAfterNavigation = recoverDuplicateRoute;
+      history.back();
+      // Embedded browsers can occasionally coalesce two closely spaced
+      // programmatic Back operations (notably after leaving a replayed lesson).
+      // If the route never changes, use the screen's explicit fallback so the
+      // Back control cannot become a dead end.
+      window.setTimeout(() => {
+        if (this.pendingAfterNavigation === recoverDuplicateRoute) this.pendingAfterNavigation = null;
+        recoverDuplicateRoute();
+      }, 180);
+    } else {
+      this.replaceNextNavigation = true;
+      fallback();
+    }
+  }
+
+  /** Give an active canvas battle its own guarded history entry. Hardware Back
+   *  pauses instead of revealing a live fight underneath a menu. */
+  beginBattleHistory(returnTo?: "map" | "handbook"): void {
+    if (this.currentRoute === "battle:") return;
+    if (returnTo) {
+      this.navDepth = Math.max(1, this.navDepth);
+      this.currentRoute = `${returnTo}:`;
+      history.replaceState({ p: returnTo, d: this.navDepth }, "", "");
+    }
+    const current = (history.state ?? {}) as { p?: string; a?: number; d?: number };
+    this.battleReturn = { p: current.p ?? returnTo ?? "map", a: current.a, d: Math.max(1, current.d ?? this.navDepth) };
+    this.pushNav("battle");
+  }
+
+  /** Restore the exact menu that launched a battle or lesson, then run any
+   *  completion feedback after that menu is visible. */
+  returnFromBattle(after?: () => void): void {
+    if (this.currentRoute === "battle:" && this.navDepth > 1) {
+      this.pendingAfterNavigation = after ?? null;
+      history.back();
+      // Some embedded browsers coalesce a programmatic Back immediately after
+      // a guarded hardware-Back gesture. Never leave a cleared canvas exposed:
+      // restore the known launch screen if no popstate arrives promptly.
+      window.setTimeout(() => {
+        if (this.currentRoute !== "battle:") return;
+        const fallback = this.battleReturn;
+        this.navDepth = fallback.d;
+        this.currentRoute = `${fallback.p}:${fallback.a ?? ""}`;
+        history.replaceState(fallback, "", "");
+        this.renderRoute(fallback);
+        const pending = this.pendingAfterNavigation;
+        this.pendingAfterNavigation = null;
+        pending?.();
+      }, 120);
+      return;
+    }
+    this.replaceNextNavigation = true;
+    this.renderRoute(this.battleReturn, false);
+    after?.();
   }
 
   private show(): void {
     this.root.classList.add("visible");
+    document.body.classList.add("menu-open");
     this.root.scrollTop = 0;
   }
 
   showToast(text: string): void {
     this.toast?.remove();
-    const toast = el(`<div class="toast">${text}</div>`);
+    const toast = el(`<div class="toast" role="status" aria-live="polite" aria-atomic="true">${text}</div>`);
     this.root.appendChild(toast);
     this.toast = toast;
     setTimeout(() => toast.classList.add("fade"), 2600);
     setTimeout(() => toast.remove(), 3300);
+  }
+
+  private showImportPanel(): void {
+    const pop = el(`
+      <div class="levelup-pop save-code-pop">
+        <div class="levelup-card save-code-card" role="dialog" aria-modal="true" aria-labelledby="save-import-title">
+          <span class="save-code-kicker">Campaign transfer</span>
+          <div class="levelup-title" id="save-import-title">BRING IN A BAND</div>
+          <div class="levelup-line">Paste a Wayband save code below. Nothing changes until you confirm.</div>
+          <label class="save-code-label" for="save-code-input">Save code</label>
+          <textarea class="save-code-input" id="save-code-input" spellcheck="false" autocomplete="off" placeholder="Paste the long save code here"></textarea>
+          <div class="save-code-status" aria-live="polite">Your current band will be replaced on this save slot.</div>
+          <div class="levelup-actions">
+            <button class="big-btn primary" data-save-code="import">Import band</button>
+            <button class="big-btn" data-save-code="cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+    const input = pop.querySelector(".save-code-input") as HTMLTextAreaElement;
+    const status = pop.querySelector(".save-code-status")!;
+    pop.addEventListener("click", (event) => {
+      const action = (event.target as HTMLElement).closest("[data-save-code]")?.getAttribute("data-save-code");
+      if (action === "cancel" || event.target === pop) {
+        audio.play("click");
+        pop.remove();
+        return;
+      }
+      if (action !== "import") return;
+      try {
+        const data = JSON.parse(decodeURIComponent(escape(atob(input.value.trim()))));
+        if (!data || data.version !== 1 || !Array.isArray(data.heroes)) throw new Error("bad");
+        localStorage.setItem(slotKey(), JSON.stringify(data));
+        audio.play("page");
+        location.reload();
+      } catch {
+        input.classList.add("invalid");
+        status.textContent = "That code is not a valid Wayband save. Check that the whole code was pasted.";
+        status.classList.add("error");
+        input.focus();
+      }
+    });
+    input.addEventListener("input", () => {
+      input.classList.remove("invalid");
+      status.classList.remove("error");
+      status.textContent = "Your current band will be replaced on this save slot.";
+    });
+    this.root.appendChild(pop);
+    setTimeout(() => input.focus(), 0);
+  }
+
+  private showCopyPanel(title: string, note: string, value: string): void {
+    const pop = el(`
+      <div class="levelup-pop save-code-pop">
+        <div class="levelup-card save-code-card" role="dialog" aria-modal="true" aria-labelledby="save-copy-title">
+          <span class="save-code-kicker">Campaign transfer</span>
+          <div class="levelup-title" id="save-copy-title">${title}</div>
+          <div class="levelup-line">${note}</div>
+          <label class="save-code-label" for="save-code-output">Code</label>
+          <textarea class="save-code-input" id="save-code-output" readonly spellcheck="false"></textarea>
+          <div class="save-code-status">Select the code, then copy it with your device's copy command.</div>
+          <div class="levelup-actions">
+            <button class="big-btn primary" data-copy-code="select">Select code</button>
+            <button class="big-btn" data-copy-code="close">Done</button>
+          </div>
+        </div>
+      </div>
+    `);
+    const output = pop.querySelector(".save-code-input") as HTMLTextAreaElement;
+    output.value = value;
+    pop.addEventListener("click", (event) => {
+      const action = (event.target as HTMLElement).closest("[data-copy-code]")?.getAttribute("data-copy-code");
+      if (action === "select") {
+        output.focus();
+        output.select();
+        return;
+      }
+      if (action === "close" || event.target === pop) {
+        audio.play("click");
+        pop.remove();
+      }
+    });
+    this.root.appendChild(pop);
+    setTimeout(() => {
+      output.focus();
+      output.select();
+    }, 0);
   }
 
   /** Battleheart-style bottom tab bar: five doors, every screen one tap apart. */
@@ -564,10 +807,10 @@ export class Menus {
     const shopDeal =
       save.heroes.some((h) => h.recruited && h.weaponTier + 1 < WEAPON_TIERS.length && WEAPON_TIERS[h.weaponTier + 1].cost <= save.gold) ||
       ALL_GEAR.some((a) => a.cost > 0 && !save.armory.includes(a.id) && a.cost <= save.gold) ||
-      ABILITIES.some((a) => !save.unlockedSpells.includes(a.id) && (SPELL_COSTS[a.id] ?? 100) <= save.gold);
+      ABILITIES.some((a) => !a.retired && !a.pathSkill && !save.unlockedSpells.includes(a.id) && (SPELL_COSTS[a.id] ?? 100) <= save.gold);
     const recruitReady = save.heroes.some((h, i) => !h.recruited && heroArrived(save, i) && (RECRUIT_COST[i] ?? Infinity) <= save.gold);
     const btn = (id: string, icon: string, label: string, extra = "") =>
-      `<button class="nav-btn ${current === id ? "on" : ""}" data-nav="${id}">${ico(icon)}<span>${label}</span>${extra}</button>`;
+      `<button class="nav-btn ${current === id ? "on" : ""}" data-nav="${id}" ${current === id ? 'aria-current="page"' : ""}>${ico(icon)}<span>${label}</span>${extra}</button>`;
     const bar = el(`
       <nav class="nav-bar">
         ${btn("battle", "sword", "Battle")}
@@ -575,6 +818,7 @@ export class Menus {
         ${btn("shop", "bag", "Shop", shopDeal ? '<span class="shop-dot"></span>' : "")}
         ${btn("tavern", "home", "Tavern", recruitReady ? '<span class="shop-dot"></span>' : "")}
         ${btn("records", "book", "Records")}
+        <button class="nav-settings" data-nav="settings" aria-label="Settings">⚙</button>
         <span class="nav-gold">${ico("coin")} ${save.gold}</span>
       </nav>
     `);
@@ -584,7 +828,11 @@ export class Menus {
       const to = target.getAttribute("data-nav");
       if (to === current) return;
       audio.play("page");
-      if (to === "battle") this.renderMap();
+      if (to === "settings") {
+        this.settingsReturn = current === "battle" ? "map" : current;
+        this.renderSettings();
+      }
+      else if (to === "battle") this.renderMap();
       else if (to === "party") this.renderParty();
       else if (to === "shop") this.renderShop("armory");
       else if (to === "tavern") this.renderShop("tavern");
@@ -605,12 +853,19 @@ export class Menus {
     this.pushNav("title");
     this.root.innerHTML = "";
     this.show();
+    const campaignComplete = (this.save.stageStats[STAGES.length - 1]?.clears ?? 0) > 0;
     const page = el(`
-      <div class="page title-page">
+      <div class="page title-page elemental-title">
         <div class="title-block">
-          <div class="title-kicker">A COMPANY RPG</div>
+          <div class="title-kicker">REAL-TIME ELEMENTAL PARTY TACTICS</div>
           <div class="game-logo">WAYBAND</div>
-          <div class="game-sub">No chosen one. Four travelers, and the road ahead.</div>
+          <div class="game-sub">Choose a Discipline. Bind the element that answers. Master its legacy down the Long Road.</div>
+          <div class="title-waymarks" aria-label="Eight elemental Attunements: ${ELEMENTS.map((element) => element.name).join(", ")}">
+            ${ELEMENTS.map((element) => `<span class="title-waymark" style="--element:${element.color}" title="${element.name}">${ico(element.icon)}<em>${element.name}</em></span>`).join("")}
+          </div>
+          <div class="title-path-equation" aria-label="Five Disciplines multiplied by eight Attunements create forty Paths">
+            <b>5 Disciplines</b><i>×</i><b>8 Attunements</b><i>→</i><strong>40 Paths</strong>
+          </div>
         </div>
         <div class="campfire-scene" aria-hidden="true">
           <svg viewBox="0 0 360 120">
@@ -646,69 +901,28 @@ export class Menus {
             <circle class="cf-ember e3" cx="181" cy="66" r="1.4" fill="#f2d16b"/>
           </svg>
         </div>
-        <div class="title-company" aria-label="Current company">
+        <div class="title-company" aria-label="Current Wayband">
           ${this.save.heroes.map((hero, index) => ({ hero, index })).filter(({ hero }) => hero.recruited).map(({ index }) => `<span style="--company:${HEROES[index].accent}"><i></i>${HEROES[index].name}</span>`).join("")}
         </div>
         <div class="title-road-status">
-          <span>${this.save.unlockedStage > 0 ? `The road remembers ${this.save.lifetime.victories} victor${this.save.lifetime.victories === 1 ? "y" : "ies"}.` : "Millbrook's west bell has stopped ringing."}</span>
-          <strong>${this.save.unlockedStage > 0 ? `${STAGES[Math.min(this.save.unlockedStage, STAGES.length - 1)].name} waits.` : "Someone has to take the south road."}</strong>
+          <span>${campaignComplete ? "The Way-Eater has fallen. All sixty waymarks burn." : this.save.unlockedStage > 0 ? `The road remembers ${this.save.lifetime.victories} victor${this.save.lifetime.victories === 1 ? "y" : "ies"}.` : "Millbrook's west bell has stopped ringing."}</span>
+          <strong>${campaignComplete ? "The Last Meridian stands open." : this.save.unlockedStage > 0 ? `${STAGES[Math.min(this.save.unlockedStage, STAGES.length - 1)].name} waits.` : "Someone has to take the south road."}</strong>
         </div>
         <div class="title-buttons">
           <button class="big-btn primary" data-act="start">${this.save.seenIntro ? "Continue the Journey" : "Begin Your Journey"}</button>
-          <button class="big-btn" data-act="tutorial">How to Play</button>
-        </div>
-        <details class="settings-card travel-kit">
-          <summary class="settings-title"><span>Settings</span><em>Audio, play, access, saves</em></summary>
-          <div class="settings-body">
-            <section class="setting-section" aria-labelledby="settings-audio">
-              <div class="setting-section-head"><span id="settings-audio">Audio</span><em>Mix the road</em></div>
-              <div class="settings-row setting-switches">
-                <button class="setting-switch" data-act="sound"></button>
-                <button class="setting-switch" data-act="music"></button>
-              </div>
-              <label class="slider-row"><span>Effects</span><input aria-label="Effects volume" type="range" min="0" max="100" data-vol="sound"><output data-vol-out="sound"></output></label>
-              <label class="slider-row"><span>Music</span><input aria-label="Music volume" type="range" min="0" max="100" data-vol="music"><output data-vol-out="music"></output></label>
-            </section>
-            <section class="setting-section" aria-labelledby="settings-battle">
-              <div class="setting-section-head"><span id="settings-battle">Battle</span><em>Pace and feedback</em></div>
-              <div class="settings-row setting-switches">
-                <button class="setting-switch wide" data-act="speed"></button>
-                <button class="setting-switch" data-act="numbers"></button>
-              </div>
-              <div class="settings-row setting-switches">
-                <button class="setting-switch" data-act="shake"></button>
-                <button class="setting-switch" data-act="pauseblur"></button>
-              </div>
-              <button class="setting-link" data-act="hotkeys"><span>Key bindings</span><em>Heroes, abilities, pause</em><b>›</b></button>
-            </section>
-            <section class="setting-section" aria-labelledby="settings-access">
-              <div class="setting-section-head"><span id="settings-access">Display &amp; access</span><em>Read the field clearly</em></div>
-              <div class="settings-row setting-switches three">
-                <button class="setting-switch" data-act="motion"></button>
-                <button class="setting-switch" data-act="colorsafe"></button>
-                <button class="setting-switch" data-act="bigtext"></button>
-              </div>
-            </section>
-            <section class="setting-section" aria-labelledby="settings-save">
-              <div class="setting-section-head"><span id="settings-save">Campaign data</span><em>Stored on this device</em></div>
-              <button class="setting-link" data-act="bands"><span>Band saves</span><em>Three separate campaigns</em><b>›</b></button>
-              <div class="settings-row compact-actions">
-                <button class="toggle-btn" data-act="export-save">Copy save</button>
-                <button class="toggle-btn" data-act="import-save">Import save</button>
-              </div>
-              <button class="setting-link quiet" data-act="export-data"><span>Copy playtest report</span><em>Battle results only</em><b>›</b></button>
-              ${(window as unknown as { __installPrompt?: unknown }).__installPrompt ? `<button class="setting-link quiet" data-act="install"><span>Install Wayband</span><em>Play from your home screen</em><b>›</b></button>` : ""}
-              <button class="setting-link danger" data-act="reset"><span>Erase this band</span><em>Levels, heroes, gear, and records</em><b>›</b></button>
-            </section>
+          <div class="title-utility-row">
+            <button class="big-btn" data-act="tutorial"><span aria-hidden="true">⌁</span> Field Handbook</button>
+            <button class="big-btn" data-act="settings"><span aria-hidden="true">⚙</span> Settings</button>
           </div>
-        </details>
-        <div class="credit">drag your heroes · draw your spells · shape your band</div>
-        <div class="version-tag">WAYBAND · woodland build</div>
+        </div>
+        <div class="credit">drag your heroes · wield the elements · shape your band</div>
+        <div class="version-tag">WAYBAND · Long Road build</div>
       </div>
     `);
     const syncToggles = () => {
       const setSwitch = (act: string, label: string, on: boolean) => {
         const button = page.querySelector(`[data-act="${act}"]`) as HTMLElement;
+        if (!button) return;
         button.classList.toggle("on", on);
         button.innerHTML = `<span>${label}</span><b>${on ? "On" : "Off"}</b>`;
         button.setAttribute("aria-pressed", String(on));
@@ -716,7 +930,7 @@ export class Menus {
       setSwitch("sound", "Effects", this.save.sound);
       setSwitch("music", "Music", this.save.music);
       const speed = page.querySelector('[data-act="speed"]') as HTMLElement;
-      speed.innerHTML = `<span>Combat pace</span><b>${speedLabel(this.save.speed)}</b>`;
+      if (speed) speed.innerHTML = `<span>Combat pace</span><b>${speedLabel(this.save.speed)}</b>`;
       setSwitch("numbers", "Combat numbers", this.save.damageNumbers);
       setSwitch("shake", "Screen shake", this.save.screenShake);
       setSwitch("pauseblur", "Pause when away", this.save.pauseOnBlur);
@@ -728,6 +942,7 @@ export class Menus {
     // volume sliders live-update the mixer, persisting on release
     for (const kind of ["sound", "music"] as const) {
       const slider = page.querySelector(`[data-vol="${kind}"]`) as HTMLInputElement;
+      if (!slider) continue;
       slider.value = String(Math.round((kind === "sound" ? this.save.soundVol : this.save.musicVol) * 100));
       const output = page.querySelector(`[data-vol-out="${kind}"]`) as HTMLOutputElement;
       output.value = `${slider.value}%`;
@@ -754,14 +969,13 @@ export class Menus {
       audio.play("click");
       if (act === "start") {
         if (!this.save.seenIntro) {
-          this.save.seenIntro = true;
-          persist(this.save);
           this.renderFirstRun();
         } else {
           this.renderMap();
         }
       }
-      if (act === "tutorial") this.renderTutorials();
+      if (act === "tutorial") { this.handbookReturn = "title"; this.renderTutorials(); }
+      if (act === "settings") { this.settingsReturn = "title"; this.renderSettings(); }
       if (act === "bands") this.renderProfiles();
       if (act === "hotkeys") this.renderHotkeys();
       if (act === "sound") {
@@ -825,31 +1039,21 @@ export class Menus {
         const code = btoa(unescape(encodeURIComponent(JSON.stringify(this.save))));
         const finish = () => this.showToast("Save code copied — paste it anywhere safe");
         if (navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(code).then(finish, () => prompt("Copy your save code:", code));
+          navigator.clipboard.writeText(code).then(finish, () => this.showCopyPanel("YOUR BAND'S SAVE CODE", "Keep this code somewhere safe, or move the band to another device.", code));
         } else {
-          prompt("Copy your save code:", code);
+          this.showCopyPanel("YOUR BAND'S SAVE CODE", "Keep this code somewhere safe, or move the band to another device.", code);
         }
       }
       if (act === "import-save") {
-        const code = prompt("Paste a save code:");
-        if (code) {
-          try {
-            const data = JSON.parse(decodeURIComponent(escape(atob(code.trim()))));
-            if (!data || data.version !== 1 || !Array.isArray(data.heroes)) throw new Error("bad");
-            localStorage.setItem(slotKey(), JSON.stringify(data));
-            location.reload();
-          } catch {
-            this.showToast("That code didn't look like a Wayband save");
-          }
-        }
+        this.showImportPanel();
       }
       if (act === "export-data") {
         const json = exportTelemetry();
         const finish = () => this.showToast(`Playtest data copied (${telemetrySummary()})`);
         if (navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(json).then(finish, () => prompt("Copy playtest data:", json));
+          navigator.clipboard.writeText(json).then(finish, () => this.showCopyPanel("PLAYTEST REPORT", "This report contains battle results and recovery diagnostics, not your save.", json));
         } else {
-          prompt("Copy playtest data:", json);
+          this.showCopyPanel("PLAYTEST REPORT", "This report contains battle results and recovery diagnostics, not your save.", json);
         }
       }
       if (act === "reset") {
@@ -882,6 +1086,259 @@ export class Menus {
     this.root.appendChild(page);
   }
 
+  /** A dedicated field ledger keeps preferences discoverable and gives each
+   *  choice enough room to explain what it changes. */
+  renderSettings(): void {
+    this.pushNav("settings");
+    this.root.innerHTML = "";
+    this.show();
+    const tabLabel = { audio: "Sound", battle: "Battle", access: "Readability", campaign: "Campaign" } as const;
+    const tabMark = { audio: "♪", battle: "⚔", access: "◉", campaign: "⌁" } as const;
+    const page = el(`
+      <div class="page settings-page">
+        <header class="ledger-mast">
+          <button class="back-rune" data-act="back" aria-label="Back">‹</button>
+          <div><span>WAYFINDER'S KIT</span><h1>Set the road to your hand.</h1><p>Every change saves immediately. Battle aids never reduce rewards.</p></div>
+          <div class="ledger-saved">saved locally</div>
+        </header>
+        <nav class="settings-chapters" role="tablist" aria-label="Settings chapters">
+          ${(["audio", "battle", "access", "campaign"] as const).map((id) => `<button id="settings-tab-${id}" role="tab" aria-controls="settings-panel-${id}" aria-selected="${this.settingsTab === id}" tabindex="${this.settingsTab === id ? 0 : -1}" class="${this.settingsTab === id ? "on" : ""}" data-settings-tab="${id}"><i>${tabMark[id]}</i><span>${tabLabel[id]}</span></button>`).join("")}
+        </nav>
+        <div class="settings-ledger">
+          <section id="settings-panel-audio" role="tabpanel" aria-labelledby="settings-tab-audio" class="settings-panel ${this.settingsTab === "audio" ? "on" : ""}" data-settings-panel="audio" ${this.settingsTab === "audio" ? "" : "hidden"}>
+            <div class="panel-heading"><span>I</span><div><strong>Sound on the road</strong><em>Keep music and effects separate.</em></div></div>
+            <div class="setting-pair"><button class="setting-switch" data-act="sound"></button><button class="setting-switch" data-act="music"></button></div>
+            <label class="ledger-slider"><span><strong>Effects volume</strong><em>Weapons, techniques, warnings</em></span><input aria-label="Effects volume" type="range" min="0" max="100" data-vol="sound"><output data-vol-out="sound"></output></label>
+            <label class="ledger-slider"><span><strong>Music volume</strong><em>Regions and boss themes</em></span><input aria-label="Music volume" type="range" min="0" max="100" data-vol="music"><output data-vol-out="music"></output></label>
+          </section>
+
+          <section id="settings-panel-battle" role="tabpanel" aria-labelledby="settings-tab-battle" class="settings-panel ${this.settingsTab === "battle" ? "on" : ""}" data-settings-panel="battle" ${this.settingsTab === "battle" ? "" : "hidden"}>
+            <div class="panel-heading"><span>II</span><div><strong>Command &amp; timing</strong><em>Tune pace without touching difficulty or rewards.</em></div></div>
+            <div class="setting-pair"><button class="setting-switch" data-act="speed"></button><button class="setting-switch" data-act="autobattle"></button></div>
+            <div class="setting-line"><span><strong>Aiming time</strong><em>What battle does while you hold an aimed technique.</em></span><div class="setting-segments" data-segments="aim"><button data-aim="freeze">Pause</button><button data-aim="slow">Slow</button><button data-aim="realtime">Live</button></div></div>
+            <div class="setting-line"><span><strong>Warning time</strong><em>Longer enemy telegraphs, independent of difficulty.</em></span><div class="setting-segments" data-segments="warning"><button data-warning="standard">Standard</button><button data-warning="long">Long</button><button data-warning="extra">Extra</button></div></div>
+            <div class="setting-pair"><button class="setting-switch" data-act="numbers"></button><button class="setting-switch" data-act="enemybars"></button></div>
+            <div class="setting-pair"><button class="setting-switch" data-act="shake"></button><button class="setting-switch" data-act="pauseblur"></button></div>
+            <button class="setting-link ledger-link" data-act="hotkeys"><span>Key bindings</span><em>Heroes, techniques, and ultimate</em><b>›</b></button>
+          </section>
+
+          <section id="settings-panel-access" role="tabpanel" aria-labelledby="settings-tab-access" class="settings-panel ${this.settingsTab === "access" ? "on" : ""}" data-settings-panel="access" ${this.settingsTab === "access" ? "" : "hidden"}>
+            <div class="panel-heading"><span>III</span><div><strong>Read the field</strong><em>Steady motion, larger words, clearer danger.</em></div></div>
+            <div class="setting-pair"><button class="setting-switch" data-act="motion"></button><button class="setting-switch" data-act="colorsafe"></button></div>
+            <div class="setting-pair"><button class="setting-switch" data-act="bigtext"></button><button class="setting-switch" data-act="coach"></button></div>
+            <div class="field-note"><b>Color-independent cues</b><span>Adds blue ally health and a bright double boundary to danger marks, so color is never the only warning.</span></div>
+            <button class="setting-link ledger-link" data-act="fullscreen"><span>Full screen</span><em>Use the whole display when your browser allows it</em><b>›</b></button>
+            <button class="setting-link ledger-link" data-act="handbook"><span>Open the Field Handbook</span><em>Controls, systems, and replayable practice</em><b>›</b></button>
+            <button class="setting-link quiet" data-act="reset-prefs"><span>Restore preference defaults</span><em>Your campaign is untouched</em><b>↺</b></button>
+          </section>
+
+          <section id="settings-panel-campaign" role="tabpanel" aria-labelledby="settings-tab-campaign" class="settings-panel ${this.settingsTab === "campaign" ? "on" : ""}" data-settings-panel="campaign" ${this.settingsTab === "campaign" ? "" : "hidden"}>
+            <div class="panel-heading"><span>IV</span><div><strong>Campaign &amp; device</strong><em>Move, protect, or retire this band.</em></div></div>
+            <button class="setting-link ledger-link" data-act="bands"><span>Band saves</span><em>Three separate campaigns</em><b>›</b></button>
+            <div class="setting-pair compact-actions"><button class="toggle-btn" data-act="export-save">Copy save</button><button class="toggle-btn" data-act="import-save">Import save</button></div>
+            <button class="setting-link quiet" data-act="export-data"><span>Copy playtest report</span><em>Battle results only — no save data</em><b>›</b></button>
+            ${(window as unknown as { __installPrompt?: unknown }).__installPrompt ? `<button class="setting-link quiet" data-act="install"><span>Install Wayband</span><em>Play from your home screen</em><b>›</b></button>` : ""}
+            <div class="danger-rule"></div>
+            <button class="setting-link danger" data-act="reset"><span>Erase this band</span><em>Levels, heroes, gear, and records</em><b>›</b></button>
+          </section>
+        </div>
+      </div>
+    `);
+
+    const setSwitch = (act: string, label: string, on: boolean) => {
+      const button = page.querySelector(`[data-act="${act}"]`) as HTMLButtonElement | null;
+      if (!button) return;
+      button.classList.toggle("on", on);
+      button.innerHTML = `<span>${label}</span><b>${on ? "On" : "Off"}</b>`;
+      button.setAttribute("aria-pressed", String(on));
+    };
+    const sync = () => {
+      setSwitch("sound", "Effects", this.save.sound);
+      setSwitch("music", "Music", this.save.music);
+      setSwitch("numbers", "Combat numbers", this.save.damageNumbers);
+      setSwitch("enemybars", "Enemy health bars", this.save.enemyHealthBars);
+      setSwitch("shake", "Impact motion", this.save.screenShake);
+      setSwitch("pauseblur", "Pause when away", this.save.pauseOnBlur);
+      setSwitch("motion", "Calm motion", this.save.reducedMotion);
+      setSwitch("colorsafe", "Color-independent cues", this.save.colorSafe);
+      setSwitch("bigtext", "Larger type", this.save.bigText);
+      setSwitch("coach", "Opening battle hints", this.save.tutorialHints);
+      setSwitch("autobattle", "Begin in Auto", this.save.autoBattle);
+      const shake = page.querySelector('[data-act="shake"]') as HTMLButtonElement;
+      shake.disabled = this.save.reducedMotion;
+      shake.setAttribute("aria-disabled", String(this.save.reducedMotion));
+      if (this.save.reducedMotion) {
+        shake.innerHTML = `<span>Impact motion</span><b>Calm</b>`;
+        shake.title = "Calm motion currently suppresses impact shake";
+      } else {
+        shake.removeAttribute("title");
+      }
+      const speed = page.querySelector('[data-act="speed"]') as HTMLButtonElement;
+      speed.innerHTML = `<span>Combat pace</span><b>${speedLabel(this.save.speed)}</b>`;
+      page.querySelectorAll("[data-aim]").forEach((button) => {
+        const selected = button.getAttribute("data-aim") === this.save.aimMode;
+        button.classList.toggle("on", selected);
+        button.setAttribute("aria-pressed", String(selected));
+      });
+      page.querySelectorAll("[data-warning]").forEach((button) => {
+        const selected = button.getAttribute("data-warning") === this.save.telegraphAssist;
+        button.classList.toggle("on", selected);
+        button.setAttribute("aria-pressed", String(selected));
+      });
+    };
+    sync();
+
+    for (const kind of ["sound", "music"] as const) {
+      const slider = page.querySelector(`[data-vol="${kind}"]`) as HTMLInputElement;
+      const output = page.querySelector(`[data-vol-out="${kind}"]`) as HTMLOutputElement;
+      slider.value = String(Math.round((kind === "sound" ? this.save.soundVol : this.save.musicVol) * 100));
+      output.value = `${slider.value}%`;
+      slider.addEventListener("input", () => {
+        const value = Number(slider.value) / 100;
+        output.value = `${slider.value}%`;
+        if (kind === "sound") { this.save.soundVol = value; audio.setSoundVolume(value); }
+        else { this.save.musicVol = value; audio.setMusicVolume(value); }
+      });
+      slider.addEventListener("change", () => { persist(this.save); if (kind === "sound") audio.play("click"); });
+    }
+
+    const resetPreferences = () => {
+      const fresh = defaultSave();
+      this.save.sound = fresh.sound;
+      this.save.music = fresh.music;
+      this.save.soundVol = fresh.soundVol;
+      this.save.musicVol = fresh.musicVol;
+      this.save.speed = fresh.speed;
+      this.save.aimMode = fresh.aimMode;
+      this.save.telegraphAssist = fresh.telegraphAssist;
+      this.save.reducedMotion = fresh.reducedMotion;
+      this.save.screenShake = fresh.screenShake;
+      this.save.damageNumbers = fresh.damageNumbers;
+      this.save.pauseOnBlur = fresh.pauseOnBlur;
+      this.save.colorSafe = fresh.colorSafe;
+      this.save.bigText = fresh.bigText;
+      this.save.enemyHealthBars = fresh.enemyHealthBars;
+      this.save.autoBattle = fresh.autoBattle;
+      this.save.tutorialHints = fresh.tutorialHints;
+      audio.setSound(this.save.sound);
+      audio.setMusic(this.save.music);
+      audio.setSoundVolume(this.save.soundVol);
+      audio.setMusicVolume(this.save.musicVol);
+      document.body.classList.toggle("reduced-motion", this.save.reducedMotion);
+      document.body.classList.toggle("big-text", this.save.bigText);
+      setColorSafe(this.save.colorSafe);
+      persist(this.save);
+      this.renderSettings();
+      this.showToast("Preferences restored — your band is unchanged");
+    };
+
+    const confirmErase = () => {
+      const pop = el(`
+        <div class="levelup-pop"><div class="levelup-card reset-card" role="dialog" aria-modal="true" aria-labelledby="erase-title">
+          <div class="levelup-title" id="erase-title" style="color:#ff8a70">ERASE THIS BAND?</div>
+          <div class="levelup-line">The whole road — levels, gold, heroes, gear, and records — will be gone for good.</div>
+          <div class="levelup-actions"><button class="big-btn danger-btn" data-reset="yes">Erase it all</button><button class="big-btn primary" data-reset="no">Keep playing</button></div>
+        </div></div>`);
+      pop.addEventListener("click", (event) => {
+        const choice = (event.target as HTMLElement).closest("[data-reset]")?.getAttribute("data-reset");
+        if (choice === "yes") { audio.play("click"); pop.remove(); this.callbacks.resetProgress(); }
+        else if (choice === "no" || event.target === pop) { audio.play("click"); pop.remove(); }
+      });
+      this.root.appendChild(pop);
+    };
+
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const tab = target.closest("[data-settings-tab]")?.getAttribute("data-settings-tab") as typeof this.settingsTab | undefined;
+      if (tab) {
+        this.settingsTab = tab;
+        page.querySelectorAll("[data-settings-tab]").forEach((button) => {
+          const selected = button.getAttribute("data-settings-tab") === tab;
+          button.classList.toggle("on", selected);
+          button.setAttribute("aria-selected", String(selected));
+          button.setAttribute("tabindex", selected ? "0" : "-1");
+        });
+        page.querySelectorAll<HTMLElement>("[data-settings-panel]").forEach((panel) => {
+          const selected = panel.getAttribute("data-settings-panel") === tab;
+          panel.classList.toggle("on", selected);
+          panel.hidden = !selected;
+        });
+        audio.play("page");
+        return;
+      }
+      const aim = target.closest("[data-aim]")?.getAttribute("data-aim") as SaveData["aimMode"] | undefined;
+      if (aim) { this.save.aimMode = aim; persist(this.save); audio.play("click"); sync(); return; }
+      const warning = target.closest("[data-warning]")?.getAttribute("data-warning") as SaveData["telegraphAssist"] | undefined;
+      if (warning) { this.save.telegraphAssist = warning; persist(this.save); audio.play("click"); sync(); return; }
+      const act = target.closest("[data-act]")?.getAttribute("data-act");
+      if (!act) return;
+      audio.unlock();
+      audio.play("click");
+      if (act === "back") {
+        this.goBack(() => {
+          if (this.settingsReturn === "map") this.renderMap();
+          else if (this.settingsReturn === "party") this.renderParty();
+          else if (this.settingsReturn === "shop") this.renderShop("armory");
+          else if (this.settingsReturn === "tavern") this.renderShop("tavern");
+          else if (this.settingsReturn === "records") this.renderChronicle();
+          else this.renderTitle();
+        });
+      }
+      else if (act === "sound") { this.save.sound = !this.save.sound; audio.setSound(this.save.sound); persist(this.save); sync(); }
+      else if (act === "music") { this.save.music = !this.save.music; audio.setMusic(this.save.music); persist(this.save); sync(); }
+      else if (act === "speed") { this.save.speed = nextSpeed(this.save.speed); persist(this.save); sync(); }
+      else if (act === "autobattle") { this.save.autoBattle = !this.save.autoBattle; persist(this.save); sync(); }
+      else if (act === "numbers") { this.save.damageNumbers = !this.save.damageNumbers; persist(this.save); sync(); }
+      else if (act === "enemybars") { this.save.enemyHealthBars = !this.save.enemyHealthBars; persist(this.save); sync(); }
+      else if (act === "shake") { this.save.screenShake = !this.save.screenShake; persist(this.save); sync(); }
+      else if (act === "pauseblur") { this.save.pauseOnBlur = !this.save.pauseOnBlur; persist(this.save); sync(); }
+      else if (act === "motion") { this.save.reducedMotion = !this.save.reducedMotion; document.body.classList.toggle("reduced-motion", this.save.reducedMotion); persist(this.save); sync(); }
+      else if (act === "colorsafe") { this.save.colorSafe = !this.save.colorSafe; setColorSafe(this.save.colorSafe); persist(this.save); sync(); }
+      else if (act === "bigtext") { this.save.bigText = !this.save.bigText; document.body.classList.toggle("big-text", this.save.bigText); persist(this.save); sync(); }
+      else if (act === "coach") { this.save.tutorialHints = !this.save.tutorialHints; persist(this.save); sync(); }
+      else if (act === "hotkeys") this.renderHotkeys();
+      else if (act === "handbook") { this.handbookReturn = "settings"; this.renderTutorials(); }
+      else if (act === "bands") this.renderProfiles();
+      else if (act === "export-save") {
+        const code = btoa(unescape(encodeURIComponent(JSON.stringify(this.save))));
+        const finish = () => this.showToast("Save code copied — paste it anywhere safe");
+        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(code).then(finish, () => this.showCopyPanel("YOUR BAND'S SAVE CODE", "Keep this code somewhere safe, or move the band to another device.", code));
+        else this.showCopyPanel("YOUR BAND'S SAVE CODE", "Keep this code somewhere safe, or move the band to another device.", code);
+      } else if (act === "import-save") this.showImportPanel();
+      else if (act === "export-data") {
+        const json = exportTelemetry();
+        const finish = () => this.showToast(`Playtest data copied (${telemetrySummary()})`);
+        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(json).then(finish, () => this.showCopyPanel("PLAYTEST REPORT", "This report contains battle results and recovery diagnostics, not your save.", json));
+        else this.showCopyPanel("PLAYTEST REPORT", "This report contains battle results and recovery diagnostics, not your save.", json);
+      } else if (act === "fullscreen") {
+        const toggle = document.fullscreenElement ? document.exitFullscreen?.() : document.documentElement.requestFullscreen?.();
+        if (!toggle) this.showToast("Full screen is not available in this browser");
+        else void toggle.catch(() => this.showToast("Full screen is not available in this browser"));
+      } else if (act === "install") {
+        const holder = window as unknown as { __installPrompt?: { prompt: () => void } | null };
+        holder.__installPrompt?.prompt(); holder.__installPrompt = null; this.renderSettings();
+      } else if (act === "reset-prefs") resetPreferences();
+      else if (act === "reset") confirmErase();
+    });
+    const chapters = page.querySelector(".settings-chapters")!;
+    chapters.addEventListener("keydown", (event) => {
+      const key = (event as KeyboardEvent).key;
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(key)) return;
+      const tabs = [...chapters.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+      const current = tabs.indexOf(event.target as HTMLButtonElement);
+      if (current < 0) return;
+      event.preventDefault();
+      const next = key === "Home"
+        ? 0
+        : key === "End"
+          ? tabs.length - 1
+          : (current + (key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+      tabs[next].click();
+      tabs[next].focus();
+    });
+    this.root.appendChild(page);
+  }
+
   // ------------------------------------------------------------------ map
 
   renderMap(): void {
@@ -889,17 +1346,41 @@ export class Menus {
     this.root.innerHTML = "";
     this.show();
     const save = this.save;
+    const campaignComplete = (save.stageStats[STAGES.length - 1]?.clears ?? 0) > 0;
+    const focusStage = Math.min(save.unlockedStage, this.selectedStage ?? save.unlockedStage, STAGES.length - 1);
+    const lateJourneyRegion = LATE_ROAD_REGIONS.find((region) => focusStage >= region.start && focusStage <= region.bossStage);
+    const journeyTheme = lateJourneyRegion
+      ? `late-journey late-journey-${lateJourneyRegion.id}`
+      : focusStage >= 12
+        ? "coast-journey"
+        : focusStage >= 6
+          ? "winter-journey"
+          : "woodland-journey";
+    const journeyChapter = lateJourneyRegion
+      ? `${lateJourneyRegion.name} · stages ${lateJourneyRegion.range}`
+      : focusStage >= 12
+        ? "Stormbreak Coast · stages XIII–XVIII"
+        : focusStage >= 6
+          ? "The Winterreach · stages VII–XII"
+          : "The South Road · stages I–VI";
+    const journeyStyle = lateJourneyRegion
+      ? ` style="--journey-accent:${lateJourneyRegion.map.accent};--journey-glow:${lateJourneyRegion.map.glow};--journey-ink:${lateJourneyRegion.map.ink}"`
+      : "";
     const seasoned = bandLevel(save);
     const pendingPoints = save.heroes.reduce((sum, hero, index) => sum + (hero.recruited ? save.unspent[index] : 0), 0);
     const recruitReady = save.heroes.some((hero, index) => !hero.recruited && heroArrived(save, index) && (RECRUIT_COST[index] ?? Infinity) <= save.gold);
-    const suggestedJourneyNote = pendingPoints > 0
+    const suggestedJourneyNote = campaignComplete
+      ? "Walk onward, revisit a Path, or answer a contract"
+      : pendingPoints > 0
       ? `${pendingPoints} attribute point${pendingPoints === 1 ? "" : "s"} waiting in Party`
       : recruitReady
         ? "A new companion can be hired in the Tavern"
         : `Scout ${STAGES[Math.min(save.unlockedStage, STAGES.length - 1)].name} and set out`;
     const journeyNote = save.pinnedGoal ?? suggestedJourneyNote;
+    const regionCount = Math.ceil(STAGES.length / 6);
+    const currentRegion = Math.floor(focusStage / 6);
     const page = el(`
-      <div class="page journey-page ${save.unlockedStage >= 12 ? "coast-journey" : save.unlockedStage >= 6 ? "winter-journey" : "woodland-journey"}">
+      <div class="page journey-page ${journeyTheme}"${journeyStyle}>
         <div class="map-header">
           <div>
             <div class="map-title">The Long Road</div>
@@ -907,9 +1388,9 @@ export class Menus {
           </div>
         </div>
         <aside class="journey-ribbon" aria-label="Journey progress">
-          <div class="journey-chapter">${save.unlockedStage < 6 ? "The South Road · stages I–VI" : save.unlockedStage < 12 ? "The Winterreach · stages VII–XII" : "Stormbreak Coast · stages XIII–XVIII"}</div>
+          <div class="journey-chapter"><span>${journeyChapter}</span><b>Stage ${focusStage + 1} / ${STAGES.length}</b></div>
           <div class="journey-track" aria-hidden="true">
-            ${STAGES.map((_, index) => `<i class="${index < save.unlockedStage ? "done" : index === save.unlockedStage ? "current" : ""}"></i>`).join("")}
+            ${Array.from({ length: regionCount }, (_, index) => `<i class="${index < currentRegion ? "done" : index === currentRegion ? "current" : ""}"></i>`).join("")}
           </div>
           <div class="journey-next"><span>Next move</span><strong>${journeyNote}</strong><button class="journey-pin" data-act="goal">${save.pinnedGoal ? "Change" : "Pin a goal"}</button></div>
         </aside>
@@ -917,6 +1398,8 @@ export class Menus {
         <div class="stage-caption"></div>
         <div class="map-footer">
           <button class="toggle-btn" data-act="difficulty" style="border-color:${DIFFICULTIES[save.difficulty].color};color:${DIFFICULTIES[save.difficulty].color}">${ico("skull")} ${DIFFICULTIES[save.difficulty].name}</button>
+          <button class="toggle-btn" data-act="handbook">⌁ Handbook</button>
+          <button class="toggle-btn" data-act="settings">⚙ Settings</button>
           <button class="toggle-btn" data-act="home">Title</button>
         </div>
       </div>
@@ -969,6 +1452,16 @@ export class Menus {
         this.showToast(`${d.name}: enemies ×${d.enemyMult}, rewards ×${d.rewardMult}`);
         this.renderMap();
       }
+      if (act === "handbook") {
+        audio.play("page");
+        this.handbookReturn = "map";
+        this.renderTutorials();
+      }
+      if (act === "settings") {
+        audio.play("page");
+        this.settingsReturn = "map";
+        this.renderSettings();
+      }
       if (act === "home") {
         audio.play("click");
         this.renderTitle();
@@ -1019,7 +1512,7 @@ export class Menus {
     }
     page.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
-      if (target.closest('[data-act="back"]')) return void this.renderMap();
+      if (target.closest('[data-act="back"]')) return void this.goBack(() => this.renderMap());
       const fight = target.closest("[data-arena]");
       if (!fight) return;
       const stage = Number(fight.getAttribute("data-arena"));
@@ -1067,7 +1560,7 @@ export class Menus {
     }
     page.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
-      if (target.closest('[data-act="back"]')) return void this.renderShop("tavern");
+      if (target.closest('[data-act="back"]')) return void this.goBack(() => this.renderShop("tavern"));
       const button = target.closest("[data-contract]");
       if (!button) return;
       const contract = CONTRACTS.find((item) => item.id === button.getAttribute("data-contract"));
@@ -1136,6 +1629,54 @@ export class Menus {
     this.root.appendChild(pop);
   }
 
+  /** Make painted SVG waymarks behave like real controls for keyboard and
+   * assistive-technology users, while sharing one selection path across acts. */
+  private wireMapNodes(host: HTMLElement): void {
+    host.querySelector("svg")?.setAttribute("role", "group");
+    const nodes = [...host.querySelectorAll<SVGGElement>(".map-node.open")];
+    for (const node of nodes) {
+      const idx = Number(node.getAttribute("data-stage"));
+      node.setAttribute("role", "button");
+      node.setAttribute("tabindex", "0");
+      node.setAttribute("aria-pressed", String(idx === this.selectedStage));
+      node.setAttribute("aria-label", `Stage ${idx + 1}: ${STAGES[idx].name}${idx === this.selectedStage ? ", selected" : ""}`);
+    }
+    const activate = (node: Element) => {
+      const idx = Number(node.getAttribute("data-stage"));
+      audio.unlock();
+      audio.play("click");
+      if (this.selectedStage === idx) {
+        this.showEmbarkBriefing(idx);
+        return;
+      }
+      this.selectedStage = idx;
+      host.querySelectorAll(".map-node.sel").forEach((item) => item.classList.remove("sel"));
+      for (const item of nodes) {
+        const selected = item === node;
+        item.setAttribute("aria-pressed", String(selected));
+        const stageIdx = Number(item.getAttribute("data-stage"));
+        item.setAttribute("aria-label", `Stage ${stageIdx + 1}: ${STAGES[stageIdx].name}${selected ? ", selected" : ""}`);
+      }
+      node.classList.add("sel");
+      const caption = this.root.querySelector(".stage-caption");
+      if (caption) {
+        caption.innerHTML = "";
+        caption.appendChild(this.buildScoutCard(idx));
+      }
+    };
+    const handle = (event: Event) => {
+      if (event instanceof KeyboardEvent && event.key !== "Enter" && event.key !== " ") return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const node = target.closest(".map-node.open");
+      if (!node || !host.contains(node)) return;
+      if (event instanceof KeyboardEvent) event.preventDefault();
+      activate(node);
+    };
+    host.addEventListener("click", handle);
+    host.addEventListener("keydown", handle);
+  }
+
   /** Stormbreak Coast: a flooded road beneath a living storm. */
   private buildCoastMap(): HTMLElement {
     const save = this.save;
@@ -1148,7 +1689,9 @@ export class Menus {
     if (this.travelFrom !== null && this.travelFrom >= 12 && this.travelFrom < 17) {
       const a = nodes[this.travelFrom - 12];
       const b = nodes[this.travelFrom - 11];
-      travel = `<circle r="7" fill="#ffe9a3" stroke="#112d36" stroke-width="2"><animateMotion dur="1.6s" fill="freeze" path="M ${a.x} ${a.y} L ${b.x} ${b.y}"/></circle>`;
+      travel = this.save.reducedMotion
+        ? `<circle cx="${b.x}" cy="${b.y}" r="7" fill="#ffe9a3" stroke="#112d36" stroke-width="2"/>`
+        : `<circle r="7" fill="#ffe9a3" stroke="#112d36" stroke-width="2"><animateMotion dur="1.6s" fill="freeze" path="M ${a.x} ${a.y} L ${b.x} ${b.y}"/></circle>`;
       this.travelFrom = null;
     }
     let markers = "";
@@ -1188,18 +1731,7 @@ export class Menus {
       <path d="${road}" fill="none" stroke="#203c42" stroke-width="13" stroke-linecap="round"/><path d="${road}" fill="none" stroke="#c6b98a" stroke-width="7" stroke-linecap="round"/><path d="${road}" fill="none" stroke="#e9ddb0" stroke-width="2" stroke-dasharray="2 9"/>
       ${markers}${travel}
     </svg></div>`);
-    svg.addEventListener("click", (event) => {
-      const node = (event.target as Element).closest(".map-node.open") as Element | null;
-      if (!node) return;
-      const idx = Number(node.getAttribute("data-stage"));
-      audio.unlock(); audio.play("click");
-      if (this.selectedStage === idx) return void this.showEmbarkBriefing(idx);
-      this.selectedStage = idx;
-      svg.querySelectorAll(".map-node.sel").forEach((item) => item.classList.remove("sel"));
-      node.classList.add("sel");
-      const caption = this.root.querySelector(".stage-caption");
-      if (caption) { caption.innerHTML = ""; caption.appendChild(this.buildScoutCard(idx)); }
-    });
+    this.wireMapNodes(svg);
     return svg;
   }
 
@@ -1240,7 +1772,9 @@ export class Menus {
     if (this.travelFrom !== null && this.travelFrom >= 6 && this.travelFrom < 11) {
       const a = nodes[this.travelFrom - 6];
       const b = nodes[this.travelFrom - 5];
-      travel = `<g><circle r="7" fill="#ffe9a3" stroke="#1a2634" stroke-width="2"><animateMotion dur="1.6s" fill="freeze" path="M ${a.x} ${a.y} L ${b.x} ${b.y}"/></circle></g>`;
+      travel = this.save.reducedMotion
+        ? `<circle cx="${b.x}" cy="${b.y}" r="7" fill="#ffe9a3" stroke="#1a2634" stroke-width="2"/>`
+        : `<g><circle r="7" fill="#ffe9a3" stroke="#1a2634" stroke-width="2"><animateMotion dur="1.6s" fill="freeze" path="M ${a.x} ${a.y} L ${b.x} ${b.y}"/></circle></g>`;
       this.travelFrom = null;
     }
     let markers = "";
@@ -1327,25 +1861,7 @@ export class Menus {
         </svg>
       </div>
     `);
-    svg.addEventListener("click", (event) => {
-      const node = (event.target as Element).closest(".map-node.open") as Element | null;
-      if (!node) return;
-      const idx = Number(node.getAttribute("data-stage"));
-      audio.unlock();
-      audio.play("click");
-      if (this.selectedStage === idx) {
-        this.showEmbarkBriefing(idx);
-        return;
-      }
-      this.selectedStage = idx;
-      svg.querySelectorAll(".map-node.sel").forEach((g) => g.classList.remove("sel"));
-      node.classList.add("sel");
-      const caption = this.root.querySelector(".stage-caption");
-      if (caption) {
-        caption.innerHTML = "";
-        caption.appendChild(this.buildScoutCard(idx));
-      }
-    });
+    this.wireMapNodes(svg);
     return svg;
   }
 
@@ -1354,7 +1870,7 @@ export class Menus {
       suggested,
       "Save gold for the next recruit",
       "Complete a matching armor set",
-      "Raise a hero to their Calling",
+      "Raise a hero to their Path",
     ];
     const pop = el(`
       <div class="levelup-pop goal-pop">
@@ -1384,6 +1900,9 @@ export class Menus {
 
   /** The preparation table: party, formation, and the one enemy lesson that matters most. */
   private showEmbarkBriefing(stageIndex: number): void {
+    const returnFocus = document.activeElement instanceof HTMLElement || document.activeElement instanceof SVGElement
+      ? document.activeElement
+      : null;
     const stage = STAGES[stageIndex];
     const party = partyRoster(this.save);
     const kinds: EnemyKind[] = [];
@@ -1397,20 +1916,37 @@ export class Menus {
       wedge: "One hero leads the advance",
       guard: "A front pair shelters the backline",
     } as const;
+    const pendingPoints = party.reduce((sum, index) => sum + (this.save.unspent[index] ?? 0), 0);
+    const pathless = party.filter((index) => this.save.heroes[index].level >= CALLING_UNLOCK_LEVEL && !this.save.heroes[index].calling).length;
+    const terrainCopy = stage.terrain === "tide-storm"
+      ? "Rising water slows the lower field; lightning circles strike after their countdown."
+      : stage.terrain === "tide"
+        ? "Rising water slows anyone fighting in the lower field."
+        : stage.terrain === "storm"
+          ? "Lightning circles strike after their countdown. Leave the mark before it closes."
+          : "No unusual terrain. Formation and target priority decide the opening.";
+    const checks = [
+      { warn: party.length < PARTY_CAP, text: `${party.length}/${PARTY_CAP} heroes taking the field` },
+      { warn: pendingPoints > 0, text: pendingPoints > 0 ? `${pendingPoints} unspent attribute point${pendingPoints === 1 ? "" : "s"}` : "Attributes are accounted for" },
+      { warn: pathless > 0, text: pathless > 0 ? `${pathless} eligible hero${pathless === 1 ? " has" : "es have"} no Path` : "Path choices are ready" },
+    ];
     const pop = el(`
       <div class="levelup-pop briefing-pop">
-        <div class="levelup-card preparation-sheet">
+        <div class="levelup-card preparation-sheet" role="dialog" aria-modal="true" aria-labelledby="briefing-title-${stageIndex}">
           <div class="briefing-kicker">PREPARATION TABLE · ${DIFFICULTIES[this.save.difficulty].name.toUpperCase()}</div>
-          <div class="levelup-title">${stage.name}</div>
+          <div class="levelup-title" id="briefing-title-${stageIndex}">${stage.name}</div>
           <div class="levelup-line">${stage.subtitle}</div>
           <div class="brief-party">
             ${party.map((index) => `<span style="--accent:${HEROES[index].accent}"><b>${HEROES[index].name}</b><em>${buildIdentity(this.save, index)}</em></span>`).join("")}
           </div>
+          <div class="brief-section"><strong>Band check</strong><em>Warnings do not prevent departure</em></div>
+          <div class="readiness-strip">${checks.map((check) => `<span class="${check.warn ? "warn" : "ready"}"><b>${check.warn ? "!" : "✓"}</b>${check.text}</span>`).join("")}</div>
           <div class="brief-section"><strong>Opening formation</strong><em id="formation-copy">${formationCopy[this.save.formation]}</em></div>
           <div class="formation-row">
             ${(["line", "wedge", "guard"] as const).map((formation) => `<button class="formation-btn ${this.save.formation === formation ? "on" : ""}" data-formation="${formation}"><i class="formation-glyph ${formation}"></i>${formation}</button>`).join("")}
           </div>
           <div class="intent-card"><span>${ico("skull")}</span><div><em>SCOUT'S WARNING · ${warning.name}</em><strong>${warning.habit}</strong></div></div>
+          <div class="intent-card terrain-intent"><span>${stage.terrain ? "≋" : "◇"}</span><div><em>FIELD CONDITIONS${BOSS_STAGES.includes(stageIndex) ? " · GREAT FOE" : ""}</em><strong>${terrainCopy}${BOSS_STAGES.includes(stageIndex) ? " Marked ground means move; break the amber poise bar to stagger the boss." : ""}</strong></div></div>
           <div class="levelup-actions">
             <button class="big-btn primary" data-brief="embark">Embark now</button>
             <button class="big-btn" data-brief="party">Adjust the band</button>
@@ -1419,6 +1955,10 @@ export class Menus {
         </div>
       </div>
     `);
+    const close = (restoreFocus = true) => {
+      pop.remove();
+      if (restoreFocus) returnFocus?.focus();
+    };
     pop.addEventListener("click", (event) => {
       const formation = (event.target as HTMLElement).closest("[data-formation]")?.getAttribute("data-formation") as SaveData["formation"] | null;
       if (formation) {
@@ -1433,11 +1973,26 @@ export class Menus {
       const action = (event.target as HTMLElement).closest("[data-brief]")?.getAttribute("data-brief");
       if (action === "embark") this.callbacks.startStage(stageIndex);
       else if (action === "party") {
-        pop.remove();
+        close(false);
         this.renderParty();
-      } else if (action === "cancel" || event.target === pop) pop.remove();
+      } else if (action === "cancel" || event.target === pop) close();
+    });
+    pop.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...pop.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     });
     this.root.appendChild(pop);
+    requestAnimationFrame(() => pop.querySelector<HTMLElement>('[data-brief="embark"]')?.focus());
   }
 
   /** Scout report for a stage: what awaits, what it pays, and the band's record there. */
@@ -1488,7 +2043,7 @@ export class Menus {
     if (knownKinds.length) {
       card.appendChild(
         el(`<div class="intent-strip">${knownKinds
-          .map((kind) => `<div><em>${ENEMIES[kind].name}</em><strong>${ENEMIES[kind].habit}</strong></div>`)
+          .map((kind) => `<div><em>${ENEMIES[kind].name}</em>${enemyWaymark(kind, true)}<strong>${ENEMIES[kind].habit}</strong></div>`)
           .join("")}</div>`),
       );
     }
@@ -1502,6 +2057,12 @@ export class Menus {
       { name: "The South Road", range: "I–VI", start: 0, build: () => this.buildSouthMap() },
       { name: "The Winterreach", range: "VII–XII", start: 6, build: () => this.buildWinterMap() },
       { name: "Stormbreak Coast", range: "XIII–XVIII", start: 12, build: () => this.buildCoastMap() },
+      ...LATE_ROAD_REGIONS.map((region) => ({
+        name: region.name,
+        range: region.range,
+        start: region.start,
+        build: () => this.buildLateRoadMap(region),
+      })),
     ];
     const currentRegion = Math.min(regions.length - 1, Math.floor((this.selectedStage ?? this.save.unlockedStage) / 6));
     const atlas = el(`
@@ -1513,7 +2074,6 @@ export class Menus {
         </div>
         <div class="atlas-ruler" aria-label="Known stretches of the Long Road">
           ${regions.map((region, i) => `<button class="atlas-mark ${i === currentRegion ? "on" : ""}" data-road-region="${i}"><i></i><span>${region.range}</span><em>${region.name}</em></button>`).join("")}
-          <div class="atlas-beyond"><i></i><span>XIX–LX</span><em>Road uncharted</em></div>
         </div>
         <div class="road-viewport"><div class="road-strip"></div></div>
       </div>
@@ -1525,6 +2085,7 @@ export class Menus {
       strip.appendChild(panel);
     }
     const viewport = atlas.querySelector(".road-viewport") as HTMLElement;
+    const ruler = atlas.querySelector(".atlas-ruler") as HTMLElement;
     const name = atlas.querySelector("[data-region-name]")!;
     let active = currentRegion;
     const showRegion = (next: number, smooth = true) => {
@@ -1532,6 +2093,11 @@ export class Menus {
       viewport.scrollTo({ left: viewport.clientWidth * active, behavior: smooth && !this.save.reducedMotion ? "smooth" : "auto" });
       name.textContent = regions[active].name;
       atlas.querySelectorAll(".atlas-mark").forEach((mark, i) => mark.classList.toggle("on", i === active));
+      const activeMark = atlas.querySelectorAll<HTMLElement>(".atlas-mark")[active];
+      ruler.scrollTo({
+        left: Math.max(0, activeMark.offsetLeft - ruler.clientWidth / 2 + activeMark.clientWidth / 2),
+        behavior: smooth && !this.save.reducedMotion ? "smooth" : "auto",
+      });
       (atlas.querySelector('[data-road-step="-1"]') as HTMLButtonElement).disabled = active === 0;
       (atlas.querySelector('[data-road-step="1"]') as HTMLButtonElement).disabled = active === regions.length - 1;
     };
@@ -1548,6 +2114,17 @@ export class Menus {
     }, { passive: true });
     requestAnimationFrame(() => showRegion(currentRegion, false));
     return atlas;
+  }
+
+  /** Acts IV-X share a chartmaker's survey plate while retaining distinct
+   * palettes, silhouettes, weather and landmarks from late-road data. */
+  private buildLateRoadMap(region: LateRoadRegion): HTMLElement {
+    const travelFrom = this.travelFrom;
+    const campaignComplete = (this.save.stageStats[STAGES.length - 1]?.clears ?? 0) > 0;
+    const map = el(lateRoadMapMarkup(region, this.save.unlockedStage, this.selectedStage, travelFrom, campaignComplete, this.save.reducedMotion));
+    if (travelFrom !== null && travelFrom >= region.start && travelFrom < region.bossStage) this.travelFrom = null;
+    this.wireMapNodes(map);
+    return map;
   }
 
   /** The first painted stretch: dawn fields, deep wood, mire, and the Gloaming. */
@@ -1600,12 +2177,14 @@ export class Menus {
       const b = nodes[this.travelFrom + 1];
       const mx = (a.x + b.x) / 2 + ((this.travelFrom + 1) % 2 ? -24 : 24);
       const my = (a.y + b.y) / 2 + ((this.travelFrom + 1) % 2 ? 20 : -20);
-      travel = `
-        <g>
-          <circle r="7" fill="#ffe9a3" stroke="#1a2b20" stroke-width="2">
-            <animateMotion dur="1.6s" fill="freeze" path="M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}"/>
-          </circle>
-        </g>`;
+      travel = this.save.reducedMotion
+        ? `<circle cx="${b.x}" cy="${b.y}" r="7" fill="#ffe9a3" stroke="#1a2b20" stroke-width="2"/>`
+        : `
+          <g>
+            <circle r="7" fill="#ffe9a3" stroke="#1a2b20" stroke-width="2">
+              <animateMotion dur="1.6s" fill="freeze" path="M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}"/>
+            </circle>
+          </g>`;
       this.travelFrom = null;
     }
     let markers = "";
@@ -1730,10 +2309,10 @@ export class Menus {
           <!-- drifting cloud shadows -->
           <g fill="rgba(14, 24, 14, 0.09)">
             <ellipse cx="0" cy="170" rx="70" ry="18">
-              <animateTransform attributeName="transform" type="translate" values="-80 0; 720 24; -80 0" dur="52s" repeatCount="indefinite"/>
+              ${save.reducedMotion ? "" : `<animateTransform attributeName="transform" type="translate" values="-80 0; 720 24; -80 0" dur="52s" repeatCount="indefinite"/>`}
             </ellipse>
             <ellipse cx="0" cy="260" rx="52" ry="13">
-              <animateTransform attributeName="transform" type="translate" values="700 0; -90 -18; 700 0" dur="64s" repeatCount="indefinite"/>
+              ${save.reducedMotion ? "" : `<animateTransform attributeName="transform" type="translate" values="700 0; -90 -18; 700 0" dur="64s" repeatCount="indefinite"/>`}
             </ellipse>
           </g>
           ${markers}
@@ -1749,26 +2328,7 @@ export class Menus {
         </svg>
       </div>
     `);
-    svg.addEventListener("click", (event) => {
-      const node = (event.target as Element).closest(".map-node.open") as Element | null;
-      if (!node) return;
-      const idx = Number(node.getAttribute("data-stage"));
-      audio.unlock();
-      audio.play("click");
-      // first tap scouts the stage; tapping the scouted node again sets out
-      if (this.selectedStage === idx) {
-        this.callbacks.startStage(idx);
-        return;
-      }
-      this.selectedStage = idx;
-      svg.querySelectorAll(".map-node.sel").forEach((g) => g.classList.remove("sel"));
-      node.classList.add("sel");
-      const caption = this.root.querySelector(".stage-caption");
-      if (caption) {
-        caption.innerHTML = "";
-        caption.appendChild(this.buildScoutCard(idx));
-      }
-    });
+    this.wireMapNodes(svg);
     return svg;
   }
 
@@ -1778,7 +2338,7 @@ export class Menus {
     this.pushNav("bestiary");
     this.root.innerHTML = "";
     this.show();
-    const kinds: EnemyKind[] = ["goblin", "wolf", "archer", "shaman", "brute", "ogre", "alpha", "warlord", "frostwolf", "icewisp", "snowhag", "rimetroll", "rimeheart"];
+    const kinds = Object.keys(ENEMIES) as EnemyKind[];
     const discovered = kinds.filter((k) => (this.save.bestiary[k] ?? 0) > 0).length;
     const page = el(`
       <div class="page">
@@ -1816,6 +2376,7 @@ export class Menus {
             <div class="beast-info">
               <div class="beast-name">${def.name} <span class="beast-kills">×${kills} slain${rank}</span></div>
               <div class="beast-lore">${def.lore}</div>
+              ${enemyWaymark(kind)}
               ${habitLine}
               ${statLine}
               ${kills < T3 ? `<div class="beast-bar"><div style="width:${Math.min(100, (kills / T3) * 100)}%"></div></div>` : ""}
@@ -1839,10 +2400,16 @@ export class Menus {
       }
     }
     page.addEventListener("click", (event) => {
+      const record = (event.target as HTMLElement).closest("[data-rec]")?.getAttribute("data-rec");
+      if (record === "chronicle") {
+        audio.play("page");
+        this.renderChronicle();
+        return;
+      }
       const act = (event.target as HTMLElement).closest("[data-act]")?.getAttribute("data-act");
       if (act === "back") {
         audio.play("click");
-        this.renderMap();
+        this.goBack(() => this.renderMap());
       }
     });
     this.mount(page, "records");
@@ -1852,6 +2419,7 @@ export class Menus {
 
   /** Rebind the battle keys: tap a row, press a key. */
   renderHotkeys(): void {
+    this.pushNav("hotkeys");
     this.root.innerHTML = "";
     this.show();
     const save = this.save;
@@ -1860,18 +2428,18 @@ export class Menus {
       ["hero2", "Select hero 2"],
       ["hero3", "Select hero 3"],
       ["hero4", "Select hero 4"],
-      ["ability1", "Cast ability 1"],
-      ["ability2", "Cast ability 2"],
-      ["ability3", "Cast the ULTIMATE"],
+      ["ability1", "Use technique 1"],
+      ["ability2", "Use technique 2"],
+      ["ability3", "Use the ULTIMATE"],
     ];
     const page = el(`
       <div class="page">
         <div class="map-header">
           <div>
             <div class="map-title">Hotkeys</div>
-            <div class="map-level">Tap a row, then press the key you want · aimed spells follow the mouse, click casts, Esc cancels</div>
+            <div class="map-level">Tap a row, then press the key you want · aimed techniques follow the mouse, click casts, Esc cancels</div>
           </div>
-          <button class="big-btn party-btn" data-act="back">Title</button>
+          <button class="big-btn party-btn" data-act="back">Settings</button>
         </div>
         <div class="hotkey-list">
           ${ROWS.map(
@@ -1909,6 +2477,7 @@ export class Menus {
         }
       }
       window.removeEventListener("keydown", capture, true);
+      this.hotkeyCaptureCleanup = null;
       listening = null;
       this.renderHotkeys();
     };
@@ -1921,6 +2490,7 @@ export class Menus {
         row.classList.add("listening");
         (row.querySelector(".hotkey-key") as HTMLElement).textContent = "press a key…";
         window.addEventListener("keydown", capture, true);
+        this.hotkeyCaptureCleanup = () => window.removeEventListener("keydown", capture, true);
         return;
       }
       if (target.closest('[data-act="hotkey-defaults"]')) {
@@ -1931,9 +2501,10 @@ export class Menus {
         return;
       }
       if (target.closest('[data-act="back"]')) {
-        window.removeEventListener("keydown", capture, true);
+        this.hotkeyCaptureCleanup?.();
+        this.hotkeyCaptureCleanup = null;
         audio.play("click");
-        this.renderTitle();
+        this.goBack(() => this.renderSettings());
       }
     });
     this.root.appendChild(page);
@@ -1943,6 +2514,7 @@ export class Menus {
 
   /** Three bands, three tales — pick which one takes the road. */
   renderProfiles(): void {
+    this.pushNav("profiles");
     this.root.innerHTML = "";
     this.show();
     const current = activeSlot();
@@ -1953,7 +2525,7 @@ export class Menus {
             <div class="map-title">The Bands</div>
             <div class="map-level">Three tales, kept apart — switching never loses a thing</div>
           </div>
-          <button class="big-btn party-btn" data-act="back">Title</button>
+          <button class="big-btn party-btn" data-act="back">Settings</button>
         </div>
         <div class="slot-list"></div>
       </div>
@@ -1990,14 +2562,15 @@ export class Menus {
       }
       if (target.closest('[data-act="back"]')) {
         audio.play("click");
-        this.renderTitle();
+        this.goBack(() => this.renderSettings());
       }
     });
     this.root.appendChild(page);
   }
 
-  /** The campaign's last page: the storm breaks and the road goes on. */
+  /** The campaign's last page: the stolen road returns beyond the Meridian. */
   renderFinale(): void {
+    this.pushNav("finale");
     this.pendingFinale = false;
     this.root.innerHTML = "";
     this.show();
@@ -2006,25 +2579,31 @@ export class Menus {
     const page = el(`
       <div class="page title-page finale-page">
         <div class="title-block">
-          <div class="game-logo" style="font-size:40px">THE ROAD'S END</div>
-          <div class="game-sub">Stormjaw is fallen. The black tide retreats. Dawn reaches the coast at last.</div>
+          <div class="game-logo" style="font-size:40px">THE ROAD REMADE</div>
+          <div class="game-sub">The Way-Eater is broken. The stolen miles return, one lantern at a time. Beyond the Meridian, the Long Road belongs to the living again.</div>
         </div>
         <div class="campfire-scene" aria-hidden="true">
           <svg viewBox="0 0 360 120">
-            <defs><linearGradient id="dawnsky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2c3a54"/><stop offset="0.6" stop-color="#c9825a"/><stop offset="1" stop-color="#f2c98a"/></linearGradient></defs>
-            <rect width="360" height="120" rx="12" fill="url(#dawnsky)"/>
-            <circle cx="286" cy="86" r="22" fill="#ffe9a3"/>
-            <circle cx="286" cy="86" r="34" fill="#ffe9a3" opacity="0.25"/>
-            <path d="M 0 96 Q 90 78 180 92 T 360 88 L 360 120 L 0 120 Z" fill="#527b82"/>
-            <path d="M 0 104 Q 120 92 240 102 T 360 100 L 360 120 L 0 120 Z" fill="#c4b47d"/>
+            <defs>
+              <linearGradient id="meridianSky" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#11101c"/><stop offset="0.58" stop-color="#332b48"/><stop offset="1" stop-color="#b37a62"/></linearGradient>
+              <linearGradient id="returnedRoad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60546b"/><stop offset="0.62" stop-color="#c8b7a0"/><stop offset="1" stop-color="#ffe4a3"/></linearGradient>
+            </defs>
+            <rect width="360" height="120" rx="12" fill="url(#meridianSky)"/>
+            <g fill="#eee1c7" opacity="0.62"><circle cx="42" cy="25" r="1.2"/><circle cx="90" cy="42" r="0.8"/><circle cx="151" cy="18" r="1"/><circle cx="223" cy="35" r="1.2"/><circle cx="316" cy="20" r="0.9"/></g>
+            <circle cx="294" cy="52" r="28" fill="none" stroke="#bf9cf0" stroke-width="2" opacity="0.38"/>
+            <circle cx="294" cy="52" r="18" fill="none" stroke="#ffe4a3" stroke-width="1.5" opacity="0.72"/>
+            <path d="M0 101 Q72 76 143 91 T278 74 Q319 68 360 55 L360 120 L0 120Z" fill="#17141e"/>
+            <path d="M0 108 Q76 87 149 98 T282 82 Q322 75 360 62" fill="none" stroke="#0d0b12" stroke-width="14" stroke-linecap="round"/>
+            <path d="M0 108 Q76 87 149 98 T282 82 Q322 75 360 62" fill="none" stroke="url(#returnedRoad)" stroke-width="7" stroke-linecap="round"/>
+            <path d="M18 104V80 M15 82h6 M250 86V60 M247 62h6" stroke="#eee1c7" stroke-width="2"/><circle cx="18" cy="77" r="3" fill="#ffe4a3"/><circle cx="250" cy="57" r="3" fill="#ffe4a3"/>
             ${this.save.heroes
               .map((h, i) => ({ h, i }))
               .filter(({ h }) => h.recruited)
               .slice(0, 8)
               .map(({ i }, at) => {
                 const sx = 60 + at * 26;
-                const sy = 92 - at * 1.2;
-                return `<g fill="#1c2634"><circle cx="${sx}" cy="${sy - 12}" r="5"/><rect x="${sx - 4.5}" y="${sy - 9}" width="9" height="14" rx="3.4"/><rect x="${sx - 4.5}" y="${sy - 7.5}" width="9" height="2.4" rx="1.2" fill="${HEROES[i].accent}" opacity="0.7"/></g>`;
+                const sy = 96 - at * 1.35;
+                return `<g fill="#0d0b12"><circle cx="${sx}" cy="${sy - 12}" r="5"/><rect x="${sx - 4.5}" y="${sy - 9}" width="9" height="14" rx="3.4"/><rect x="${sx - 4.5}" y="${sy - 7.5}" width="9" height="2.4" rx="1.2" fill="${HEROES[i].accent}" opacity="0.9"/></g>`;
               })
               .join("")}
           </svg>
@@ -2044,7 +2623,7 @@ export class Menus {
     page.addEventListener("click", (event) => {
       if ((event.target as HTMLElement).closest('[data-act="finale-done"]')) {
         audio.play("levelup");
-        this.renderMap();
+        this.goBack(() => this.renderMap());
       }
     });
     this.root.appendChild(page);
@@ -2066,7 +2645,7 @@ export class Menus {
       ["Battles fought", String(lt.battles)],
       ["Victories", String(lt.victories)],
       ["Foes slain", String(lt.kills)],
-      ["Spells cast", String(lt.casts)],
+      ["Techniques used", String(lt.casts)],
       ["Gold earned", String(lt.gold)],
       ["Heroes fallen", String(lt.deaths)],
       ["Flawless wins", String(lt.flawless)],
@@ -2120,7 +2699,7 @@ export class Menus {
       }
       if ((event.target as HTMLElement).closest('[data-act="back"]')) {
         audio.play("click");
-        this.renderMap();
+        this.goBack(() => this.renderMap());
       }
     });
     this.mount(page, "records");
@@ -2130,24 +2709,26 @@ export class Menus {
 
   /** One-time fork for brand-new players: lessons first, or straight to the road. */
   renderFirstRun(): void {
+    this.pushNav("first-run");
     this.root.innerHTML = "";
     this.show();
     const page = el(`
       <div class="page title-page">
-        <div class="title-block">
-          <div class="game-logo" style="font-size:34px">FIRST STEPS</div>
-          <div class="game-sub">Lead a small company in real time. Two minutes of practice makes the first battle much clearer.</div>
+        <div class="title-block first-mile-title">
+          <div class="title-kicker">BEFORE THE FIRST MILE</div>
+          <div class="game-logo" style="font-size:34px">THREE FIELD RULES</div>
+          <div class="game-sub">Wayband is about giving a few clear orders, then reading what the battlefield says back.</div>
         </div>
-        <div class="guide-list first-steps-list">
-          <div class="shop-note"><strong>1 · Command</strong> — drag a hero onto open ground to move, or onto a foe to attack.</div>
-          <div class="shop-note"><strong>2 · Cast</strong> — tap an ability for an instant spell; drag an aimed ability onto the battlefield.</div>
-          <div class="shop-note"><strong>3 · Grow</strong> — after battle, spend each hero's points however you like. There are no fixed classes.</div>
+        <div class="first-mile-rules">
+          <article><span>01</span><i>↗</i><strong>Place the band</strong><p>Drag a hero to move or attack. Tap a portrait, then the field, for the same command.</p></article>
+          <article><span>02</span><i>◇</i><strong>Read, then cast</strong><p>Tap instant techniques. Drag aimed techniques. Leave marked ground before it resolves.</p></article>
+          <article><span>03</span><i>✦</i><strong>Shape a Path</strong><p>At level ${CALLING_UNLOCK_LEVEL}, a Discipline plus an Attunement becomes two techniques and one ultimate.</p></article>
         </div>
         <div class="title-buttons">
-          <button class="big-btn primary" data-act="learn">Practice for two minutes (recommended)</button>
-          <button class="big-btn" data-act="skip">${ico("play")} Skip practice and see the map</button>
+          <button class="big-btn primary" data-act="learn">Enter the practice ring <small>about two minutes</small></button>
+          <button class="big-btn" data-act="skip">${ico("play")} Take me to the Long Road</button>
         </div>
-        <div class="credit">practice is always available from How to Play</div>
+        <div class="credit">Every lesson remains replayable in the Field Handbook.</div>
       </div>
     `);
     page.addEventListener("click", (event) => {
@@ -2155,43 +2736,64 @@ export class Menus {
       if (!act) return;
       audio.unlock();
       audio.play("click");
-      if (act === "learn") this.callbacks.startTutorial("basics");
-      else this.renderMap();
+      this.save.seenIntro = true;
+      persist(this.save);
+      if (act === "learn") this.callbacks.startTutorial("basics", "map");
+      else {
+        this.replaceNextNavigation = true;
+        this.renderMap();
+      }
     });
     this.root.appendChild(page);
   }
 
   renderTutorials(): void {
+    this.pushNav("handbook");
     this.root.innerHTML = "";
     this.show();
     const lessons = [
-      { kind: "basics", icon: "🗡", name: "The Basics", blurb: "Moving, attacking, your first spells, and healing. Start here." },
-      { kind: "gestures", icon: "🎯", name: "Gesture Spells", blurb: "Practice aiming rays, blast circles, and frost trails." },
-      { kind: "healing", icon: "✚", name: "Healing & Stances", blurb: "Channel heals, Mend, and switching your healer's stance." },
-      { kind: "village", icon: "🏪", name: "The Village", blurb: "Gold, recruiting, gear, and the spell shop — a quick guide." },
+      { kind: "basics", mark: "I", icon: "↗", name: "First Commands", time: "2 min", blurb: "Move, tap-order, attack, cast, heal, and change a stance." },
+      { kind: "fieldcraft", mark: "II", icon: "◎", name: "Read the Field", time: "2 min", blurb: "Escape telegraphs, focus the band, read Waymarks, and break boss poise." },
+      { kind: "gestures", mark: "III", icon: "⌁", name: "Aimed Techniques", time: "2 min", blurb: "Practice rays, blast circles, and trails while time bends around your aim." },
+      { kind: "healing", mark: "IV", icon: "✚", name: "Healing & Stances", time: "2 min", blurb: "Channel healing, place Mend, and switch a healer between support and attack." },
     ];
+    const complete = lessons.filter((lesson) => this.save.completedTutorials.includes(lesson.kind)).length;
     const page = el(`
-      <div class="page">
-        <div class="map-header">
-          <div>
-            <div class="map-title">How to Play</div>
-            <div class="map-level">Short lessons — pick any, skip anytime</div>
-          </div>
-          <button class="big-btn party-btn" data-act="back">Back</button>
-        </div>
-        <div class="lesson-list"></div>
+      <div class="page handbook-page">
+        <header class="handbook-mast">
+          <button class="back-rune" data-act="back" aria-label="Back">‹</button>
+          <div><span>THE WAYFINDER'S</span><h1>Field Handbook</h1><p>Commands, battle signs, and the systems behind the Long Road.</p></div>
+          <div class="handbook-progress"><strong>${complete}/${lessons.length}</strong><em>field lessons</em></div>
+        </header>
+        <section class="command-ribbon" aria-label="Essential controls">
+          <div><kbd>DRAG</kbd><span><b>Hero → ground</b>Move</span></div>
+          <div><kbd>DRAG</kbd><span><b>Hero → foe</b>Attack</span></div>
+          <div><kbd>2×</kbd><span><b>Double-tap foe</b>Focus band</span></div>
+          <div><kbd>HOLD</kbd><span><b>Technique</b>Read details</span></div>
+          <div><kbd>MARK</kbd><span><b>Marked ground</b>Move now</span></div>
+        </section>
+        <div class="handbook-section-title"><span>Practice ring</span><em>Replay any lesson · skip any time</em></div>
+        <div class="lesson-list handbook-lessons"></div>
+        <div class="handbook-section-title"><span>Rules of the road</span><em>Keep the important math close</em></div>
+        <section class="system-primer">
+          <article><i>✦</i><div><strong>Elemental Waymarks</strong><p>Normal foes take <b>+25%</b> from a weakness and <b>−20%</b> from a resistance. Boss values are +15% and −10%.</p></div></article>
+          <article><i>◇</i><div><strong>One Path, three techniques</strong><p>A Discipline and Attunement grant two normal techniques plus one charge-based ultimate. Armor is passive unless a future legendary says otherwise.</p></div></article>
+          <article><i>▰</i><div><strong>Boss language</strong><p>Marked ground warns of impact. The amber bar is poise: break it to stagger. Diamonds mark phase changes.</p></div></article>
+          <article><i>≋</i><div><strong>Terrain matters</strong><p>Flooded low ground slows the band. Lightning circles detonate after their countdown. Scout chips name terrain before you embark.</p></div></article>
+        </section>
+        <button class="handbook-reference" data-lesson="village"><span>COMPANY REFERENCE</span><strong>Gear, recruits, Paths, talents &amp; keyboard</strong><b>Open ›</b></button>
       </div>
     `);
     const list = page.querySelector(".lesson-list")!;
     for (const lesson of lessons) {
       const card = el(`
         <button class="stage-card lesson-card" data-lesson="${lesson.kind}">
-          <div class="stage-num">${lesson.icon}</div>
+          <div class="lesson-mark"><span>${lesson.mark}</span><i>${lesson.icon}</i></div>
           <div class="stage-info">
             <div class="stage-name">${lesson.name}</div>
             <div class="stage-sub">${lesson.blurb}</div>
           </div>
-          <div class="stage-waves">▶</div>
+          <div class="lesson-status ${this.save.completedTutorials.includes(lesson.kind) ? "done" : ""}"><span>${this.save.completedTutorials.includes(lesson.kind) ? "Practiced" : lesson.time}</span><b>${this.save.completedTutorials.includes(lesson.kind) ? "✓" : "▶"}</b></div>
         </button>
       `);
       list.appendChild(card);
@@ -2204,26 +2806,34 @@ export class Menus {
         audio.play("click");
         const kind = lesson.getAttribute("data-lesson")!;
         if (kind === "village") this.renderVillageGuide();
-        else this.callbacks.startTutorial(kind);
+        else this.callbacks.startTutorial(kind, "handbook");
         return;
       }
       if (target.closest('[data-act="back"]')) {
         audio.play("click");
-        this.renderTitle();
+        // Lessons briefly own a guarded battle-history entry. Navigate this
+        // explicit Back control to its logical parent in one step even when an
+        // embedded browser retains a duplicate lesson/handbook entry.
+        this.navDepth = Math.max(1, this.navDepth - 1);
+        this.replaceNextNavigation = true;
+        if (this.handbookReturn === "map") this.renderMap();
+        else if (this.handbookReturn === "settings") this.renderSettings();
+        else this.renderTitle();
       }
     });
     this.root.appendChild(page);
   }
 
   renderVillageGuide(): void {
+    this.pushNav("reference");
     this.root.innerHTML = "";
     this.show();
     const page = el(`
       <div class="page">
         <div class="map-header">
           <div>
-            <div class="map-title">The Village</div>
-            <div class="map-level">Everything gold can buy</div>
+            <div class="map-title">Company Reference</div>
+            <div class="map-level">Builds, battle rules, and the village</div>
           </div>
           <button class="big-btn party-btn" data-act="back">Back</button>
         </div>
@@ -2231,10 +2841,10 @@ export class Menus {
           <div class="shop-note"><strong>${ico("coin")} Gold</strong> — every foe you slay and stage you clear pays gold. Even defeats salvage half the spoils.</div>
           <div class="shop-note"><strong>🍺 The Tavern</strong> — recruit new heroes to the band. Anyone hired can be rotated in or out of your fighting party of ${PARTY_CAP} on the Party screen.</div>
           <div class="shop-note"><strong>${ico("shield")} The Armory</strong> — weapons upgrade in tiers, but armor is a WARDROBE across THREE slots: body, helm, and boots. Every piece changes passive stats or combat traits; wear two or three pieces of one family and the SET answers with more. The Forge reworks any owned piece up to +3, and the great foes each guard a RELIC piece for whoever fells them first.</div>
-          <div class="shop-note"><strong>${ico("spark")} The Spell Shop</strong> — unlock a spell once for the whole band, then assign it to any hero whose attributes meet its bar. Each hero carries up to ${MAX_EQUIPPED} spells.</div>
-          <div class="shop-note"><strong>${ico("banner")} Six founding callings</strong> — swear an oath at level ${CALLING_UNLOCK_LEVEL}. Earn ${CALLING_MASTERY_LEVELS} levels beneath it to retain its mastery lesson after switching. At level ${ADV_CALLING_LEVEL}, a mastered oath promotes down one of two permanent paths.</div>
+          <div class="shop-note"><strong>${ico("spark")} The Technique Archive</strong> — a Path grants exactly two techniques and one ultimate. Retired arts no longer appear in the archive or battle bar.</div>
+          <div class="shop-note"><strong>${ico("banner")} Paths</strong> — at level ${CALLING_UNLOCK_LEVEL}, pair one of five combat Disciplines with a Waymark Attunement. Practice an element for ${CALLING_MASTERY_LEVELS} levels to preserve its Elemental Legacy. At level ${ADV_CALLING_LEVEL}, a seasoned Path can take one of two Promotions.</div>
           <div class="shop-note"><strong>${ico("skull")} Bosses</strong> — the great foes hunt whoever HURTS them most. Pour damage in and a boss turns on you; your warrior holds its anger just by standing in its face, and taunts trump everything. Marked ground means MOVE.</div>
-          <div class="shop-note"><strong>⌨ Keyboard</strong> — on a computer: 1–4 picks a hero, Q/W/E casts, R is the ultimate. Aimed spells follow the mouse; click casts, Esc cancels. Rebind in Settings.</div>
+          <div class="shop-note"><strong>⌨ Keyboard</strong> — on a computer: 1–4 picks a hero, Q/W uses their two techniques, and R unleashes the ultimate. Aimed techniques follow the mouse; click casts, Esc cancels. Rebind in Settings.</div>
           <div class="shop-note"><strong>${ico("star")} Talents</strong> — every 2 band levels, each hero earns a talent point for the Strength, Dexterity, and Magic trees. Find them on the Party screen.</div>
         </div>
       </div>
@@ -2242,7 +2852,7 @@ export class Menus {
     page.addEventListener("click", (event) => {
       if ((event.target as HTMLElement).closest('[data-act="back"]')) {
         audio.play("click");
-        this.renderTutorials();
+        this.goBack(() => this.renderTutorials());
       }
     });
     this.root.appendChild(page);
@@ -2375,7 +2985,7 @@ export class Menus {
       }
       if (target.closest('[data-act="back"]')) {
         audio.play("click");
-        this.renderParty();
+        this.goBack(() => this.renderParty());
       }
     });
     this.mount(page, "party");
@@ -2384,12 +2994,12 @@ export class Menus {
   // ------------------------------------------------------------------ village shops
 
   renderShop(tab: "tavern" | "armory" | "smithy" | "spells" | "curios"): void {
-    this.pushNav("shop");
+    const tavern = tab === "tavern";
+    this.pushNav(tavern ? "tavern" : "shop");
     this.root.innerHTML = "";
     this.show();
     const save = this.save;
     // the Tavern is its own door on the bottom bar — the Village tab row stays wares-only
-    const tavern = tab === "tavern";
     const page = el(`
       <div class="page">
         <div class="map-header">
@@ -2408,7 +3018,6 @@ export class Menus {
             : `<div class="shop-tabs">
           <button class="shop-tab ${tab === "armory" ? "on" : ""}" data-tab="armory">${ico("shield")} Armory</button>
           <button class="shop-tab ${tab === "smithy" ? "on" : ""}" data-tab="smithy">${ico("sword")} Smithy</button>
-          <button class="shop-tab ${tab === "spells" ? "on" : ""}" data-tab="spells">${ico("spark")} Spells</button>
           <button class="shop-tab ${tab === "curios" ? "on" : ""}" data-tab="curios">${ico("gem")} Curios</button>
         </div>`
         }
@@ -2426,12 +3035,12 @@ export class Menus {
       const tabBtn = target.closest("[data-tab]");
       if (tabBtn) {
         audio.play("click");
-        this.renderShop(tabBtn.getAttribute("data-tab") as "armory" | "smithy" | "spells" | "curios");
+        this.renderShop(tabBtn.getAttribute("data-tab") as "armory" | "smithy" | "curios");
         return;
       }
       if (target.closest('[data-act="back"]')) {
         audio.play("click");
-        this.renderMap();
+        this.goBack(() => this.renderMap());
       }
     });
     this.mount(page, tavern ? "tavern" : "shop");
@@ -2526,6 +3135,32 @@ export class Menus {
         <b>Read notices ›</b>
       </button>
     `));
+    if (save.unlockedStage >= ROAD_TUTELAGE_STAGE) {
+      const activeLevels = partyRoster(save).map((index) => save.heroes[index].level);
+      const veteranLevel = Math.max(1, ...activeLevels);
+      const pupils = save.heroes
+        .map((hero, index) => ({ hero, index }))
+        .filter(({ hero }) => hero.recruited && !hero.active && hero.level < veteranLevel && hero.level < MAX_LEVEL);
+      body.appendChild(el(`
+        <div class="hero-card road-tutelage">
+          <div class="hero-head">
+            <div class="hero-avatar mystery-hero"><span>✦</span></div>
+            <div>
+              <div class="hero-name">Road Tutelage <em>Stories sharpen steel</em></div>
+              <div class="hero-meta">After Stormbreak, an inactive companion can study with the veterans. Each lesson grants exactly one level and can never pass the active band.</div>
+            </div>
+          </div>
+          <div class="tinker-rows">
+            ${pupils.length
+              ? pupils.map(({ hero, index }) => {
+                  const cost = roadTutelageCost(hero.level);
+                  return `<div class="tinker-row"><span class="tinker-item"><strong>${HEROES[index].name}</strong> · level ${hero.level} → ${hero.level + 1}</span><button class="big-btn buy-btn ${save.gold < cost ? "cant" : ""}" data-tutor="${index}">${ico("coin")} ${cost}</button></div>`;
+                }).join("")
+              : '<div class="shop-note">Every companion is keeping pace with the active band.</div>'}
+          </div>
+        </div>
+      `));
+    }
     for (let i = 0; i < HEROES.length; i++) {
       const def = HEROES[i];
       const hero = save.heroes[i];
@@ -2572,6 +3207,27 @@ export class Menus {
       if ((event.target as HTMLElement).closest("[data-contract-board]")) {
         audio.play("page");
         this.renderContracts();
+        return;
+      }
+      const tutor = (event.target as HTMLElement).closest("[data-tutor]");
+      if (tutor) {
+        const index = Number(tutor.getAttribute("data-tutor"));
+        const hero = save.heroes[index];
+        const veteranLevel = Math.max(1, ...partyRoster(save).map((active) => save.heroes[active].level));
+        if (!hero?.recruited || hero.active || hero.level >= veteranLevel || hero.level >= MAX_LEVEL) {
+          this.showToast("Only an inactive companion behind the active band can take a lesson.");
+          return;
+        }
+        const cost = roadTutelageCost(hero.level);
+        if (!this.spend(cost)) return;
+        const needed = Math.max(1, xpForLevel(hero.level) - hero.xp);
+        grantHeroXp(save, index, needed);
+        persist(save);
+        audio.play("levelup");
+        navigator.vibrate?.([14, 28, 20]);
+        this.showToast(`${HEROES[index].name} studies the road and reaches level ${hero.level}`);
+        this.renderShop("tavern");
+        this.maybeOfferBoons();
         return;
       }
       const btn = (event.target as HTMLElement).closest("[data-recruit]");
@@ -2844,11 +3500,16 @@ export class Menus {
 
   private buildSpellShop(body: Element): void {
     const save = this.save;
+    const archive = ABILITIES.filter((ability) => !ability.retired && !ability.pathSkill);
     body.appendChild(
-      el(`<div class="shop-note">Unlock a spell once, then assign it to any hero who meets its attribute — up to ${MAX_EQUIPPED} spells per hero, on the Party screen.</div>`),
+      el(`<div class="shop-note">Path techniques are learned automatically and never bought. This archive only holds independent techniques the band may discover later.</div>`),
     );
+    if (!archive.length) {
+      body.appendChild(el(`<div class="picker-empty">The archive shelves are quiet. Choose or change a hero's techniques from their Path.</div>`));
+      return;
+    }
     // filter rail: thirty spells is a long shelf without one
-    const owned = ABILITIES.filter((a) => save.unlockedSpells.includes(a.id)).length;
+    const owned = archive.filter((a) => save.unlockedSpells.includes(a.id)).length;
     body.appendChild(
       el(`
         <div class="shop-filters">
@@ -2856,12 +3517,12 @@ export class Menus {
           ${ATTR_KEYS.map(
             (k) => `<button class="filter-chip ${this.shopAttr === k ? "on" : ""}" data-filter="${k}">${ATTR_NAMES[k]}</button>`,
           ).join("")}
-          <button class="filter-chip owned-chip ${this.shopHideOwned ? "on" : ""}" data-filter="hide-owned">Hide owned · ${owned}/${ABILITIES.length}</button>
+          <button class="filter-chip owned-chip ${this.shopHideOwned ? "on" : ""}" data-filter="hide-owned">Hide owned · ${owned}/${archive.length}</button>
         </div>
       `),
     );
     // shelved by attribute, cheapest gate first
-    const shelf = [...ABILITIES]
+    const shelf = [...archive]
       .sort((a, b) => ATTR_KEYS.indexOf(a.gate.attr) - ATTR_KEYS.indexOf(b.gate.attr) || a.gate.value - b.gate.value)
       .filter((a) => (this.shopAttr === "all" || a.gate.attr === this.shopAttr) && !(this.shopHideOwned && save.unlockedSpells.includes(a.id)));
     if (!shelf.length) {
@@ -2923,11 +3584,11 @@ export class Menus {
     const strip = el(`
       <div class="shop-tabs hero-tabs">
         <button class="hero-step" data-hstep="-1" title="previous hero">‹</button>
-        <button class="shop-tab ${active === "overview" ? "on" : ""}" data-htab="overview">${ico("banner")} Overview</button>
-        <button class="shop-tab ${active === "gear" ? "on" : ""}" data-htab="gear">${ico("shield")} Gear</button>
-        <button class="shop-tab ${active === "spells" ? "on" : ""}" data-htab="spells">${ico("spark")} Spells</button>
-        <button class="shop-tab ${active === "talents" ? "on" : ""}" data-htab="talents">${ico("star")} Talents</button>
-        <button class="shop-tab ${active === "calling" ? "on" : ""}" data-htab="calling" ${canCall ? "" : "disabled"}>${ico("sword")} Calling</button>
+        <button class="shop-tab ${active === "overview" ? "on" : ""}" data-htab="overview" ${active === "overview" ? 'aria-current="page"' : ""}>${ico("banner")} Overview</button>
+        <button class="shop-tab ${active === "gear" ? "on" : ""}" data-htab="gear" ${active === "gear" ? 'aria-current="page"' : ""}>${ico("shield")} Gear</button>
+        <button class="shop-tab ${active === "spells" ? "on" : ""}" data-htab="spells" ${active === "spells" ? 'aria-current="page"' : ""}>${ico("spark")} Techniques</button>
+        <button class="shop-tab ${active === "talents" ? "on" : ""}" data-htab="talents" ${active === "talents" ? 'aria-current="page"' : ""}>${ico("star")} Talents</button>
+        <button class="shop-tab ${active === "calling" ? "on" : ""}" data-htab="calling" ${active === "calling" ? 'aria-current="page"' : ""} ${canCall ? "" : "disabled"}>${ico("sword")} Path</button>
         <button class="hero-step" data-hstep="1" title="next hero">›</button>
       </div>
     `);
@@ -2985,7 +3646,7 @@ export class Menus {
     page.addEventListener("click", (event) => {
       if ((event.target as HTMLElement).closest('[data-act="back"]')) {
         audio.play("click");
-        this.renderParty();
+        this.goBack(() => this.renderParty());
       }
     });
     this.mount(page, "party");
@@ -3082,9 +3743,10 @@ export class Menus {
         this.save.heroes.forEach((h, i) => {
           const p = preset.loadout[i];
           if (!p) return;
-          // only what still holds: owned spells the hero still qualifies for
-          const gated = unlockedAbilities(h.attrs).map((a) => a.id);
-          h.equipped = p.equipped.filter((id) => this.save.unlockedSpells.includes(id) && gated.includes(id)).slice(0, MAX_EQUIPPED);
+          // A preset may reorder this Path's techniques, but never restores retired abilities.
+          const pathIds = heroPathAbilities(h).map((ability) => ability.id);
+          const remembered = p.equipped.filter((id) => pathIds.includes(id));
+          h.equipped = [...remembered, ...pathIds.filter((id) => !remembered.includes(id))].slice(0, MAX_EQUIPPED);
           h.trinket = p.trinket && this.save.inventory.includes(p.trinket) ? p.trinket : null;
           if (h.recruited) h.active = p.active;
         });
@@ -3123,7 +3785,7 @@ export class Menus {
       const act = target.closest("[data-act]")?.getAttribute("data-act");
       if (act === "back") {
         audio.play("click");
-        this.renderMap();
+        this.goBack(() => this.renderMap());
       }
     });
     this.mount(page, "party");
@@ -3146,7 +3808,7 @@ export class Menus {
       oathHolds ? hero.calling : null,
       oathHolds ? hero.advCalling : null,
       hero.boons,
-      hero.masteredCallings,
+      hero.masteredElements,
     );
     const weapon = dominantWeapon(hero.attrs, oathHolds ? hero.calling : null);
     const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
@@ -3166,7 +3828,7 @@ export class Menus {
               sworn
                 ? oathHolds
                   ? `<span class="calling-tag" style="color:${sworn.color}">${advInfo ? advInfo.adv.name : sworn.name}</span> · `
-                  : `<span class="calling-tag dormant">${sworn.name} — dormant</span> · `
+                  : `<span class="calling-tag dormant">${sworn.name} — inactive</span> · `
                 : ""
             }<span class="build-identity">${buildIdentity(save, index)}</span> · <span class="hero-lv">Lv ${hero.level}</span> · ${WEAPON_LABEL[weapon]} · ${WEAPON_TIERS[hero.weaponTier].name} / ${armorById(hero.armor)?.name ?? "Traveler's Garb"}</div>
             <div class="xp-bar hero-xp"><div class="xp-fill" style="width:${Math.min(100, Math.round((hero.xp / xpForLevel(hero.level)) * 100))}%"></div></div>
@@ -3184,17 +3846,16 @@ export class Menus {
           <div data-stat="Range"><span>Range</span><strong>${stats.range > 90 ? "Ranged" : "Melee"}</strong></div>
           <div data-stat="Move"><span>Move</span><strong>${Math.round(stats.speed)}</strong></div>
           <div data-stat="Healing"><span>Healing</span><strong>${stats.healPower.toFixed(1)}/s</strong></div>
-          <div data-stat="Spell power"><span>Spell power</span><strong>×${stats.spellPower.toFixed(2)}</strong></div>
+              <div data-stat="Technique power"><span>Technique power</span><strong>×${stats.spellPower.toFixed(2)}</strong></div>
         </div>
         <div class="stat-hint">tap any stat to see what it does</div>` : ""}
         <button class="trinket-row equip-row loadout-row" data-act="equip">
           <span class="loadout-slots"></span>
-          <span class="loadout-text"><strong>Gear &amp; Spells</strong><em>${WEAPON_TIERS[hero.weaponTier].name} · ${armorById(hero.armor)?.name ?? "Traveler's Garb"}${trinket ? ` · ${trinket.name}` : ""} — tap to change</em></span>
+          <span class="loadout-text"><strong>Gear &amp; Techniques</strong><em>${WEAPON_TIERS[hero.weaponTier].name} · ${armorById(hero.armor)?.name ?? "Traveler's Garb"}${trinket ? ` · ${trinket.name}` : ""} — tap to change</em></span>
           <span class="loadout-go">${ico("arrow")}</span>
         </button>
         ${full ? '<div class="attr-rows"></div>' : ""}
         <div class="card-actions">
-          <button class="toggle-btn equip-btn" data-act="equip">${ico("shield")} Equip</button>
           ${save.unspent[index] > 0 ? `<button class="toggle-btn suggest-btn" data-act="suggest">${ico("spark")} Suggest</button>` : ""}
           <button class="toggle-btn talents-btn" data-act="talents">${ico("star")} Talents</button>
           <button class="toggle-btn calling-btn ${!sworn && hero.level >= CALLING_UNLOCK_LEVEL ? "beckons" : ""}"
@@ -3202,10 +3863,10 @@ export class Menus {
             ${sworn ? (oathHolds ? `style="border-color:${sworn.color};color:${sworn.color}"` : 'style="border-color:#ff9a85;color:#ff9a85"') : ""}>
             ${
               sworn
-                ? `${ico(sworn.crest)} ${advInfo ? advInfo.adv.name : sworn.name}${oathHolds ? "" : " (dormant)"}`
+                ? `${ico(sworn.crest)} ${advInfo ? advInfo.adv.name : sworn.name}${oathHolds ? "" : " (inactive)"}`
                 : hero.level >= CALLING_UNLOCK_LEVEL
-                  ? "Choose a Calling"
-                  : `Calling at level ${CALLING_UNLOCK_LEVEL}`
+                  ? "Choose a Path"
+                  : `Path at level ${CALLING_UNLOCK_LEVEL}`
             }
           </button>
           <button class="toggle-btn respec" data-act="respec">Respec (free)</button>
@@ -3255,15 +3916,12 @@ export class Menus {
 
     const attrRows = card.querySelector(".attr-rows");
     if (attrRows) for (const key of ATTR_KEYS) {
-      // surface what the attribute does and the next spell it would unlock
-      const nextGate = ABILITIES.filter((a) => a.gate.attr === key && a.gate.value > hero.attrs[key]).sort(
-        (a, b) => a.gate.value - b.gate.value,
-      )[0];
+      // Attributes shape every Path; techniques come from Discipline + Attunement.
       const row = el(`
         <div class="attr-row">
           <div class="attr-name">
             ${ATTR_NAMES[key]}
-            <div class="attr-sub">${ATTR_BLURBS[key]}${nextGate ? ` · <b>${nextGate.name}</b> at ${nextGate.gate.value}` : ""}</div>
+            <div class="attr-sub">${ATTR_BLURBS[key]}</div>
           </div>
           <div class="attr-bar"><div style="width:${Math.min(100, hero.attrs[key] * 5)}%"></div></div>
           <div class="attr-val">${hero.attrs[key]}</div>
@@ -3281,7 +3939,7 @@ export class Menus {
         return c && callingEligible(c, hero.attrs) ? hero.calling : null;
       };
       const effAdv = () => (effCalling() ? hero.advCalling : null);
-      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.boons, hero.masteredCallings);
+      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.boons, hero.masteredElements);
       hero.attrs[key] += 1;
       save.unspent[index] -= 1;
       const before = unlocked.length;
@@ -3302,7 +3960,7 @@ export class Menus {
         audio.play("click");
       }
       persist(save);
-      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.boons, hero.masteredCallings);
+      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.boons, hero.masteredElements);
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, statsBefore, statsAfter);
     });
@@ -3322,7 +3980,7 @@ export class Menus {
         const c = callingById(hero.calling);
         return c && callingEligible(c, hero.attrs) ? hero.calling : null;
       };
-      const before = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.boons, hero.masteredCallings);
+      const before = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.boons, hero.masteredElements);
       for (let p = 0; p < pts; p++) {
         let bestK = ATTR_KEYS[0];
         let bestScore = -1;
@@ -3345,7 +4003,7 @@ export class Menus {
       persist(save);
       audio.play("levelup");
       this.showToast(`${def.name}'s training follows their nature — ${pts} point${pts === 1 ? "" : "s"} spent`);
-      const after = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.boons, hero.masteredCallings);
+      const after = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.boons, hero.masteredElements);
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, before, after);
     });
@@ -3364,7 +4022,7 @@ export class Menus {
     return card;
   }
 
-  // ------------------------------------------------------------------ callings
+  // ------------------------------------------------------------------ Paths
 
   renderCalling(index: number): void {
     this.pushNav("calling", index);
@@ -3373,148 +4031,174 @@ export class Menus {
     const save = this.save;
     const def = HEROES[index];
     const hero = save.heroes[index];
+    let draftDiscipline: DisciplineId = hero.discipline ?? DISCIPLINES[0].id;
+    let draftElement: ElementId = hero.element ?? ELEMENTS[0].id;
     const page = el(`
-      <div class="page hero-sheet">
-        <div class="map-header">
+      <div class="page hero-sheet path-page">
+        <div class="map-header path-header">
           <div>
-            <div class="map-title">${def.name}'s Calling</div>
-            <div class="map-level">${
-              hero.calling
-                ? `Sworn — switching costs ${CALLING_SWITCH_COST}g`
-                : "Swear one oath — your first is free, and stats never lock"
-            } · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div>
+            <div class="map-title">${def.name}'s Path</div>
+            <div class="map-level">${hero.calling ? `Changing an established Path costs ${CALLING_SWITCH_COST}g` : "Your first Path is free"} · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div>
           </div>
         </div>
-        <div class="calling-grid"></div>
+        <div class="path-folio">
+          <section class="path-step discipline-step" aria-labelledby="discipline-heading">
+            <div class="path-step-heading"><span>01</span><div><strong id="discipline-heading">Choose how you fight</strong><em>Discipline shapes your weapon, role, and first lesson.</em></div></div>
+            <div class="discipline-rail">
+              ${DISCIPLINES.map((discipline) => `<button class="discipline-choice" data-discipline="${discipline.id}" aria-pressed="false" style="--path-color:${discipline.color}">
+                <span class="discipline-crest">${ico(discipline.crest)}</span>
+                <span><strong>${discipline.name}</strong><em>${discipline.epithet}</em><small>${discipline.weapon}</small></span>
+              </button>`).join("")}
+            </div>
+          </section>
+          <div class="folio-seam" aria-hidden="true"><span></span><b>WAYMARK</b><span></span></div>
+          <section class="path-step attunement-step" aria-labelledby="attunement-heading">
+            <div class="path-step-heading"><span>02</span><div><strong id="attunement-heading">Choose what answers you</strong><em>Attunement carves an element into that Discipline.</em></div></div>
+            <div class="waymark-grid">
+              ${ELEMENTS.map((element) => `<button class="waymark-choice" data-element="${element.id}" aria-pressed="false" style="--path-color:${element.color}">
+                <i>${ico(element.icon)}</i><span><strong>${element.name}</strong><em>${element.adjective}</em></span>
+              </button>`).join("")}
+            </div>
+          </section>
+          <section class="path-reveal" aria-live="polite"></section>
+        </div>
       </div>
     `);
     page.querySelector(".map-header")!.after(this.heroTabs(index, "calling"));
-    const grid = page.querySelector(".calling-grid")!;
-    const FAMILY_ORDER = ["Iron", "Blade", "Hunt", "Elemental", "Faith & Shadow"];
-    const visibleIds = new Set<string>(FOUNDATIONAL_CALLING_IDS);
-    if (hero.calling) visibleIds.add(hero.calling); // legacy oaths remain playable and switchable
-    const ordered = CALLINGS.filter((calling) => visibleIds.has(calling.id)).sort((a, b) => FAMILY_ORDER.indexOf(a.family) - FAMILY_ORDER.indexOf(b.family));
-    let lastFamily = "";
-    for (const c of ordered) {
-      if (c.family !== lastFamily) {
-        lastFamily = c.family;
-        grid.appendChild(el(`<div class="calling-family">${c.family} <span>${ordered.filter((o) => o.family === c.family).length} paths</span></div>`));
+    const reveal = page.querySelector(".path-reveal") as HTMLElement;
+
+    const refreshReveal = () => {
+      page.querySelectorAll<HTMLElement>("[data-discipline]").forEach((button) => {
+        const selected = button.dataset.discipline === draftDiscipline;
+        button.classList.toggle("selected", selected);
+        button.setAttribute("aria-pressed", String(selected));
+      });
+      page.querySelectorAll<HTMLElement>("[data-element]").forEach((button) => {
+        const selected = button.dataset.element === draftElement;
+        button.classList.toggle("selected", selected);
+        button.setAttribute("aria-pressed", String(selected));
+      });
+      const discipline = DISCIPLINES.find((choice) => choice.id === draftDiscipline)!;
+      const element = ELEMENTS.find((choice) => choice.id === draftElement)!;
+      const id = pathId(draftDiscipline, draftElement);
+      const path = callingById(id);
+      if (!path) {
+        reveal.innerHTML = '<div class="path-empty">This Waymark has not been charted yet.</div>';
+        return;
       }
-      const eligible = callingEligible(c, hero.attrs);
-      const isSworn = hero.calling === c.id;
-      const practice = Math.min(CALLING_MASTERY_LEVELS, hero.callingLevels[c.id] ?? 0);
-      const mastered = hero.masteredCallings.includes(c.id);
-      const card = el(`
-        <div class="calling-card ${isSworn ? "sworn" : ""} ${eligible ? "" : "locked"}" style="--chip:${c.color}">
-          <div class="calling-head">
-            <span class="calling-crest">${ico(c.crest)}</span>
-            <div class="calling-title"><strong>${c.name}</strong><em>${c.epithet}</em></div>
-            ${isSworn ? `<span class="sworn-badge ${eligible ? "" : "dormant"}">${eligible ? "Sworn" : "Dormant"}</span>` : ""}
-          </div>
-          ${
-            isSworn && !eligible
-              ? '<div class="dormant-note">Oath dormant — passive and ultimate are offline until the requirements are met again.</div>'
-              : ""
-          }
-          <div class="calling-req">${c.entry
-            .map((e) => `<span class="req-chip ${hero.attrs[e.attr] >= e.value ? "met" : ""}">${ATTR_NAMES[e.attr]} ${e.value}</span>`)
-            .join("")}</div>
-          <div class="calling-passive">${c.passive}</div>
-          <div class="mastery-track ${mastered ? "complete" : ""}"><span><b>${mastered ? "Mastered" : `Mastery ${practice}/${CALLING_MASTERY_LEVELS}`}</b><em>${mastered ? "Passive retained when another oath is active" : "Earn hero levels while this oath is active"}</em></span><i><b style="width:${(practice / CALLING_MASTERY_LEVELS) * 100}%"></b></i></div>
-          <div class="calling-sig">
-            <span class="spell-ico"></span>
-            <span class="spell-info">
-              <strong>${c.signature.name} <span class="ult-chip">ULT</span></strong>
-              <em>${c.signature.blurb}</em>
-              <em class="charge-hint">${c.chargeHint}</em>
-            </span>
-          </div>
-          ${
-            isSworn
-              ? ""
-              : `<button class="big-btn ${eligible ? "primary" : ""} swear-btn" data-swear="${c.id}" ${eligible ? "" : "disabled"}>
-                  ${eligible ? (hero.calling ? `Switch — ${CALLING_SWITCH_COST}g` : "Swear the oath") : "Attributes too low"}
-                </button>`
-          }
+      const techniques = [...pathAbilities(draftDiscipline, draftElement)];
+      const isCurrent = hero.calling === path.id;
+      const changing = !!hero.calling && !isCurrent;
+      const pathPractice = Math.min(CALLING_MASTERY_LEVELS, hero.callingLevels[path.id] ?? 0);
+      const pathMastered = hero.masteredCallings.includes(path.id);
+      const legacyPractice = Math.min(CALLING_MASTERY_LEVELS, hero.elementLevels?.[draftElement] ?? 0);
+      const legacyMastered = (hero.masteredElements ?? []).includes(draftElement);
+      const advancement = isCurrent ? hero.advCalling : hero.advancedCallings[path.id] ?? null;
+      const promotionReady = isCurrent && hero.level >= ADV_CALLING_LEVEL && pathMastered;
+      reveal.style.setProperty("--path-color", path.color);
+      reveal.innerHTML = `
+        <div class="path-reveal-heading">
+          <span class="path-sigil">${ico(discipline.crest)}</span>
+          <div><small>${discipline.name} · ${element.name}</small><h2>${path.name}</h2><p>${path.epithet}</p></div>
+          ${isCurrent ? '<span class="path-current-mark">Current Path</span>' : ""}
         </div>
-      `);
-      const holder = card.querySelector(".spell-ico")!;
-      const canvas = document.createElement("canvas");
-      canvas.width = canvas.height = 60;
-      canvas.style.width = canvas.style.height = "30px";
-      const cctx = canvas.getContext("2d")!;
-      cctx.scale(2, 2);
-      drawAbilityGlyph(cctx, c.signature.icon, 15, 15, 9, c.color);
-      holder.appendChild(canvas);
-      // level-20 advancement: the sworn calling shows its two branches
-      if (isSworn && c.advanced) {
-        const advReady = hero.level >= ADV_CALLING_LEVEL && mastered;
-        const advWrap = el(`
-          <div class="adv-section">
-            <div class="adv-head">Promotion ${advReady ? "" : `<span>requires level ${ADV_CALLING_LEVEL} + mastery</span>`}</div>
-            <div class="adv-branches"></div>
-          </div>
-        `);
-        const branches = advWrap.querySelector(".adv-branches")!;
-        for (const adv of c.advanced) {
-          const isCurrent = hero.advCalling === adv.id;
-          branches.appendChild(
-            el(`
-              <div class="adv-branch ${isCurrent ? "sworn" : ""} ${advReady ? "" : "locked"}">
-                <strong>${adv.name} <em>${adv.epithet}</em>${isCurrent ? '<span class="sworn-badge">Chosen</span>' : ""}</strong>
-                <span class="adv-line">${adv.passive}</span>
-                <span class="adv-line ult">${adv.ultNote}</span>
-                ${
-                  isCurrent || !advReady
-                    ? ""
-                    : `<button class="big-btn ${hero.advCalling ? "" : "primary"} adv-btn" data-advance="${adv.id}">
-                        ${hero.advCalling ? `Switch — ${ADV_SWITCH_COST}g` : "Advance"}
-                      </button>`
-                }
-              </div>
-            `),
-          );
-        }
-        card.appendChild(advWrap);
-      }
-      grid.appendChild(card);
-    }
+        <div class="path-doctrine"><span>Passive</span><strong>${path.passive}</strong><em>${discipline.name} Discipline · ${element.name} Attunement</em></div>
+        <div class="path-arsenal">
+          ${techniques.map((ability, at) => `<article class="path-technique"><span class="path-glyph" data-path-glyph="${at}"></span><div><small>Technique ${at + 1}</small><strong>${ability.name}</strong><em>${ability.blurb}</em></div></article>`).join("")}
+          <article class="path-technique ultimate"><span class="path-glyph" data-path-glyph="2"></span><div><small>Ultimate</small><strong>${path.signature.name}</strong><em>${path.signature.blurb}</em><b>${path.chargeHint}</b></div></article>
+        </div>
+        <div class="path-progress-grid">
+          <div class="path-progress ${legacyMastered ? "complete" : ""}"><span><b>Elemental Legacy</b><em>${legacyMastered ? `${element.name} remains with you on every future Path.` : `Practice ${element.name} for ${CALLING_MASTERY_LEVELS} levels to keep its lesson.`}</em></span><strong>${legacyMastered ? "MASTERED" : `${legacyPractice}/${CALLING_MASTERY_LEVELS}`}</strong><i><b style="width:${(legacyPractice / CALLING_MASTERY_LEVELS) * 100}%"></b></i></div>
+          <div class="path-progress ${pathMastered ? "complete" : ""}"><span><b>Path Mastery</b><em>${pathMastered ? "This Path is ready for its level-20 Promotion." : "Earn levels while this complete Path is active."}</em></span><strong>${pathMastered ? "MASTERED" : `${pathPractice}/${CALLING_MASTERY_LEVELS}`}</strong><i><b style="width:${(pathPractice / CALLING_MASTERY_LEVELS) * 100}%"></b></i></div>
+        </div>
+        <div class="path-promotions">
+          <div class="path-section-label"><span>Level ${ADV_CALLING_LEVEL}</span><strong>Promotion</strong><em>${promotionReady ? "Choose the final shape of this Path." : isCurrent ? `Requires level ${ADV_CALLING_LEVEL} and Path Mastery.` : "Set this as the current Path before promoting."}</em></div>
+          <div class="promotion-ledger">${(path.advanced ?? []).map((promotion) => {
+            const chosen = advancement === promotion.id;
+            return `<article class="promotion-card ${chosen ? "chosen" : ""} ${promotionReady ? "" : "locked"}"><span>${chosen ? "Chosen" : "Branch"}</span><strong>${promotion.name}</strong><em>${promotion.epithet}</em><p>${promotion.passive}</p><small>${promotion.ultNote}</small>${chosen || !promotionReady ? "" : `<button class="big-btn adv-btn" data-advance="${promotion.id}">${hero.advCalling ? `Change Promotion · ${ADV_SWITCH_COST}g` : "Take Promotion"}</button>`}</article>`;
+          }).join("")}</div>
+        </div>
+        <button class="big-btn primary path-confirm ${isCurrent ? "is-current" : ""} ${changing && save.gold < CALLING_SWITCH_COST ? "cant" : ""}" data-set-path="${path.id}" ${isCurrent ? "disabled" : ""}>
+          ${isCurrent ? "Current Path" : changing ? `Set Path · ${CALLING_SWITCH_COST}g` : "Begin this Path · free"}
+        </button>
+      `;
+      const glyphs = [...techniques, path.signature];
+      reveal.querySelectorAll<HTMLElement>("[data-path-glyph]").forEach((holder) => {
+        const ability = glyphs[Number(holder.dataset.pathGlyph)];
+        if (!ability) return;
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 72;
+        canvas.style.width = canvas.style.height = "36px";
+        const ctx = canvas.getContext("2d")!;
+        ctx.scale(2, 2);
+        drawAbilityGlyph(ctx, ability.icon, 18, 18, 10.5, ability.color);
+        holder.appendChild(canvas);
+      });
+    };
+
     page.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
-      const advance = target.closest("[data-advance]");
+      const discipline = target.closest<HTMLElement>("[data-discipline]");
+      if (discipline) {
+        draftDiscipline = discipline.dataset.discipline as DisciplineId;
+        audio.play("click");
+        refreshReveal();
+        return;
+      }
+      const element = target.closest<HTMLElement>("[data-element]");
+      if (element) {
+        draftElement = element.dataset.element as ElementId;
+        audio.play("click");
+        refreshReveal();
+        return;
+      }
+      const advance = target.closest<HTMLElement>("[data-advance]");
       if (advance) {
-        const id = advance.getAttribute("data-advance")!;
+        const id = advance.dataset.advance!;
         if (hero.level < ADV_CALLING_LEVEL || !hero.masteredCallings.includes(hero.calling ?? "")) return;
-        if (hero.advCalling && !this.spend(ADV_SWITCH_COST)) return;
+        if (hero.advCalling && hero.advCalling !== id && !this.spend(ADV_SWITCH_COST)) return;
         hero.advCalling = id;
         if (hero.calling) hero.advancedCallings[hero.calling] = id;
         persist(save);
         audio.play("levelup");
         navigator.vibrate?.([20, 30, 50]);
-        const found = advCallingById(id)!;
-        this.showToast(`${def.name} rises: ${found.adv.name}, ${found.adv.epithet}!`);
+        const found = advCallingById(id);
+        this.showToast(found ? `${def.name} rises: ${found.adv.name}, ${found.adv.epithet}!` : `${def.name} takes a new Promotion.`);
         this.renderCalling(index);
         return;
       }
-      const swear = target.closest("[data-swear]");
-      if (swear) {
-        const id = swear.getAttribute("data-swear")!;
-        const c = callingById(id)!;
-        if (!callingEligible(c, hero.attrs)) return;
-        if (hero.calling && !this.spend(CALLING_SWITCH_COST)) return;
-        hero.calling = id;
-        hero.advCalling = hero.advancedCallings[id] ?? null;
+      const setPath = target.closest<HTMLElement>("[data-set-path]");
+      if (setPath && !setPath.hasAttribute("disabled")) {
+        const nextId = pathId(draftDiscipline, draftElement);
+        const nextPath = callingById(nextId);
+        if (!nextPath || hero.calling === nextId) return;
+        const changing = !!hero.calling;
+        if (changing && save.gold < CALLING_SWITCH_COST) {
+          audio.play("click");
+          this.showToast(`Not enough gold — need ${CALLING_SWITCH_COST}`);
+          return;
+        }
+        if (changing) save.gold -= CALLING_SWITCH_COST;
+        const techniques = [...pathAbilities(draftDiscipline, draftElement)];
+        hero.discipline = draftDiscipline;
+        hero.element = draftElement;
+        hero.calling = nextId;
+        hero.advCalling = hero.advancedCallings[nextId] ?? null;
+        hero.equipped = techniques.map((ability) => ability.id).slice(0, MAX_EQUIPPED);
+        for (const ability of techniques) if (!save.unlockedSpells.includes(ability.id)) save.unlockedSpells.push(ability.id);
         persist(save);
         audio.play("levelup");
-        this.showToast(`${def.name} swears the ${c.name}'s oath — ${c.signature.name} joins the battle bar`);
+        navigator.vibrate?.([20, 30, 50]);
+        this.showToast(`${def.name} walks the ${nextPath.name} Path — two techniques and an ultimate are ready.`);
         this.renderCalling(index);
         return;
       }
       if (target.closest('[data-act="back"]')) {
         audio.play("click");
-        this.renderParty();
+        this.goBack(() => this.renderParty());
       }
     });
+    refreshReveal();
     this.mount(page, "party");
   }
 
@@ -3532,7 +4216,7 @@ export class Menus {
     const oathHolds = sworn ? callingEligible(sworn, hero.attrs) : false;
     const weapon = dominantWeapon(hero.attrs, oathHolds ? hero.calling : null);
     const currentGear = () => heroGearOf(hero, save.forge);
-    const currentStats = () => deriveStats(hero.attrs, hero.weaponTier, currentGear(), hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.boons, hero.masteredCallings);
+    const currentStats = () => deriveStats(hero.attrs, hero.weaponTier, currentGear(), hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.boons, hero.masteredElements);
     const wornSet = armorSetOf(currentGear());
     const slotInfo = [
       { key: "weapon", label: "Weapon", icon: "sword", value: `${WEAPON_TIERS[hero.weaponTier].name} ${WEAPON_LABEL[weapon]}` },
@@ -3606,7 +4290,7 @@ export class Menus {
       const choices: (typeof pool[number] | null)[] = [null, ...pool];
       list.innerHTML = choices.map((piece) => {
         const altGear = { ...currentGear(), [kind === "body" ? "body" : kind]: piece?.id ?? null };
-        const alt = deriveStats(hero.attrs, hero.weaponTier, altGear, hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.boons, hero.masteredCallings);
+        const alt = deriveStats(hero.attrs, hero.weaponTier, altGear, hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.boons, hero.masteredElements);
         const deltas = [[alt.maxHp - cur.maxHp, "hp"], [Math.round((alt.armor - cur.armor) * 100), "% armor"], [Math.round(((alt.speed - cur.speed) / cur.speed) * 100), "% move"]] as const;
         const deltaHtml = deltas.filter(([n]) => n).map(([n, label]) => `<i class="${n > 0 ? "up" : "dn"}">${n > 0 ? "+" : ""}${n}${label}</i>`).join("");
         const active = wornId === (piece?.id ?? null);
@@ -3635,7 +4319,7 @@ export class Menus {
       const trinket = target.closest("[data-trinket]"); if (trinket) { hero.trinket = trinket.getAttribute("data-trinket") === "none" ? null : trinket.getAttribute("data-trinket"); persist(save); audio.play("click"); this.renderEquipment(index); return; }
       const handoff = target.closest("[data-handoff]"); if (handoff) { this.askHandoff(index, handoff.getAttribute("data-handoff") as "body" | "helm" | "boots"); return; }
       if (target.closest("[data-goto]")) { audio.play("page"); this.renderShop("armory"); return; }
-      if (target.closest('[data-act="back"]')) { audio.play("click"); this.renderParty(); }
+      if (target.closest('[data-act="back"]')) { audio.play("click"); this.goBack(() => this.renderParty()); }
     });
     this.mount(page, "party");
   }
@@ -3671,7 +4355,7 @@ export class Menus {
               <canvas class="figure-canvas" width="360" height="440"></canvas>
               <div class="figure-caption">${
                 oathGuided
-                  ? `${WEAPON_LABEL[weapon]} — the ${sheetSworn!.name}'s oath guides the hand`
+                  ? `${WEAPON_LABEL[weapon]} — the ${sheetSworn!.name} Path guides the hand`
                   : `${WEAPON_LABEL[weapon]} — shaped by ${ATTR_NAMES[dominant]} ${hero.attrs[dominant]}`
               }</div>
             </div>
@@ -3719,7 +4403,7 @@ export class Menus {
     const gearHolder = page.querySelector(".gear-slots")!;
     const gearNow = () => heroGearOf(hero, save.forge);
     const statsWith = (gear: ReturnType<typeof gearNow>) =>
-      deriveStats(hero.attrs, hero.weaponTier, gear, hero.talents, hero.trinket, sheetHolds ? hero.calling : null, sheetHolds ? hero.advCalling : null, hero.boons, hero.masteredCallings);
+      deriveStats(hero.attrs, hero.weaponTier, gear, hero.talents, hero.trinket, sheetHolds ? hero.calling : null, sheetHolds ? hero.advCalling : null, hero.boons, hero.masteredElements);
     const buildSlot = (kind: "body" | "helm" | "boots") => {
       const catalog = kind === "body" ? ARMORS : kind === "helm" ? HELMS : BOOTS;
       const wornId = kind === "body" ? hero.armor : kind === "helm" ? hero.helm : hero.boots;
@@ -3879,7 +4563,7 @@ export class Menus {
       }
       if (target.closest('[data-act="back"]')) {
         audio.play("click");
-        this.renderParty();
+        this.goBack(() => this.renderParty());
       }
     });
     this.mount(page, "party");
@@ -3934,7 +4618,7 @@ export class Menus {
     this.root.appendChild(pop);
   }
 
-  /** A battle-bar-first spell screen: select a slot, then assign one known spell. */
+  /** A Path always carries exactly two techniques and one charge-based ultimate. */
   renderSpells(index: number): void {
     this.pushNav("spells", index);
     this.root.innerHTML = "";
@@ -3942,260 +4626,115 @@ export class Menus {
     const save = this.save;
     const hero = save.heroes[index];
     const def = HEROES[index];
-    this.spellFocus = Math.max(0, Math.min(MAX_EQUIPPED - 1, this.spellFocus));
-    const trainable = new Set(unlockedAbilities(hero.attrs).map((a) => a.id));
-    const usable = ABILITIES.filter((a) => save.unlockedSpells.includes(a.id) && trainable.has(a.id));
-    const unavailable = ABILITIES.filter((a) => !save.unlockedSpells.includes(a.id) || !trainable.has(a.id));
+    const path = callingById(hero.calling);
+    const roadSkills = path ? [] : hero.equipped.flatMap((id) => {
+      const ability = ABILITIES.find((candidate) => candidate.id === id);
+      return ability ? [ability] : [];
+    }).slice(0, MAX_EQUIPPED);
+    const granted = heroPathAbilities(hero);
+    const remembered = hero.equipped.filter((id) => granted.some((ability) => ability.id === id));
+    const techniques = [...remembered.map(abilityById), ...granted.filter((ability) => !remembered.includes(ability.id))].slice(0, MAX_EQUIPPED);
+    const normalized = techniques.map((ability) => ability.id);
+    if (path && normalized.join("|") !== hero.equipped.join("|")) {
+      hero.equipped = normalized;
+      persist(save);
+    }
     const page = el(`
-      <div class="page hero-sheet loadout-page spell-loadout-page">
-        <div class="map-header"><div class="equip-title"><div><div class="map-title">${def.name} <em class="sheet-title">${def.title}</em></div>
-          <div class="map-level">Build the battle bar one slot at a time · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div></div></div></div>
-        <div class="spell-workbench">
-          <section class="battlebar-panel">
-            <div class="picker-head"><span>${ico("spark")} Battle bar</span><small>Choose a slot to edit</small></div>
-            <div class="battlebar-slots"></div>
-            <div class="battlebar-note">Spells appear in this order during combat.</div>
-          </section>
-          <section class="spell-picker">
-            <div class="picker-head"><span>${ico("book")} Slot ${this.spellFocus + 1}</span><small>${hero.equipped[this.spellFocus] ? "Choose a replacement or clear it" : "Choose a spell"}</small></div>
-            <div class="spell-choice-list"></div>
-          </section>
-        </div>
+      <div class="page hero-sheet loadout-page spell-loadout-page path-bar-page">
+        <div class="map-header"><div class="equip-title"><div><div class="map-title">${def.name}'s Battle Bar</div>
+          <div class="map-level">${path ? "Two techniques · one ultimate · every slot comes from the current Path" : `Road skills now · elemental Paths open at level ${CALLING_UNLOCK_LEVEL}`}</div></div></div></div>
+        ${path && techniques.length === MAX_EQUIPPED ? `
+          <div class="spell-workbench path-bar-workbench" style="--path-color:${path.color}">
+            <section class="battlebar-panel path-battlebar-panel">
+              <div class="picker-head"><span>${ico("spark")} Ready for battle</span><small>Q · W · R by default</small></div>
+              <div class="battlebar-slots"></div>
+              <button class="toggle-btn path-swap" data-swap-techniques>${ico("arrow")} Swap technique order</button>
+            </section>
+            <aside class="path-bar-doctrine">
+              <span class="path-bar-kicker">Current Path</span>
+              <strong>${path.name}</strong><em>${path.epithet}</em>
+              <p>${path.passive}</p>
+              <div><b>Discipline</b><span>${DISCIPLINES.find((choice) => choice.id === hero.discipline)?.name ?? "Uncharted"}</span></div>
+              <div><b>Attunement</b><span>${ELEMENTS.find((choice) => choice.id === hero.element)?.name ?? "Uncharted"}</span></div>
+              <button class="big-btn" data-open-path>Review or change Path</button>
+            </aside>
+          </div>` : roadSkills.length ? `
+          <div class="spell-workbench path-bar-workbench road-skill-workbench">
+            <section class="battlebar-panel path-battlebar-panel">
+              <div class="picker-head"><span>${ico("spark")} Road skills</span><small>Q · W by default</small></div>
+              <div class="battlebar-slots road-skill-slots"></div>
+            </section>
+            <aside class="path-bar-doctrine">
+              <span class="path-bar-kicker">Before the Path</span>
+              <strong>Founder's training</strong><em>Reliable skills for the first journey</em>
+              <p>These opening skills keep the hero battle-ready. At level ${CALLING_UNLOCK_LEVEL}, choose a Discipline and an Attunement to replace them with a complete elemental Path.</p>
+              <button class="big-btn primary" disabled>Paths unlock at level ${CALLING_UNLOCK_LEVEL}</button>
+            </aside>
+          </div>` : `
+          <section class="path-bar-empty">
+            <span>${ico("banner")}</span><strong>No Path charted</strong>
+            <p>Choose a Discipline and an Attunement to set two techniques and an ultimate.</p>
+            <button class="big-btn primary" data-open-path ${hero.level < CALLING_UNLOCK_LEVEL ? "disabled" : ""}>${hero.level < CALLING_UNLOCK_LEVEL ? `Paths unlock at level ${CALLING_UNLOCK_LEVEL}` : "Choose a Path"}</button>
+          </section>`}
       </div>`);
     page.querySelector(".map-header")!.after(this.heroTabs(index, "spells"));
-    const slots = page.querySelector(".battlebar-slots")!;
-    for (let s = 0; s < MAX_EQUIPPED; s++) {
-      const id = hero.equipped[s] ?? null;
-      const ability = id ? abilityById(id) : null;
-      const slot = el(`<button class="battlebar-slot ${s === this.spellFocus ? "selected" : ""} ${id ? "filled" : "empty"}" data-slot="${s}" style="--chip:${ability?.color ?? "#6b6478"}"><span class="slot-number">${s + 1}</span><span class="spell-ico"></span><span><strong>${ability?.name ?? "Empty slot"}</strong><em>${ability?.blurb ?? "Tap to choose a spell"}</em></span><b>›</b></button>`);
-      if (ability) {
-        const canvas = document.createElement("canvas"); canvas.width = canvas.height = 68; canvas.style.width = canvas.style.height = "34px";
-        const ctx = canvas.getContext("2d")!; ctx.scale(2, 2); drawAbilityGlyph(ctx, ability.icon, 17, 17, 10, ability.color); slot.querySelector(".spell-ico")!.appendChild(canvas);
+    if (path && techniques.length === MAX_EQUIPPED) {
+      const slots = page.querySelector(".battlebar-slots")!;
+      const entries = [
+        ...techniques.map((ability, at) => ({ ability, label: `Technique ${at + 1}`, key: at === 0 ? "Q" : "W", ultimate: false })),
+        { ability: path.signature, label: "Ultimate", key: "R", ultimate: true },
+      ];
+      for (const entry of entries) {
+        const slot = el(`<article class="battlebar-slot filled path-fixed-slot ${entry.ultimate ? "signature" : ""}" style="--chip:${entry.ability.color}"><span class="slot-number">${entry.key}</span><span class="spell-ico"></span><span><small>${entry.label}</small><strong>${entry.ability.name}</strong><em>${entry.ability.blurb}</em></span><b>${entry.ultimate ? "Charge" : "Ready"}</b></article>`);
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 72;
+        canvas.style.width = canvas.style.height = "36px";
+        const ctx = canvas.getContext("2d")!;
+        ctx.scale(2, 2);
+        drawAbilityGlyph(ctx, entry.ability.icon, 18, 18, 10.5, entry.ability.color);
+        slot.querySelector(".spell-ico")!.appendChild(canvas);
+        slots.appendChild(slot);
       }
-      slots.appendChild(slot);
-    }
-    const sworn = callingById(hero.calling);
-    if (sworn) {
-      const holds = callingEligible(sworn, hero.attrs);
-      slots.appendChild(el(`<div class="battlebar-slot signature ${holds ? "" : "dormant"}" style="--chip:${holds ? sworn.color : "#6b6478"}"><span class="slot-number">★</span><span class="spell-ico">${ico(sworn.crest)}</span><span><strong>${sworn.signature.name}</strong><em>${holds ? `${sworn.name} ultimate · always available` : "Calling requirements are not met"}</em></span><b>${holds ? "Bonus" : "Dormant"}</b></div>`));
-    }
-    const list = page.querySelector(".spell-choice-list")!;
-    if (hero.equipped[this.spellFocus]) list.appendChild(el(`<button class="spell-choice clear-choice" data-clear="1"><span class="choice-icon">×</span><span><strong>Clear this slot</strong><em>Leave slot ${this.spellFocus + 1} empty</em></span></button>`));
-    if (!usable.length) list.appendChild(el(`<div class="picker-empty">No usable spells yet. Unlock spells in the Village or train this hero's attributes.</div>`));
-    for (const ability of usable) {
-      const at = hero.equipped.indexOf(ability.id);
-      const choice = el(`<button class="spell-choice ${at === this.spellFocus ? "equipped" : ""}" data-ability="${ability.id}" style="--chip:${ability.color}"><span class="spell-ico"></span><span><strong>${ability.name}</strong><em>${ability.blurb}</em><small>${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}${at >= 0 ? ` · currently in slot ${at + 1}` : ""}</small></span><b>${at === this.spellFocus ? "✓" : at >= 0 && this.spellFocus < hero.equipped.length ? "Swap" : at >= 0 ? "Added" : "Equip"}</b></button>`);
-      const canvas = document.createElement("canvas"); canvas.width = canvas.height = 68; canvas.style.width = canvas.style.height = "34px";
-      const ctx = canvas.getContext("2d")!; ctx.scale(2, 2); drawAbilityGlyph(ctx, ability.icon, 17, 17, 10, ability.color); choice.querySelector(".spell-ico")!.appendChild(canvas); list.appendChild(choice);
-    }
-    if (unavailable.length) {
-      list.appendChild(el(`<details class="unavailable-spells"><summary>${unavailable.length} unavailable spell${unavailable.length === 1 ? "" : "s"}</summary><div>${unavailable.map((a) => `<button class="spell-choice locked" data-locked="${a.id}" style="--chip:${a.color}"><span class="choice-icon">${ico("lock")}</span><span><strong>${a.name}</strong><em>${!save.unlockedSpells.includes(a.id) ? "Unlock at the Village" : `Needs ${ATTR_NAMES[a.gate.attr]} ${a.gate.value}`}</em></span></button>`).join("")}</div></details>`));
+    } else if (roadSkills.length) {
+      const slots = page.querySelector(".road-skill-slots")!;
+      for (const [at, ability] of roadSkills.entries()) {
+        const slot = el(`<article class="battlebar-slot filled path-fixed-slot" style="--chip:${ability.color}"><span class="slot-number">${at === 0 ? "Q" : "W"}</span><span class="spell-ico"></span><span><small>Road skill ${at + 1}</small><strong>${ability.name}</strong><em>${ability.blurb}</em></span><b>Ready</b></article>`);
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 72;
+        canvas.style.width = canvas.style.height = "36px";
+        const ctx = canvas.getContext("2d")!;
+        ctx.scale(2, 2);
+        drawAbilityGlyph(ctx, ability.icon, 18, 18, 10.5, ability.color);
+        slot.querySelector(".spell-ico")!.appendChild(canvas);
+        slots.appendChild(slot);
+      }
     }
     page.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
-      const slot = target.closest("[data-slot]");
-      if (slot) { this.spellFocus = Number(slot.getAttribute("data-slot")); audio.play("click"); this.renderSpells(index); return; }
-      if (target.closest("[data-clear]")) { hero.equipped.splice(this.spellFocus, 1); persist(save); audio.play("click"); this.renderSpells(index); return; }
-      const pick = target.closest("[data-ability]");
-      if (pick) {
-        const id = pick.getAttribute("data-ability")!;
-        const next = [...hero.equipped];
-        const existing = next.indexOf(id);
-        if (existing === this.spellFocus) return;
-        if (existing >= 0 && this.spellFocus >= next.length) { this.showToast(`${abilityById(id).name} is already in slot ${existing + 1}`); return; }
-        if (existing >= 0 && this.spellFocus < next.length) [next[existing], next[this.spellFocus]] = [next[this.spellFocus], next[existing]];
-        else { if (existing >= 0) next.splice(existing, 1); if (this.spellFocus < next.length) next[this.spellFocus] = id; else next.push(id); }
-        hero.equipped = next.slice(0, MAX_EQUIPPED); persist(save); audio.play("levelup"); this.showToast(`${abilityById(id).name} assigned to slot ${this.spellFocus + 1}`); this.renderSpells(index); return;
+      if (target.closest("[data-swap-techniques]") && techniques.length === MAX_EQUIPPED) {
+        hero.equipped = [techniques[1].id, techniques[0].id];
+        persist(save);
+        audio.play("click");
+        this.showToast("Technique order swapped.");
+        this.renderSpells(index);
+        return;
       }
-      const locked = target.closest("[data-locked]");
-      if (locked) { const a = abilityById(locked.getAttribute("data-locked")!); this.showToast(!save.unlockedSpells.includes(a.id) ? "Unlock this spell at the Village first" : `Needs ${ATTR_NAMES[a.gate.attr]} ${a.gate.value}`); return; }
-      if (target.closest('[data-act="back"]')) { audio.play("click"); this.renderParty(); }
+      if (target.closest("[data-open-path]") && hero.level >= CALLING_UNLOCK_LEVEL) {
+        audio.play("page");
+        this.renderCalling(index);
+        return;
+      }
+      if (target.closest('[data-act="back"]')) {
+        audio.play("click");
+        this.goBack(() => this.renderParty());
+      }
     });
     this.mount(page, "party");
   }
 
-  /** Previous expanded spellbook retained as a fallback reference. */
+  /** Compatibility alias for old debug links; the obsolete global spellbook is retired. */
   renderSpellsLegacy(index: number): void {
-    this.pushNav("spells", index);
-    this.root.innerHTML = "";
-    this.show();
-    const save = this.save;
-    const hero = save.heroes[index];
-    const def = HEROES[index];
-    const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
-    const page = el(`
-      <div class="page hero-sheet">
-        <div class="map-header">
-          <div class="equip-title">
-            <div>
-              <div class="map-title">${def.name} <em class="sheet-title">${def.title}</em></div>
-              <div class="map-level">Spellcraft · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div>
-            </div>
-          </div>
-        </div>
-        <div class="equip-slot loadout-panel">
-          <div class="equip-slot-head">${ico("spark")} Spell loadout — <strong>${hero.equipped.length}/${MAX_EQUIPPED}</strong>
-            <span class="loadout-hint ${this.pendingSpell ? "urgent" : ""}">${
-              this.pendingSpell ? "tap a slot to swap it in" : "these fire from the battle bar"
-            }</span>
-          </div>
-          <div class="slot-row"></div>
-        </div>
-        <div class="equip-slot">
-          <div class="equip-slot-head">${ico("book")} Spellbook <span>tap to equip · tap again to remove</span></div>
-          <div class="spell-grid"></div>
-        </div>
-      </div>
-    `);
-    page.querySelector(".map-header")!.after(this.heroTabs(index, "spells"));
-
-    // loadout slots
-    const slotRow = page.querySelector(".slot-row")!;
-    for (let s = 0; s < MAX_EQUIPPED; s++) {
-      const id = hero.equipped[s] ?? null;
-      const slot = el(`
-        <button class="big-slot ${id ? "filled" : "empty"} ${this.pendingSpell ? "pulse" : ""}" data-slot="${s}" ${id ? `style="--chip:${abilityById(id).color}"` : ""}>
-          <span class="big-slot-ico"></span>
-          <span class="big-slot-name">${id ? abilityById(id).name : "Empty"}</span>
-          ${id && !this.pendingSpell ? '<span class="big-slot-x">×</span>' : ""}
-        </button>
-      `);
-      if (id) {
-        const holder = slot.querySelector(".big-slot-ico")!;
-        const canvas = document.createElement("canvas");
-        canvas.width = canvas.height = 68;
-        canvas.style.width = canvas.style.height = "34px";
-        const cctx = canvas.getContext("2d")!;
-        cctx.scale(2, 2);
-        drawAbilityGlyph(cctx, abilityById(id).icon, 17, 17, 10, abilityById(id).color);
-        holder.appendChild(canvas);
-      }
-      slotRow.appendChild(slot);
-    }
-    // sworn calling's ultimate rides along as a bonus fourth slot
-    const swornCalling = callingById(hero.calling);
-    const sheetOathHolds = swornCalling ? callingEligible(swornCalling, hero.attrs) : false;
-    if (swornCalling) {
-      const sigSlot = el(`
-        <div class="big-slot filled signature ${sheetOathHolds ? "" : "dormant"}" style="--chip:${sheetOathHolds ? swornCalling.color : "#7d7590"}">
-          <span class="big-slot-ico"></span>
-          <span class="big-slot-name">${swornCalling.signature.name}</span>
-          <span class="sig-tag">${ico(swornCalling.crest)} ${sheetOathHolds ? `${swornCalling.name} ultimate` : "oath dormant"}</span>
-        </div>
-      `);
-      const sigHolder = sigSlot.querySelector(".big-slot-ico")!;
-      const sigCanvas = document.createElement("canvas");
-      sigCanvas.width = sigCanvas.height = 68;
-      sigCanvas.style.width = sigCanvas.style.height = "34px";
-      const sigCtx = sigCanvas.getContext("2d")!;
-      sigCtx.scale(2, 2);
-      drawAbilityGlyph(sigCtx, swornCalling.signature.icon, 17, 17, 10, swornCalling.color);
-      sigHolder.appendChild(sigCanvas);
-      slotRow.appendChild(sigSlot);
-    }
-
-    const grid = page.querySelector(".spell-grid")!;
-    let lastAttr = "";
-    for (const ability of [...ABILITIES].sort((a, b) => ATTR_KEYS.indexOf(a.gate.attr) - ATTR_KEYS.indexOf(b.gate.attr) || a.gate.value - b.gate.value)) {
-      if (ability.gate.attr !== lastAttr) {
-        lastAttr = ability.gate.attr;
-        grid.appendChild(el(`<div class="spell-section">${ATTR_NAMES[ability.gate.attr]} <em>${hero.attrs[ability.gate.attr]} trained</em></div>`));
-      }
-      const gateOk = unlocked.includes(ability.id);
-      const owned = save.unlockedSpells.includes(ability.id);
-      const usable = gateOk && owned;
-      const slotAt = hero.equipped.indexOf(ability.id);
-      const isPending = this.pendingSpell === ability.id;
-      const tag = !owned
-        ? "Unlock at the Village"
-        : !gateOk
-          ? `Needs ${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}`
-          : slotAt >= 0
-            ? `Equipped — slot ${slotAt + 1}`
-            : ability.blurb;
-      const chip = el(`
-        <button class="spell-chip ${usable ? "" : "locked"} ${slotAt >= 0 ? "equipped" : ""} ${isPending ? "pending" : ""}"
-          style="--chip:${ability.color}" data-ability="${ability.id}">
-          <span class="spell-ico"></span>
-          <span class="spell-info">
-            <strong>${ability.name}${isPending ? " — pick a slot" : ""}</strong>
-            <em>${tag}</em>
-          </span>
-          ${slotAt >= 0 ? `<span class="slot-badge">${slotAt + 1}</span>` : ""}
-        </button>
-      `);
-      const holder = chip.querySelector(".spell-ico")!;
-      const canvas = document.createElement("canvas");
-      canvas.width = canvas.height = 60;
-      canvas.style.width = canvas.style.height = "30px";
-      const cctx = canvas.getContext("2d")!;
-      cctx.scale(2, 2);
-      drawAbilityGlyph(cctx, ability.icon, 15, 15, 9, usable ? ability.color : "#6b6478");
-      holder.appendChild(canvas);
-      grid.appendChild(chip);
-    }
-
-    page.addEventListener("click", (event) => {
-      const target = event.target as HTMLElement;
-      const slotBtn = target.closest("[data-slot]");
-      if (slotBtn) {
-        const at = Number(slotBtn.getAttribute("data-slot"));
-        if (this.pendingSpell) {
-          // swap the waiting spell into this slot
-          if (at < hero.equipped.length) hero.equipped[at] = this.pendingSpell;
-          else hero.equipped.push(this.pendingSpell);
-          this.pendingSpell = null;
-          audio.play("levelup");
-          persist(save);
-        } else if (hero.equipped[at]) {
-          hero.equipped.splice(at, 1);
-          audio.play("click");
-          persist(save);
-        }
-        this.renderSpells(index);
-        return;
-      }
-      const chip = target.closest("[data-ability]");
-      if (chip) {
-        const id = chip.getAttribute("data-ability")!;
-        if (this.pendingSpell === id) {
-          // tapping the waiting spell again cancels the swap
-          this.pendingSpell = null;
-          audio.play("click");
-          this.renderSpells(index);
-          return;
-        }
-        if (!save.unlockedSpells.includes(id)) {
-          this.showToast("Buy this spell at the Village first");
-          return;
-        }
-        if (!unlockedAbilities(hero.attrs).some((a) => a.id === id)) {
-          const gate = abilityById(id).gate;
-          this.showToast(`Needs ${ATTR_NAMES[gate.attr]} ${gate.value} — train up first`);
-          return;
-        }
-        const at = hero.equipped.indexOf(id);
-        if (at >= 0) hero.equipped.splice(at, 1);
-        else if (hero.equipped.length < MAX_EQUIPPED) hero.equipped.push(id);
-        else {
-          // slots full: arm replace mode instead of scolding
-          this.pendingSpell = id;
-          audio.play("click");
-          this.renderSpells(index);
-          return;
-        }
-        audio.play("click");
-        persist(save);
-        this.renderSpells(index);
-        return;
-      }
-      if (target.closest('[data-act="back"]')) {
-        this.pendingSpell = null;
-        audio.play("click");
-        this.renderParty();
-      }
-    });
-    this.mount(page, "party");
+    this.renderSpells(index);
   }
 
   private refreshCard(card: HTMLElement, index: number): HTMLElement {

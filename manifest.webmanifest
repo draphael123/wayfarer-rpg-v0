@@ -1,7 +1,7 @@
 {
-  "name": "Wayband — classless party tactics",
+  "name": "Wayband — elemental party tactics",
   "short_name": "Wayband",
-  "description": "Drag your heroes, draw your spells, shape your band.",
+  "description": "Choose a discipline, bind an element, and shape your band.",
   "start_url": ".",
   "display": "fullscreen",
   "orientation": "landscape",

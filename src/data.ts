@@ -3,12 +3,16 @@ import type {
   Attributes,
   AttrKey,
   DerivedStats,
+  DisciplineId,
+  ElementId,
   EnemyKind,
   HeroSave,
   SaveData,
   StageDef,
   WeaponKind,
 } from "./types";
+import { LATE_ROAD_STAGES } from "./late-road";
+import { LATE_BOSS_PHASES, LATE_ENEMIES } from "./late-content";
 
 export const ATTR_KEYS: AttrKey[] = ["str", "dex", "int", "vit", "spi"];
 
@@ -21,11 +25,11 @@ export const ATTR_NAMES: Record<AttrKey, string> = {
 };
 
 export const ATTR_BLURBS: Record<AttrKey, string> = {
-  str: "Melee damage, a little armor and health",
-  dex: "Attack speed, bow damage, move speed",
-  int: "Arcane bolt damage and spell power",
-  vit: "Health and armor",
-  spi: "Healing channel and holy magic",
+  str: "Melee damage, weapon force, a little armor and health",
+  dex: "Attack speed, ranged damage and move speed",
+  int: "Technique power and elemental potency",
+  vit: "Health, armor and frontline staying power",
+  spi: "Healing strength, wards and support power",
 };
 
 export interface HeroDef {
@@ -520,7 +524,14 @@ export const ABILITIES: AbilityDef[] = [
 
 // Battleheart pacing: every cast is a decision. Cooldowns stretched across the
 // board — the battle side compensates by making each cast land harder.
-for (const a of ABILITIES) a.cooldown = Math.round(a.cooldown * 2.5);
+// The original free-form spellbook remains readable by old saves, replays and
+// the early road tutorial.  New path menus deliberately hide it: sworn paths
+// bring their own two skills, so equipment never becomes a wall of unrelated
+// actives again.
+for (const a of ABILITIES) {
+  a.cooldown = Math.round(a.cooldown * 2.5);
+  a.retired = true;
+}
 
 export function abilityById(id: string): AbilityDef | undefined {
   return ABILITIES.find((a) => a.id === id);
@@ -841,36 +852,28 @@ export const SPELL_COSTS: Record<string, number> = {
   bastion: 280,
 };
 
-export function unlockedAbilities(attrs: Attributes): AbilityDef[] {
-  return ABILITIES.filter((a) => attrs[a.gate.attr] >= a.gate.value);
+export function unlockedAbilities(
+  attrs: Attributes,
+  discipline?: DisciplineId | null,
+  element?: ElementId | null,
+): AbilityDef[] {
+  const general = ABILITIES.filter((ability) => !ability.retired && !ability.pathSkill && attrs[ability.gate.attr] >= ability.gate.value);
+  return discipline && element ? [...general, ...pathAbilities(discipline, element)] : general;
 }
 
-/** Each calling favors an art; swearing its oath steadies the hand that way. */
-const CALLING_WEAPON_AFFINITY: Record<string, AttrKey> = {
-  duelist: "str",
-  warden: "str",
-  spellblade: "str",
-  nightblade: "dex",
-  vanguard: "str",
-  reaver: "str",
-  ranger: "dex",
-  arcanist: "int",
-  chaplain: "spi",
-  trickster: "dex",
-};
-
 /**
- * The weapon morphs with the dominant stat — but an active oath adds a +2
- * thumb on the scale toward its favored art (weapon choice only, never the
- * stats themselves), so a sworn Reaver at STR 8 / INT 9 still draws a blade.
+ * Before a path is chosen, the weapon follows the hero's strongest aptitude.
+ * Once sworn, the discipline owns the silhouette regardless of later respecs.
  */
 export function dominantWeapon(attrs: Attributes, calling?: string | null): WeaponKind {
-  const a: Attributes = { ...attrs };
-  const fav = calling ? CALLING_WEAPON_AFFINITY[calling] : undefined;
-  if (fav) a[fav] += 2;
-  if (a.spi > a.str && a.spi > a.dex && a.spi > a.int) return "stave";
-  if (a.int > a.str && a.int >= a.dex) return "staff";
-  if (a.dex > a.str) return "bow";
+  const discipline = callingById(calling)?.discipline;
+  if (discipline === "knight" || discipline === "rogue") return "sword";
+  if (discipline === "archer") return "bow";
+  if (discipline === "priest") return "stave";
+  if (discipline === "mage") return "staff";
+  if (attrs.spi > attrs.str && attrs.spi > attrs.dex && attrs.spi > attrs.int) return "stave";
+  if (attrs.int > attrs.str && attrs.int >= attrs.dex) return "staff";
+  if (attrs.dex > attrs.str) return "bow";
   return "sword";
 }
 
@@ -889,16 +892,73 @@ export interface AdvCallingDef {
 
 export interface CallingDef {
   id: string;
+  discipline: DisciplineId;
+  element: ElementId;
   name: string;
   epithet: string; // shown under the hero's name once sworn
   crest: string; // ico() name for menu chrome
   color: string;
   entry: { attr: AttrKey; value: number }[];
   passive: string; // menu description of the always-on perk
+  abilityIds: readonly [string, string]; // the two normal skills fixed to this path
   signature: AbilityDef; // charge-based ultimate, exclusive to the calling
   chargeHint: string; // how the ultimate meter fills
   family: string; // picker grouping (Iron, Blade, Hunt, Elemental, Faith & Shadow, Song & Craft)
   advanced?: [AdvCallingDef, AdvCallingDef]; // level-20 branch choice (the founding ten)
+}
+
+export interface DisciplineDef {
+  id: DisciplineId;
+  name: string;
+  epithet: string;
+  weapon: WeaponKind;
+  crest: string;
+  color: string;
+  passive: string;
+  chargeHint: string;
+}
+
+export interface ElementDef {
+  id: ElementId;
+  name: string;
+  adjective: string;
+  color: string;
+  icon: string;
+  passive: string;
+}
+
+export const DISCIPLINE_IDS: readonly DisciplineId[] = ["knight", "rogue", "archer", "priest", "mage"];
+export const ELEMENT_IDS: readonly ElementId[] = ["flame", "frost", "storm", "earth", "venom", "radiant", "blood", "shadow"];
+
+export const DISCIPLINES: readonly DisciplineDef[] = [
+  { id: "knight", name: "Knight", epithet: "Hold the line", weapon: "sword", crest: "shield", color: "#d59a4b", passive: "+10% health and +4% armor.", chargeHint: "Charges by taking damage and guarding allies" },
+  { id: "rogue", name: "Rogue", epithet: "Choose the opening", weapon: "sword", crest: "sword", color: "#b86a8f", passive: "+8% move speed and +5% critical chance.", chargeHint: "Charges by dealing damage and striking vulnerable foes" },
+  { id: "archer", name: "Archer", epithet: "Own the distance", weapon: "bow", crest: "bow", color: "#7fa65b", passive: "+8% ranged damage and +6% move speed.", chargeHint: "Charges by dealing ranged damage" },
+  { id: "priest", name: "Priest", epithet: "Keep the band standing", weapon: "stave", crest: "sun", color: "#d7c77a", passive: "+10% healing and a small starting shield.", chargeHint: "Charges by healing and protecting allies" },
+  { id: "mage", name: "Mage", epithet: "Rewrite the field", weapon: "staff", crest: "spark", color: "#8f78cf", passive: "+10% spell power and 5% faster cooldowns.", chargeHint: "Charges by dealing spell damage" },
+];
+
+export const ELEMENTS: readonly ElementDef[] = [
+  { id: "flame", name: "Flame", adjective: "Ember", color: "#e6653f", icon: "flame", passive: "Hits scorch: +5% damage against wounded foes." },
+  { id: "frost", name: "Frost", adjective: "Rime", color: "#78b9db", icon: "snow", passive: "Cold resolve grants +3% armor and steadier cooldowns." },
+  { id: "storm", name: "Storm", adjective: "Gale", color: "#72cddd", icon: "bolt", passive: "Momentum grants +5% attack speed and quicker cooldowns." },
+  { id: "earth", name: "Earth", adjective: "Stone", color: "#a58a5a", icon: "mountain", passive: "Stonecraft grants +8% health and +2% armor." },
+  { id: "venom", name: "Venom", adjective: "Viper", color: "#79b84e", icon: "flask", passive: "Patient strikes gain +4% critical chance." },
+  { id: "radiant", name: "Radiant", adjective: "Dawn", color: "#edcf69", icon: "sun", passive: "Light grants +6% healing and an opening ward." },
+  { id: "blood", name: "Blood", adjective: "Crimson", color: "#c94a4a", icon: "drop", passive: "Blood price grants +6% melee damage and +4% health." },
+  { id: "shadow", name: "Shadow", adjective: "Gloam", color: "#7669a9", icon: "ghost", passive: "Gloam grants +6% move speed and faster cooldowns." },
+];
+
+export function disciplineById(id: string | null | undefined): DisciplineDef | undefined {
+  return DISCIPLINES.find((discipline) => discipline.id === id);
+}
+
+export function elementById(id: string | null | undefined): ElementDef | undefined {
+  return ELEMENTS.find((element) => element.id === id);
+}
+
+export function pathId(discipline: DisciplineId, element: ElementId): string {
+  return `${discipline}-${element}`;
 }
 
 // --- boons: level-up gifts, one chosen of two offered — a hero's personal story ---
@@ -975,7 +1035,8 @@ export const CALLING_SWITCH_COST = 150;
 export const ADV_CALLING_LEVEL = 20;
 export const ADV_SWITCH_COST = 300;
 export const CALLING_MASTERY_LEVELS = 10;
-export const FOUNDATIONAL_CALLING_IDS = ["vanguard", "reaver", "ranger", "arcanist", "chaplain", "trickster"] as const;
+
+type LegacyCallingDef = Omit<CallingDef, "discipline" | "element" | "abilityIds">;
 
 const sig = (id: string, name: string, targeting: AbilityDef["targeting"], cooldown: number, color: string, blurb: string): AbilityDef => ({
   id,
@@ -986,9 +1047,10 @@ const sig = (id: string, name: string, targeting: AbilityDef["targeting"], coold
   color,
   icon: id,
   blurb,
+  retired: true,
 });
 
-export const CALLINGS: CallingDef[] = [
+export const LEGACY_CALLINGS: LegacyCallingDef[] = [
   {
     id: "vanguard",
     family: "Iron",
@@ -1400,111 +1462,57 @@ export function callingById(id: string | null | undefined): CallingDef | null {
 }
 
 export function callingEligible(calling: CallingDef, attrs: Attributes): boolean {
-  return calling.entry.every((e) => attrs[e.attr] >= e.value);
+  void attrs;
+  return !!disciplineById(calling.discipline) && !!elementById(calling.element) && calling.id === pathId(calling.discipline, calling.element);
 }
 
 function callingStatMods(calling?: string | null, advCalling?: string | null, masteries: string[] = []) {
   const m = { meleeDmg: 0, rangedDmg: 0, hpPct: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, startShield: 0 };
-  switch (calling) {
-    case "duelist":
-      m.atkSpeed += 0.08;
-      break;
-    case "warden":
-      m.hpPct += 0.12;
-      break;
-    case "spellblade":
-      m.spellPower += 0.08;
-      break;
-    case "nightblade":
-      m.moveSpeed += 0.08;
-      break;
+  const path = callingById(calling);
+  switch (path?.discipline) {
+    case "knight": m.hpPct += 0.1; m.armorFlat += 0.04; break;
+    case "rogue": m.moveSpeed += 0.08; m.crit += 0.05; break;
+    case "archer": m.rangedDmg += 0.08; m.moveSpeed += 0.06; break;
+    case "priest": m.healPower += 0.1; m.startShield += 10; break;
+    case "mage": m.spellPower += 0.1; m.cdr += 0.05; break;
   }
-  switch (advCalling) {
-    case "swordsaint":
-      m.crit += 0.1;
-      break;
-    case "corsair":
-      m.moveSpeed += 0.08;
-      m.atkSpeed += 0.06;
-      break;
-    case "oathkeeper":
-      break;
-    case "thornwarden":
-      break;
-    case "runeknight":
-      m.spellPower += 0.08;
-      m.hpPct += 0.1;
-      break;
-    case "stormedge":
-      m.atkSpeed += 0.08;
-      break;
-    case "phantom":
-      m.moveSpeed += 0.08;
-      break;
-    case "reaper":
-      break;
+  switch (path?.element) {
+    case "flame": m.meleeDmg += 0.025; m.rangedDmg += 0.025; m.spellPower += 0.04; break;
+    case "frost": m.armorFlat += 0.03; m.cdr += 0.02; break;
+    case "storm": m.atkSpeed += 0.05; m.cdr += 0.02; break;
+    case "earth": m.hpPct += 0.08; m.armorFlat += 0.02; break;
+    case "venom": m.crit += 0.04; break;
+    case "radiant": m.healPower += 0.06; m.startShield += 8; break;
+    case "blood": m.meleeDmg += 0.03; m.rangedDmg += 0.03; m.spellPower += 0.03; m.hpPct += 0.04; break;
+    case "shadow": m.moveSpeed += 0.06; m.cdr += 0.03; break;
   }
-  switch (calling) {
-    case "pyromancer": m.spellPower += 0.10; break;
-    case "cryomancer": m.spellPower += 0.06; m.cdr += 0.04; break;
-    case "tempest": m.spellPower += 0.05; m.atkSpeed += 0.05; break;
-    case "geomancer": m.armorFlat += 0.04; m.spellPower += 0.05; break;
-    case "exorcist": m.spellPower += 0.06; m.healPower += 0.06; break;
-    case "bloodknight": m.meleeDmg += 0.05; m.hpPct += 0.06; break;
-    case "seer": m.healPower += 0.08; break;
-    case "lancer": m.meleeDmg += 0.05; m.moveSpeed += 0.06; break;
-    case "monk": m.atkSpeed += 0.06; m.armorFlat += 0.02; break;
-    case "necromancer": m.spellPower += 0.08; break;
-    case "bard": m.cdr += 0.06; m.healPower += 0.04; break;
-    case "alchemist": m.cdr += 0.08; break;
-    case "trapper": m.rangedDmg += 0.05; m.cdr += 0.04; break;
-    case "warcrier": m.hpPct += 0.05; m.healPower += 0.04; break;
-    case "vanguard":
-      m.armorFlat = 0.05;
-      break;
-    case "reaver":
-      m.meleeDmg = 0.08;
-      break;
-    case "ranger":
-      m.moveSpeed = 0.08;
-      m.rangedDmg = 0.06;
-      break;
-    case "arcanist":
-      m.cdr = 0.1;
-      m.spellPower = 0.08;
-      break;
-    case "chaplain":
-      m.healPower = 0.1;
-      break;
-    case "trickster":
-      m.moveSpeed = 0.06;
-      m.cdr = 0.06;
-      break;
+  if (advCalling === `${path?.id}-ascendant`) {
+    m.hpPct += 0.05;
+    m.armorFlat += 0.02;
+    m.healPower += 0.03;
+  } else if (advCalling === `${path?.id}-paragon`) {
+    m.meleeDmg += 0.05;
+    m.rangedDmg += 0.05;
+    m.spellPower += 0.05;
+    m.atkSpeed += 0.03;
   }
-  switch (advCalling) {
-    case "stormcaller":
-      m.spellPower += 0.08;
-      break;
-    case "runebinder":
-      m.cdr += 0.08;
-      break;
-    case "lightwarden":
-      m.healPower += 0.08;
-      break;
-    case "strider":
-      m.moveSpeed += 0.08;
-      break;
-    case "shadowdancer":
-      m.moveSpeed += 0.06;
-      break;
-  }
+  const masteredElements = new Set<ElementId>();
   for (const mastered of masteries) {
-    if (mastered === "vanguard") m.armorFlat += 0.02;
-    else if (mastered === "reaver") m.meleeDmg += 0.04;
-    else if (mastered === "ranger") m.rangedDmg += 0.04;
-    else if (mastered === "arcanist") m.spellPower += 0.04;
-    else if (mastered === "chaplain") m.healPower += 0.05;
-    else if (mastered === "trickster") m.cdr += 0.03;
+    const direct = elementById(mastered)?.id;
+    const fromPath = callingById(mastered)?.element;
+    const legacy = LEGACY_CALLING_PATHS[mastered]?.element;
+    const element = direct ?? fromPath ?? legacy;
+    if (element) masteredElements.add(element);
+  }
+  for (const mastered of masteredElements) {
+    if (mastered === "flame") { m.meleeDmg += 0.02; m.rangedDmg += 0.02; m.spellPower += 0.02; }
+    else if (mastered === "frost") m.armorFlat += 0.01;
+    else if (mastered === "storm") m.atkSpeed += 0.02;
+    else if (mastered === "earth") m.hpPct += 0.03;
+    else if (mastered === "venom") m.crit += 0.015;
+    else if (mastered === "radiant") m.healPower += 0.025;
+    else if (mastered === "blood") { m.meleeDmg += 0.015; m.rangedDmg += 0.015; m.spellPower += 0.015; }
+    else if (mastered === "shadow") m.cdr += 0.015;
   }
   return m;
 }
@@ -1513,7 +1521,7 @@ function callingStatMods(calling?: string | null, advCalling?: string | null, ma
 export function cooldownReduction(hero: HeroSave): number {
   return Math.min(
     0.5,
-    talentMods(hero.talents).cdr + trinketMods(hero.trinket).cdr + callingStatMods(hero.calling, hero.advCalling).cdr + boonMods(hero.boons).cdr,
+    talentMods(hero.talents).cdr + trinketMods(hero.trinket).cdr + callingStatMods(hero.calling, hero.advCalling, hero.masteredElements).cdr + boonMods(hero.boons).cdr,
   );
 }
 
@@ -1604,6 +1612,8 @@ export interface EnemyDef {
   trim: string;
   lore: string;
   habit: string; // one-line tactical note shown in the bestiary
+  weakTo?: ElementId;
+  resists?: ElementId;
 }
 
 export const ENEMIES: Record<EnemyKind, EnemyDef> = {
@@ -1778,7 +1788,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
 
   wyrm: {
     name: "The Winter Wyrm",
-    maxHp: 1080,
+    maxHp: 1510,
     damage: 19,
     range: 64,
     attackCooldown: 1.45,
@@ -1821,11 +1831,11 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     body: "#6a7a4a",
     trim: "#39442a",
     lore: "It sleeps under the deadfall and wakes for the smell of iron. The pines grow crooked around it.",
-    habit: "Huge, slow, and crushing. Keep moving and never take two swings in a row.",
+    habit: "Break its grip before it carries a hero away. Dodge the cart and belly-flop to leave it stunned and open.",
   },
   alpha: {
     name: "Alpha of Thornwood",
-    maxHp: 1450,
+    maxHp: 2175,
     damage: 19,
     range: 34,
     attackCooldown: 1.1,
@@ -1836,7 +1846,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     body: "#3f3a4d",
     trim: "#6e6680",
     lore: "The pack answers one voice. It has never known a hunt to fail.",
-    habit: "Dodge the pounce circle! When exhausted after leaping, strike hard.",
+    habit: "It chooses prey, calls a pack, and devours fallen wolves. Empty pounce circles break the hunt and its poise.",
   },
   warlord: {
     name: "Gorehulk",
@@ -1851,7 +1861,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     body: "#8a4a3a",
     trim: "#2f1a12",
     lore: "Gorehulk, warlord of the hollow. The forest itself seems to flinch.",
-    habit: "His slam wounds everyone near it. Never clump up.",
+    habit: "Spread against axe volleys, hold burst through Shieldwall, then destroy the war banner before No Quarter overwhelms you.",
   },
   frostwolf: {
     name: "Frostbite Wolf",
@@ -1926,7 +1936,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     body: "#8fb8cc",
     trim: "#dcedf5",
     lore: "The Winterreach has one king, older than the snow that crowns it.",
-    habit: "Hail from above, breath that freezes the ground, and a heart that SHATTERS its own armor when cornered.",
+    habit: "Keep moving so the ice cannot crack beneath you. Cross the long breath, then punish the heart after its armor shatters.",
   },
   brinecrawler: {
     name: "Brinecrawler", maxHp: 150, damage: 15, range: 34, attackCooldown: 2.1, speed: 48, armor: 0.48, radius: 21, xp: 35,
@@ -1956,15 +1966,72 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     name: "Stormcaller", maxHp: 84, damage: 12, range: 220, attackCooldown: 2.2, speed: 58, armor: 0.05, radius: 15, xp: 41,
     body: "#506a8b", trim: "#b7e5df", lore: "A living rod for a sky that wants the earth.", habit: "Charges lightning conductors. Break the channel—or use the strike against its allies.",
   },
+  wreckgunner: {
+    name: "Wreck Gunner", maxHp: 82, damage: 14, range: 230, attackCooldown: 2.65, speed: 50, armor: 0.08, radius: 17, xp: 42,
+    body: "#5e6868", trim: "#c68d55", lore: "A drowned deckhand chained to the last cannon of a ship with no name.", habit: "Lobs a clearly marked blast into the back line. Leave the circle before the shot lands.",
+  },
+  stormeel: {
+    name: "Storm Eel", maxHp: 68, damage: 11, range: 38, attackCooldown: 1.45, speed: 118, armor: 0.04, radius: 14, xp: 34,
+    body: "#397884", trim: "#a9f2ff", lore: "It learned lightning from the clouds and patience from the drowned.", habit: "Its bite arcs between nearby heroes, and high tide makes the second shock briefly stun. Spread out in water.",
+  },
+  conchseer: {
+    name: "Conch Seer", maxHp: 78, damage: 8, range: 190, attackCooldown: 2.35, speed: 56, armor: 0.1, radius: 16, xp: 40,
+    body: "#735f79", trim: "#e0c79d", lore: "It listens to tomorrow through a shell grown around yesterday's dead.", habit: "Raises pearlescent wards around nearby allies. Break the seer before the shields bury the field.",
+  },
   bellwidow: {
-    name: "The Bell Widow", maxHp: 1720, damage: 22, range: 180, attackCooldown: 2.45, speed: 48, armor: 0.22, radius: 32, xp: 190,
-    body: "#526e75", trim: "#d2ae67", lore: "Abbess, lighthouse keeper, and last voice of a drowned abbey.", habit: "Each toll floods two combat lanes. Read the warning and move the band into the named silence.",
+    name: "The Bell Widow", maxHp: 2250, damage: 22, range: 180, attackCooldown: 2.45, speed: 48, armor: 0.22, radius: 32, xp: 190,
+    body: "#526e75", trim: "#d2ae67", lore: "Abbess, lighthouse keeper, and last voice of a drowned abbey.", habit: "Each toll floods two lanes and silences stragglers. Gather the whole band in the named quiet lane to stop the clapper and expose her.",
   },
   stormjaw: {
-    name: "Stormjaw", maxHp: 2025, damage: 25, range: 62, attackCooldown: 2.7, speed: 55, armor: 0.26, radius: 40, xp: 260,
-    body: "#315f69", trim: "#9ed2c7", lore: "The coast was never land. It was only sleeping.", habit: "Force it to breach with lightning, survive the tide, then strike the exposed heart.",
+    name: "Stormjaw", maxHp: 3260, damage: 25, range: 62, attackCooldown: 2.7, speed: 55, armor: 0.26, radius: 40, xp: 260,
+    body: "#315f69", trim: "#9ed2c7", lore: "The coast was never land. It was only sleeping.", habit: "Bait marked lightning onto its reef plates, run against the undertow, then dodge the breach for a long exposed-heart window.",
   },
+  ...LATE_ENEMIES,
 };
+
+/** One readable strength and weakness per foe; combat may consume these directly. */
+const LATE_ENEMY_AFFINITIES = Object.fromEntries(
+  Object.entries(LATE_ENEMIES).map(([kind, enemy]) => [kind, { weakTo: enemy.weakTo, resists: enemy.resists }]),
+) as Record<keyof typeof LATE_ENEMIES, { weakTo: ElementId; resists: ElementId }>;
+
+const ENEMY_AFFINITIES: Record<EnemyKind, { weakTo: ElementId; resists: ElementId }> = {
+  goblin: { weakTo: "radiant", resists: "venom" },
+  wolf: { weakTo: "flame", resists: "shadow" },
+  archer: { weakTo: "storm", resists: "venom" },
+  brute: { weakTo: "venom", resists: "earth" },
+  ogre: { weakTo: "venom", resists: "earth" },
+  shaman: { weakTo: "shadow", resists: "radiant" },
+  alpha: { weakTo: "flame", resists: "shadow" },
+  warlord: { weakTo: "storm", resists: "earth" },
+  frostwolf: { weakTo: "flame", resists: "frost" },
+  icewisp: { weakTo: "flame", resists: "frost" },
+  rimetroll: { weakTo: "flame", resists: "frost" },
+  snowhag: { weakTo: "flame", resists: "frost" },
+  rimeheart: { weakTo: "flame", resists: "frost" },
+  bonecaller: { weakTo: "radiant", resists: "shadow" },
+  shambler: { weakTo: "radiant", resists: "venom" },
+  stalker: { weakTo: "radiant", resists: "shadow" },
+  shieldbearer: { weakTo: "storm", resists: "earth" },
+  harrier: { weakTo: "frost", resists: "storm" },
+  drummer: { weakTo: "shadow", resists: "blood" },
+  warbanner: { weakTo: "flame", resists: "blood" },
+  wyrm: { weakTo: "flame", resists: "frost" },
+  brinecrawler: { weakTo: "storm", resists: "earth" },
+  kelpbound: { weakTo: "flame", resists: "venom" },
+  saltwitch: { weakTo: "venom", resists: "frost" },
+  galeharrier: { weakTo: "frost", resists: "storm" },
+  bellkeeper: { weakTo: "storm", resists: "shadow" },
+  reefhound: { weakTo: "earth", resists: "storm" },
+  stormcaller: { weakTo: "earth", resists: "storm" },
+  wreckgunner: { weakTo: "storm", resists: "earth" },
+  stormeel: { weakTo: "earth", resists: "storm" },
+  conchseer: { weakTo: "venom", resists: "radiant" },
+  bellwidow: { weakTo: "radiant", resists: "shadow" },
+  stormjaw: { weakTo: "earth", resists: "storm" },
+  ...LATE_ENEMY_AFFINITIES,
+};
+
+for (const kind of Object.keys(ENEMY_AFFINITIES) as EnemyKind[]) Object.assign(ENEMIES[kind], ENEMY_AFFINITIES[kind]);
 
 export const STAGES: StageDef[] = [
   {
@@ -2166,19 +2233,19 @@ export const STAGES: StageDef[] = [
     id: 12, name: "Saltroad Causeway", subtitle: "The sea has crossed the road", terrain: "tide",
     palette: { skyTop: "#5f8492", skyBottom: "#c5c6a5", hills: "#55756d", ground: "#748b70", groundDark: "#47666a", prop: "#b6905a" },
     scale: 3.15, xpReward: 185,
-    waves: [[{ kind: "brinecrawler", count: 2 }, { kind: "reefhound", count: 2 }], [{ kind: "kelpbound", count: 2 }, { kind: "saltwitch", count: 1 }], [{ kind: "brinecrawler", count: 2 }, { kind: "galeharrier", count: 2 }]],
+    waves: [[{ kind: "brinecrawler", count: 2 }, { kind: "reefhound", count: 2 }], [{ kind: "kelpbound", count: 2 }, { kind: "saltwitch", count: 1 }], [{ kind: "brinecrawler", count: 1 }, { kind: "galeharrier", count: 2 }, { kind: "stormeel", count: 2 }]],
   },
   {
     id: 13, name: "The Weeping Reeds", subtitle: "Something pulls beneath", terrain: "tide",
     palette: { skyTop: "#526f76", skyBottom: "#aebd9e", hills: "#45645b", ground: "#61775f", groundDark: "#3c5960", prop: "#8a784f" },
     scale: 3.3, xpReward: 200,
-    waves: [[{ kind: "kelpbound", count: 3 }, { kind: "reefhound", count: 2 }], [{ kind: "saltwitch", count: 2 }, { kind: "brinecrawler", count: 1 }], [{ kind: "bellkeeper", count: 1 }, { kind: "kelpbound", count: 3 }]],
+    waves: [[{ kind: "kelpbound", count: 2 }, { kind: "reefhound", count: 2 }, { kind: "conchseer", count: 1 }], [{ kind: "saltwitch", count: 1 }, { kind: "brinecrawler", count: 1 }, { kind: "stormeel", count: 2 }], [{ kind: "bellkeeper", count: 1 }, { kind: "kelpbound", count: 2 }, { kind: "wreckgunner", count: 1 }]],
   },
   {
     id: 14, name: "Lanternwreck Bay", subtitle: "Masts call down the sky", terrain: "storm",
     palette: { skyTop: "#324b63", skyBottom: "#9aaea9", hills: "#3f5d61", ground: "#65776e", groundDark: "#38515b", prop: "#c39b5b" },
     scale: 3.35, xpReward: 220,
-    waves: [[{ kind: "galeharrier", count: 3 }, { kind: "stormcaller", count: 1 }], [{ kind: "bellkeeper", count: 1 }, { kind: "reefhound", count: 3 }], [{ kind: "stormcaller", count: 2 }, { kind: "brinecrawler", count: 2 }]],
+    waves: [[{ kind: "galeharrier", count: 2 }, { kind: "stormcaller", count: 1 }, { kind: "wreckgunner", count: 1 }], [{ kind: "bellkeeper", count: 1 }, { kind: "reefhound", count: 2 }, { kind: "stormeel", count: 2 }], [{ kind: "stormcaller", count: 1 }, { kind: "brinecrawler", count: 1 }, { kind: "conchseer", count: 1 }, { kind: "wreckgunner", count: 1 }]],
   },
   {
     id: 15, name: "The Drowned Belfry", subtitle: "One bell still answers", terrain: "tide-storm",
@@ -2189,17 +2256,509 @@ export const STAGES: StageDef[] = [
     id: 16, name: "The Eye Road", subtitle: "Walk where the storm looks away", terrain: "tide-storm",
     palette: { skyTop: "#23364f", skyBottom: "#78969a", hills: "#31525b", ground: "#506d69", groundDark: "#294754", prop: "#a88452" },
     scale: 3.55, xpReward: 250,
-    waves: [[{ kind: "stormcaller", count: 2 }, { kind: "galeharrier", count: 2 }], [{ kind: "brinecrawler", count: 2 }, { kind: "saltwitch", count: 1 }, { kind: "bellkeeper", count: 1 }], [{ kind: "kelpbound", count: 3 }, { kind: "reefhound", count: 3 }, { kind: "stormcaller", count: 1 }]],
+    waves: [[{ kind: "stormcaller", count: 1 }, { kind: "galeharrier", count: 2 }, { kind: "stormeel", count: 2 }], [{ kind: "brinecrawler", count: 1 }, { kind: "saltwitch", count: 1 }, { kind: "bellkeeper", count: 1 }, { kind: "wreckgunner", count: 1 }], [{ kind: "kelpbound", count: 2 }, { kind: "reefhound", count: 2 }, { kind: "stormcaller", count: 1 }, { kind: "conchseer", count: 1 }]],
   },
   {
     id: 17, name: "The Sleeping Coast", subtitle: "The shoreline opens its eye", terrain: "tide-storm",
     palette: { skyTop: "#142a43", skyBottom: "#668b91", hills: "#244955", ground: "#42676a", groundDark: "#203f4e", prop: "#d1aa64" },
     scale: 3.45, xpReward: 330, waves: [[{ kind: "stormjaw", count: 1 }]],
   },
+  ...LATE_ROAD_STAGES,
 ];
+
+interface PathLore {
+  name: string;
+  epithet: string;
+  passive: string;
+  ultimate: string;
+  ultimateBlurb: string;
+  techniques: readonly [
+    { name: string; blurb: string },
+    { name: string; blurb: string },
+  ];
+}
+
+/** Authored identities keep each combination feeling like a class, not a color swap. */
+const PATH_LORE: Record<DisciplineId, Record<ElementId, PathLore>> = {
+  knight: {
+    flame: {
+      name: "Cinder Knight", epithet: "the Last Hearth", passive: "Foes caught by your Path techniques kindle wards for wounded allies.", ultimate: "Furnace Rampart",
+      ultimateBlurb: "Raise a burning bastion that taunts the field, shields the band, and builds a great hearth ward from every foe caught.",
+      techniques: [
+        { name: "Hearthguard", blurb: "Brace and taunt nearby foes. Each foe caught strengthens a ward on the most wounded ally." },
+        { name: "Furnace Charge", blurb: "Drive into the line, scorch every foe around you, and share your guard with nearby allies." },
+      ],
+    },
+    frost: {
+      name: "Rimeguard", epithet: "Keeper of Still Gates", passive: "Your Path techniques turn a planted stance into an enduring ice ward.", ultimate: "Glacier Oath",
+      ultimateBlurb: "Become the still gate: lock down nearby foes beneath deep frost while a glacier ward seals your armor.",
+      techniques: [
+        { name: "Stillgate", blurb: "Brace, taunt, and wrap yourself in an ice ward while nearby foes lose their footing." },
+        { name: "Glacier Ram", blurb: "Crash forward through the line; already chilled foes remain trapped in the cold longer." },
+      ],
+    },
+    storm: {
+      name: "Thunder Warden", epithet: "the Walking Stormwall", passive: "Your guarded surges carry battle-tempo to allies fighting beside you.", ultimate: "Skybreak Bastion",
+      ultimateBlurb: "Call the stormwall down around the whole band, taunting foes while every nearby ally surges with lightning speed.",
+      techniques: [
+        { name: "Thunderbrace", blurb: "Catch nearby foes on your guard and turn their impact into a burst of speed for close allies." },
+        { name: "Skybreaker", blurb: "Surge into the front line, chaining storm force through enemies and quickening the band behind you." },
+      ],
+    },
+    earth: {
+      name: "Stonewarden", epithet: "Who Does Not Yield", passive: "Your Path techniques lend a share of your guard to nearby allies.", ultimate: "The Mountain Stands",
+      ultimateBlurb: "Plant an unbreakable mountain-oath that shields the band, taunts the field, and crushes a boss's poise.",
+      techniques: [
+        { name: "Bedrock Oath", blurb: "Brace and taunt, lending a layer of stone guard to allies who hold near you." },
+        { name: "Faultline Charge", blurb: "Drive a fault through the enemy line, heavily staggering great foes while sheltering nearby allies." },
+      ],
+    },
+    venom: {
+      name: "Mireguard", epithet: "the Serpent Rampart", passive: "Corrosion spreads outward from foes caught against your shield.", ultimate: "Coils of the Fen",
+      ultimateBlurb: "Draw the field into the serpent rampart, taunting foes as a wave of corrosion exposes the entire enemy line.",
+      techniques: [
+        { name: "Mire Ward", blurb: "Brace and taunt while venom eats through the defenses of every foe pressed against you." },
+        { name: "Serpent Breach", blurb: "Charge the line and spread corrosion from each struck foe to enemies clustered beside it." },
+      ],
+    },
+    radiant: {
+      name: "Dawn Paladin", epithet: "Shield at First Light", passive: "Every successful Path technique sends healing light through the nearby band.", ultimate: "Daybreak Aegis",
+      ultimateBlurb: "Raise the sun behind your shield, restoring and warding allies while the whole battlefield turns to face you.",
+      techniques: [
+        { name: "Dawn Guard", blurb: "Brace and taunt; the impact releases a healing pulse and a ward for the weakest ally." },
+        { name: "Sunlance", blurb: "Drive a line of judgment through the enemy and bathe nearby allies in restorative light." },
+      ],
+    },
+    blood: {
+      name: "Crimson Bulwark", epithet: "the Debt in Iron", passive: "Missing health deepens both the force of your Path techniques and the guard they grant.", ultimate: "Red Citadel",
+      ultimateBlurb: "Pay the crimson price to become a red citadel, striking wounded foes harder and refusing to yield while blood remains.",
+      techniques: [
+        { name: "Red Bastion", blurb: "Pay a little blood to brace and taunt. The more wounded you are, the stronger your counter and guard." },
+        { name: "Debt Collector", blurb: "Charge wounded enemies with execution force, reclaiming blood as their defenses break." },
+      ],
+    },
+    shadow: {
+      name: "Dusk Knight", epithet: "Warden of the Last Lamp", passive: "Your guard erases hostile attention and leaves pursuers struggling through gloom.", ultimate: "Nightwall",
+      ultimateBlurb: "Raise a wall of night that swallows enemy attention, shields allies, and leaves every attacker stumbling in darkness.",
+      techniques: [
+        { name: "Dusk Ward", blurb: "Brace and taunt before dimming the enemy's sight, slowing pursuit and slipping from hostile attention." },
+        { name: "Eclipse Charge", blurb: "Rush through the line under cover of gloom, leaving struck foes exposed and disoriented." },
+      ],
+    },
+  },
+  rogue: {
+    flame: {
+      name: "Ashknife", epithet: "Smoke Between Sparks", passive: "Every Path dash leaves a burning trail at the place you abandoned.", ultimate: "Kindling Coup",
+      ultimateBlurb: "Flash between marked foes, turning every departure and arrival into a chain of burning ambushes.",
+      techniques: [
+        { name: "Cinderstep", blurb: "Dash through your prey and leave an ember trail that burns enemies chasing through your old position." },
+        { name: "Smoke Knife", blurb: "Vanish into smoke and reappear at the weakest opening, striking with a hotter finishing cut." },
+      ],
+    },
+    frost: {
+      name: "Glassblade", epithet: "the Cold Reflection", passive: "Striking an already chilled foe shatters the frost for heavy bonus damage.", ultimate: "Mirror Shatter",
+      ultimateBlurb: "Move through a hall of frozen reflections, shattering every chilled target and vanishing before the shards settle.",
+      techniques: [
+        { name: "Mirrorstep", blurb: "Slip through a target in a flash of frost; a chilled victim shatters for bonus damage." },
+        { name: "Shatterpoint", blurb: "Find the cold fault in the weakest foe, break it open, and escape behind a veil of ice." },
+      ],
+    },
+    storm: {
+      name: "Flashknife", epithet: "Ahead of Thunder", passive: "Your Path strikes interrupt prey and leave you moving faster than retaliation.", ultimate: "Stormstep",
+      ultimateBlurb: "Become the interval before thunder, cutting through five foes and interrupting each before the sound arrives.",
+      techniques: [
+        { name: "Flashstep", blurb: "Cross the gap in a lightning flash, interrupting your target and stealing the tempo." },
+        { name: "Thunder Feint", blurb: "Disappear from hostile attention, then return with an interrupting cut and a burst of speed." },
+      ],
+    },
+    earth: {
+      name: "Faultstep", epithet: "Beneath Notice", passive: "Your departures split the ground, slowing anyone who tries to follow.", ultimate: "Riven Floor",
+      ultimateBlurb: "Carve fault after fault beneath the enemy line until the whole field breaks and pursuit becomes impossible.",
+      techniques: [
+        { name: "Seismic Slip", blurb: "Dash through a foe and leave a jagged, slowing fault where your pursuit began." },
+        { name: "Rift Knife", blurb: "Break from attention and strike a weak point while the ground behind you hinders pursuit." },
+      ],
+    },
+    venom: {
+      name: "Viper", epithet: "the Patient Fang", passive: "Already corroded prey take increasingly vicious damage from your Path techniques.", ultimate: "Seven Venoms",
+      ultimateBlurb: "Deliver a perfected dose to every exposed foe, deepening corrosion before the final venom finds the weakest heart.",
+      techniques: [
+        { name: "First Fang", blurb: "Dash through prey and begin the dose; already vulnerable targets suffer a deeper bite." },
+        { name: "Mortal Dose", blurb: "Return to the weakest exposed foe with execution damage and a stronger corrosive mark." },
+      ],
+    },
+    radiant: {
+      name: "Sunblade", epithet: "No Shadow's Friend", passive: "Every clean Path strike flashes a protective ward onto the weakest ally.", ultimate: "Noonday Cut",
+      ultimateBlurb: "Cross the field as a line of noon-bright steel, exposing foes while wards bloom across the band.",
+      techniques: [
+        { name: "Sunflash", blurb: "Dash through a foe in a burst of light, healing and warding the ally most in danger." },
+        { name: "Noonday Feint", blurb: "Vanish in glare, strike the weakest opening, and leave protective light behind." },
+      ],
+    },
+    blood: {
+      name: "Redhand", epithet: "Collector of Debts", passive: "Wounded targets take greater execution damage, and a killing Path strike restores momentum.", ultimate: "Blood Ledger",
+      ultimateBlurb: "Open the ledger across five wounded foes, collecting each debt in a chain of life-stealing executions.",
+      techniques: [
+        { name: "Red Advance", blurb: "Spend blood to cross the gap; the closer your prey is to death, the harder the cut lands." },
+        { name: "Final Debt", blurb: "Collect from the weakest foe with execution force, reclaiming health and speed if it falls." },
+      ],
+    },
+    shadow: {
+      name: "Nightblade", epithet: "Where Lamps Fail", passive: "Path techniques erase hostile attention and wrap your new position in protective gloom.", ultimate: "Blackout",
+      ultimateBlurb: "Extinguish the battlefield, cutting through marked foes while every enemy loses track of where you went.",
+      techniques: [
+        { name: "Gloamstep", blurb: "Pass through a target, shed hostile attention, and veil your arrival." },
+        { name: "Blackout Cut", blurb: "Strike from nowhere, expose the weakest foe, and leave a smoke veil around your escape." },
+      ],
+    },
+  },
+  archer: {
+    flame: {
+      name: "Emberbow", epithet: "Fire on the Fletching", passive: "Path arrows fan their burn from each struck target into nearby ranks.", ultimate: "Ashen Rain",
+      ultimateBlurb: "Loose a horizon of fire that ignites the full line and carries burning fragments into every clustered foe.",
+      techniques: [
+        { name: "Kindle Arrow", blurb: "Loose a piercing ember shaft whose fire spreads to enemies clustered around its target." },
+        { name: "Cinderfall", blurb: "Drive a broad line of burning arrows through the formation, scattering flame from every hit." },
+      ],
+    },
+    frost: {
+      name: "Rimebow", epithet: "Winter's Measure", passive: "Long-range Path shots gain damage and hold their victims in deeper cold.", ultimate: "Whiteout Volley",
+      ultimateBlurb: "Measure the entire field in one white line, rewarding distance with crushing impact and a lingering freeze.",
+      techniques: [
+        { name: "Winter Measure", blurb: "A patient shot that strikes harder and chills longer when loosed from true range." },
+        { name: "Whitewind", blurb: "Send a wide frost line through the enemy, with distant targets taking the cruelest edge." },
+      ],
+    },
+    storm: {
+      name: "Galebow", epithet: "Rider of Crosswinds", passive: "Your lightning volleys quicken the nearest ally while their arcs seek clustered prey.", ultimate: "Tempest Quiver",
+      ultimateBlurb: "Empty a quiver into the crosswind, chaining lightning through the enemy while the band races beneath the storm.",
+      techniques: [
+        { name: "Crosswind Arrow", blurb: "Loose a storm shaft that arcs to nearby prey and lends its momentum to an ally." },
+        { name: "Tempest Line", blurb: "Draw a wide lightning line through the formation and quicken the band at your shoulder." },
+      ],
+    },
+    earth: {
+      name: "Flintshot", epithet: "the Patient Range", passive: "Distance gives Path arrows armor-breaking weight and exceptional stagger against bosses.", ultimate: "Stonefall",
+      ultimateBlurb: "Drop the weight of a mountainside through the enemy line, crushing armor and breaking a great foe's poise.",
+      techniques: [
+        { name: "Flint Arrow", blurb: "A dense long shot that gains force with distance and cracks open the target's defense." },
+        { name: "Stonepiercer", blurb: "Drive a broad fault-line arrow through the formation, heavily staggering great foes." },
+      ],
+    },
+    venom: {
+      name: "Thornshot", epithet: "Green Death", passive: "Every Path arrow marks prey with corrosion that the whole band can exploit.", ultimate: "Briar Tempest",
+      ultimateBlurb: "Sew the battlefield with briars, spreading deep corrosion along the entire shot line and into clustered ranks.",
+      techniques: [
+        { name: "Thornmark", blurb: "Pin one target with a corrosive marker that rewards the band's focused attacks." },
+        { name: "Briarfall", blurb: "Rake a wide line with poisoned thorns, spreading each mark into nearby enemies." },
+      ],
+    },
+    radiant: {
+      name: "Dawnshot", epithet: "the First Ray", passive: "Path shots seek the weakest ally with a healing spark and protective afterglow.", ultimate: "Sunrise Salvo",
+      ultimateBlurb: "Draw sunrise across the battlefield, exposing the enemy line while healing light and wards find the whole band.",
+      techniques: [
+        { name: "First Ray", blurb: "Mark a foe with dawnlight while a healing spark seeks the ally most in danger." },
+        { name: "Daybreak Volley", blurb: "Draw a line of judgment through several foes and leave a ward on the weakest ally." },
+      ],
+    },
+    blood: {
+      name: "Heartseeker", epithet: "the Pulse Between Ribs", passive: "Path arrows strike harder as either archer or quarry approaches death.", ultimate: "Crimson Constellation",
+      ultimateBlurb: "Join wounded hearts in a single crimson line, gaining lethal force from every life balanced on the edge.",
+      techniques: [
+        { name: "Pulse Arrow", blurb: "Spend blood on a shot that gains force from your wounds and the target's missing health." },
+        { name: "Heartline", blurb: "Thread the wounded enemy line with execution arrows and reclaim part of the price on impact." },
+      ],
+    },
+    shadow: {
+      name: "Gloamstalker", epithet: "Beyond the Firelight", passive: "After a Path volley you fade backward, break hostile attention, and sharpen your escape.", ultimate: "Moonless Hunt",
+      ultimateBlurb: "Fire from a moonless horizon, then recede beyond pursuit while the enemy line searches the dark for you.",
+      techniques: [
+        { name: "Gloamshot", blurb: "Loose an exposing arrow and briefly veil yourself from retaliation." },
+        { name: "Moonfall", blurb: "Cut a shadow line through the enemy, then slip backward under cover of protective gloom." },
+      ],
+    },
+  },
+  priest: {
+    flame: {
+      name: "Hearthkeeper", epithet: "Keeper of Embers", passive: "Allies touched by your Path healing kindle a damaging aura against nearby foes.", ultimate: "The Last Hearth",
+      ultimateBlurb: "Gather the entire band at the last hearth, restoring them while every protected hero burns the enemies at their feet.",
+      techniques: [
+        { name: "Kindle", blurb: "Mend one ally and kindle an ember aura that burns foes fighting close to them." },
+        { name: "Hearth Circle", blurb: "Consecrate a gathering place that restores nearby allies and sets surrounding enemies alight." },
+      ],
+    },
+    frost: {
+      name: "Winter Saint", epithet: "Mercy in Stillness", passive: "Your healing hardens allies while cold radiates outward to slow nearby foes.", ultimate: "Quietus Bell",
+      ultimateBlurb: "Ring the still bell over the whole band, wrapping allies in winter guard and arresting every nearby enemy advance.",
+      techniques: [
+        { name: "Still Mercy", blurb: "Mend an ally, strip away slowing cold, and turn that frost outward against nearby foes." },
+        { name: "Winter Chapel", blurb: "Raise a guarded refuge whose cold slows enemies pressing into its reach." },
+      ],
+    },
+    storm: {
+      name: "Tempest Cantor", epithet: "Voice of the Squall", passive: "Path healing carries haste to allies and an answering lightning note to nearby foes.", ultimate: "Choir of Thunder",
+      ultimateBlurb: "Lead the full band in a thunder chorus, flooding allies with speed while lightning answers across the enemy ranks.",
+      techniques: [
+        { name: "Quickening Verse", blurb: "Mend an ally and quicken their hands while a lightning answer seeks the nearest foe." },
+        { name: "Squall Chorus", blurb: "Raise a refuge of speed and send storm notes arcing through enemies beside it." },
+      ],
+    },
+    earth: {
+      name: "Stone Chaplain", epithet: "of the Deep Foundation", passive: "Every Path blessing adds both a ward and a layer of enduring guard.", ultimate: "Sanctuary Unbroken",
+      ultimateBlurb: "Set the band's feet on an unbroken foundation, restoring everyone beneath great wards and mountain guard.",
+      techniques: [
+        { name: "Foundation", blurb: "Mend one ally and set stone beneath them, granting both guard and a protective ward." },
+        { name: "Stone Sanctuary", blurb: "Consecrate firm ground that restores and armors every ally gathered there." },
+      ],
+    },
+    venom: {
+      name: "Plague Doctor", epithet: "Mercy with Teeth", passive: "Your Path blessings purge harmful effects and transfer their weakness into nearby enemies.", ultimate: "Bitter Communion",
+      ultimateBlurb: "Draw every poison and weakness from the band, then return the gathered affliction to the enemy as a bitter communion.",
+      techniques: [
+        { name: "Bitter Tonic", blurb: "Mend one ally, purge burning and vulnerability, and turn the removed affliction against a nearby foe." },
+        { name: "Cleansing Miasma", blurb: "Cleanse allies in a wide refuge, then spread the stolen corruption across nearby enemies." },
+      ],
+    },
+    radiant: {
+      name: "Lightwarden", epithet: "Bearer of Morning", passive: "Healing beyond full health becomes a lasting radiant ward instead of being lost.", ultimate: "Great Aurora",
+      ultimateBlurb: "Pour an aurora over the whole band, converting every measure of excess healing into brilliant shields.",
+      techniques: [
+        { name: "Morning Grace", blurb: "Mend one ally; any healing beyond full health remains as a radiant ward." },
+        { name: "Aurora Sanctuary", blurb: "Flood a refuge with healing light and turn every excess spark into protection." },
+      ],
+    },
+    blood: {
+      name: "Red Chalice", epithet: "Keeper of the Price", passive: "Your own blood empowers healing on near-death allies and spills mercy toward a second wounded hero.", ultimate: "Covenant of Blood",
+      ultimateBlurb: "Bind the band's wounds into one covenant, paying your blood to restore those nearest death and sharing every surplus drop.",
+      techniques: [
+        { name: "Life Tithe", blurb: "Pay blood to mend one ally, with far greater power when their life hangs below half." },
+        { name: "Scarlet Communion", blurb: "Share a blood-bought restoration through a gathered group, then spill mercy to the weakest ally." },
+      ],
+    },
+    shadow: {
+      name: "Gravekeeper", epithet: "Friend of the Last Road", passive: "Path blessings erase hostile attention and shelter wounded allies beneath smoke.", ultimate: "Lanterns Below",
+      ultimateBlurb: "Light the lamps below for the entire band, restoring allies while smoke and forgotten names hide them from death.",
+      techniques: [
+        { name: "Last Lantern", blurb: "Mend one ally, soften the next blows against them, and dim hostile attention." },
+        { name: "Graveside Vigil", blurb: "Raise a smoke-shrouded refuge that restores allies and makes the wounded difficult to pursue." },
+      ],
+    },
+  },
+  mage: {
+    flame: {
+      name: "Pyromancer", epithet: "the Unbound Spark", passive: "Focus and ultimate Path spells detonate an existing burn for bonus damage.", ultimate: "Crownfire",
+      ultimateBlurb: "Crown the chosen ground in living fire, detonating every existing burn before kindling the survivors anew.",
+      techniques: [
+        { name: "Cinder Lance", blurb: "Hurl a compact burst that scorches every foe caught around the point of impact." },
+        { name: "Furnace Sigil", blurb: "Inscribe a wide furnace; already burning targets erupt for bonus damage." },
+      ],
+    },
+    frost: {
+      name: "Cryomancer", epithet: "the Perfect Silence", passive: "Focus and ultimate Path spells freeze foes that were already chilled.", ultimate: "Absolute Winter",
+      ultimateBlurb: "Impose absolute winter on a wide field, freezing every pre-chilled foe beneath a second, deeper silence.",
+      techniques: [
+        { name: "Rime Lance", blurb: "Burst frost around the point of impact, slowing every foe caught within." },
+        { name: "Zero Sigil", blurb: "Inscribe a killing cold that briefly freezes enemies already carrying frost." },
+      ],
+    },
+    storm: {
+      name: "Stormweaver", epithet: "Hand on the Horizon", passive: "Your Path fields draw enemies inward while lightning chains outward and haste gathers on you.", ultimate: "Heaven's Engine",
+      ultimateBlurb: "Set heaven's engine turning, drawing the enemy formation inward as lightning races across every foe caught.",
+      techniques: [
+        { name: "Arc Lance", blurb: "Burst lightning around the target point; the first strike chains outward and quickens your casting." },
+        { name: "Tempest Sigil", blurb: "Inscribe a storm field that draws clustered enemies inward while arcs leap between them." },
+      ],
+    },
+    earth: {
+      name: "Geomancer", epithet: "Speaker for the Deep", passive: "Path sigils lend mountain guard to allies standing near their center and heavily stagger bosses.", ultimate: "Worldspine",
+      ultimateBlurb: "Raise the worldspine through the chosen field, breaking enemy poise while stone guard closes around nearby allies.",
+      techniques: [
+        { name: "Stone Spear", blurb: "Break the ground beneath a target point, staggering foes and briefly armoring nearby allies." },
+        { name: "Fault Sigil", blurb: "Inscribe a broad fault that crushes boss poise and shelters allies near its center." },
+      ],
+    },
+    venom: {
+      name: "Blightweaver", epithet: "Gardener of Ruin", passive: "Path spells bite harder into already vulnerable foes and deepen the corrosion they leave.", ultimate: "Verdant Doom",
+      ultimateBlurb: "Cultivate a final garden of ruin, multiplying every existing weakness before poison flowers across the field.",
+      techniques: [
+        { name: "Blight Dart", blurb: "Burst venom at a target point, leaving every foe exposed to focused attacks." },
+        { name: "Ruin Garden", blurb: "Inscribe a broad blight that deals bonus damage to already vulnerable enemies and deepens their corrosion." },
+      ],
+    },
+    radiant: {
+      name: "Luminary", epithet: "the Living Star", passive: "Every Path cast sheds healing sparks and turns stronger hits into wards for the weakest ally.", ultimate: "Second Sunrise",
+      ultimateBlurb: "Ignite a second sunrise over the battlefield, exposing every foe while healing sparks and wards race back to the band.",
+      techniques: [
+        { name: "Starbolt", blurb: "Burst starlight around a target point and send a healing spark toward the weakest ally." },
+        { name: "Dawn Sigil", blurb: "Inscribe a field of judgment whose light both exposes foes and wards the ally most in danger." },
+      ],
+    },
+    blood: {
+      name: "Sanguinist", epithet: "the Scarlet Equation", passive: "Missing health multiplies the damage of your Path spells, while each hit returns a measured share.", ultimate: "Heartstorm",
+      ultimateBlurb: "Solve the scarlet equation across a wide field, spending life to unleash power proportional to every wound you carry.",
+      techniques: [
+        { name: "Sanguine Spear", blurb: "Pay blood to burst a target point; your missing health increases the spell's force." },
+        { name: "Heart Sigil", blurb: "Inscribe a blood field whose damage rises with your wounds and feeds a portion back to you." },
+      ],
+    },
+    shadow: {
+      name: "Necromancer", epithet: "Keeper of Empty Names", passive: "Path fields pull exposed enemies inward and hide your position beneath protective gloom.", ultimate: "Night Without End",
+      ultimateBlurb: "Open a night without end that draws the enemy formation into one exposed center while your own name vanishes from pursuit.",
+      techniques: [
+        { name: "Gloam Bolt", blurb: "Burst shadow at a target point, exposing foes while their formation is drawn inward." },
+        { name: "Void Sigil", blurb: "Inscribe a wide void that pulls enemies together and erases hostile attention from you." },
+      ],
+    },
+  },
+};
+
+const DISCIPLINE_LOADOUT: Record<DisciplineId, {
+  coreTarget: AbilityDef["targeting"];
+  focusTarget: AbilityDef["targeting"];
+  coreIcon: string;
+  focusIcon: string;
+}> = {
+  knight: { coreTarget: "instant", focusTarget: "ray", coreIcon: "shieldslam", focusIcon: "groundbreaker" },
+  rogue: { coreTarget: "ray", focusTarget: "instant", coreIcon: "rush", focusIcon: "smokebomb" },
+  archer: { coreTarget: "ray", focusTarget: "point", coreIcon: "pierce", focusIcon: "volley" },
+  priest: { coreTarget: "ally", focusTarget: "point", coreIcon: "mend", focusIcon: "sanctuary" },
+  mage: { coreTarget: "ray", focusTarget: "point", coreIcon: "missiles", focusIcon: "gravity" },
+};
+
+const PROMOTION_ROLES: Record<DisciplineId, readonly [string, string]> = {
+  knight: ["Bastion", "Avenger"],
+  rogue: ["Phantom", "Saboteur"],
+  archer: ["Deadeye", "Wayfinder"],
+  priest: ["Hierophant", "Oracle"],
+  mage: ["Archon", "Runebinder"],
+};
+
+const ELEMENT_ABILITY_ICONS: Record<ElementId, string> = {
+  flame: "fireball",
+  frost: "frostwake",
+  storm: "chainspark",
+  earth: "stoneskin",
+  venom: "caltrops",
+  radiant: "radiance",
+  blood: "warcry",
+  shadow: "smokebomb",
+};
+
+const PATH_ABILITY_SETS = new Map<string, readonly [AbilityDef, AbilityDef]>();
+
+function buildPathAbilities(discipline: DisciplineDef, element: ElementDef): readonly [AbilityDef, AbilityDef] {
+  const id = pathId(discipline.id, element.id);
+  const loadout = DISCIPLINE_LOADOUT[discipline.id];
+  const lore = PATH_LORE[discipline.id][element.id];
+  const [core, focus] = lore.techniques;
+  const gate: AbilityDef["gate"] = { attr: discipline.id === "knight" ? "vit" : discipline.id === "rogue" || discipline.id === "archer" ? "dex" : discipline.id === "priest" ? "spi" : "int", value: 0 };
+  return [
+    { id: `${id}-core`, name: core.name, gate, targeting: loadout.coreTarget, cooldown: 12, color: element.color, icon: loadout.coreIcon, blurb: core.blurb, element: element.id, discipline: discipline.id, pathSkill: "core" },
+    { id: `${id}-focus`, name: focus.name, gate, targeting: loadout.focusTarget, cooldown: 18, color: element.color, icon: loadout.focusIcon, blurb: focus.blurb, element: element.id, discipline: discipline.id, pathSkill: "focus" },
+  ];
+}
+
+for (const discipline of DISCIPLINES) {
+  for (const element of ELEMENTS) {
+    const skills = buildPathAbilities(discipline, element);
+    PATH_ABILITY_SETS.set(pathId(discipline.id, element.id), skills);
+    ABILITIES.push(...skills);
+  }
+}
+
+export function pathAbilities(discipline: DisciplineId, element: ElementId): readonly [AbilityDef, AbilityDef] {
+  return PATH_ABILITY_SETS.get(pathId(discipline, element))!;
+}
+
+export const CALLINGS: CallingDef[] = DISCIPLINES.flatMap((discipline) =>
+  ELEMENTS.map((element) => {
+    const id = pathId(discipline.id, element.id);
+    const lore = PATH_LORE[discipline.id][element.id];
+    const [firstPromotion, secondPromotion] = PROMOTION_ROLES[discipline.id];
+    const [coreSkill, focusSkill] = pathAbilities(discipline.id, element.id);
+    return {
+      id,
+      discipline: discipline.id,
+      element: element.id,
+      name: lore.name,
+      epithet: lore.epithet,
+      crest: discipline.crest,
+      color: element.color,
+      entry: [],
+      passive: `${discipline.passive} ${element.passive} ${lore.passive}`,
+      abilityIds: [coreSkill.id, focusSkill.id],
+      chargeHint: discipline.chargeHint,
+      family: discipline.name,
+      signature: {
+        id: `${id}-ultimate`,
+        name: lore.ultimate,
+        gate: { attr: "str", value: 0 },
+        targeting: discipline.id === "archer" || discipline.id === "mage" ? "point" : discipline.id === "priest" ? "ally" : "instant",
+        cooldown: 1,
+        color: element.color,
+        icon: ELEMENT_ABILITY_ICONS[element.id],
+        blurb: `Ultimate: ${lore.ultimateBlurb}`,
+        element: element.id,
+        discipline: discipline.id,
+        pathSkill: "ultimate",
+      },
+      advanced: [
+        { id: `${id}-ascendant`, name: `${element.adjective} ${firstPromotion}`, epithet: "the Exalted Path", passive: `Deepens the defensive and teamcraft side of ${lore.name}.`, ultNote: `${lore.ultimate} protects allies as its power unfolds.` },
+        { id: `${id}-paragon`, name: `${element.adjective} ${secondPromotion}`, epithet: "the Unbound Path", passive: `Deepens the aggressive and mobile side of ${lore.name}.`, ultNote: `${lore.ultimate} strikes harder and reaches farther.` },
+      ],
+    } satisfies CallingDef;
+  }),
+);
+
+/** Compatibility alias used by the older calling picker; every path is foundational now. */
+export const FOUNDATIONAL_CALLING_IDS: readonly string[] = CALLINGS.map((calling) => calling.id);
+
+export const LEGACY_CALLING_PATHS: Readonly<Record<string, { discipline: DisciplineId; element: ElementId }>> = {
+  vanguard: { discipline: "knight", element: "earth" },
+  reaver: { discipline: "rogue", element: "blood" },
+  ranger: { discipline: "archer", element: "earth" },
+  arcanist: { discipline: "mage", element: "storm" },
+  chaplain: { discipline: "priest", element: "radiant" },
+  trickster: { discipline: "rogue", element: "shadow" },
+  duelist: { discipline: "rogue", element: "radiant" },
+  warden: { discipline: "knight", element: "earth" },
+  spellblade: { discipline: "knight", element: "storm" },
+  nightblade: { discipline: "rogue", element: "shadow" },
+  pyromancer: { discipline: "mage", element: "flame" },
+  cryomancer: { discipline: "mage", element: "frost" },
+  tempest: { discipline: "mage", element: "storm" },
+  geomancer: { discipline: "mage", element: "earth" },
+  exorcist: { discipline: "priest", element: "radiant" },
+  bloodknight: { discipline: "knight", element: "blood" },
+  seer: { discipline: "priest", element: "storm" },
+  lancer: { discipline: "knight", element: "storm" },
+  monk: { discipline: "rogue", element: "earth" },
+  necromancer: { discipline: "mage", element: "shadow" },
+  bard: { discipline: "priest", element: "storm" },
+  alchemist: { discipline: "rogue", element: "venom" },
+  trapper: { discipline: "archer", element: "venom" },
+  warcrier: { discipline: "knight", element: "flame" },
+};
+
+/** Former level-20 choices retain their intent when their parent calling migrates. */
+export const LEGACY_ADVANCED_BRANCH: Readonly<Record<string, "ascendant" | "paragon">> = {
+  bulwarkSaint: "ascendant", warbreaker: "paragon", berserker: "ascendant", blademaster: "paragon",
+  hawkeye: "ascendant", strider: "paragon", stormcaller: "ascendant", runebinder: "paragon",
+  lightwarden: "ascendant", oracle: "paragon", shadowdancer: "ascendant", spellthief: "paragon",
+  swordsaint: "ascendant", corsair: "paragon", oathkeeper: "ascendant", thornwarden: "paragon",
+  runeknight: "ascendant", stormedge: "paragon", phantom: "ascendant", reaper: "paragon",
+};
 
 export function xpForLevel(level: number): number {
   return Math.round(40 * level * (1 + level * 0.35));
+}
+
+/** Once the road leaves Stormbreak, inactive companions can pay for one level
+ * of catch-up training. The price scales hard enough to remain a meaningful
+ * late-game sink without raising the active party's power ceiling. */
+export const ROAD_TUTELAGE_STAGE = 18;
+export function roadTutelageCost(level: number): number {
+  return 250 + Math.max(1, level) * 125;
 }
 
 export const POINTS_PER_LEVEL = 2;
@@ -2389,6 +2948,13 @@ export const TRINKETS: TrinketDef[] = [
   { id: "reeftalon", name: "Reef Talon", blurb: "+7% melee damage, +3% critical chance", rarity: "common", icon: "🪸" },
   { id: "widowsChime", name: "The Widow's Chime", blurb: "+12% healing, -8% cooldowns, battles start with a 20 hp ward", rarity: "rare", icon: "🔔" },
   { id: "stormjawHeart", name: "Stormjaw's Heart", blurb: "+14% max health, +8% melee damage, +5% attack speed", rarity: "rare", icon: "🌊" },
+  { id: "cindermawCoal", name: "Cindermaw Coal", blurb: "+12% spell power, +4% armor", rarity: "rare", icon: "◆" },
+  { id: "colossusSeed", name: "Colossus Seed", blurb: "+15% max health, +10% healing", rarity: "rare", icon: "♣" },
+  { id: "nightmotherSilk", name: "Nightmother Silk", blurb: "-10% cooldowns, +6% critical chance", rarity: "rare", icon: "☾" },
+  { id: "seraphicPinion", name: "Seraphic Pinion", blurb: "+12% healing, battles start with a 30 hp ward", rarity: "rare", icon: "✦" },
+  { id: "skybreakerPrism", name: "Skybreaker Prism", blurb: "+10% ranged damage, +8% attack speed", rarity: "rare", icon: "◇" },
+  { id: "bloodmoonTine", name: "Bloodmoon Tine", blurb: "+12% melee damage, +6% critical chance", rarity: "rare", icon: "♜" },
+  { id: "lastWaystone", name: "The Last Waystone", blurb: "+10% max health, -8% cooldowns, +6% move speed", rarity: "rare", icon: "◈" },
 ];
 
 export function trinketById(id: string | null | undefined): TrinketDef | undefined {
@@ -2430,6 +2996,13 @@ export function trinketMods(id: string | null | undefined): TalentMods {
     case "reeftalon": return { ...none, meleeDmg: 0.07, crit: 0.03 };
     case "widowsChime": return { ...none, healPower: 0.12, cdr: 0.08, startShield: 20 };
     case "stormjawHeart": return { ...none, hpPct: 0.14, meleeDmg: 0.08, atkSpeed: 0.05 };
+    case "cindermawCoal": return { ...none, spellPower: 0.12, armorFlat: 0.04 };
+    case "colossusSeed": return { ...none, hpPct: 0.15, healPower: 0.1 };
+    case "nightmotherSilk": return { ...none, cdr: 0.1, crit: 0.06 };
+    case "seraphicPinion": return { ...none, healPower: 0.12, startShield: 30 };
+    case "skybreakerPrism": return { ...none, rangedDmg: 0.1, atkSpeed: 0.08 };
+    case "bloodmoonTine": return { ...none, meleeDmg: 0.12, crit: 0.06 };
+    case "lastWaystone": return { ...none, hpPct: 0.1, cdr: 0.08, moveSpeed: 0.06 };
     default: return none;
   }
 }
@@ -2443,12 +3016,13 @@ export function trinketFlatHp(id: string | null | undefined): number {
 }
 
 /** Stages whose final wave is a boss — these drop rare trinkets. */
-export const BOSS_STAGES = [4, 5, 11, 15, 17];
+export const BOSS_STAGES = [4, 5, 11, 15, 17, 23, 29, 35, 41, 47, 53, 59];
 
 /** Health thresholds belong to the boss definition, not the HUD. */
 export const BOSS_PHASES: Partial<Record<EnemyKind, number[]>> = {
   alpha: [0.6, 0.3], ogre: [0.66, 0.33], warlord: [0.66, 0.33], rimeheart: [0.66, 0.33],
   wyrm: [0.66, 0.33], bellwidow: [0.66, 0.33], stormjaw: [0.68, 0.34],
+  ...LATE_BOSS_PHASES,
 };
 
 export interface ContractDef {
@@ -2553,19 +3127,19 @@ export const DEEDS: DeedDef[] = [
   {
     id: "oathbound",
     name: "Oathbound",
-    blurb: "A hero swears their first calling.",
+    blurb: "A hero begins their first elemental Path.",
     done: (s) => s.heroes.some((h) => h.calling),
   },
   {
     id: "ascendant",
     name: "Ascendant",
-    blurb: "An oath deepened — any advanced calling taken.",
+    blurb: "A seasoned hero earns their first Path Promotion.",
     done: (s) => s.heroes.some((h) => h.advCalling),
   },
   {
     id: "scholar",
     name: "Scholar of the Band",
-    blurb: "Fifteen spells in the band's library.",
+    blurb: "Fifteen techniques recorded in the band's archive.",
     done: (s) => s.unlockedSpells.length >= 15,
     progress: (s) => `${Math.min(15, s.unlockedSpells.length)}/15`,
   },

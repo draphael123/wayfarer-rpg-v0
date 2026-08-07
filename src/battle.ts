@@ -1,5 +1,6 @@
 import { audio } from "./audio";
 import { BOSS_PHASES, DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, boonMods, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, talentMods, trinketMods, SET_BONUSES } from "./data";
+import { isLateBossKind, isLateFoeKind, type LateBossKind, type LateEnemyKind } from "./late-content";
 
 // Battleheart pacing: cooldowns run 2.5× longer, so each cast must matter more.
 // Heals compensate harder than damage — a mend that has to cover a 20s window
@@ -9,7 +10,10 @@ const HEAL_POTENCY = 1.8;
 import type { FxSystem } from "./fx";
 import type {
   AbilityState,
+  DamageElement,
+  DisciplineId,
   EnemyKind,
+  ElementId,
   GroundZone,
   Telegraph,
   Projectile,
@@ -20,6 +24,38 @@ import type {
   Vec,
 } from "./types";
 
+const ELEMENT_COLORS: Record<ElementId, string> = {
+  flame: "#ff9b42",
+  frost: "#a9ddf5",
+  storm: "#8fc7e8",
+  earth: "#c9a06b",
+  venom: "#9ad06a",
+  radiant: "#ffe9a3",
+  blood: "#d95763",
+  shadow: "#a89bd8",
+};
+
+const ELEMENT_POOL_COLORS: Record<ElementId, string> = {
+  flame: "255,155,66",
+  frost: "169,221,245",
+  storm: "143,199,232",
+  earth: "160,128,82",
+  venom: "130,190,86",
+  radiant: "255,233,163",
+  blood: "190,65,78",
+  shadow: "120,104,170",
+};
+
+/** Short combat callouts make each Discipline + Attunement interaction legible
+ * without adding another button, meter, or status icon to the HUD. */
+const PATH_SIGNATURE_CUES: Record<DisciplineId, Record<ElementId, string>> = {
+  knight: { flame: "HEARTH WARD", frost: "STILL GATE", storm: "STORMWALL", earth: "SHARED STONE", venom: "CORRODING GUARD", radiant: "DAWN AEGIS", blood: "BLOOD DEBT", shadow: "NIGHTWALL" },
+  rogue: { flame: "EMBER TRAIL", frost: "MIRROR SHATTER", storm: "STORMSTEP", earth: "RIVEN FLOOR", venom: "MORTAL DOSE", radiant: "SUNWARD", blood: "DEBT PAID", shadow: "BLACKOUT" },
+  archer: { flame: "ASHEN WAKE", frost: "WINTER'S MEASURE", storm: "CROSSWIND", earth: "STONEPIERCE", venom: "THORNMARK", radiant: "FIRST RAY", blood: "HEARTSEEKER", shadow: "MOONLESS STEP" },
+  priest: { flame: "HEARTH AURA", frost: "QUIET MERCY", storm: "THUNDER CHOIR", earth: "DEEP FOUNDATION", venom: "BITTER PURGE", radiant: "AURORA WARD", blood: "BLOOD COVENANT", shadow: "LAST LANTERN" },
+  mage: { flame: "DETONATION", frost: "ABSOLUTE ZERO", storm: "CURRENT FIELD", earth: "WORLDSPINE", venom: "RUIN BLOOMS", radiant: "LIVING STAR", blood: "SCARLET EQUATION", shadow: "VOID DRAW" },
+};
+
 export interface FieldRect {
   left: number;
   right: number;
@@ -29,8 +65,6 @@ export interface FieldRect {
 
 export type BattleState = "fighting" | "wavebreak" | "victory" | "defeat";
 
-let nextUnitId = 1;
-
 function makeEffect(kind: StatusEffect["kind"], time: number, power: number, source: Unit | null = null): StatusEffect {
   return { kind, time, power, source };
 }
@@ -39,6 +73,7 @@ function makeEffect(kind: StatusEffect["kind"], time: number, power: number, sou
 const BOSS_KINDS = Object.keys(BOSS_PHASES);
 
 export class Battle {
+  private nextUnitId = 1;
   units: Unit[] = [];
   projectiles: Projectile[] = [];
   zones: GroundZone[] = [];
@@ -78,7 +113,19 @@ export class Battle {
   tideHigh = false;
   private lightningTimer = 7;
   private widowToll = 4.5;
-  private jawStorm = 5.5;
+  private widowRite: { safeLane: number; safeY: number; halfWidth: number; time: number; duration: number } | null = null;
+  private widowTollCount = 0;
+  private jawCycle: {
+    mode: "reef" | "undertow" | "breach" | "exposed";
+    time: number;
+    nextBreach: number;
+    nextLightning: number;
+    tideWasHigh: boolean;
+    target: Vec | null;
+  } | null = null;
+  /** Pattern cursor for late-road bosses; keyed by unit id so the Way-Eater can
+   * recall earlier omens without adding hidden state to save data. */
+  private lateBossCycles = new Map<number, number>();
   castCounts: Record<string, number> = {};
   heroDeaths = 0;
   /** Per-hero battle ledger (keyed by heroIndex) — feeds the victory recap. */
@@ -104,6 +151,9 @@ export class Battle {
   private bannerPlanted = false; // Gorehulk's 33% war banner
   private stillness: Record<number, { x: number; y: number; t: number }> = {}; // Rimeheart's cracking ice
   private detonations: { x: number; y: number; at: number; dmg: number; r: number }[] = []; // vengeful elites' last words
+  private elementWeakShown = new Set<string>();
+  private elementResistShown = new Set<string>();
+  private warningScale = 1;
 
   constructor(
     public stage: StageDef,
@@ -113,8 +163,9 @@ export class Battle {
     public tutorialMode = false,
   ) {
     const diff = DIFFICULTIES[save.difficulty ?? 1];
+    this.warningScale = save.telegraphAssist === "extra" ? 1.5 : save.telegraphAssist === "long" ? 1.25 : 1;
     this.difficultyMult = this.tutorialMode ? 1 : diff.enemyMult;
-    this.telegraphTime = this.tutorialMode ? 1.5 : diff.telegraph;
+    this.telegraphTime = (this.tutorialMode ? 1.5 : diff.telegraph) * this.warningScale;
     this.enemyHaste = this.tutorialMode ? 1 : diff.haste;
     this.extraSpawn = this.tutorialMode ? 0 : diff.extraSpawn;
     const roster = partyRoster(save);
@@ -144,24 +195,32 @@ export class Battle {
       const sworn = callingById(heroSave.calling);
       const oath = sworn && callingEligible(sworn, heroSave.attrs) ? sworn : null;
       const advanced = oath ? heroSave.advCalling : null;
-      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroGearOf(heroSave, save.forge), heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced, heroSave.boons, heroSave.masteredCallings);
-      const abilities: AbilityState[] = heroSave.equipped
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroGearOf(heroSave, save.forge), heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced, heroSave.boons, heroSave.masteredElements);
+      const pathIds: readonly string[] = oath?.abilityIds ?? [];
+      const pathDefs = pathIds
         .map((id) => abilityById(id))
-        .filter((d): d is NonNullable<typeof d> => !!d)
+        .filter((def): def is NonNullable<typeof def> => !!def);
+      const normalDefs = pathDefs.filter((def) => def.pathSkill !== "ultimate");
+      const abilities: AbilityState[] = (normalDefs.length ? normalDefs : heroSave.equipped
+        .map((id) => abilityById(id))
+        .filter((d): d is NonNullable<typeof d> => !!d))
         .map((def) => ({ def, timer: 0 }));
-      if (oath) abilities.push({ def: oath.signature, timer: 1, ult: true });
+      const pathUltimate = pathDefs.find((def) => def.pathSkill === "ultimate");
+      if (oath) abilities.push({ def: pathUltimate ?? oath.signature, timer: 1, ult: true });
       // Ordinary armor is passive-only. A future legendary may explicitly
       // carry an active without reopening the old family-skill system.
       const bodyPiece = armorById(heroSave.armor);
       if (bodyPiece?.active) abilities.push({ def: bodyPiece.active, timer: 0, armorSkill: true });
       this.units.push({
-        id: nextUnitId++,
+        id: this.nextUnitId++,
         name: HEROES[i].name,
         team: "hero",
         heroIndex: i,
         enemyKind: null,
         calling: oath?.id ?? null,
         advCalling: advanced,
+        discipline: oath?.discipline ?? heroSave.discipline ?? null,
+        element: oath?.element ?? heroSave.element ?? null,
         ultCharge: 0,
         entered: true,
         x: pos.x,
@@ -173,7 +232,7 @@ export class Battle {
         moveTarget: null,
         attackTarget: null,
         healTarget: null,
-        stance: heroSave.attrs.spi >= 6 ? "heal" : "attack",
+        stance: (oath?.discipline ?? heroSave.discipline) === "priest" || heroSave.attrs.spi >= 6 ? "heal" : "attack",
         autoOrder: false,
         abilities,
         effects: [],
@@ -230,13 +289,15 @@ export class Battle {
     const frontier = living.length ? Math.max(...living.map((h) => h.x)) : this.field.left + 200;
     const x = overrides.x ?? Math.min(this.field.right + 30, frontier + 620 + Math.random() * 90);
     this.units.push({
-      id: nextUnitId++,
+      id: this.nextUnitId++,
       name: def.name,
       team: "enemy",
       heroIndex: -1,
       enemyKind: kind,
       calling: null,
       advCalling: null,
+      discipline: null,
+      element: null,
       ultCharge: 0,
       entered: false,
       x,
@@ -326,6 +387,12 @@ export class Battle {
       this.state = "victory";
       this.resultDelay = 1.4;
       this.slowmo = Math.max(this.slowmo, 1.1); // savor the final blow
+      // The encounter is settled on the final blow. Stray hostile missiles and
+      // warnings must not injure the band behind the victory banner or change a
+      // flawless/contract result while the player reads the recap.
+      this.projectiles.length = 0;
+      this.telegraphs.length = 0;
+      this.pendingSpawns.length = 0;
       // a shower of gold and light while the banner lands
       const cx = (this.field.left + this.field.right) / 2;
       const cy = (this.field.top + this.field.bottom) / 2;
@@ -367,19 +434,10 @@ export class Battle {
       this.bossRef = this.units.find((u) => u.alive && BOSS_KINDS.includes(u.enemyKind ?? "")) ?? null;
       if (this.bossRef) {
         this.bossStagger = 0;
-        this.bossStaggerMax =
-          this.bossRef.enemyKind === "wyrm" ? 440 : this.bossRef.enemyKind === "rimeheart" ? 400 : this.bossRef.enemyKind === "warlord" ? 340 : this.bossRef.enemyKind === "alpha" ? 280 : 240;
+        this.bossStaggerMax = this.bossStaggerCapacity(this.bossRef.enemyKind);
         this.cinematic = 2.6;
         this.waveBanner = 0;
-        audio.play(
-          this.bossRef.enemyKind === "warlord"
-            ? "warhorn"
-            : this.bossRef.enemyKind === "alpha"
-              ? "howl"
-              : this.bossRef.enemyKind === "rimeheart" || this.bossRef.enemyKind === "wyrm"
-                ? "glacialGroan"
-                : "roar",
-        );
+        this.playBossEntrance(this.bossRef.enemyKind);
       }
     }
     this.seerGuard = this.livingHeroes().filter((h) => h.calling === "seer").length;
@@ -421,6 +479,33 @@ export class Battle {
     audio.play("wave");
   }
 
+  private bossStaggerCapacity(kind: EnemyKind | null): number {
+    let base = 240;
+    if (kind === "wyrm") base = 440;
+    else if (kind === "rimeheart") base = 400;
+    else if (kind === "warlord") base = 340;
+    else if (kind === "alpha") base = 280;
+    else if (kind === "wayeater") base = 520;
+    else if (isLateBossKind(kind)) base = 390 + Math.floor(this.stage.id / 12) * 18;
+    // Harder foes gain some poise along with health, without making interrupts
+    // disappear entirely on the upper difficulties.
+    return Math.round(base * Math.sqrt(this.difficultyMult));
+  }
+
+  private playBossEntrance(kind: EnemyKind | null): void {
+    if (kind === "warlord") audio.play("warhorn");
+    else if (kind === "alpha") audio.play("howl");
+    else if (kind === "rimeheart" || kind === "wyrm") audio.play("glacialGroan");
+    else if (kind === "cindermaw") audio.play("bossEruption");
+    else if (kind === "verdantcolossus") audio.play("bossRoots");
+    else if (kind === "nightmother") audio.play("bossEclipse");
+    else if (kind === "reliquaryseraph") audio.play("bossBeam");
+    else if (kind === "skybreaker") audio.play("bossShatter");
+    else if (kind === "bloodmoonstag") audio.play("bossBloodmoon");
+    else if (kind === "wayeater") audio.play("bossVoid");
+    else audio.play("roar");
+  }
+
   private windstepReady = new Set<number>();
   private armorDodgeReady = new Set<number>();
 
@@ -453,13 +538,20 @@ export class Battle {
   }
 
   effect(unit: Unit, kind: StatusEffect["kind"]): StatusEffect | undefined {
-    return unit.effects.find((e) => e.kind === kind);
+    if (kind !== "haste") return unit.effects.find((e) => e.kind === kind);
+    // Several sources can quicken the same unit. Cadence must use the strongest
+    // live effect rather than whichever one happened to be inserted first.
+    return unit.effects.reduce<StatusEffect | undefined>(
+      (strongest, candidate) => candidate.kind === "haste" && (!strongest || candidate.power > strongest.power) ? candidate : strongest,
+      undefined,
+    );
   }
 
   private speedOf(unit: Unit): number {
     let speed = unit.stats.speed;
     const slow = this.effect(unit, "slow");
     if (slow) speed *= 1 - slow.power;
+    if (unit.enemyKind === "stormeel" && this.tideHigh) speed *= 1.18;
     // the drummer's rhythm puts spring in a foe's stride too
     if (unit.team === "enemy" && this.effect(unit, "haste")) speed *= 1.15;
     return speed;
@@ -467,15 +559,16 @@ export class Battle {
 
   /** Feed a hero's ultimate meter; announces the moment it fills. */
   private gainUlt(hero: Unit, amount: number): void {
-    if (!hero.calling || !hero.alive || amount <= 0) return;
+    if ((!hero.calling && !hero.discipline) || !hero.alive || amount <= 0) return;
     // the Wolf's Heart boon quickens the meter
     const boons = this.saveRef?.heroes[hero.heroIndex]?.boons;
     if (boons) amount *= 1 + boonMods(boons).ultRate;
     const before = hero.ultCharge;
     hero.ultCharge = Math.min(100, hero.ultCharge + amount);
     if (before < 100 && hero.ultCharge >= 100) {
-      this.fx.floatText(hero.x, hero.y - hero.radius * 3 - 12, "ultimate ready!", callingById(hero.calling)?.color ?? "#ffe9a3", 13);
-      this.fx.ring(hero.x, hero.y, 46, callingById(hero.calling)?.color ?? "#ffe9a3", { width: 3, life: 0.5 });
+      const color = hero.element ? ELEMENT_COLORS[hero.element] : callingById(hero.calling)?.color ?? "#ffe9a3";
+      this.fx.floatText(hero.x, hero.y - hero.radius * 3 - 12, "ultimate ready!", color, 13);
+      this.fx.ring(hero.x, hero.y, 46, color, { width: 3, life: 0.5 });
       audio.play("ultReady");
       navigator.vibrate?.(35);
     }
@@ -486,8 +579,11 @@ export class Battle {
     const haste = this.effect(unit, "haste");
     if (haste) interval /= haste.power;
     if (unit.team === "enemy") interval /= this.enemyHaste;
-    // Ranger skirmisher: faster shots while nothing is in their face
-    if (unit.calling === "ranger" && !this.nearestEnemyWithin(unit, 70)) interval /= 1.15;
+    // Archers keep their cadence while the line holds; legacy Rangers inherit it.
+    if ((unit.discipline === "archer" || unit.calling === "ranger") && !this.nearestEnemyWithin(unit, 70)) interval /= 1.15;
+    // Rogues and storm-bound heroes trade a little safety for tempo.
+    if (unit.discipline === "rogue") interval /= 1.08;
+    if (unit.element === "storm") interval /= 1.05;
     // the Bard's song carries: allies near one strike quicker
     if (unit.team === "hero" && this.livingHeroes().some((s) => s.calling === "bard" && Math.hypot(s.x - unit.x, s.y - unit.y) < 140)) {
       interval /= 1.06;
@@ -497,7 +593,12 @@ export class Battle {
     return interval;
   }
 
-  damage(target: Unit, rawAmount: number, source: Unit | null, opts: { spell?: boolean; color?: string } = {}): void {
+  damage(
+    target: Unit,
+    rawAmount: number,
+    source: Unit | null,
+    opts: { spell?: boolean; color?: string; element?: DamageElement; secondary?: boolean } = {},
+  ): void {
     if (!target.alive) return;
     // Wind Step: shrug off the first hit of the wave entirely
     if (target.team === "hero" && this.windstepReady.has(target.id)) {
@@ -539,6 +640,30 @@ export class Battle {
     let amount = rawAmount * (1 - target.stats.armor);
     const vulnerable = this.effect(target, "vulnerable");
     if (vulnerable) amount *= 1 + vulnerable.power;
+    // Elemental matchups reward preparation without ever making a party invalid.
+    // Bosses use gentler values so their mechanics, rather than loadout luck,
+    // remain the deciding factor.
+    if (target.team === "enemy" && target.enemyKind) {
+      const element: DamageElement = opts.element ?? "physical";
+      const def = ENEMIES[target.enemyKind];
+      const boss = BOSS_KINDS.includes(target.enemyKind);
+      const key = `${target.id}:${element}`;
+      if (def.weakTo === element) {
+        const bonus = boss ? 0.15 : 0.25;
+        amount *= 1 + bonus;
+        if (!this.elementWeakShown.has(key)) {
+          this.elementWeakShown.add(key);
+          this.fx.floatText(target.x, target.y - target.radius * 3 - 12, `WEAK +${Math.round(bonus * 100)}%`, ELEMENT_COLORS[element], 12);
+        }
+      } else if (def.resists === element) {
+        const reduction = boss ? 0.1 : 0.2;
+        amount *= 1 - reduction;
+        if (!this.elementResistShown.has(key)) {
+          this.elementResistShown.add(key);
+          this.fx.floatText(target.x, target.y - target.radius * 3 - 12, `RESISTS -${Math.round(reduction * 100)}%`, "#c9c2b8", 11);
+        }
+      }
+    }
     // the pavise: blows from the front glance off, and friends crouch in its shadow
     if (target.team === "enemy" && source && source.team === "hero" && !opts.spell) {
       if ((target.enemyKind === "shieldbearer" || target.enemyKind === "brinecrawler") && source.x < target.x) {
@@ -556,8 +681,8 @@ export class Battle {
     }
     const guard = this.effect(target, "guard");
     if (guard) amount *= 1 - guard.power;
-    // Vanguard holds the line: sturdier while an enemy is at arm's reach
-    if (target.calling === "vanguard" && this.nearestEnemyWithin(target, 60)) amount *= 0.9;
+    // Knights hold the line; legacy Vanguards keep the same promise.
+    if ((target.discipline === "knight" || target.calling === "vanguard") && this.nearestEnemyWithin(target, 60)) amount *= 0.9;
     // smoke cover softens whatever finds you in it
     if (target.team === "hero") {
       const smoke = this.zones.find(
@@ -673,16 +798,41 @@ export class Battle {
     if (target.team === "hero" && target.heroIndex >= 0) {
       this.tally(target.heroIndex).taken += amount;
     }
-    // ultimate charge: playing your calling's role feeds the meter
-    if (source?.team === "hero" && target.team === "enemy") {
+    // Ultimate charge now follows the broad discipline role. Legacy callings
+    // remain as a fallback for old saves that have not migrated yet.
+    if (source?.team === "hero" && target.team === "enemy" && !opts.secondary) {
       const primary = [
         "reaver", "ranger", "arcanist", "duelist", "spellblade", "nightblade",
         "pyromancer", "cryomancer", "tempest", "exorcist", "bloodknight", "lancer", "monk", "trapper", "alchemist", "warcrier",
       ].includes(source.calling ?? "");
-      this.gainUlt(source, amount * (primary ? 0.3 : source.calling === "trickster" ? 0.18 : 0.12));
+      const roleRate = source.discipline === "rogue" || source.discipline === "archer" || source.discipline === "mage"
+        ? 0.3
+        : source.discipline === "knight"
+          ? 0.18
+          : source.discipline === "priest"
+            ? 0.14
+            : primary
+              ? 0.3
+              : source.calling === "trickster"
+                ? 0.18
+                : 0.12;
+      this.gainUlt(source, amount * roleRate);
     }
     if (target.team === "hero") {
-      this.gainUlt(target, amount * (target.calling === "vanguard" ? 0.42 : target.calling === "warden" ? 0.38 : target.calling === "geomancer" ? 0.34 : 0.12));
+      const roleRate = target.discipline === "knight"
+        ? 0.42
+        : target.discipline === "priest"
+          ? 0.18
+          : target.calling === "vanguard"
+            ? 0.42
+            : target.calling === "warden"
+              ? 0.38
+              : target.calling === "geomancer"
+                ? 0.34
+                : 0.12;
+      // Difficulty raises incoming damage; it should not also become an
+      // unintended ultimate-generation bonus.
+      this.gainUlt(target, (amount / Math.max(1, this.difficultyMult)) * roleRate);
     }
     if (amount > 24) this.hitstop = Math.max(this.hitstop, 0.055);
     if (amount > 18 && source) {
@@ -769,13 +919,27 @@ export class Battle {
     if (!target.alive || target.hp >= target.stats.maxHp) return;
     // spell heals share the potency compensation (channel healing keeps its own pace)
     if (this.castingSpell && from && from.team === "hero") amount *= HEAL_POTENCY;
+    if (from?.discipline === "priest") amount *= 1.05;
     const applied = Math.min(target.stats.maxHp - target.hp, amount);
     target.hp += applied;
     if (from && from.team === "hero" && from.heroIndex >= 0 && applied >= 1) {
       this.tally(from.heroIndex).healed += applied;
     }
     if (from && from.team === "hero" && target !== from) {
-      this.gainUlt(from, applied * (from.calling === "chaplain" ? 0.36 : from.calling === "seer" ? 0.3 : from.calling === "bard" ? 0.25 : from.calling === "warden" ? 0.2 : 0.12));
+      const roleRate = from.discipline === "priest"
+        ? 0.36
+        : from.discipline === "knight"
+          ? 0.2
+          : from.calling === "chaplain"
+            ? 0.36
+            : from.calling === "seer"
+              ? 0.3
+              : from.calling === "bard"
+                ? 0.25
+                : from.calling === "warden"
+                  ? 0.2
+                  : 0.12;
+      this.gainUlt(from, applied * roleRate);
     }
     if (showText && applied >= 1) {
       if (this.saveRef?.damageNumbers !== false) {
@@ -964,8 +1128,919 @@ export class Battle {
 
   // ----- abilities -----
 
+  /** Refresh a path effect without building an unreadable tower of duplicates. */
+  private refreshPathEffect(target: Unit, kind: StatusEffect["kind"], time: number, power: number, source: Unit): void {
+    const existing = this.effect(target, kind);
+    if (existing) {
+      existing.time = Math.max(existing.time, time);
+      existing.power = Math.max(existing.power, power);
+      if (!existing.source || !existing.source.alive) existing.source = source;
+      return;
+    }
+    target.effects.push(makeEffect(kind, time, power, source));
+  }
+
+  /** Element is the consequence; discipline decides how that consequence is delivered. */
+  private applyPathElement(
+    source: Unit,
+    target: Unit,
+    element: ElementId,
+    tier: "core" | "focus" | "ultimate",
+    baseDamage: number,
+    allowPulse: boolean,
+  ): void {
+    if (!target.alive) return;
+    const rank = tier === "core" ? 0 : tier === "focus" ? 1 : 2;
+    const boss = BOSS_KINDS.includes(target.enemyKind ?? "");
+    const color = ELEMENT_COLORS[element];
+    switch (element) {
+      case "flame": {
+        const duration = [3, 4.2, 5.8][rank];
+        const dps = Math.max(2, baseDamage * [0.08, 0.11, 0.14][rank]);
+        this.refreshPathEffect(target, "burn", duration, dps, source);
+        this.addDecal(target.x, target.y, "scorch", 16 + rank * 5);
+        break;
+      }
+      case "frost": {
+        const duration = [2.2, 3.2, 4.4][rank] * (boss ? 0.65 : 1);
+        const slow = [0.18, 0.28, 0.38][rank] * (boss ? 0.7 : 1);
+        this.refreshPathEffect(target, "slow", duration, slow, source);
+        break;
+      }
+      case "storm": {
+        this.refreshPathEffect(source, "haste", [1.8, 2.8, 4][rank], [1.12, 1.2, 1.3][rank], source);
+        if (allowPulse) {
+          const arcs = [1, 2, 3][rank];
+          const range = [115, 140, 170][rank];
+          const others = this.livingEnemies()
+            .filter((enemy) => enemy !== target && unitDist(enemy, target) < range)
+            .sort((a, b) => unitDist(a, target) - unitDist(b, target))
+            .slice(0, arcs);
+          for (const enemy of others) {
+            this.damage(enemy, baseDamage * [0.24, 0.29, 0.34][rank], source, { spell: true, color, element, secondary: true });
+            this.fx.tracer(target.x, target.y - 14, enemy.x, enemy.y - 14, color, 0.28, 2.5 + rank * 0.5);
+            this.fx.burst(enemy.x, enemy.y - 12, color, 4 + rank * 2, 70, { glow: true, life: 0.3 });
+          }
+        }
+        break;
+      }
+      case "earth": {
+        this.refreshPathEffect(source, "guard", [2.2, 3.4, 5][rank], [0.12, 0.2, 0.3][rank], source);
+        if (boss) {
+          if (target === this.bossRef && this.bossStaggerMax > 0) this.bossStagger += [5, 10, 18][rank];
+          this.refreshPathEffect(target, "slow", [0.8, 1.2, 1.8][rank], 0.16, source);
+        } else {
+          this.refreshPathEffect(target, "stun", [0.16, 0.34, 0.62][rank], 1, source);
+        }
+        break;
+      }
+      case "venom": {
+        // Poison deliberately shares the existing damage-over-time vessel; the
+        // green cast language and corrosion make it distinct without a second
+        // hidden timer system.
+        this.refreshPathEffect(target, "burn", [4, 5.2, 7][rank], Math.max(1.8, baseDamage * [0.08, 0.1, 0.13][rank]), source);
+        this.refreshPathEffect(target, "vulnerable", [2.5, 3.8, 5][rank], [0.06, 0.1, 0.16][rank], source);
+        break;
+      }
+      case "radiant": {
+        if (rank > 0) this.refreshPathEffect(target, "vulnerable", [0, 3, 4.5][rank], [0, 0.08, 0.14][rank], source);
+        if (allowPulse) {
+          const ally = this.mostWoundedAlly();
+          if (ally) {
+            this.heal(ally, Math.max(3, baseDamage * [0.14, 0.2, 0.28][rank]), true, source);
+            if (rank > 0) this.refreshPathEffect(ally, "shield", [0, 4, 6][rank], [0, 8, 15][rank] + source.stats.healPower * 0.35, source);
+          }
+        }
+        break;
+      }
+      case "blood": {
+        if (allowPulse && source.hp < source.stats.maxHp) {
+          this.heal(source, Math.max(2, baseDamage * [0.1, 0.16, 0.24][rank]), true, source);
+        }
+        if (target.hp < target.stats.maxHp * 0.4) this.refreshPathEffect(target, "vulnerable", 2.2 + rank, 0.08 + rank * 0.04, source);
+        break;
+      }
+      case "shadow": {
+        this.refreshPathEffect(target, "vulnerable", [2, 3.2, 4.8][rank], [0.07, 0.12, 0.18][rank], source);
+        this.refreshPathEffect(source, "guard", [1.3, 2.2, 3.4][rank], [0.12, 0.2, 0.28][rank], source);
+        if (!boss) {
+          const away = this.normalize({ x: target.x - source.x, y: target.y - source.y });
+          const moved = this.clampToField({ x: target.x + away.x * [10, 19, 30][rank], y: target.y + away.y * [10, 19, 30][rank] }, target.radius);
+          target.x = moved.x;
+          target.y = moved.y;
+        }
+        if (allowPulse) {
+          if (rank > 0 && source.discipline !== "priest") {
+            this.zones.push({
+              x: source.x,
+              y: source.y,
+              radius: rank === 2 ? 105 : 78,
+              time: 0,
+              duration: rank === 2 ? 5 : 3.5,
+              kind: "smoke",
+              power: rank === 2 ? 0.32 : 0.24,
+              dps: 0,
+              from: source,
+            });
+            this.fx.pool(source.x, source.y, rank === 2 ? 105 : 78, ELEMENT_POOL_COLORS.shadow, rank === 2 ? 1 : 0.75);
+          }
+          for (const enemy of this.livingEnemies()) {
+            if (enemy.aggro === source) enemy.aggro = null;
+            if (enemy.attackTarget === source) enemy.attackTarget = null;
+          }
+        }
+        break;
+      }
+    }
+    this.fx.burst(target.x, target.y - target.radius * 0.7, color, 3 + rank * 2, 60 + rank * 15, { glow: true, life: 0.35 });
+  }
+
+  /** Priest techniques express their element even when there is no enemy in
+   *  the sanctuary. Offensive consequences still come from applyPathElement. */
+  private applyPriestElementSupport(source: Unit, ally: Unit, element: ElementId, tier: "core" | "focus" | "ultimate", power: number): void {
+    const rank = tier === "core" ? 0 : tier === "focus" ? 1 : 2;
+    switch (element) {
+      case "flame":
+        this.refreshPathEffect(ally, "haste", [1.8, 2.8, 4][rank], [1.06, 1.1, 1.16][rank], source);
+        break;
+      case "frost":
+        ally.effects = ally.effects.filter((effect) => effect.kind !== "slow");
+        this.refreshPathEffect(ally, "guard", [2, 3, 4.5][rank], [0.06, 0.1, 0.16][rank], source);
+        break;
+      case "storm":
+        this.refreshPathEffect(ally, "haste", [2.2, 3.5, 5][rank], [1.12, 1.2, 1.3][rank], source);
+        break;
+      case "earth":
+        this.refreshPathEffect(ally, "guard", [2.5, 4, 6][rank], [0.1, 0.18, 0.26][rank], source);
+        break;
+      case "venom":
+        ally.effects = ally.effects.filter((effect) => effect.kind !== "burn" && effect.kind !== "vulnerable");
+        break;
+      case "radiant":
+        this.refreshPathEffect(ally, "shield", [3, 5, 7][rank], power * [0.22, 0.38, 0.58][rank], source);
+        break;
+      case "blood":
+        if (ally.hp < ally.stats.maxHp * 0.55) this.refreshPathEffect(ally, "haste", [1.8, 2.8, 4][rank], [1.08, 1.14, 1.22][rank], source);
+        break;
+      case "shadow":
+        this.refreshPathEffect(ally, "guard", [1.8, 3, 4.5][rank], [0.1, 0.17, 0.24][rank], source);
+        if (rank > 0) {
+          for (const enemy of this.livingEnemies()) {
+            if (enemy.aggro === ally) enemy.aggro = null;
+            if (enemy.attackTarget === ally) enemy.attackTarget = null;
+          }
+        }
+        break;
+    }
+  }
+
+  /** The shared element rule is only the foundation. This second layer gives
+   * every one of the forty Paths a discipline-specific way to exploit it. */
+  private applyPathSignature(
+    source: Unit,
+    discipline: DisciplineId,
+    element: ElementId,
+    tier: "core" | "focus" | "ultimate",
+    power: number,
+    origin: Vec,
+    center: Vec,
+    hitTargets: Unit[],
+    supportedAllies: Unit[],
+    eventCount: number,
+    overflowWard: number,
+  ): void {
+    const rank = tier === "core" ? 0 : tier === "focus" ? 1 : 2;
+    const color = ELEMENT_COLORS[element];
+    const enemies = this.livingEnemies();
+    const allies = this.livingHeroes();
+    const livingHits = hitTargets.filter((target) => target.alive);
+    const fallenHits = hitTargets.filter((target) => !target.alive);
+    let triggered = false;
+    const within = (point: Vec, unit: Unit, radius: number) => Math.hypot(unit.x - point.x, unit.y - point.y) < radius + unit.radius;
+    const leastHealthyAlly = () => [...allies].sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0] ?? null;
+    const ward = (ally: Unit, amount: number, time = 5 + rank) => {
+      this.refreshPathEffect(ally, "shield", time, Math.max(3, amount), source);
+      this.fx.ring(ally.x, ally.y - 10, ally.radius * 2.25, color, { width: 2.5 + rank * 0.5, life: 0.45 });
+    };
+    const addWard = (ally: Unit, amount: number, time: number) => {
+      const existing = this.effect(ally, "shield");
+      const added = Math.max(3, amount);
+      if (existing) {
+        existing.time = Math.max(existing.time, time);
+        existing.power = Math.min(ally.stats.maxHp * 0.6, existing.power + added);
+        existing.source = source;
+      } else {
+        ally.effects.push(makeEffect("shield", time, Math.min(ally.stats.maxHp * 0.6, added), source));
+      }
+      this.fx.ring(ally.x, ally.y - 10, ally.radius * 2.35, color, { width: 3 + rank * 0.5, life: 0.5 });
+    };
+
+    switch (discipline) {
+      case "knight": {
+        const nearAllies = allies.filter((ally) => within(source, ally, 118 + rank * 24));
+        switch (element) {
+          case "flame": {
+            const ally = leastHealthyAlly();
+            if (ally && hitTargets.length) {
+              ward(ally, 5 + hitTargets.length * [2.5, 4, 6][rank] + power * 0.08);
+              if (rank > 0) for (const near of nearAllies) this.refreshPathEffect(near, "guard", 2.5 + rank, 0.06 + rank * 0.04, source);
+              triggered = true;
+            }
+            break;
+          }
+          case "frost":
+            if (hitTargets.length) {
+              ward(source, power * [0.18, 0.3, 0.46][rank], 4 + rank * 1.5);
+              for (const target of livingHits) this.refreshPathEffect(target, "slow", [2.4, 4, 5.5][rank], [0.22, 0.34, 0.44][rank], source);
+              triggered = true;
+            }
+            break;
+          case "storm":
+            if (hitTargets.length) {
+              for (const ally of nearAllies) this.refreshPathEffect(ally, "haste", [1.8, 3, 4.8][rank], [1.08, 1.16, 1.25][rank], source);
+              triggered = true;
+            }
+            break;
+          case "earth":
+            if (hitTargets.length) {
+              for (const ally of nearAllies) this.refreshPathEffect(ally, "guard", [2, 3.5, 5.5][rank], [0.07, 0.12, 0.19][rank], source);
+              for (const target of livingHits) {
+                if (target === this.bossRef && this.bossStaggerMax > 0) this.bossStagger += [3, 8, 15][rank];
+              }
+              triggered = true;
+            }
+            break;
+          case "venom":
+            if (hitTargets.length) {
+              if (rank > 0) {
+                for (const struck of hitTargets) {
+                  for (const enemy of enemies) {
+                    if (hitTargets.includes(enemy) || !within(struck, enemy, 76 + rank * 16)) continue;
+                    this.refreshPathEffect(enemy, "vulnerable", 3.2 + rank, 0.07 + rank * 0.04, source);
+                  }
+                }
+              }
+              triggered = true;
+            }
+            break;
+          case "radiant":
+            if (hitTargets.length) {
+              for (const ally of nearAllies) this.heal(ally, power * [0.1, 0.16, 0.24][rank], true, source);
+              const weakest = leastHealthyAlly();
+              if (weakest) ward(weakest, power * [0.12, 0.22, 0.36][rank]);
+              triggered = true;
+            }
+            break;
+          case "blood": {
+            if (hitTargets.length) {
+              const missing = 1 - source.hp / source.stats.maxHp;
+              this.refreshPathEffect(source, "guard", 2.5 + rank, [0.1, 0.16, 0.23][rank] + missing * 0.12, source);
+              if (fallenHits.length) this.refreshPathEffect(source, "haste", 2.5 + rank, 1.12 + rank * 0.08, source);
+              triggered = true;
+            }
+            break;
+          }
+          case "shadow":
+            if (hitTargets.length) {
+              for (const target of livingHits) this.refreshPathEffect(target, "slow", [1.4, 2.4, 3.6][rank], [0.12, 0.2, 0.3][rank], source);
+              for (const enemy of enemies) {
+                if (enemy.aggro === source) enemy.aggro = null;
+                if (enemy.attackTarget === source) enemy.attackTarget = null;
+              }
+              triggered = true;
+            }
+            break;
+        }
+        break;
+      }
+      case "rogue": {
+        switch (element) {
+          case "flame": {
+            const trailTargets = enemies.filter((enemy) => within(origin, enemy, [58, 78, 104][rank]));
+            for (const enemy of trailTargets) {
+              this.refreshPathEffect(enemy, "burn", 3.2 + rank, Math.max(1.6, power * [0.045, 0.065, 0.09][rank]), source);
+              this.addDecal(enemy.x, enemy.y, "scorch", 13 + rank * 4);
+            }
+            triggered = trailTargets.length > 0 || hitTargets.length > 0;
+            break;
+          }
+          case "frost":
+            triggered = eventCount > 0;
+            break;
+          case "storm":
+            if (livingHits.length) {
+              for (const target of livingHits) {
+                if (BOSS_KINDS.includes(target.enemyKind ?? "")) {
+                  if (target === this.bossRef && this.bossStaggerMax > 0) this.bossStagger += [2, 5, 9][rank];
+                } else {
+                  this.refreshPathEffect(target, "stun", [0.12, 0.22, 0.36][rank], 1, source);
+                }
+              }
+              triggered = true;
+            }
+            break;
+          case "earth": {
+            const pursuers = enemies.filter((enemy) => within(origin, enemy, [62, 88, 118][rank]));
+            for (const enemy of pursuers) this.refreshPathEffect(enemy, "slow", [1.8, 2.8, 4][rank], [0.2, 0.3, 0.4][rank], source);
+            this.refreshPathEffect(source, "guard", 1.5 + rank, 0.12 + rank * 0.06, source);
+            triggered = pursuers.length > 0 || hitTargets.length > 0;
+            break;
+          }
+          case "venom":
+            if (livingHits.length) {
+              for (const target of livingHits) this.refreshPathEffect(target, "vulnerable", 3 + rank * 1.2, 0.1 + rank * 0.05, source);
+              triggered = true;
+            }
+            break;
+          case "radiant": {
+            const ally = leastHealthyAlly();
+            if (ally && hitTargets.length) {
+              ward(ally, power * [0.15, 0.25, 0.38][rank]);
+              triggered = true;
+            }
+            break;
+          }
+          case "blood":
+            if (hitTargets.length) {
+              if (fallenHits.length) {
+                this.heal(source, power * (0.22 + rank * 0.08), true, source);
+                this.refreshPathEffect(source, "haste", 2.2 + rank, 1.16 + rank * 0.08, source);
+              }
+              triggered = true;
+            }
+            break;
+          case "shadow":
+            if (hitTargets.length) {
+              this.refreshPathEffect(source, "guard", 2 + rank, 0.18 + rank * 0.06, source);
+              for (const enemy of enemies) {
+                if (enemy.aggro === source) enemy.aggro = null;
+                if (enemy.attackTarget === source) enemy.attackTarget = null;
+              }
+              if (rank === 0) {
+                this.zones.push({ x: source.x, y: source.y, radius: 58, time: 0, duration: 2.2, kind: "smoke", power: 0.18, dps: 0, from: source, element });
+                this.fx.pool(source.x, source.y, 58, ELEMENT_POOL_COLORS.shadow, 0.65);
+              }
+              triggered = true;
+            }
+            break;
+        }
+        break;
+      }
+      case "archer": {
+        switch (element) {
+          case "flame":
+            if (hitTargets.length) {
+              for (const struck of hitTargets) {
+                for (const enemy of enemies) {
+                  if (enemy === struck || !within(struck, enemy, 72 + rank * 12)) continue;
+                  this.refreshPathEffect(enemy, "burn", 3.2 + rank, Math.max(1.5, power * [0.04, 0.06, 0.08][rank]), source);
+                }
+              }
+              triggered = true;
+            }
+            break;
+          case "frost":
+            if (livingHits.length) {
+              for (const target of livingHits) this.refreshPathEffect(target, "slow", 3 + rank * 1.2, 0.25 + rank * 0.07, source);
+              triggered = true;
+            }
+            break;
+          case "storm": {
+            if (hitTargets.length) {
+              const ally = allies.filter((candidate) => candidate !== source).sort((a, b) => unitDist(source, a) - unitDist(source, b))[0] ?? source;
+              this.refreshPathEffect(ally, "haste", 2.4 + rank * 1.2, 1.12 + rank * 0.08, source);
+              triggered = true;
+            }
+            break;
+          }
+          case "earth":
+            if (livingHits.length) {
+              for (const target of livingHits) {
+                this.refreshPathEffect(target, "vulnerable", 2.4 + rank, 0.06 + rank * 0.04, source);
+                if (target === this.bossRef && this.bossStaggerMax > 0) this.bossStagger += [3, 8, 16][rank];
+              }
+              triggered = true;
+            }
+            break;
+          case "venom":
+            if (hitTargets.length) {
+              if (rank > 0) {
+                for (const struck of hitTargets) {
+                  for (const enemy of enemies) {
+                    if (hitTargets.includes(enemy) || !within(struck, enemy, 82 + rank * 12)) continue;
+                    this.refreshPathEffect(enemy, "vulnerable", 3.5 + rank, 0.08 + rank * 0.04, source);
+                  }
+                }
+              }
+              triggered = true;
+            }
+            break;
+          case "radiant": {
+            const ally = leastHealthyAlly();
+            if (ally && hitTargets.length) {
+              ward(ally, power * [0.12, 0.23, 0.36][rank]);
+              triggered = true;
+            }
+            break;
+          }
+          case "blood":
+            if (hitTargets.length) {
+              if (fallenHits.length) this.refreshPathEffect(source, "haste", 2.2 + rank, 1.12 + rank * 0.08, source);
+              triggered = true;
+            }
+            break;
+          case "shadow":
+            if (hitTargets.length) {
+              const away = this.normalize({ x: source.x - center.x, y: source.y - center.y });
+              const step = [22, 48, 74][rank];
+              const moved = this.clampToField({ x: source.x + away.x * step, y: source.y + away.y * step }, source.radius);
+              source.x = moved.x;
+              source.y = moved.y;
+              this.refreshPathEffect(source, "guard", 1.8 + rank, 0.14 + rank * 0.06, source);
+              for (const enemy of enemies) {
+                if (enemy.aggro === source) enemy.aggro = null;
+                if (enemy.attackTarget === source) enemy.attackTarget = null;
+              }
+              triggered = true;
+            }
+            break;
+        }
+        break;
+      }
+      case "priest": {
+        switch (element) {
+          case "flame":
+            if (supportedAllies.length) {
+              for (const ally of supportedAllies) {
+                for (const enemy of enemies) {
+                  if (!within(ally, enemy, 64 + rank * 16)) continue;
+                  this.refreshPathEffect(enemy, "burn", 3.2 + rank, Math.max(1.5, power * [0.045, 0.065, 0.09][rank]), source);
+                }
+              }
+              triggered = true;
+            }
+            break;
+          case "frost":
+            if (supportedAllies.length) {
+              for (const ally of supportedAllies) {
+                for (const enemy of enemies) {
+                  if (within(ally, enemy, 72 + rank * 16)) this.refreshPathEffect(enemy, "slow", 2.2 + rank, 0.2 + rank * 0.08, source);
+                }
+              }
+              triggered = true;
+            }
+            break;
+          case "storm": {
+            const target = enemies.sort((a, b) => Math.hypot(a.x - center.x, a.y - center.y) - Math.hypot(b.x - center.x, b.y - center.y))[0];
+            if (target && supportedAllies.length) {
+              this.damage(target, power * [0.16, 0.22, 0.3][rank], source, { spell: true, color, element, secondary: true });
+              this.fx.tracer(center.x, center.y - 12, target.x, target.y - 12, color, 0.3, 2.5 + rank);
+              triggered = true;
+            }
+            break;
+          }
+          case "earth":
+            if (supportedAllies.length) {
+              for (const ally of supportedAllies) ward(ally, power * [0.1, 0.18, 0.28][rank]);
+              triggered = true;
+            }
+            break;
+          case "venom":
+            if (eventCount > 0) {
+              const recipients = enemies
+                .sort((a, b) => Math.hypot(a.x - center.x, a.y - center.y) - Math.hypot(b.x - center.x, b.y - center.y))
+                .slice(0, Math.min(enemies.length, eventCount + rank));
+              for (const enemy of recipients) {
+                this.refreshPathEffect(enemy, "vulnerable", 3.5 + rank, 0.1 + rank * 0.04, source);
+                this.refreshPathEffect(enemy, "burn", 3 + rank, Math.max(1.4, power * 0.04), source);
+              }
+              triggered = true;
+            }
+            break;
+          case "radiant":
+            if (supportedAllies.length && overflowWard > 0) {
+              addWard(supportedAllies[0], overflowWard * [0.65, 0.78, 0.92][rank], 5 + rank * 1.5);
+              triggered = true;
+            }
+            break;
+          case "blood": {
+            const ally = this.mostWoundedAlly();
+            if (ally && supportedAllies.length) {
+              this.heal(ally, power * [0.12, 0.2, 0.3][rank], true, source);
+              triggered = true;
+            }
+            break;
+          }
+          case "shadow":
+            if (supportedAllies.length) {
+              const covered = this.zones.some((zone) => zone.kind === "smoke" && zone.from === source && Math.hypot(zone.x - center.x, zone.y - center.y) < 30);
+              if (!covered) {
+                const radius = [64, 88, 118][rank];
+                this.zones.push({ x: center.x, y: center.y, radius, time: 0, duration: [2.8, 4.2, 6][rank], kind: "smoke", power: [0.16, 0.24, 0.32][rank], dps: 0, from: source, element });
+                this.fx.pool(center.x, center.y, radius, ELEMENT_POOL_COLORS.shadow, 0.75 + rank * 0.12);
+              }
+              triggered = true;
+            }
+            break;
+        }
+        break;
+      }
+      case "mage": {
+        switch (element) {
+          case "flame":
+          case "frost":
+          case "venom":
+            triggered = eventCount > 0;
+            break;
+          case "storm":
+            if (livingHits.length) {
+              for (const target of livingHits) {
+                const bossScale = BOSS_KINDS.includes(target.enemyKind ?? "") ? 0.35 : 1;
+                const toward = this.normalize({ x: center.x - target.x, y: center.y - target.y });
+                const step = [12, 26, 44][rank] * bossScale;
+                const moved = this.clampToField({ x: target.x + toward.x * step, y: target.y + toward.y * step }, target.radius);
+                target.x = moved.x;
+                target.y = moved.y;
+              }
+              triggered = true;
+            }
+            break;
+          case "earth": {
+            const sheltered = allies.filter((ally) => within(center, ally, [82, 116, 164][rank]));
+            for (const ally of sheltered) this.refreshPathEffect(ally, "guard", 2.5 + rank * 1.2, 0.08 + rank * 0.05, source);
+            for (const target of livingHits) {
+              if (target === this.bossRef && this.bossStaggerMax > 0) this.bossStagger += [4, 10, 18][rank];
+            }
+            triggered = hitTargets.length > 0 || sheltered.length > 0;
+            break;
+          }
+          case "radiant": {
+            const ally = leastHealthyAlly();
+            if (ally && hitTargets.length) {
+              ward(ally, power * [0.1, 0.2, 0.34][rank]);
+              triggered = true;
+            }
+            break;
+          }
+          case "blood":
+            if (hitTargets.length) {
+              const missing = 1 - source.hp / source.stats.maxHp;
+              if (missing > 0.25) ward(source, power * missing * [0.1, 0.18, 0.28][rank], 3 + rank);
+              triggered = true;
+            }
+            break;
+          case "shadow":
+            if (livingHits.length) {
+              for (const target of livingHits) {
+                const bossScale = BOSS_KINDS.includes(target.enemyKind ?? "") ? 0.35 : 1;
+                const toward = this.normalize({ x: center.x - target.x, y: center.y - target.y });
+                const step = [22, 46, 74][rank] * bossScale;
+                const moved = this.clampToField({ x: target.x + toward.x * step, y: target.y + toward.y * step }, target.radius);
+                target.x = moved.x;
+                target.y = moved.y;
+                this.refreshPathEffect(target, "slow", 1.8 + rank, 0.16 + rank * 0.06, source);
+              }
+              triggered = true;
+            }
+            break;
+        }
+        break;
+      }
+    }
+
+    if (triggered) {
+      const suffix = eventCount > 1 && (element === "frost" || element === "venom") ? ` x${eventCount}` : "";
+      this.fx.floatText(source.x, source.y - source.radius * 2.6 - 22, `${PATH_SIGNATURE_CUES[discipline][element]}${suffix}`, color, tier === "ultimate" ? 14 : 11);
+    }
+  }
+
+  /** Five readable delivery patterns, each deepened by a handcrafted
+   * Discipline + Attunement signature without expanding the three-button bar. */
+  private castPathAbility(hero: Unit, state: AbilityState, save: SaveData, aim: Vec | null, allyTarget: Unit | null): boolean {
+    const discipline: DisciplineId | null = state.def.discipline ?? hero.discipline;
+    const element: ElementId | null = state.def.element && state.def.element !== "physical" ? state.def.element : hero.element;
+    const tier = state.def.pathSkill;
+    if (!discipline || !element || !tier) return false;
+
+    const attrs = save.heroes[hero.heroIndex].attrs;
+    const roleStat = discipline === "knight"
+      ? Math.max(attrs.str, attrs.vit)
+      : discipline === "rogue"
+        ? Math.max(attrs.dex, attrs.str)
+        : discipline === "archer"
+          ? attrs.dex
+          : discipline === "priest"
+            ? attrs.spi
+            : attrs.int;
+    const tierRank = tier === "core" ? 0 : tier === "focus" ? 1 : 2;
+    const damage = (5 + roleStat * 1.25 + hero.stats.damage * 0.55) * [0.72, 1, 1.45][tierRank];
+    const color = ELEMENT_COLORS[element];
+    const enemies = this.livingEnemies();
+    const castOrigin = { x: hero.x, y: hero.y };
+    let signatureCenter: Vec = aim ?? castOrigin;
+    const hitTargets: Unit[] = [];
+    const supportedAllies: Unit[] = [];
+    let signatureEvents = 0;
+    let overflowWard = 0;
+    let pulseReady = true;
+    let hitCount = 0;
+    const hit = (target: Unit, multiplier = 1) => {
+      if (!target.alive) return;
+      const amount = damage * multiplier;
+      hitTargets.push(target);
+      this.damage(target, amount, hero, { spell: true, color, element });
+      this.applyPathElement(hero, target, element, tier, amount, pulseReady);
+      pulseReady = false;
+      hitCount++;
+    };
+
+    // Blood always asks its price up front, but never kills its bearer. The
+    // path must connect (or deliberately dash/support) before this is charged.
+    const payBloodPrice = () => {
+      if (element !== "blood") return;
+      const price = Math.min(hero.hp - 1, Math.max(1, hero.stats.maxHp * [0.025, 0.045, 0.075][tierRank]));
+      if (price <= 0) return;
+      hero.hp -= price;
+      this.fx.floatText(hero.x, hero.y - hero.radius - 18, `-${Math.round(price)} blood`, color, 11);
+    };
+
+    switch (discipline) {
+      case "knight": {
+        const nearest = enemies.sort((a, b) => unitDist(hero, a) - unitDist(hero, b))[0];
+        if (tier === "focus" && (aim || nearest)) {
+          const toward = aim ?? nearest;
+          const delta = { x: toward.x - hero.x, y: toward.y - hero.y };
+          const length = Math.hypot(delta.x, delta.y);
+          if (length > 1) {
+            const step = Math.min(96, length);
+            const moved = this.clampToField({ x: hero.x + (delta.x / length) * step, y: hero.y + (delta.y / length) * step }, hero.radius);
+            hero.x = moved.x;
+            hero.y = moved.y;
+          }
+        }
+        payBloodPrice();
+        const radius = [84, 112, 170][tierRank];
+        for (const enemy of enemies) {
+          if (unitDist(hero, enemy) < radius + enemy.radius) {
+            let multiplier = tier === "ultimate" ? 1.1 : 1;
+            if (element === "blood") {
+              const missing = 1 - hero.hp / hero.stats.maxHp;
+              multiplier *= 1 + missing * [0.2, 0.35, 0.55][tierRank];
+            }
+            hit(enemy, multiplier);
+            if (enemy.alive && tier === "core") this.refreshPathEffect(enemy, "taunt", 2.4, 1, hero);
+            if (enemy.alive && element !== "earth") {
+              if (BOSS_KINDS.includes(enemy.enemyKind ?? "")) {
+                if (tier !== "core" && enemy === this.bossRef) this.bossStagger += tier === "ultimate" ? 14 : 7;
+              } else if (tier !== "core") {
+                this.refreshPathEffect(enemy, "stun", tier === "ultimate" ? 0.5 : 0.24, 1, hero);
+              }
+            }
+          }
+        }
+        this.refreshPathEffect(hero, "guard", [2.5, 4, 6][tierRank], [0.18, 0.28, 0.38][tierRank], hero);
+        if (tier === "ultimate") {
+          for (const ally of this.livingHeroes()) {
+            if (unitDist(hero, ally) > radius + 35) continue;
+            this.refreshPathEffect(ally, "guard", 4.5, 0.2, hero);
+            this.refreshPathEffect(ally, "shield", 6, 10 + attrs.vit * 1.6, hero);
+          }
+          for (const enemy of enemies) this.refreshPathEffect(enemy, "taunt", 3.5, 1, hero);
+        }
+        hero.lunge = 1;
+        signatureCenter = { x: hero.x, y: hero.y };
+        hero.lungeDir = aim ? this.normalize({ x: aim.x - hero.x, y: aim.y - hero.y }) : { x: hero.facing, y: 0 };
+        this.fx.slash(hero.x, hero.y - 12, Math.atan2(hero.lungeDir.y, hero.lungeDir.x), radius * 0.62, color, Math.PI * 1.45);
+        this.fx.ring(hero.x, hero.y, radius, color, { width: 4 + tierRank, life: 0.45 + tierRank * 0.1 });
+        break;
+      }
+      case "rogue": {
+        const candidates = enemies
+          .filter((enemy) => unitDist(hero, enemy) < (tier === "ultimate" ? 430 : 350))
+          .sort((a, b) => {
+            if (aim) return Math.hypot(a.x - aim.x, a.y - aim.y) - Math.hypot(b.x - aim.x, b.y - aim.y);
+            return a.hp / a.stats.maxHp - b.hp / b.stats.maxHp;
+          });
+        if (!candidates.length) {
+          if (!aim || tier === "ultimate") return false;
+          payBloodPrice();
+          const from = { x: hero.x, y: hero.y };
+          const d = this.normalize({ x: aim.x - hero.x, y: aim.y - hero.y });
+          const distance = Math.min(tier === "focus" ? 240 : 175, Math.hypot(aim.x - hero.x, aim.y - hero.y));
+          const to = this.clampToField({ x: hero.x + d.x * distance, y: hero.y + d.y * distance }, hero.radius);
+          hero.x = to.x;
+          hero.y = to.y;
+          this.refreshPathEffect(hero, "guard", 1.2, 0.25, hero);
+          this.fx.tracer(from.x, from.y - 12, to.x, to.y - 12, color, 0.35, 4);
+          break;
+        }
+        payBloodPrice();
+        const marks = tier === "ultimate" ? candidates.slice(0, 5) : candidates.slice(0, 1);
+        for (const prey of marks) {
+          const from = { x: hero.x, y: hero.y };
+          const travelDir = this.normalize({ x: prey.x - hero.x, y: prey.y - hero.y });
+          const side = tier === "focus" || tier === "ultimate" ? 1 : -1;
+          const arrive = this.clampToField(
+            { x: prey.x + travelDir.x * (prey.radius + hero.radius + 5) * side, y: prey.y + travelDir.y * (prey.radius + hero.radius + 5) * side },
+            hero.radius,
+          );
+          hero.x = arrive.x;
+          hero.y = arrive.y;
+          const execute = prey.hp / prey.stats.maxHp < (tier === "focus" ? 0.45 : 0.32);
+          let multiplier = tier === "ultimate" ? (execute ? 1.22 : 0.82) : tier === "focus" && execute ? 1.55 : 1;
+          if (element === "frost" && this.effect(prey, "slow")) {
+            multiplier *= [1.18, 1.32, 1.45][tierRank];
+            signatureEvents++;
+          } else if (element === "venom" && this.effect(prey, "vulnerable")) {
+            multiplier *= [1.12, 1.26, 1.4][tierRank];
+            signatureEvents++;
+          }
+          if (element === "blood") {
+            const preyMissing = 1 - prey.hp / prey.stats.maxHp;
+            multiplier *= 1 + preyMissing * [0.2, 0.34, 0.5][tierRank];
+          }
+          hit(prey, multiplier);
+          this.fx.tracer(from.x, from.y - 12, hero.x, hero.y - 12, color, 0.28, 3 + tierRank);
+          this.fx.slash(prey.x, prey.y - 12, Math.atan2(travelDir.y, travelDir.x), 42 + tierRank * 6, color, Math.PI * 1.1);
+        }
+        hero.moveTarget = null;
+        hero.lunge = 1;
+        signatureCenter = { x: hero.x, y: hero.y };
+        if (tier !== "core") {
+          this.refreshPathEffect(hero, "guard", tier === "ultimate" ? 3 : 1.8, tier === "ultimate" ? 0.35 : 0.24, hero);
+          this.refreshPathEffect(hero, "haste", tier === "ultimate" ? 3.5 : 2.2, tier === "ultimate" ? 1.35 : 1.2, hero);
+          for (const enemy of enemies) {
+            if (enemy.aggro === hero) enemy.aggro = null;
+            if (enemy.attackTarget === hero) enemy.attackTarget = null;
+          }
+        }
+        break;
+      }
+      case "archer": {
+        if (!aim && !enemies.length) return false;
+        payBloodPrice();
+        const nearest = enemies.sort((a, b) => unitDist(hero, a) - unitDist(hero, b))[0];
+        const direction = this.normalize({ x: (aim?.x ?? nearest?.x ?? hero.x + hero.facing) - hero.x, y: (aim?.y ?? nearest?.y ?? hero.y) - hero.y });
+        const reach = [430, 470, 540][tierRank];
+        const width = [13, 28, 54][tierRank];
+        const inLine = enemies
+          .map((enemy) => ({ enemy, along: (enemy.x - hero.x) * direction.x + (enemy.y - hero.y) * direction.y }))
+          .filter(({ enemy, along }) => along >= 0 && along <= reach && this.distToRay(hero, direction, reach, enemy) < enemy.radius + width)
+          .sort((a, b) => a.along - b.along);
+        const marks = tier === "core" ? inLine.slice(0, 1) : inLine;
+        signatureCenter = aim ?? (marks[0]?.enemy ? { x: marks[0].enemy.x, y: marks[0].enemy.y } : { x: hero.x + direction.x * reach, y: hero.y + direction.y * reach });
+        marks.forEach(({ enemy, along }, index) => {
+          let multiplier = tier === "focus" && index === 0 ? 1.22 : tier === "ultimate" ? 1.05 : 1;
+          if (element === "frost" && along > 230) {
+            multiplier *= [1.16, 1.25, 1.36][tierRank];
+            signatureEvents++;
+          }
+          if (element === "earth" && along > 210) {
+            multiplier *= [1.14, 1.22, 1.32][tierRank];
+            signatureEvents++;
+          }
+          if (element === "blood") {
+            const wound = Math.max(1 - hero.hp / hero.stats.maxHp, 1 - enemy.hp / enemy.stats.maxHp);
+            multiplier *= 1 + wound * [0.22, 0.36, 0.52][tierRank];
+          }
+          hit(enemy, multiplier);
+        });
+        this.fx.tracer(hero.x + direction.x * 12, hero.y - 14, hero.x + direction.x * reach, hero.y - 14 + direction.y * reach, color, 0.4 + tierRank * 0.08, 3 + tierRank * 1.5);
+        for (let t = 55; t < reach; t += 72) this.fx.burst(hero.x + direction.x * t, hero.y - 14 + direction.y * t, color, 1 + tierRank, 32, { glow: true, life: 0.3 });
+        hero.lungeDir = direction;
+        hero.lunge = 0.65;
+        break;
+      }
+      case "priest": {
+        payBloodPrice();
+        const support = allyTarget ?? this.mostWoundedAlly() ?? hero;
+        signatureCenter = { x: support.x, y: support.y };
+        const supportRadius = tier === "core" ? 0 : tier === "focus" ? 125 : Infinity;
+        for (const ally of this.livingHeroes()) {
+          if (supportRadius !== Infinity && ally !== support && unitDist(ally, support) > supportRadius) continue;
+          if (tier === "core" && ally !== support) continue;
+          const removedAilments = element === "venom"
+            ? ally.effects.filter((effect) => effect.kind === "burn" || effect.kind === "vulnerable").length
+            : 0;
+          let healing = damage * [0.62, 0.5, 0.72][tierRank];
+          if (element === "blood" && ally.hp < ally.stats.maxHp * 0.5) {
+            healing *= [1.22, 1.3, 1.42][tierRank];
+            signatureEvents++;
+          }
+          if (element === "radiant") {
+            const effectiveHealing = healing * HEAL_POTENCY * 1.05;
+            overflowWard += Math.max(0, effectiveHealing - (ally.stats.maxHp - ally.hp));
+          }
+          this.heal(ally, healing, true, hero);
+          supportedAllies.push(ally);
+          signatureEvents += removedAilments;
+          this.applyPriestElementSupport(hero, ally, element, tier, damage);
+          if (tier !== "core") this.refreshPathEffect(ally, "shield", tier === "ultimate" ? 7 : 4.5, damage * (tier === "ultimate" ? 0.55 : 0.3), hero);
+          this.fx.ring(ally.x, ally.y - 10, ally.radius * 2.2, color, { width: 2.5, life: 0.45 });
+        }
+        const nearest = enemies.sort((a, b) => unitDist(hero, a) - unitDist(hero, b))[0];
+        const center = aim ?? (nearest && unitDist(hero, nearest) < 220 ? { x: nearest.x, y: nearest.y } : { x: support.x, y: support.y });
+        signatureCenter = center;
+        const radius = [62, 100, 170][tierRank];
+        const judged = enemies.filter((enemy) => Math.hypot(enemy.x - center.x, enemy.y - center.y) < radius + enemy.radius);
+        const marks = tier === "core" ? judged.slice(0, 1) : judged;
+        for (const enemy of marks) hit(enemy, tier === "ultimate" ? 0.78 : 0.62);
+        this.fx.beam(center.x, center.y, 100 + tierRank * 45, 12 + tierRank * 5, color, 0.5 + tierRank * 0.15);
+        this.fx.ring(center.x, center.y, radius, color, { width: 4 + tierRank, life: 0.55 });
+        break;
+      }
+      case "mage": {
+        if (!aim && !enemies.length) return false;
+        payBloodPrice();
+        const nearest = enemies.sort((a, b) => unitDist(hero, a) - unitDist(hero, b))[0];
+        const center = this.clampToField(aim ?? { x: nearest.x, y: nearest.y }, 0);
+        signatureCenter = center;
+        const radius = [74, 108, 158][tierRank];
+        const caught = enemies.filter((enemy) => Math.hypot(enemy.x - center.x, enemy.y - center.y) < radius + enemy.radius);
+        for (const enemy of caught) {
+          const burning = this.effect(enemy, "burn");
+          const chilled = this.effect(enemy, "slow");
+          const exposed = this.effect(enemy, "vulnerable");
+          let multiplier = tier === "ultimate" ? 1.08 : 1;
+          if (element === "flame" && tier !== "core" && burning) {
+            multiplier *= tier === "ultimate" ? 1.42 : 1.28;
+            signatureEvents++;
+          } else if (element === "venom" && exposed) {
+            multiplier *= [1.12, 1.25, 1.4][tierRank];
+            signatureEvents++;
+          }
+          if (element === "blood") {
+            const missing = 1 - hero.hp / hero.stats.maxHp;
+            multiplier *= 1 + missing * [0.22, 0.4, 0.62][tierRank];
+          }
+          hit(enemy, multiplier);
+          if (!enemy.alive) continue;
+          const boss = BOSS_KINDS.includes(enemy.enemyKind ?? "");
+          if (element === "frost" && tier !== "core" && chilled) {
+            signatureEvents++;
+            if (boss) {
+              if (enemy === this.bossRef && this.bossStaggerMax > 0) this.bossStagger += tier === "ultimate" ? 14 : 7;
+            } else {
+              this.refreshPathEffect(enemy, "stun", tier === "ultimate" ? 0.72 : 0.42, 1, hero);
+            }
+          }
+          this.refreshPathEffect(enemy, "slow", [1.2, 2.2, 3.4][tierRank] * (boss ? 0.6 : 1), [0.12, 0.2, 0.28][tierRank] * (boss ? 0.7 : 1), hero);
+          if (tier === "ultimate" && !boss) this.refreshPathEffect(enemy, "stun", 0.32, 1, hero);
+        }
+        this.fx.pool(center.x, center.y, radius, ELEMENT_POOL_COLORS[element], 0.7 + tierRank * 0.2);
+        this.fx.ring(center.x, center.y, radius, color, { width: 4 + tierRank, life: 0.55 + tierRank * 0.1 });
+        this.fx.burst(center.x, center.y - 10, color, 14 + tierRank * 8, 120 + tierRank * 35, { glow: true, gravity: element === "earth" ? 220 : 30 });
+        break;
+      }
+    }
+
+    this.applyPathSignature(hero, discipline, element, tier, damage, castOrigin, signatureCenter, hitTargets, supportedAllies, signatureEvents, overflowWard);
+
+    if (hitCount > 0) {
+      this.hitstop = Math.max(this.hitstop, tier === "ultimate" ? 0.08 : 0.035);
+      this.fx.addShake(tier === "ultimate" ? 7 : tier === "focus" ? 4 : 2);
+    }
+    hero.castGlow = 0.55;
+    if (element === "flame") audio.play("fireball");
+    else if (element === "frost") audio.play("frost");
+    else if (element === "earth") audio.play("thud");
+    else if (element === "radiant") audio.play("heal");
+    else if (discipline === "knight" || discipline === "rogue") audio.play("slash");
+    else audio.play("bolt");
+    return true;
+  }
+
+  private finishAbilityCast(hero: Unit, state: AbilityState, save: SaveData): void {
+    const id = state.def.id;
+    this.castCounts[id] = (this.castCounts[id] ?? 0) + 1;
+    this.fx.sigil(hero.x, hero.y - hero.radius * 2.6 - 14, state.def.icon, state.def.color);
+    const ultimate = state.ult || state.def.pathSkill === "ultimate";
+    if (ultimate) {
+      hero.ultCharge = 0;
+      state.timer = 1;
+      navigator.vibrate?.([18, 26, 42]);
+      const color = state.def.color || (hero.element ? ELEMENT_COLORS[hero.element] : callingById(hero.calling)?.color ?? "#ffe9a3");
+      this.ultFlash = { color, time: 0.55 };
+      this.slowmo = Math.max(this.slowmo, 0.35);
+      this.hitstop = Math.max(this.hitstop, 0.1);
+      this.zoomPunch = Math.max(this.zoomPunch, 0.8);
+    } else {
+      const cdr = hero.heroIndex >= 0 ? cooldownReduction(save.heroes[hero.heroIndex]) : 0;
+      state.timer = state.def.cooldown * (1 - cdr);
+    }
+    hero.castGlow = 0.4;
+  }
+
   castAbility(hero: Unit, state: AbilityState, save: SaveData, aim: Vec | null, allyTarget: Unit | null): boolean {
-    if (!hero.alive || state.timer > 0 || this.effect(hero, "stun")) return false;
+    if (hero.team === "hero" && (this.state !== "fighting" || this.cinematic > 0)) return false;
+    if (!hero.alive || state.timer > 0 || this.effect(hero, "stun") || this.effect(hero, "silence")) return false;
+    if (state.def.pathSkill) {
+      this.castingSpell = hero.team === "hero";
+      const cast = this.castPathAbility(hero, state, save, aim, allyTarget);
+      this.castingSpell = false;
+      if (cast) this.finishAbilityCast(hero, state, save);
+      return cast;
+    }
     const id = state.def.id;
     const attrs = save.heroes[hero.heroIndex].attrs;
     const dir = aim ? this.normalize({ x: aim.x - hero.x, y: aim.y - hero.y }) : { x: hero.facing, y: 0 };
@@ -2089,7 +3164,7 @@ export class Battle {
       case "cleansing": {
         for (const ally of this.livingHeroes()) {
           this.heal(ally, 14 + attrs.spi * 2.2, true, hero);
-          ally.effects = ally.effects.filter((e) => !["burn", "slow", "stun", "vulnerable"].includes(e.kind));
+          ally.effects = ally.effects.filter((e) => !["burn", "slow", "silence", "stun", "vulnerable"].includes(e.kind));
         }
         this.fx.ring(hero.x, hero.y, 160, "#f0f5d8", { width: 4, life: 0.7 });
         audio.play("spJudgement");
@@ -2176,25 +3251,7 @@ export class Battle {
         cast = false;
     }
     this.castingSpell = false;
-    if (cast) {
-      this.castCounts[id] = (this.castCounts[id] ?? 0) + 1;
-      // every cast wears its own mark — you can READ who cast what at a glance
-      this.fx.sigil(hero.x, hero.y - hero.radius * 2.6 - 14, state.def.icon, state.def.color);
-      if (state.ult) {
-        hero.ultCharge = 0;
-        state.timer = 1;
-        navigator.vibrate?.([18, 26, 42]);
-        // ceremony: the world catches its breath in the oath's color
-        this.ultFlash = { color: callingById(hero.calling)?.color ?? "#ffe9a3", time: 0.55 };
-        this.slowmo = Math.max(this.slowmo, 0.35);
-        this.hitstop = Math.max(this.hitstop, 0.1);
-        this.zoomPunch = Math.max(this.zoomPunch, 0.8);
-      } else {
-        const cdr = hero.heroIndex >= 0 ? cooldownReduction(save.heroes[hero.heroIndex]) : 0;
-        state.timer = state.def.cooldown * (1 - cdr);
-      }
-      hero.castGlow = 0.4;
-    }
+    if (cast) this.finishAbilityCast(hero, state, save);
     return cast;
   }
 
@@ -2228,17 +3285,12 @@ export class Battle {
 
   update(dt: number, save: SaveData): void {
     this.saveRef = save;
-    this.time += dt;
-    this.updateTerrain(dt);
-    this.waveBanner = Math.max(0, this.waveBanner - dt);
-    this.introBanner = Math.max(0, this.introBanner - dt);
-    if (this.ultFlash) {
-      this.ultFlash.time -= dt;
-      if (this.ultFlash.time <= 0) this.ultFlash = null;
-    }
-
     if (this.state === "victory" || this.state === "defeat") {
       this.resultDelay = Math.max(0, this.resultDelay - dt);
+      if (this.ultFlash) {
+        this.ultFlash.time -= dt;
+        if (this.ultFlash.time <= 0) this.ultFlash = null;
+      }
       // the band walks off down the road as the victory settles
       if (this.state === "victory" && this.resultDelay < 0.7) {
         const band = this.livingHeroes();
@@ -2250,8 +3302,18 @@ export class Battle {
         });
       }
       this.updatePresentation(dt);
-      this.updateProjectiles(dt);
       return;
+    }
+
+    // Encounter time is combat time, not the time spent reading a result card.
+    // Contracts, best records and journal entries all consume this one clock.
+    this.time += dt;
+    this.updateTerrain(dt);
+    this.waveBanner = Math.max(0, this.waveBanner - dt);
+    this.introBanner = Math.max(0, this.introBanner - dt);
+    if (this.ultFlash) {
+      this.ultFlash.time -= dt;
+      if (this.ultFlash.time <= 0) this.ultFlash = null;
     }
 
     if (this.cinematic > 0) {
@@ -2434,7 +3496,7 @@ export class Battle {
       if (this.tideHigh) {
         const waterline = this.field.top + (this.field.bottom - this.field.top) * 0.58;
         for (const unit of this.units) {
-          if (!unit.alive || unit.y < waterline || unit.enemyKind === "reefhound") continue;
+          if (!unit.alive || unit.y < waterline || unit.enemyKind === "reefhound" || unit.enemyKind === "stormeel") continue;
           const slow = this.effect(unit, "slow");
           if (slow) {
             slow.time = Math.max(slow.time, 0.22);
@@ -2455,7 +3517,7 @@ export class Battle {
             y: this.field.top + (this.field.bottom - this.field.top) * (0.35 + Math.random() * 0.5),
             radius: 68,
             time: 0,
-            duration: 2.25,
+            duration: 2.25 * this.warningScale,
             owner,
             kind: "lightning",
           });
@@ -2470,13 +3532,18 @@ export class Battle {
     if (unit.team === "hero" && this.armorHookOf(unit) === "slowProof") {
       unit.effects = unit.effects.filter((e) => e.kind !== "slow");
     }
+    // Once the great bell begins to swing, ordinary control cannot desync the
+    // lane warning from its impact. The safe lane is the interrupt.
+    if (unit.enemyKind === "bellwidow" && this.widowRite) {
+      unit.effects = unit.effects.filter((effect) => effect.kind !== "stun");
+    }
     for (let i = unit.effects.length - 1; i >= 0; i--) {
       const effect = unit.effects[i];
       effect.time -= dt;
       if (effect.kind === "burn") {
         unit.hp -= effect.power * dt;
         if (unit.hp <= 0) {
-          this.kill(unit);
+          this.kill(unit, effect.source);
           return;
         }
       }
@@ -2526,7 +3593,7 @@ export class Battle {
         if (unit.team === "enemy") {
           unit.hp -= zone.dps * dt;
           if (unit.hp <= 0) {
-            this.kill(unit);
+            this.kill(unit, zone.from);
             return;
           }
         }
@@ -2572,8 +3639,8 @@ export class Battle {
     }
     // auto orders release when finished so the player's own orders always win
     // ultimate: slow ambient charge, and mirror readiness into the button timer
-    if (hero.calling && this.state === "fighting") this.gainUlt(hero, dt * 1.2);
-    const ultState = hero.abilities.find((a) => a.ult);
+    if ((hero.calling || hero.discipline) && this.state === "fighting") this.gainUlt(hero, dt * 1.2);
+    const ultState = hero.abilities.find((a) => a.ult || a.def.pathSkill === "ultimate");
     if (ultState) ultState.timer = hero.ultCharge >= 100 ? 0 : 1;
 
     if (hero.autoOrder && hero.healTarget && hero.healTarget.hp >= hero.healTarget.stats.maxHp * 0.98) {
@@ -2621,7 +3688,7 @@ export class Battle {
           this.heal(target, rate * dt, false, hero);
           // Chaplain's grace: the channel spills onto wounded allies nearby
           // (Oracles reach two; everyone else one)
-          if (hero.calling === "chaplain") {
+          if (hero.discipline === "priest" || hero.calling === "chaplain") {
             const spillCount = hero.advCalling === "oracle" ? 2 : 1;
             const candidates = this.livingHeroes()
               .filter((ally) => ally !== target && ally !== hero && ally.hp / ally.stats.maxHp < 0.92)
@@ -2745,6 +3812,9 @@ export class Battle {
     const nearestForPace = this.nearestHero(enemy);
     const paceBoost = nearestForPace && unitDist(enemy, nearestForPace) > 320 ? 1.5 : 1;
 
+    if (isLateBossKind(enemy.enemyKind) && this.updateLateBoss(enemy, dt)) return;
+    if (isLateFoeKind(enemy.enemyKind) && this.updateLateFoe(enemy, dt)) return;
+
     if (enemy.enemyKind === "bonecaller") {
       this.updateBonecaller(enemy, dt);
       return;
@@ -2765,6 +3835,14 @@ export class Battle {
       this.updateDrummer(enemy, dt);
       return;
     }
+    if (enemy.enemyKind === "wreckgunner") {
+      this.updateWreckGunner(enemy, dt);
+      return;
+    }
+    if (enemy.enemyKind === "conchseer") {
+      this.updateConchSeer(enemy, dt);
+      return;
+    }
     if (enemy.enemyKind === "warbanner") {
       this.updateBanner(enemy, dt);
       return;
@@ -2773,7 +3851,7 @@ export class Battle {
       this.updateWyrm(enemy, dt);
       return;
     }
-    if (enemy.enemyKind === "stormjaw") this.updateStormjaw(enemy, dt);
+    if (enemy.enemyKind === "stormjaw" && this.updateStormjaw(enemy, dt)) return;
     // Rimeclad ice casing: it cracks off at three-quarters strength
     if (enemy.enemyKind === "rimetroll" && enemy.phase === 0 && enemy.hp < enemy.stats.maxHp * 0.75) {
       enemy.phase = 1;
@@ -2784,7 +3862,7 @@ export class Battle {
       audio.play("staggerBreak");
     }
     if (enemy.enemyKind === "rimeheart") this.updateRimeheart(enemy, dt);
-    if (enemy.enemyKind === "bellwidow") this.updateBellWidow(enemy, dt);
+    if (enemy.enemyKind === "bellwidow" && this.updateBellWidow(enemy, dt)) return;
     if (enemy.enemyKind === "alpha") {
       this.updateAlpha(enemy, dt);
       return;
@@ -2829,6 +3907,212 @@ export class Battle {
     if (enemy.attackTimer <= 0 && enemy.windup <= 0) {
       this.startAttack(enemy, target);
     }
+  }
+
+  private latePatternOf(kind: LateEnemyKind): Telegraph["kind"] {
+    if (kind === "cinderkin" || kind === "cindermaw") return "eruption";
+    if (kind === "briarback" || kind === "verdantcolossus") return "roots";
+    if (kind === "gloomwing" || kind === "nightmother") return "eclipse";
+    if (kind === "reliquaryguard" || kind === "reliquaryseraph") return "beam";
+    if (kind === "shardling" || kind === "skybreaker") return "shatter";
+    if (kind === "bloodreaver" || kind === "bloodmoonstag") return "bloodmoon";
+    return "void";
+  }
+
+  private playLatePatternSound(kind: Telegraph["kind"]): void {
+    if (kind === "eruption") audio.play("bossEruption");
+    else if (kind === "roots") audio.play("bossRoots");
+    else if (kind === "eclipse") audio.play("bossEclipse");
+    else if (kind === "beam") audio.play("bossBeam");
+    else if (kind === "shatter") audio.play("bossShatter");
+    else if (kind === "bloodmoon") audio.play("bossBloodmoon");
+    else if (kind === "void") audio.play("bossVoid");
+  }
+
+  private queueLatePattern(owner: Unit, kind: Telegraph["kind"], boss: boolean): void {
+    const heroes = this.livingHeroes();
+    if (!heroes.length) return;
+    owner.castGlow = 0.85;
+    const duration = this.telegraphTime * (boss ? 1.08 : 0.92) + (kind === "beam" || kind === "bloodmoon" ? 0.28 : 0);
+    const weakest = [...heroes].sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0];
+    let clustered = heroes[0];
+    let clusteredCount = 0;
+    for (const hero of heroes) {
+      const nearby = heroes.filter((other) => Math.hypot(other.x - hero.x, other.y - hero.y) < 120).length;
+      if (nearby > clusteredCount) {
+        clustered = hero;
+        clusteredCount = nearby;
+      }
+    }
+    const addCircle = (target: Vec, radius: number, label: string, delay = 0) => {
+      this.telegraphs.push({ x: target.x, y: target.y, radius, time: -delay, duration, owner, kind, label });
+    };
+
+    if (kind === "eruption") {
+      const count = boss ? Math.min(heroes.length, Math.max(2, owner.phase + 1)) : 1;
+      for (let i = 0; i < count; i++) addCircle(heroes[(i + owner.id) % heroes.length], boss ? 68 : 48, "ERUPT", i * 0.16);
+      if (boss && owner.phase >= 3) addCircle(owner, 96, "VENT", 0.28);
+    } else if (kind === "roots") {
+      const targets = boss ? heroes.slice(0, owner.phase >= 3 ? heroes.length : 2) : [clustered];
+      targets.forEach((hero, index) => addCircle(hero, boss ? 72 : 50, "ROOTS", index * 0.12));
+    } else if (kind === "eclipse") {
+      addCircle(clustered, boss ? 126 : 66, "ECLIPSE");
+      if (boss && owner.phase >= 3) {
+        const other = heroes.find((hero) => hero !== clustered) ?? clustered;
+        addCircle(other, 88, "FALSE MOON", 0.32);
+      }
+    } else if (kind === "beam") {
+      const cx = (this.field.left + this.field.right) / 2;
+      const cy = (this.field.top + this.field.bottom) / 2;
+      this.telegraphs.push({
+        x: cx,
+        y: clustered.y,
+        radius: boss ? 52 : 34,
+        time: 0,
+        duration,
+        owner,
+        kind,
+        label: "VERDICT",
+        angle: 0,
+        length: this.field.right - this.field.left,
+      });
+      if (boss && owner.phase >= 2) {
+        this.telegraphs.push({
+          x: clustered.x,
+          y: cy,
+          radius: 48,
+          time: -0.22,
+          duration,
+          owner,
+          kind,
+          label: "CROSSING RAY",
+          angle: Math.PI / 2,
+          length: this.field.bottom - this.field.top,
+        });
+      }
+    } else if (kind === "shatter") {
+      addCircle(clustered, boss ? 128 : 64, "SHATTER");
+      if (boss && owner.phase >= 3) addCircle(weakest, 90, "AFTERSHOCK", 0.38);
+    } else if (kind === "bloodmoon") {
+      const dx = weakest.x - owner.x;
+      const dy = weakest.y - owner.y;
+      const distance = Math.max(1, Math.hypot(dx, dy));
+      const length = Math.min(boss ? 520 : 350, distance + (boss ? 120 : 70));
+      const ux = dx / distance;
+      const uy = dy / distance;
+      this.telegraphs.push({
+        x: owner.x + ux * length * 0.5,
+        y: owner.y + uy * length * 0.5,
+        radius: boss ? 56 : 38,
+        time: 0,
+        duration,
+        owner,
+        kind,
+        label: "MARKED CHARGE",
+        angle: Math.atan2(dy, dx),
+        length,
+      });
+      owner.facing = (dx >= 0 ? 1 : -1) as 1 | -1;
+    } else {
+      addCircle(clustered, boss ? 122 : 68, "UNMAKE");
+      if (boss && owner.phase >= 4) addCircle(weakest, 82, "NO ROAD", 0.4);
+    }
+    this.playLatePatternSound(kind);
+  }
+
+  /** One signature warning per late regular foe. They keep moving and using
+   * basic attacks between casts, so the new mechanic adds a role instead of
+   * replacing the existing combat grammar. */
+  private updateLateFoe(enemy: Unit, dt: number): boolean {
+    if (!isLateFoeKind(enemy.enemyKind)) return false;
+    enemy.supportTimer -= dt;
+    if (this.telegraphs.some((mark) => mark.owner === enemy)) {
+      enemy.castGlow = Math.max(enemy.castGlow, 0.5);
+      return true;
+    }
+    if (enemy.supportTimer <= 0 && !this.effect(enemy, "stun")) {
+      this.queueLatePattern(enemy, this.latePatternOf(enemy.enemyKind), false);
+      enemy.supportTimer = 8.5 + (enemy.id % 4) * 0.55;
+      return true;
+    }
+    return false;
+  }
+
+  /** Every late boss owns a different arena question. The Way-Eater is the
+   * capstone: it recalls those questions in sequence rather than inventing a
+   * visually unrelated final gimmick. */
+  private updateLateBoss(boss: Unit, dt: number): boolean {
+    if (!isLateBossKind(boss.enemyKind)) return false;
+    const thresholds = BOSS_PHASES[boss.enemyKind] ?? [];
+    const frac = boss.hp / boss.stats.maxHp;
+    const nextPhase = 1 + thresholds.filter((threshold) => frac < threshold).length;
+    if (nextPhase > boss.phase) {
+      const previousPhase = boss.phase;
+      boss.phase = nextPhase;
+      boss.supportTimer = Math.min(boss.supportTimer, nextPhase === 1 ? 1.15 : 0.7);
+      const phaseWords: Record<LateBossKind, string[]> = {
+        cindermaw: ["THE FURNACE OPENS", "THE CRUST SPLITS", "ALL FIRES BELOW"],
+        verdantcolossus: ["THE GROVE WALKS", "ROOTS TAKE HOLD", "HEARTWOOD BARED"],
+        nightmother: ["THE VEIL DESCENDS", "A SECOND MOON", "NIGHT WITHOUT LAMPS"],
+        reliquaryseraph: ["THE VOW AWAKES", "VERDICT IN GOLD", "SEVEN WINGS BURN"],
+        skybreaker: ["THE PEAK TAKES FLIGHT", "CRYSTAL STORM", "THE SKY COMES APART"],
+        bloodmoonstag: ["THE HUNT NAMES YOU", "THE RED TRAIL", "NO QUARRY ESCAPES"],
+        wayeater: ["THE HORIZON OPENS", "IT REMEMBERS FIRE", "IT REMEMBERS NIGHT", "THE LAST ROAD"],
+      };
+      const words = phaseWords[boss.enemyKind][Math.min(nextPhase - 1, phaseWords[boss.enemyKind].length - 1)];
+      this.fx.floatText(boss.x, boss.y - boss.radius * 3.1, words, "#ffe9a3", nextPhase === 1 ? 17 : 20);
+      this.fx.ring(boss.x, boss.y, boss.radius * (2.2 + nextPhase * 0.3), ENEMIES[boss.enemyKind].trim, { width: 4, life: 0.7 });
+      if (nextPhase > 1) {
+        const crossedPhases = nextPhase - Math.max(1, previousPhase);
+        const phaseHaste = 1.05 + nextPhase * 0.06;
+        const existingPhaseHaste = boss.effects.find((effect) => effect.kind === "haste" && effect.source === null && effect.time >= 900);
+        if (existingPhaseHaste) {
+          existingPhaseHaste.time = 999;
+          existingPhaseHaste.power = Math.max(existingPhaseHaste.power, phaseHaste);
+        } else {
+          boss.effects.push(makeEffect("haste", 999, phaseHaste, null));
+        }
+        boss.stats.armor = Math.max(0.05, boss.stats.armor - 0.035 * crossedPhases);
+        const attendant: Partial<Record<LateBossKind, EnemyKind>> = {
+          cindermaw: "cinderkin",
+          verdantcolossus: "briarback",
+          nightmother: "gloomwing",
+          reliquaryseraph: "reliquaryguard",
+          skybreaker: "shardling",
+          bloodmoonstag: "bloodreaver",
+          wayeater: "nullwalker",
+        };
+        const attendantScale = boss.enemyKind === "reliquaryseraph"
+          ? 0.68
+          : boss.enemyKind === "wayeater"
+            ? 0.58
+            : 0.82;
+        // Burst damage may cross more than one threshold in a frame. Preserve
+        // every phase's reinforcement instead of silently skipping the middle.
+        for (let crossed = 0; crossed < crossedPhases; crossed++) {
+          this.spawnEnemy(attendant[boss.enemyKind]!, { scale: this.stage.scale * attendantScale });
+        }
+        this.fx.addShake(7 + nextPhase);
+      }
+    }
+
+    boss.supportTimer -= dt;
+    if (this.telegraphs.some((mark) => mark.owner === boss)) {
+      boss.castGlow = Math.max(boss.castGlow, 0.75);
+      return true;
+    }
+    if (boss.supportTimer > 0 || this.effect(boss, "stun")) return false;
+
+    let pattern = this.latePatternOf(boss.enemyKind);
+    if (boss.enemyKind === "wayeater") {
+      const remembered: Telegraph["kind"][] = ["eruption", "roots", "eclipse", "beam", "shatter", "bloodmoon", "void"];
+      const cursor = this.lateBossCycles.get(boss.id) ?? 0;
+      pattern = remembered[(cursor + Math.max(0, boss.phase - 1)) % remembered.length];
+      this.lateBossCycles.set(boss.id, cursor + 1);
+    }
+    this.queueLatePattern(boss, pattern, true);
+    boss.supportTimer = Math.max(4.25, 7.4 - boss.phase * 0.72);
+    return true;
   }
 
   /** Fen Stalker: skirts the fight along a lane, then leaps on whoever mends the others. */
@@ -2994,6 +4278,94 @@ export class Battle {
     if (dist < d.stats.range + near.radius && d.attackTimer <= 0 && d.windup <= 0) this.startAttack(d, near);
   }
 
+  /** Wreck Gunner: keeps its rusted cannon behind the line and marks the ground before firing. */
+  private updateWreckGunner(gunner: Unit, dt: number): void {
+    gunner.supportTimer -= dt;
+    const nearest = this.nearestHero(gunner);
+    const pending = this.telegraphs.some((mark) => mark.owner === gunner);
+    if (!pending && gunner.supportTimer <= 0 && !this.effect(gunner, "stun")) {
+      const heroes = this.livingHeroes();
+      let target: Unit | null = null;
+      let cluster = -1;
+      for (const hero of heroes) {
+        const nearby = heroes.filter((other) => Math.hypot(other.x - hero.x, other.y - hero.y) < 105).length;
+        if (nearby > cluster) {
+          cluster = nearby;
+          target = hero;
+        }
+      }
+      if (target) {
+        this.telegraphs.push({
+          x: target.x,
+          y: target.y,
+          radius: 62,
+          time: 0,
+          duration: this.telegraphTime + 0.45,
+          owner: gunner,
+          kind: "cannon",
+        });
+        gunner.facing = target.x >= gunner.x ? 1 : -1;
+        gunner.castGlow = 0.55;
+        gunner.supportTimer = 7.5;
+        this.fx.floatText(gunner.x, gunner.y - gunner.radius * 3, "powder lit!", "#e6b06c", 12);
+        audio.play("shoot");
+      }
+    }
+    if (!nearest) return;
+    const dist = unitDist(gunner, nearest);
+    if (dist < 165) {
+      const away = this.normalize({ x: gunner.x - nearest.x, y: gunner.y - nearest.y });
+      this.moveToward(gunner, this.clampToField({ x: gunner.x + away.x * 70, y: gunner.y + away.y * 70 }, gunner.radius), dt, 4, 0.9);
+      gunner.facing = nearest.x >= gunner.x ? 1 : -1;
+      return;
+    }
+    if (dist > gunner.stats.range + nearest.radius - 4) {
+      this.moveToward(gunner, nearest, dt, gunner.stats.range + nearest.radius - 14);
+      return;
+    }
+    gunner.facing = nearest.x >= gunner.x ? 1 : -1;
+    if (gunner.attackTimer <= 0 && gunner.windup <= 0) this.startAttack(gunner, nearest);
+  }
+
+  /** Conch Seer: lays short-lived pearlescent wards over the coast's front line. */
+  private updateConchSeer(seer: Unit, dt: number): void {
+    seer.supportTimer -= dt;
+    const nearest = this.nearestHero(seer);
+    if (nearest && unitDist(seer, nearest) < 135) {
+      const away = this.normalize({ x: seer.x - nearest.x, y: seer.y - nearest.y });
+      this.moveToward(seer, this.clampToField({ x: seer.x + away.x * 70, y: seer.y + away.y * 70 }, seer.radius), dt, 4, 0.9);
+    }
+    if (seer.supportTimer <= 0 && !this.effect(seer, "stun")) {
+      const ward = Math.round((this.tideHigh ? 18 : 15) * this.stage.scale);
+      const allies = this.livingEnemies()
+        .filter((ally) => ally !== seer && unitDist(seer, ally) < 240 && (this.effect(ally, "shield")?.power ?? 0) < ward)
+        .sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)
+        .slice(0, 2);
+      if (allies.length) {
+        for (const ally of allies) {
+          ally.effects = ally.effects.filter((effect) => effect.kind !== "shield");
+          ally.effects.push(makeEffect("shield", 6.8, ward, seer));
+          this.fx.ring(ally.x, ally.y - 10, ally.radius * 2.35, "#e7d5b6", { width: 3, life: 0.55 });
+          this.fx.burst(ally.x, ally.y - 14, "#b9eee5", 5, 48, { glow: true, gravity: -35, life: 0.45 });
+        }
+        seer.castGlow = 0.55;
+        seer.supportTimer = 6.2;
+        this.fx.floatText(seer.x, seer.y - seer.radius * 3, this.tideHigh ? "high-tide ward!" : "pearl ward!", "#e7d5b6", 12);
+        audio.play("shield");
+        return;
+      }
+      seer.supportTimer = 0.5;
+    }
+    if (!nearest) return;
+    const dist = unitDist(seer, nearest);
+    if (dist > seer.stats.range + nearest.radius - 4) {
+      this.moveToward(seer, nearest, dt, seer.stats.range + nearest.radius - 12);
+    } else if (seer.attackTimer <= 0 && seer.windup <= 0) {
+      seer.facing = nearest.x >= seer.x ? 1 : -1;
+      this.startAttack(seer, nearest);
+    }
+  }
+
   private updateShaman(shaman: Unit, dt: number): void {
     shaman.supportTimer -= dt;
     // drift to stay behind the front line
@@ -3137,7 +4509,7 @@ export class Battle {
       if (Math.hypot(hero.x - rec.x, hero.y - rec.y) < 7) {
         rec.t += dt;
         if (rec.t > 2.6) {
-          this.telegraphs.push({ x: hero.x, y: hero.y, radius: 55, time: 0, duration: 1.1, owner, kind: "sweep" });
+          this.telegraphs.push({ x: hero.x, y: hero.y, radius: 55, time: 0, duration: 1.1 * this.warningScale, owner, kind: "sweep" });
           this.fx.floatText(hero.x, hero.y - hero.radius - 26, "the ice cracks!", "#b8e0f0", 12);
           audio.play("frost");
           rec.t = -1.5; // grace after each crack
@@ -3216,12 +4588,12 @@ export class Battle {
       const prey = this.nearestHero(wyrm);
       if (prey) this.moveToward(wyrm, prey, dt, 10, 1.35);
       if (W.t < 3.5 && Math.floor((W.t - dt) / 0.7) !== Math.floor(W.t / 0.7)) {
-        this.telegraphs.push({ x: wyrm.x, y: wyrm.y, radius: 46, time: 0, duration: 1.0, owner: wyrm, kind: "sweep" });
+        this.telegraphs.push({ x: wyrm.x, y: wyrm.y, radius: 46, time: 0, duration: 1.0 * this.warningScale, owner: wyrm, kind: "sweep" });
         audio.play("frost");
       }
       if (W.t >= 3.5 && W.t - dt < 3.5) {
         // the water goes still — then the lake EXPLODES
-        this.telegraphs.push({ x: wyrm.x, y: wyrm.y, radius: 95, time: 0, duration: 1.1, owner: wyrm, kind: "sweep" });
+        this.telegraphs.push({ x: wyrm.x, y: wyrm.y, radius: 95, time: 0, duration: 1.1 * this.warningScale, owner: wyrm, kind: "sweep" });
         this.fx.floatText(wyrm.x, wyrm.y - 30, "the water stills…", "#dcedf5", 13);
       }
       if (W.t >= 4.7) {
@@ -3286,8 +4658,11 @@ export class Battle {
     }
   }
 
-  /** The Bell Widow conducts the flooded field: dodge her tolls, then punish the silence. */
-  private updateBellWidow(widow: Unit, dt: number): void {
+  /** The Bell Widow conducts the whole field. Two lanes drown on each toll; the
+   *  untouched lane is a playable answer. Reach it together and the clapper is
+   *  checked, leaving her exposed. Anyone caught outside is silenced, and from
+   *  phase two onward the failed rite calls another drowned attendant. */
+  private updateBellWidow(widow: Unit, dt: number): boolean {
     const frac = widow.hp / widow.stats.maxHp;
     if (widow.phase === 0) {
       widow.phase = 1;
@@ -3297,7 +4672,8 @@ export class Battle {
     if (frac < 0.66 && widow.phase < 2) {
       widow.phase = 2;
       this.spawnEnemy("bellkeeper");
-      this.spawnEnemy("kelpbound");
+      this.spawnEnemy("conchseer");
+      this.widowToll = Math.min(this.widowToll, 2.2);
       this.fx.ring(widow.x, widow.y, 190, "#b9e4df", { width: 5, life: 0.8 });
       this.fx.floatText(widow.x, widow.y - widow.radius * 3, "THE DROWNED ANSWER!", "#b9e4df", 19);
       audio.play("warcry");
@@ -3307,42 +4683,94 @@ export class Battle {
       widow.stats.armor = Math.max(0.04, widow.stats.armor - 0.12);
       widow.effects.push(makeEffect("haste", 999, 1.22, null));
       this.bossStaggerMax = Math.round(this.bossStaggerMax * 0.78);
+      this.widowToll = Math.min(this.widowToll, 1.2);
       this.fx.floatText(widow.x, widow.y - widow.radius * 3, "THE LAST TOLL!", "#ffcf76", 21);
       this.fx.addShake(9);
       audio.play("staggerBreak");
     }
+
+    if (this.widowRite) {
+      const rite = this.widowRite;
+      rite.time += dt;
+      // drawBellWidow reads castGlow for the clapper swing. Refreshing it keeps
+      // the whole warning visibly in motion; the impact below snaps it to one.
+      widow.castGlow = Math.max(widow.castGlow, 0.72);
+      if (rite.time < rite.duration) return true;
+
+      widow.castGlow = 1;
+      const heroes = this.livingHeroes();
+      const caught = heroes.filter((hero) => Math.abs(hero.y - rite.safeY) > rite.halfWidth);
+      if (caught.length === 0 && heroes.length > 0) {
+        widow.effects.push(makeEffect("stun", 1.45, 1, null));
+        widow.effects.push(makeEffect("vulnerable", 3.1, 0.34, null));
+        this.bossStagger += this.bossStaggerMax * 0.28;
+        this.fx.floatText(widow.x, widow.y - widow.radius * 3, "THE TOLL FALLS SILENT!", "#ffe9a3", 19);
+        this.fx.ring(widow.x, widow.y, 175, "#ffe9a3", { width: 6, life: 0.75 });
+        if (this.bossStagger >= this.bossStaggerMax) this.staggerBoss(widow);
+        audio.play("staggerBreak");
+      } else {
+        const silenceTime = widow.phase >= 3 ? 3.4 : 2.6;
+        for (const hero of caught) {
+          hero.effects.push(makeEffect("silence", silenceTime, 1, widow));
+          hero.effects.push(makeEffect("slow", 1.8, 0.28, widow));
+          this.fx.floatText(hero.x, hero.y - hero.radius - 24, "SILENCED", "#d5bd80", 12);
+        }
+        const attendants = this.livingEnemies().filter((unit) => unit !== widow).length;
+        if (widow.phase >= 2 && attendants < 4) {
+          const summon = widow.phase >= 3 && this.widowTollCount % 2 === 0 ? "bellkeeper" : "kelpbound";
+          this.spawnEnemy(summon);
+          this.fx.floatText(widow.x, widow.y - widow.radius * 3, "THE FLOOD-BELL ANSWERS!", "#b9e4df", 15);
+        }
+      }
+      this.widowRite = null;
+      return true;
+    }
+
     this.widowToll -= dt;
-    if (this.widowToll > 0 || this.effect(widow, "stun")) return;
-    this.widowToll = widow.phase >= 3 ? 5.8 : widow.phase >= 2 ? 7 : 8.5;
+    if (this.widowToll > 0 || this.effect(widow, "stun")) return false;
+    this.widowToll = widow.phase >= 3 ? 6.2 : widow.phase >= 2 ? 7.5 : 9;
+    this.widowTollCount++;
     const span = this.field.bottom - this.field.top;
-    const safeLane = Math.floor(Math.random() * 3);
+    const laneCenters = [1 / 6, 0.5, 5 / 6];
+    // The safe lane rotates instead of rerolling, so the rite can be learned.
+    const safeLane = (this.widowTollCount + widow.phase - 1) % 3;
+    const safeY = this.field.top + span * laneCenters[safeLane];
+    const duration = this.telegraphTime + 0.7;
+    this.widowRite = { safeLane, safeY, halfWidth: Math.max(38, span / 6 - 8), time: 0, duration };
     for (let lane = 0; lane < 3; lane++) {
       if (lane === safeLane) continue;
-      const y = this.field.top + span * (0.2 + lane * 0.3);
-      for (let x = this.field.left + 120; x < this.field.right; x += 210) {
-        this.telegraphs.push({ x, y, radius: 74, time: 0, duration: this.telegraphTime + lane * 0.24, owner: widow, kind: "sweep" });
+      const y = this.field.top + span * laneCenters[lane];
+      for (let x = this.field.left + 66; x < this.field.right; x += 132) {
+        this.telegraphs.push({ x, y, radius: 68, time: 0, duration, owner: widow, kind: "sweep" });
       }
     }
-    // The untouched lane is the answer, not a hidden dice roll.
-    const safeY = this.field.top + span * (0.2 + safeLane * 0.3);
-    this.fx.floatText(this.field.left + 190, safeY - 28, "THE BELL CANNOT REACH HERE", "#b9e4df", 12);
+    const laneName = safeLane === 0 ? "UPPER" : safeLane === 1 ? "MIDDLE" : "LOWER";
+    widow.castGlow = 0.95;
+    this.fx.floatText(this.field.left + 210, safeY - 26, `${laneName} LANE — SILENCE`, "#b9e4df", 14);
     this.fx.ring(widow.x, widow.y, 150, "#d5bd80", { width: 5, life: 0.7 });
     audio.play("glacialGroan");
+    return true;
   }
 
-  /** Stormjaw marks itself and the band for lightning: bait the sky onto its exposed plates. */
-  private updateStormjaw(jaw: Unit, dt: number): void {
+  /** Stormjaw is a tide rhythm, not another summoner. Reef plates close at
+   *  high water; marked lightning can crack them. Its undertow pulls the band
+   *  toward a promised breach, and dodging the jaws earns the longest heart
+   *  window. */
+  private updateStormjaw(jaw: Unit, dt: number): boolean {
     const frac = jaw.hp / jaw.stats.maxHp;
-    if (jaw.phase === 0) {
+    if (jaw.phase === 0 || !this.jawCycle) {
       jaw.phase = 1;
-      this.jawStorm = 4.5;
+      this.jawCycle = { mode: "reef", time: 0, nextBreach: 5.5, nextLightning: 7, tideWasHigh: this.tideHigh, target: null };
       this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, "THE COAST WAKES", "#9edbd5", 20);
     }
+    const cycle = this.jawCycle;
     if (frac < 0.68 && jaw.phase < 2) {
       jaw.phase = 2;
       this.spawnEnemy("reefhound");
-      this.spawnEnemy("reefhound");
-      jaw.stats.damage *= 1.12;
+      this.spawnEnemy("stormeel");
+      jaw.stats.damage *= 1.1;
+      cycle.nextBreach = Math.min(cycle.nextBreach, 2.2);
+      cycle.nextLightning = Math.min(cycle.nextLightning, 1.2);
       this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, "BREAKERS, RISE!", "#9edbd5", 20);
       this.fx.addShake(10);
       audio.play("breach");
@@ -3350,21 +4778,139 @@ export class Battle {
     if (frac < 0.34 && jaw.phase < 3) {
       jaw.phase = 3;
       jaw.stats.armor = Math.max(0.05, jaw.stats.armor - 0.14);
+      jaw.effects = jaw.effects.filter((effect) => !(effect.kind === "guard" && effect.source === jaw));
       jaw.effects.push(makeEffect("haste", 999, 1.3, null));
-      this.jawStorm = 0.4;
+      cycle.nextBreach = Math.min(cycle.nextBreach, 0.8);
+      cycle.nextLightning = Math.min(cycle.nextLightning, 1.5);
       this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, "THE HEART SURFACES!", "#ffe9a3", 21);
       audio.play("staggerBreak");
     }
-    this.jawStorm -= dt;
-    if (this.jawStorm > 0 || this.effect(jaw, "stun") || this.telegraphs.some((mark) => mark.kind === "lightning" && mark.owner === jaw)) return;
-    this.jawStorm = jaw.phase >= 3 ? 5.5 : jaw.phase >= 2 ? 7 : 8.5;
-    const heroes = this.livingHeroes();
-    const targets = heroes.slice().sort(() => Math.random() - 0.5).slice(0, jaw.phase >= 2 ? 2 : 1);
-    // One conductor always follows the boss: players can turn its signature attack back on it.
-    this.telegraphs.push({ x: jaw.x, y: jaw.y, radius: 82, time: 0, duration: 2.3, owner: jaw, kind: "lightning" });
-    for (const hero of targets) this.telegraphs.push({ x: hero.x, y: hero.y, radius: 68, time: 0, duration: 2.3, owner: jaw, kind: "lightning" });
-    this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, "THE SKY FINDS CONDUCTORS!", "#b9f4ff", 15);
-    audio.play("glacialGroan");
+
+    // High tide closes the reef shell. Low tide opens it again; phase three has
+    // already torn the plates off and never regains this protection.
+    if (jaw.phase < 3 && this.tideHigh) {
+      const plate = jaw.effects.find((effect) => effect.kind === "guard" && effect.source === jaw);
+      if (plate) plate.time = Math.max(plate.time, 0.3);
+      else jaw.effects.push(makeEffect("guard", 0.3, 0.24, jaw));
+      if (!cycle.tideWasHigh) this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, "REEF PLATES CLOSE", "#9edbd5", 13);
+    } else {
+      jaw.effects = jaw.effects.filter((effect) => !(effect.kind === "guard" && effect.source === jaw));
+      if (cycle.tideWasHigh && jaw.phase < 3) {
+        jaw.effects.push(makeEffect("vulnerable", 1.4, 0.16, null));
+        this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, "LOW TIDE — PLATES OPEN", "#ffe9a3", 13);
+      }
+    }
+    cycle.tideWasHigh = this.tideHigh;
+
+    if (cycle.mode === "exposed") {
+      cycle.time += dt;
+      jaw.castGlow = Math.max(jaw.castGlow, 0.5);
+      if (cycle.time >= (jaw.phase >= 3 ? 2.8 : 3.4)) {
+        cycle.mode = "reef";
+        cycle.time = 0;
+        cycle.nextBreach = jaw.phase >= 3 ? 4.8 : jaw.phase >= 2 ? 6.5 : 8;
+        this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, "THE REEF SEALS", "#9edbd5", 13);
+      }
+      return true;
+    }
+
+    if (cycle.mode === "breach") {
+      cycle.time += dt;
+      jaw.castGlow = Math.max(jaw.castGlow, 0.82);
+      if (cycle.target) this.moveToward(jaw, cycle.target, dt, 14, 1.75);
+      // updateTelegraphs normally ends this mode. This fallback prevents an
+      // interrupted or externally-cleared mark from trapping the boss forever.
+      if (cycle.time > this.telegraphTime + 1.35 && !this.telegraphs.some((mark) => mark.owner === jaw && mark.kind === "sweep" && mark.radius >= 110)) {
+        this.finishStormjawBreach(jaw, 0);
+      }
+      return true;
+    }
+
+    if (cycle.mode === "undertow") {
+      cycle.time += dt;
+      jaw.castGlow = Math.max(jaw.castGlow, 0.65);
+      const pull = (this.tideHigh ? 52 : 36) * (jaw.phase >= 3 ? 1.12 : 1);
+      for (const hero of this.livingHeroes()) {
+        const dx = jaw.x - hero.x;
+        const dy = jaw.y - hero.y;
+        const len = Math.hypot(dx, dy) || 1;
+        hero.x += (dx / len) * pull * dt;
+        hero.y += (dy / len) * pull * dt;
+        const clamped = this.clampToField(hero, hero.radius);
+        hero.x = clamped.x;
+        hero.y = clamped.y;
+      }
+      if (Math.floor((cycle.time - dt) * 2) !== Math.floor(cycle.time * 2)) {
+        this.fx.ring(jaw.x, jaw.y, 210 - Math.min(120, cycle.time * 42), "#76c9cc", { width: 4, life: 0.45 });
+      }
+      if (cycle.time >= (jaw.phase >= 3 ? 1.65 : 2.05)) {
+        const heroes = this.livingHeroes();
+        if (!heroes.length) return true;
+        const target = this.clampToField({
+          x: heroes.reduce((sum, hero) => sum + hero.x, 0) / heroes.length,
+          y: heroes.reduce((sum, hero) => sum + hero.y, 0) / heroes.length,
+        }, 105);
+        cycle.mode = "breach";
+        cycle.time = 0;
+        cycle.target = target;
+        const duration = this.telegraphTime + (jaw.phase >= 3 ? 0.1 : 0.35);
+        this.telegraphs.push({ x: target.x, y: target.y, radius: 118, time: 0, duration, owner: jaw, kind: "sweep" });
+        this.fx.floatText(target.x, target.y - 40, "THE JAWS BREACH HERE", "#b9f4ff", 15);
+        audio.play("breach");
+      }
+      return true;
+    }
+
+    cycle.nextBreach -= dt;
+    cycle.nextLightning -= dt;
+    if (
+      jaw.phase >= 2 &&
+      cycle.nextLightning <= 0 &&
+      !this.effect(jaw, "stun") &&
+      !this.telegraphs.some((mark) => mark.kind === "lightning" && mark.owner === jaw)
+    ) {
+      cycle.nextLightning = jaw.phase >= 3 ? 6.8 : 9;
+      const heroes = this.livingHeroes();
+      // Only heroes are marked. Carrying the warning circle back over Stormjaw
+      // is the counterplay; the boss no longer gifts itself a free strike.
+      const marked = heroes
+        .slice()
+        .sort((a, b) => unitDist(jaw, a) - unitDist(jaw, b))
+        .slice(0, jaw.phase >= 3 ? Math.min(2, heroes.length) : 1);
+      for (const hero of marked) {
+        this.telegraphs.push({ x: hero.x, y: hero.y, radius: 72, time: 0, duration: 2.55 * this.warningScale, owner: jaw, kind: "lightning" });
+        this.fx.floatText(hero.x, hero.y - hero.radius - 27, "MARKED — BAIT THE SKY", "#b9f4ff", 12);
+      }
+      jaw.castGlow = 0.9;
+      audio.play("glacialGroan");
+    }
+    if (cycle.nextBreach <= 0 && !this.effect(jaw, "stun")) {
+      cycle.mode = "undertow";
+      cycle.time = 0;
+      cycle.target = null;
+      this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, "UNDERTOW — BREAK FROM THE JAWS!", "#9edbd5", 16);
+      this.fx.ring(jaw.x, jaw.y, 220, "#76c9cc", { width: 5, life: 0.7 });
+      audio.play("warcry");
+      return true;
+    }
+    return false;
+  }
+
+  private finishStormjawBreach(jaw: Unit, struck: number): void {
+    const cycle = this.jawCycle;
+    if (!cycle || cycle.mode !== "breach") return;
+    cycle.mode = "exposed";
+    cycle.time = 0;
+    cycle.target = null;
+    const cleanDodge = struck === 0;
+    const window = cleanDodge ? 4.2 : 3;
+    jaw.effects.push(makeEffect("vulnerable", window, cleanDodge ? 0.48 : 0.28, null));
+    this.bossStagger += this.bossStaggerMax * (cleanDodge ? 0.34 : 0.12);
+    jaw.castGlow = 1;
+    this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, cleanDodge ? "JAWS MISS — HEART EXPOSED!" : "THE HEART SURFACES!", "#ffe9a3", 19);
+    this.fx.ring(jaw.x, jaw.y, 165, "#ffe9a3", { width: 6, life: 0.7 });
+    if (this.bossStagger >= this.bossStaggerMax) this.staggerBoss(jaw);
+    audio.play("staggerBreak");
   }
 
   private updateRimeheart(king: Unit, dt: number): void {
@@ -3834,6 +5380,138 @@ export class Battle {
     }
   }
 
+  private resolveLateTelegraph(mark: Telegraph): boolean {
+    const lateKinds: Telegraph["kind"][] = ["eruption", "roots", "eclipse", "beam", "shatter", "bloodmoon", "void"];
+    if (!lateKinds.includes(mark.kind)) return false;
+    const owner = mark.owner;
+    const boss = owner === this.bossRef && isLateBossKind(owner.enemyKind);
+    const angle = mark.angle ?? 0;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const inside = (hero: Unit): boolean => {
+      const dx = hero.x - mark.x;
+      const dy = hero.y - mark.y;
+      if (mark.kind === "beam" || mark.kind === "bloodmoon") {
+        const along = dx * cos + dy * sin;
+        const across = -dx * sin + dy * cos;
+        const halfLength = (mark.length ?? mark.radius * 5) / 2;
+        const halfWidth = mark.radius * (mark.kind === "beam" ? 0.55 : 0.42);
+        return Math.abs(along) <= halfLength + hero.radius && Math.abs(across) <= halfWidth + hero.radius * 0.55;
+      }
+      if (mark.kind === "shatter") {
+        const within = Math.hypot(dx, dy / 0.7) <= mark.radius + hero.radius * 0.45;
+        return within && (Math.abs(dx) <= mark.radius * 0.2 + hero.radius || Math.abs(dy) <= mark.radius * 0.18 + hero.radius);
+      }
+      const ellipticalDistance = Math.hypot(dx, dy / 0.55);
+      if (mark.kind === "eclipse") return ellipticalDistance >= mark.radius * 0.36 && ellipticalDistance <= mark.radius + hero.radius * 0.5;
+      return ellipticalDistance <= mark.radius + hero.radius * 0.5;
+    };
+
+    const colors: Record<string, string> = {
+      eruption: "#ff8a3d",
+      roots: "#aad16f",
+      eclipse: "#c4a9ee",
+      beam: "#ffe49a",
+      shatter: "#bdefff",
+      bloodmoon: "#f06d68",
+      void: "#aa9ce0",
+    };
+    const elements: Record<string, DamageElement> = {
+      eruption: "flame",
+      roots: "earth",
+      eclipse: "shadow",
+      beam: "radiant",
+      shatter: "storm",
+      bloodmoon: "blood",
+      void: "shadow",
+    };
+    const multipliers: Record<string, number> = {
+      eruption: boss ? 1.12 : 0.82,
+      roots: boss ? 0.9 : 0.68,
+      eclipse: boss ? 0.88 : 0.7,
+      beam: boss ? 1.2 : 0.78,
+      shatter: boss ? 1.08 : 0.78,
+      bloodmoon: boss ? 1.34 : 0.92,
+      void: boss ? 1.02 : 0.76,
+    };
+    let struck = 0;
+    for (const hero of this.livingHeroes()) {
+      if (!inside(hero)) continue;
+      // The Seraph's crossed verdicts and the finale's recalled sequence layer
+      // more hazards than single-pattern bosses, so each individual hit is a
+      // little lighter while still punishing a missed warning.
+      const patternScale = owner.enemyKind === "reliquaryseraph" && mark.kind === "beam"
+        ? 0.84
+        : owner.enemyKind === "wayeater"
+          ? 0.68
+          : 1;
+      this.damage(hero, owner.stats.damage * multipliers[mark.kind] * patternScale, owner, {
+        spell: mark.kind !== "bloodmoon",
+        color: colors[mark.kind],
+        element: elements[mark.kind],
+      });
+      struck++;
+      if (!hero.alive) continue;
+      if (mark.kind === "eruption") hero.effects.push(makeEffect("burn", boss ? 4 : 2.5, boss ? 5 : 3, owner));
+      else if (mark.kind === "roots") hero.effects.push(makeEffect("slow", boss ? 3 : 1.8, boss ? 0.58 : 0.4, owner));
+      else if (mark.kind === "eclipse") {
+        hero.effects.push(makeEffect("silence", boss ? 2.4 : 1.3, 1, owner));
+        hero.effects.push(makeEffect("vulnerable", boss ? 2.8 : 1.6, boss ? 0.22 : 0.12, owner));
+      } else if (mark.kind === "beam") hero.effects.push(makeEffect("silence", boss ? 1.4 : 0.7, 1, owner));
+      else if (mark.kind === "shatter") hero.effects.push(makeEffect("stun", boss ? 0.75 : 0.4, 1, owner));
+      else if (mark.kind === "bloodmoon") hero.effects.push(makeEffect("burn", boss ? 3.5 : 2, boss ? 4 : 2.5, owner));
+      else if (mark.kind === "void") hero.effects.push(makeEffect("vulnerable", boss ? 3.4 : 2, boss ? 0.3 : 0.18, owner));
+    }
+
+    if (mark.kind === "bloodmoon") {
+      const length = mark.length ?? mark.radius * 5;
+      const arrive = this.clampToField({ x: mark.x + Math.cos(angle) * length * 0.5, y: mark.y + Math.sin(angle) * length * 0.5 }, owner.radius);
+      owner.x = arrive.x;
+      owner.y = arrive.y;
+      owner.lungeDir = { x: Math.cos(angle), y: Math.sin(angle) };
+      owner.lunge = 1;
+      if (struck > 0 && owner.alive) this.heal(owner, owner.stats.maxHp * Math.min(0.09, struck * 0.025), true, owner);
+    }
+
+    if (boss && struck === 0 && this.bossStaggerMax > 0) {
+      const poise = mark.kind === "bloodmoon" ? 0.3 : mark.kind === "beam" || mark.kind === "eclipse" ? 0.18 : 0.11;
+      this.bossStagger += this.bossStaggerMax * poise;
+      if (poise >= 0.18) this.fx.floatText(mark.x, mark.y - mark.radius * 0.7, mark.kind === "bloodmoon" ? "THE HUNT MISSES!" : "PATTERN BROKEN", "#ffe9a3", 15);
+      if (mark.kind === "bloodmoon") owner.effects.push(makeEffect("vulnerable", 2.2, 0.3, null));
+      if (this.bossStagger >= this.bossStaggerMax) this.staggerBoss(owner);
+    }
+
+    const color = colors[mark.kind];
+    if (mark.kind === "eruption") {
+      this.fx.burst(mark.x, mark.y - 8, color, 24, 220, { glow: true, gravity: 120 });
+      this.fx.pool(mark.x, mark.y, mark.radius * 1.4, "255,92,44", 0.8);
+      this.addDecal(mark.x, mark.y, "scorch", Math.min(58, mark.radius));
+    } else if (mark.kind === "roots") {
+      this.fx.burst(mark.x, mark.y, color, 18, 105, { gravity: -80, size: 4 });
+      this.fx.ring(mark.x, mark.y, mark.radius, color, { width: 5, life: 0.55 });
+    } else if (mark.kind === "eclipse") {
+      this.fx.pool(mark.x, mark.y, mark.radius * 1.3, "78,56,118", 0.7);
+      this.fx.ring(mark.x, mark.y, mark.radius, color, { width: 5, life: 0.65 });
+    } else if (mark.kind === "beam") {
+      const length = mark.length ?? mark.radius * 6;
+      this.fx.slash(mark.x, mark.y, angle, length * 0.48, color, 0.04);
+      this.fx.burst(mark.x, mark.y, color, 20, 180, { glow: true, gravity: 20 });
+    } else if (mark.kind === "shatter") {
+      for (let i = 0; i < 4; i++) this.fx.slash(mark.x, mark.y, (i / 4) * Math.PI * 2, mark.radius * 0.82, color, 0.08);
+      this.fx.burst(mark.x, mark.y, color, 28, 240, { glow: true, gravity: 150 });
+    } else if (mark.kind === "bloodmoon") {
+      this.fx.slash(mark.x, mark.y, angle, (mark.length ?? 300) * 0.5, color, 0.12);
+      this.fx.burst(owner.x, owner.y, color, 18, 170, { glow: true, gravity: 80 });
+    } else {
+      this.fx.pool(mark.x, mark.y, mark.radius * 1.45, "55,43,92", 0.9);
+      this.fx.ring(mark.x, mark.y, mark.radius, color, { width: 6, life: 0.7 });
+    }
+    this.fx.addShake(boss ? 9 : 4);
+    this.hitstop = Math.max(this.hitstop, boss ? 0.07 : 0.025);
+    this.playLatePatternSound(mark.kind);
+    return true;
+  }
+
   private updateTelegraphs(dt: number): void {
     for (let i = this.telegraphs.length - 1; i >= 0; i--) {
       const mark = this.telegraphs[i];
@@ -3844,15 +5522,18 @@ export class Battle {
       }
       if (mark.time >= mark.duration) {
         this.telegraphs.splice(i, 1);
+        if (this.resolveLateTelegraph(mark)) continue;
         if (mark.kind === "lightning") {
           for (const unit of this.units) {
             if (!unit.alive || Math.hypot(unit.x - mark.x, unit.y - mark.y) >= mark.radius + unit.radius) continue;
             this.damage(unit, 16 * this.stage.scale, null, { spell: true, color: "#b9f4ff" });
             if (unit.alive && this.tideHigh) unit.effects.push(makeEffect("stun", 0.55, 1, null));
             if (unit.alive && unit.enemyKind === "stormjaw") {
+              unit.effects = unit.effects.filter((effect) => !(effect.kind === "guard" && effect.source === unit));
               unit.effects.push(makeEffect("vulnerable", 2.8, 0.38, null));
               this.bossStagger += this.bossStaggerMax * 0.24;
               this.fx.floatText(unit.x, unit.y - unit.radius * 3, "PLATES SPLIT!", "#ffe9a3", 17);
+              if (this.jawCycle?.mode === "reef") this.jawCycle.nextBreach = Math.min(this.jawCycle.nextBreach, 1.5);
               if (this.bossStagger >= this.bossStaggerMax) this.staggerBoss(unit);
             }
           }
@@ -3861,6 +5542,22 @@ export class Battle {
           this.addDecal(mark.x, mark.y, "scorch", 46);
           this.fx.addShake(10);
           audio.play("glacialGroan");
+          continue;
+        }
+        if (mark.kind === "cannon") {
+          const gunner = mark.owner;
+          for (const hero of this.livingHeroes()) {
+            if (Math.hypot(hero.x - mark.x, hero.y - mark.y) >= mark.radius + hero.radius * 0.5) continue;
+            this.damage(hero, gunner.stats.damage * 1.15, gunner);
+            if (hero.alive) hero.effects.push(makeEffect("slow", 1.2, 0.22, gunner));
+          }
+          this.fx.burst(mark.x, mark.y - 8, "#e6b06c", 22, 210, { glow: true, gravity: 150 });
+          this.fx.burst(mark.x, mark.y, "#59686a", 16, 130, { gravity: 40, size: 5 });
+          this.fx.ring(mark.x, mark.y, mark.radius + 12, "#d58d4e", { width: 5, life: 0.5 });
+          this.addDecal(mark.x, mark.y, "scorch", 44);
+          this.fx.addShake(8);
+          this.hitstop = Math.max(this.hitstop, 0.06);
+          audio.play("thud");
           continue;
         }
         if (mark.kind === "meteor") {
@@ -3889,20 +5586,26 @@ export class Battle {
           const lord = mark.owner;
           const isAxe = mark.radius <= 60;
           const isFlop = lord.enemyKind === "ogre" && mark.radius > 120;
-          lord.lungeDir = this.normalize({ x: mark.x - lord.x, y: mark.y - lord.y });
-          lord.lunge = 1;
+          const isWidowFlood = lord.enemyKind === "bellwidow";
+          const isStormBreach = lord.enemyKind === "stormjaw" && mark.radius >= 110;
+          if (!isWidowFlood) {
+            lord.lungeDir = this.normalize({ x: mark.x - lord.x, y: mark.y - lord.y });
+            lord.lunge = 1;
+          }
           let struck = 0;
           for (const hero of this.livingHeroes()) {
             if (Math.hypot(hero.x - mark.x, hero.y - mark.y) < mark.radius + hero.radius * 0.5) {
-              this.damage(hero, lord.stats.damage * (isFlop ? 1.6 : isAxe ? 0.75 : 1.5), lord);
-              if (hero.alive) hero.effects.push(makeEffect("slow", 1.5, isAxe ? 0.25 : 0.35, lord));
+              const multiplier = isWidowFlood ? 0.62 : isStormBreach ? 0.82 : isFlop ? 1.6 : isAxe ? 0.75 : 1.5;
+              this.damage(hero, lord.stats.damage * multiplier, lord);
+              if (hero.alive) hero.effects.push(makeEffect("slow", isWidowFlood ? 1.8 : 1.5, isWidowFlood ? 0.28 : isAxe ? 0.25 : 0.35, lord));
               struck++;
             }
           }
+          if (isStormBreach) this.finishStormjawBreach(lord, struck);
           // dodging is a weapon: a promise that finds nobody costs the boss poise —
           // but only in proportion to how big the promise was. Slipping one circle
           // of a five-lane breath is expected play, not a triumph.
-          if (struck === 0 && lord === this.bossRef && this.bossStaggerMax > 0) {
+          if (struck === 0 && !isWidowFlood && !isStormBreach && lord === this.bossRef && this.bossStaggerMax > 0) {
             const poiseFrac = isFlop ? 0.5 : mark.radius >= 90 ? 0.3 : mark.radius >= 60 ? 0.12 : 0.05;
             this.bossStagger += this.bossStaggerMax * poiseFrac;
             if (poiseFrac >= 0.12) this.fx.floatText(mark.x, mark.y - 20, isFlop ? "FACE-FIRST!" : "wide open!", "#ffe9a3", isFlop ? 18 : 14);
@@ -3911,6 +5614,10 @@ export class Battle {
               lord.effects.push(makeEffect("vulnerable", 2.6, 0.45, null));
             }
             if (this.bossStagger >= this.bossStaggerMax) this.staggerBoss(lord);
+          }
+          if (isWidowFlood) {
+            this.fx.ring(mark.x, mark.y, mark.radius + 5, "#d5bd80", { width: 3, life: 0.4 });
+            continue;
           }
           this.fx.slash(mark.x, mark.y - 10, Math.PI * 0.1, mark.radius * 0.8, "#ff9a85", Math.PI * 1.6);
           this.fx.ring(mark.x, mark.y, mark.radius + 10, "#ff8a70", { width: 5, life: 0.5 });
@@ -4069,6 +5776,9 @@ export class Battle {
     }
     let dmg = attacker.stats.damage;
     let crit = false;
+    // A hero's weapon carries a restrained elemental imprint. It participates
+    // in readable matchup math, while the stronger statuses stay on path casts.
+    const attackElement: DamageElement = attacker.team === "hero" && attacker.element ? attacker.element : "physical";
     if (attacker.team === "hero" && this.saveRef) {
       const chance = talentMods(this.saveRef.heroes[attacker.heroIndex].talents).crit;
       if (Math.random() < chance) {
@@ -4128,7 +5838,8 @@ export class Battle {
       target.y = push.y;
     }
     if (ranged) {
-      const weapon = attacker.team === "hero" ? attacker.stats.weapon : attacker.enemyKind === "shaman" || attacker.enemyKind === "bonecaller" ? "staff" : "bow";
+      const coastalCaster = attacker.enemyKind === "saltwitch" || attacker.enemyKind === "stormcaller" || attacker.enemyKind === "conchseer";
+      const weapon = attacker.team === "hero" ? attacker.stats.weapon : attacker.enemyKind === "shaman" || attacker.enemyKind === "bonecaller" || coastalCaster ? "staff" : "bow";
       const isArcane = weapon === "staff";
       const isHoly = weapon === "stave";
       const missile = {
@@ -4140,7 +5851,7 @@ export class Battle {
         damage: dmg,
         from: attacker,
         kind: (isArcane ? "bolt" : isHoly ? "spark" : "arrow") as "bolt" | "spark" | "arrow",
-        color: isArcane ? (attacker.enemyKind === "shaman" ? "#7de8c9" : "#b48ae8") : isHoly ? "#ffe9a3" : "#e8d9b0",
+        color: isArcane ? (coastalCaster ? "#a9e1d8" : attacker.enemyKind === "shaman" ? "#7de8c9" : "#b48ae8") : isHoly ? "#ffe9a3" : "#e8d9b0",
         heals: false,
         life: 3,
       };
@@ -4170,8 +5881,23 @@ export class Battle {
       }
       audio.play(isArcane || isHoly ? "bolt" : "shoot");
     } else {
-      this.damage(target, dmg, attacker, crit ? { color: "#ffd76b" } : {});
+      this.damage(target, dmg, attacker, crit ? { color: "#ffd76b", element: attackElement } : { element: attackElement });
       if (crit) this.fx.floatText(target.x, target.y - target.radius - 30, "crit!", "#ffd76b", 12);
+      // Storm Eels punish a packed formation. High tide carries the arc farther and leaves a brief stun.
+      if (attacker.enemyKind === "stormeel" && target.team === "hero") {
+        const arcRange = this.tideHigh ? 145 : 105;
+        const other = this.livingHeroes()
+          .filter((hero) => hero !== target && Math.hypot(hero.x - target.x, hero.y - target.y) < arcRange)
+          .sort((a, b) => Math.hypot(a.x - target.x, a.y - target.y) - Math.hypot(b.x - target.x, b.y - target.y))[0];
+        if (other) {
+          this.damage(other, dmg * 0.48, attacker, { spell: true, color: "#a9f2ff" });
+          if (this.tideHigh && other.alive) other.effects.push(makeEffect("stun", 0.35, 1, attacker));
+          this.fx.burst(target.x, target.y - 12, "#a9f2ff", 5, 70, { glow: true, life: 0.35 });
+          this.fx.burst(other.x, other.y - 12, "#a9f2ff", 7, 90, { glow: true, life: 0.4 });
+          this.fx.floatText(other.x, other.y - other.radius * 2.5, this.tideHigh ? "high-tide arc!" : "arc!", "#a9f2ff", 11);
+          audio.play("bolt");
+        }
+      }
       // Cleaving Blows: melee strikes splash to nearby foes
       if (attacker.team === "hero" && this.heroTalentRank(attacker, "cleavingBlows") > 0) {
         for (const other of this.livingEnemies()) {
@@ -4296,7 +6022,8 @@ export class Battle {
           this.heal(p.target, p.damage, true, p.from);
           this.fx.burst(p.target.x, p.target.y - 16, p.color, 8, 80, { glow: true, gravity: -40 });
         } else {
-          this.damage(p.target, p.damage, p.from, { color: p.kind === "bolt" ? "#d3b6f0" : undefined });
+          const element: DamageElement = p.from.team === "hero" && p.from.element ? p.from.element : "physical";
+          this.damage(p.target, p.damage, p.from, { color: p.kind === "bolt" ? "#d3b6f0" : undefined, element });
         }
         this.projectiles.splice(i, 1);
         continue;

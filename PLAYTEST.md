@@ -34,14 +34,15 @@ stuck, record the time and screen before helping; that moment is the finding.
 - First screen visited after that battle
 
 ## Collecting data
-After the session: title screen → Settings → **Export playtest data** copies a
+After the session: open **Settings** from the title or bottom-bar gear, choose
+**Campaign**, then **Copy playtest report**. This copies a
 JSON log of battles (duration, result, deaths, ability usage, difficulty) to
 the clipboard. Have the tester paste it back to you. **Export save** likewise
 copies their progress so you can reproduce their state.
 
 ## Questions to ask afterwards
-1. What were you trying to build? (checks whether classless design landed)
-2. Which spell felt best to use? Which felt useless?
+1. What discipline and element did you choose, and what did you expect that combination to do?
+2. Which technique felt best to use? Which felt useless?
 3. What would you spend your next 100 gold on?
 4. When did you feel strongest? Weakest?
 5. Would you play again tomorrow? Why / why not?
@@ -56,13 +57,33 @@ copies their progress so you can reproduce their state.
 
 ## Balance lab
 
-Run `npm run balance` to produce a deterministic 12-seed report for every stage
-and difficulty. It uses reference parties and AUTO behavior, so use it to catch
-regressions and difficulty cliffs—not as a substitute for players who dodge,
-focus targets, and choose builds deliberately.
+Run `npm run balance` to produce a deterministic six-seed report for every stage
+and difficulty. The reference party earns its levels from earlier clears and
+uses real Discipline + Attunement Paths with two techniques and an ultimate.
+Set `BALANCE_SEEDS` to 1–24 for a faster smoke test or a denser tuning sample.
+Use it to catch regressions and difficulty cliffs—not as a substitute for
+players who dodge, focus targets, and choose builds deliberately.
+
+Run `npm run economy` to audit the conservative Normal first-clear floor. It
+tracks recruit timing, personal XP milestones, weapon and role-kit purchases,
+Path-change costs, and the remaining purse without counting random loot or side
+activities.
 
 For Act III, verify that the tide line is readable without obscuring units, the
 terrain status chip changes before high tide, lightning warnings allow time to
 move, and both coast bosses remain winnable on Normal with a prepared four-hero
 band. Record whether players understand that high tide turns lightning into a
 brief stun without being told twice.
+
+For Acts IV–X, sample at least one approach stage and the boss of each region.
+Ask the tester to name the promised attack before it lands: eruption, roots,
+eclipse, verdict beam, shatter, marked charge, or void. A warning fails if its
+shape, countdown label, and safe space disagree. Confirm that each signature foe
+teaches the same rule later used by its boss, and that the Way-Eater's recalled
+patterns feel learned rather than random.
+
+At the Tavern after stage 18, verify that Road Tutelage appears only for
+inactive companions behind the active band, buys exactly one level, charges the
+displayed amount, queues the normal boon choice, and disappears when the pupil
+catches the active party. It must never raise an active hero or create a new
+highest-level hero.

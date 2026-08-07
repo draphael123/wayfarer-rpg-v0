@@ -70,7 +70,7 @@ export function runBattleSimulation(
     const dt = 1 / 30;
     let casts = 0;
     while (battle.state !== "victory" && battle.state !== "defeat" && battle.time < maxSeconds) {
-      casts += autopilotTick(battle, save);
+      if (battle.state === "fighting" && battle.cinematic <= 0) casts += autopilotTick(battle, save);
       battle.update(dt, save);
       fx.update(dt);
       if (fx.particles.length > 300) fx.particles.length = 0;

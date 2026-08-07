@@ -1,7 +1,7 @@
 import { audio } from "./audio";
 import { speedLabel } from "./save";
 import type { Battle } from "./battle";
-import { BOSS_PHASES, callingById, DIFFICULTIES, HEROES } from "./data";
+import { BOSS_PHASES, callingById, DIFFICULTIES, elementById, HEROES } from "./data";
 import { drawAbilityGlyph } from "./icons";
 import type { AbilityState, SaveData, Unit } from "./types";
 
@@ -64,6 +64,11 @@ export class Hud {
   private moveMarks: { x: number; y: number; t: number }[] = [];
   /** Double-tapping an enemy converges the whole band on it. */
   private lastEnemyTap: { id: number; time: number } | null = null;
+  /** Exposed to the practice ring so its focus-fire lesson advances only
+   *  after the player actually issues the band command. */
+  lastBandFocusId: number | null = null;
+  /** Monotonic count of explicit ground orders, used by interactive lessons. */
+  moveCommandSerial = 0;
   /** When true the sim AI fights the battle; any time is a good time to retake command. */
   autopilot = false;
   /** A hotkey armed an aimed ability: the preview follows the mouse, click casts. */
@@ -182,6 +187,11 @@ export class Hud {
     return c ? { x: c.x + c.w / 2, y: c.y + c.h / 2 } : null;
   }
 
+  heroPortraitCenter(index = 0): { x: number; y: number } | null {
+    const portrait = this.portraits[index];
+    return portrait ? { x: portrait.x + portrait.w / 2, y: portrait.y + portrait.h / 2 } : null;
+  }
+
   constructor(
     public battle: Battle,
     public save: SaveData,
@@ -288,18 +298,28 @@ export class Hud {
           if (b.ability.def.targeting === "instant") {
             // cast lands on release — a long hold shows the tooltip instead
           } else {
+            const wp = this.toWorld(x, y);
             this.drag = {
               mode: "ability",
               hero: b.hero,
               ability: b.ability,
-              startX: x,
-              startY: y,
-              x,
-              y,
+              // Keep the entire gesture in world space. Mixing the HUD's
+              // screen coordinates with a camera-shifted release made taps
+              // look like long pulls after the camera had moved.
+              startX: wp.x,
+              startY: wp.y,
+              x: wp.x,
+              y: wp.y,
             };
+            const openingAimHint =
+              this.save.aimMode === "freeze"
+                ? "Time pauses while you aim — drag out, take your time, release"
+                : this.save.aimMode === "realtime"
+                  ? "Battle keeps moving while you aim — drag out and release"
+                  : "Time slows while you aim — drag out, take your time, release";
             this.showHint(
               !this.aimHintShown
-                ? "Time slows while you aim — drag out, take your time, release"
+                ? openingAimHint
                 : b.ability.def.targeting === "ally"
                   ? "Drag onto an ally, then release"
                   : "Drag to aim, then release",
@@ -330,6 +350,7 @@ export class Hud {
         this.battle.fx.ring(unit.x, unit.y + 2, unit.radius * 2.6, "#ff8a70", { width: 3.4, life: 0.5 });
         this.showHint("The band converges!");
         audio.play("click");
+        this.lastBandFocusId = unit.id;
         this.lastEnemyTap = null;
         return null;
       }
@@ -340,6 +361,7 @@ export class Hud {
     }
     if (!unit && this.selected && this.selected.alive) {
       this.battle.orderMove(this.selected, wp);
+      this.moveCommandSerial += 1;
       this.moveMarks.push({ x: wp.x, y: wp.y, t: 0 });
       return null;
     }
@@ -409,6 +431,7 @@ export class Hud {
         }
       } else if (moved > 12 && sy < this.height - HUD_H + 20) {
         this.battle.orderMove(hero, { x, y });
+        this.moveCommandSerial += 1;
         this.moveMarks.push({ x, y, t: 0 });
       }
       return;
@@ -486,14 +509,14 @@ export class Hud {
       });
       // portrait shake on big hits
       const prevHp = this.prevHp[hero.id] ?? hero.hp;
-      if (prevHp - hero.hp > 8) this.portraitShake[hero.id] = 0.35;
+      if (!this.save.reducedMotion && this.save.screenShake && prevHp - hero.hp > 8) this.portraitShake[hero.id] = 0.35;
       this.prevHp[hero.id] = hero.hp;
       this.portraitShake[hero.id] = Math.max(0, (this.portraitShake[hero.id] ?? 0) - dt);
     }
     if (this.selected && !this.selected.alive) this.selected = null;
 
     // gentle coaching for brand-new players (never during tutorials)
-    if (this.freshPlayer && !this.tutorial && this.battle.state === "fighting" && !this.paused) {
+    if (this.save.tutorialHints && this.freshPlayer && !this.tutorial && this.battle.state === "fighting" && !this.paused) {
       const b = this.battle;
       if (this.coachStage === 0 && b.time > 4 && b.ordersIssued === 0 && this.hintTime <= 0) {
         this.showHint("Drag a hero onto open ground to move — or onto a foe to attack");
@@ -1217,7 +1240,7 @@ export class Hud {
       }
       ctx.restore();
 
-      // sworn-oath crest pinned to the portrait corner
+      // the path's Waymark is pinned to the portrait corner
       const heroOath = callingById(hero.calling);
       if (heroOath) {
         ctx.save();
@@ -1465,14 +1488,15 @@ export class Hud {
       } else line = test;
     }
     if (line) lines.push(line);
-    const oath = hold.ability.ult ? callingById(hold.hero.calling) : null;
+    const path = hold.ability.ult ? callingById(hold.hero.calling) : null;
+    const element = def.element && def.element !== "physical" ? elementById(def.element) : null;
     const footer = hold.ability.ult
-      ? oath
-        ? `ULTIMATE · ${oath.chargeHint}`
+      ? path
+        ? `ULTIMATE · ${path.chargeHint}`
         : "ULTIMATE"
       : hold.ability.armorSkill
         ? `ARMOR SKILL · cooldown ${def.cooldown}s`
-        : `cooldown ${def.cooldown}s${def.targeting === "instant" ? "" : " · drag to aim"}`;
+        : `${element ? `${element.name.toUpperCase()} · ` : ""}cooldown ${def.cooldown}s${def.targeting === "instant" ? "" : " · drag to aim"}`;
     const w = 210;
     const h = 44 + lines.length * 14;
     const x = Math.max(8, Math.min(this.width - w - 8, hold.x + hold.w / 2 - w / 2));
@@ -1529,7 +1553,7 @@ export class Hud {
     roundRect(ctx, x, y, s, s, 8);
     ctx.fill();
     if (isUlt) {
-      // the meter IS the button: charge fills bottom-up in the calling color
+      // the meter IS the button: charge fills bottom-up in the path color
       ctx.save();
       roundRect(ctx, x, y, s, s, 8);
       ctx.clip();
@@ -1613,52 +1637,49 @@ export class Hud {
     accent: string,
     h = 250,
   ): { x: number; y: number; w: number } {
-    ctx.fillStyle = "rgba(14, 10, 22, 0.72)";
+    ctx.fillStyle = "rgba(8, 7, 11, 0.78)";
     ctx.fillRect(0, 0, this.width, this.height);
     const w = 340;
     const x = this.width / 2 - w / 2;
     const y = this.height / 2 - h / 2 - 20;
-    // paneled card with a soft top light
+    // A field-ledger leaf: flat ink, a brass binding and ruled paper. This is
+    // the same visual language as Settings and the Handbook, carried into play.
     const g = ctx.createLinearGradient(0, y, 0, y + h);
-    g.addColorStop(0, "#2c2342");
-    g.addColorStop(0.2, "#251e36");
-    g.addColorStop(1, "#1d1730");
+    g.addColorStop(0, "#211b25");
+    g.addColorStop(0.18, "#19151d");
+    g.addColorStop(1, "#141119");
     ctx.fillStyle = g;
-    roundRect(ctx, x, y, w, h, 16);
+    roundRect(ctx, x, y, w, h, 5);
     ctx.fill();
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 2;
-    roundRect(ctx, x, y, w, h, 16);
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(255, 245, 225, 0.08)";
+    ctx.strokeStyle = "rgba(207, 181, 121, 0.62)";
     ctx.lineWidth = 1;
-    roundRect(ctx, x + 4, y + 4, w - 8, h - 8, 12);
+    roundRect(ctx, x, y, w, h, 5);
     ctx.stroke();
-    // corner diamonds
     ctx.fillStyle = accent;
-    for (const [dx, dy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]] as [number, number][]) {
-      ctx.save();
-      ctx.translate(dx, dy);
-      ctx.rotate(Math.PI / 4);
-      ctx.fillRect(-3.4, -3.4, 6.8, 6.8);
-      ctx.restore();
+    ctx.globalAlpha = 0.72;
+    ctx.fillRect(x, y, 4, h);
+    ctx.globalAlpha = 1;
+    // faint ledger rules keep the large sheet from feeling like an empty card
+    ctx.strokeStyle = "rgba(229, 215, 187, 0.035)";
+    for (let lineY = y + 70; lineY < y + h - 8; lineY += 22) {
+      ctx.beginPath();
+      ctx.moveTo(x + 14, lineY);
+      ctx.lineTo(x + w - 14, lineY);
+      ctx.stroke();
     }
+    ctx.fillStyle = "#9c8c70";
+    ctx.font = "700 7.5px ui-monospace, Consolas, monospace";
+    ctx.textAlign = "left";
+    ctx.fillText("WAYFINDER'S FIELD LEDGER", x + 24, y + 18);
     ctx.fillStyle = accent;
-    ctx.font = "700 26px Cinzel, Palatino, Georgia, serif";
-    ctx.textAlign = "center";
-    ctx.fillText(title, this.width / 2, y + 42);
-    // divider with a center diamond
-    ctx.strokeStyle = "rgba(255, 245, 225, 0.18)";
+    ctx.font = "700 23px Cinzel, Palatino, Georgia, serif";
+    ctx.fillText(title.toUpperCase(), x + 24, y + 46);
+    ctx.strokeStyle = "rgba(207, 181, 121, 0.34)";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(x + 46, y + 56);
-    ctx.lineTo(x + w - 46, y + 56);
+    ctx.moveTo(x + 24, y + 56);
+    ctx.lineTo(x + w - 18, y + 56);
     ctx.stroke();
-    ctx.save();
-    ctx.translate(this.width / 2, y + 56);
-    ctx.rotate(Math.PI / 4);
-    ctx.fillRect(-2.4, -2.4, 4.8, 4.8);
-    ctx.restore();
     return { x, y, w };
   }
 
@@ -1672,17 +1693,23 @@ export class Hud {
     accent = "#ffe9a3",
   ): void {
     const h = 40;
-    ctx.fillStyle = "#332a4a";
-    roundRect(ctx, x, y, w, h, 10);
+    ctx.fillStyle = "rgba(35, 29, 41, 0.94)";
+    roundRect(ctx, x, y, w, h, 4);
     ctx.fill();
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, x, y, w, h, 10);
+    ctx.strokeStyle = "rgba(211, 193, 155, 0.28)";
+    ctx.lineWidth = 1;
+    roundRect(ctx, x, y, w, h, 4);
     ctx.stroke();
+    ctx.fillStyle = accent;
+    ctx.fillRect(x, y, 3, h);
     ctx.fillStyle = "#f2ecd8";
-    ctx.font = "700 15px 'Trebuchet MS', Verdana, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(label, x + w / 2, y + 26);
+    ctx.font = "700 13.5px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(label, x + 14, y + 25.5);
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(x + w - 13, y + h / 2, 2.2, 0, Math.PI * 2);
+    ctx.fill();
     this.overlayButtons.push({ id, x, y, w, h, label });
   }
 
@@ -1691,8 +1718,8 @@ export class Hud {
     const bw = frame.w - 60;
     const bx = frame.x + 30;
     this.addOverlayButton(ctx, "resume", "Resume", bx, frame.y + 64, bw);
-    this.addOverlayButton(ctx, "retry", "Restart Battle", bx, frame.y + 108, bw);
-    this.addOverlayButton(ctx, "map", "Retreat to Map", bx, frame.y + 152, bw);
+    this.addOverlayButton(ctx, "retry", this.battle.tutorialMode ? "Restart Lesson" : "Restart Battle", bx, frame.y + 108, bw);
+    this.addOverlayButton(ctx, "map", this.battle.tutorialMode ? "Leave Lesson" : "Retreat to Map", bx, frame.y + 152, bw);
     this.addOverlayButton(ctx, "speed", `Combat speed: ${speedLabel(this.save.speed)}`, bx, frame.y + 196, bw);
     this.addOverlayButton(ctx, "sound", `Sound: ${this.save.sound ? "on" : "off"}`, bx, frame.y + 240, bw / 2 - 5);
     this.addOverlayButton(

@@ -38,6 +38,8 @@ export class Tutorial {
       this.steps = this.gestureSteps(mid);
     } else if (kind === "healing") {
       this.steps = this.healingSteps();
+    } else if (kind === "fieldcraft") {
+      this.steps = this.fieldcraftSteps(mid);
     } else {
       this.steps = this.basicSteps(mid);
     }
@@ -46,6 +48,7 @@ export class Tutorial {
 
   private basicSteps(mid: () => { x: number; y: number }): TutStep[] {
     const battle = this.battle;
+    let ordersBefore = 0;
     return [
       {
         text: "Meet Bram and Sol — your band begins here.",
@@ -63,6 +66,13 @@ export class Tutorial {
           battle
             .heroes()
             .some((h, i) => Math.hypot(h.x - this.startPositions[i].x, h.y - this.startPositions[i].y) > 40),
+      },
+      {
+        text: "There is a second command style: tap Bram's portrait, then tap the field.",
+        sub: "Use whichever feels natural — drag orders and tap orders do the same work.",
+        onEnter: () => { ordersBefore = battle.ordersIssued; },
+        target: () => this.hud.heroPortraitCenter(0),
+        check: () => battle.ordersIssued > ordersBefore,
       },
       {
         text: "A goblin! Drag Bram onto it to attack.",
@@ -94,14 +104,20 @@ export class Tutorial {
         check: () => this.abilityUsed("mend"),
       },
       {
-        text: "Sol also mends on his own — see the ✚ on his portrait.",
-        sub: "Tap it anytime to switch him between mending and fighting.",
+        text: "Sol also mends on his own — tap the ✚ on his portrait now.",
+        sub: "The stance chip switches him from mending to fighting.",
         target: () => this.hud.stanceChipCenter(),
-        check: () => this.stepTime > 4,
+        check: () => battle.heroes()[1]?.stance === "attack",
+      },
+      {
+        text: "Tap the stance again to return Sol to mending.",
+        sub: "You can change a healer's job at any moment.",
+        target: () => this.hud.stanceChipCenter(),
+        check: () => battle.heroes()[1]?.stance === "heal",
       },
       {
         text: "You're ready. The road awaits!",
-        sub: "Train attributes between battles to unlock new abilities.",
+        sub: "At level 5, combine a Discipline and Attunement to forge an elemental Path.",
         onEnter: () => {
           for (const enemy of this.battle.livingEnemies()) this.battle.damage(enemy, 99999, null);
         },
@@ -118,8 +134,8 @@ export class Tutorial {
     };
     return [
       {
-        text: "Aimed spells are drawn, not tapped.",
-        sub: "Press a spell button, drag onto the field, release to cast.",
+        text: "Aimed techniques are drawn, not tapped.",
+        sub: "Press a technique button, drag onto the field, release to cast.",
         check: () => this.stepTime > 2.6,
       },
       {
@@ -148,7 +164,7 @@ export class Tutorial {
       },
       {
         text: "Sharp shooting. You're a natural.",
-        sub: "Every aimed spell works this way.",
+        sub: "Every aimed technique works this way.",
         onEnter: () => {
           for (const enemy of battle.livingEnemies()) battle.damage(enemy, 99999, null);
         },
@@ -207,6 +223,66 @@ export class Tutorial {
         text: "The band is in good hands.",
         sub: "High Spirit heroes make the best menders.",
         check: () => this.stepTime > 3,
+      },
+    ];
+  }
+
+  private fieldcraftSteps(mid: () => { x: number; y: number }): TutStep[] {
+    const battle = this.battle;
+    let dangerAt: Vec | null = null;
+    let focus: Unit | null = null;
+    let moveCommandsAt = 0;
+    return [
+      {
+        text: "Read the field before chasing damage.",
+        sub: "Bright marked ground is a promise: something dangerous will land there.",
+        check: () => this.stepTime > 2.6,
+      },
+      {
+        text: "Bram is marked. Move him outside the warning ring.",
+        sub: "Warning time can be lengthened in Settings without changing rewards.",
+        onEnter: () => {
+          const bram = battle.heroes()[0];
+          dangerAt = { x: bram.x, y: bram.y };
+          moveCommandsAt = this.hud.moveCommandSerial;
+          const m = mid();
+          battle.spawnEnemy("brute", { x: m.x + 150, y: m.y, scale: 0.32 });
+          focus = battle.livingEnemies()[0] ?? null;
+          if (focus) {
+            focus.stats.maxHp = Math.max(focus.stats.maxHp, 5000);
+            focus.hp = focus.stats.maxHp;
+            focus.effects.push({ kind: "stun", time: 999, power: 1, source: null });
+            battle.telegraphs.push({ x: dangerAt.x, y: dangerAt.y, radius: 62, time: 0, duration: 60, owner: focus, kind: "sweep", label: "MOVE" });
+          }
+        },
+        target: () => dangerAt,
+        check: () => {
+          const bram = battle.heroes()[0];
+          return !!dangerAt && this.hud.moveCommandSerial > moveCommandsAt && Math.hypot(bram.x - dangerAt.x, bram.y - dangerAt.y) > 82;
+        },
+      },
+      {
+        text: "Now double-tap the Brute to focus the whole band.",
+        sub: "A bright ring confirms that every available fighter is converging.",
+        onEnter: () => {
+          battle.telegraphs = battle.telegraphs.filter((mark) => mark.label !== "MOVE");
+          if (focus) focus.effects = focus.effects.filter((effect) => effect.kind !== "stun");
+        },
+        target: () => focus?.alive ? { x: focus.x, y: focus.y - 18 } : null,
+        check: () => !!focus && this.hud.lastBandFocusId === focus.id,
+      },
+      {
+        text: "Waymarks reveal an enemy's elemental weakness and resistance.",
+        sub: "A normal weakness adds 25% damage; a resistance trims 20%. Boss matchups are gentler.",
+        check: () => this.stepTime > 4,
+      },
+      {
+        text: "Against bosses: marked ground means move; the amber bar is poise.",
+        sub: "Break poise to stagger the boss. Phase diamonds show when its tactics will change.",
+        onEnter: () => {
+          for (const enemy of battle.livingEnemies()) battle.damage(enemy, 99999, null);
+        },
+        check: () => this.stepTime > 4,
       },
     ];
   }
