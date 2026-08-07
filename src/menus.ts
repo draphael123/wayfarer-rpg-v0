@@ -40,12 +40,13 @@ import {
   ATTR_BLURBS,
   ATTR_KEYS,
   ATTR_NAMES,
+  bandLevel,
+  boonById,
   DEEDS,
   ENEMIES,
   HEROES,
   MAX_EQUIPPED,
   PARTY_CAP,
-  POINTS_PER_LEVEL,
   RECRUIT_COST,
   SPELL_COSTS,
   STAGES,
@@ -442,7 +443,6 @@ export class Menus {
   root: HTMLElement;
   toast: HTMLElement | null = null;
   travelFrom: number | null = null; // cleared stage to animate the road-march from
-  pendingLevelUp: { level: number; gained: number } | null = null; // set on victory, shown once on the map
   private pendingSpell: string | null = null; // spell waiting for a slot in replace mode
   private figureTimer: number | null = null; // idle animation for the hero-sheet figure
   private justDonned = false; // flash the figure preview on the next sheet render
@@ -807,15 +807,13 @@ export class Menus {
     this.root.innerHTML = "";
     this.show();
     const save = this.save;
-    const need = xpForLevel(save.level);
-    const xpPct = Math.min(100, Math.round((save.xp / need) * 100));
+    const seasoned = bandLevel(save);
     const page = el(`
       <div class="page">
         <div class="map-header">
           <div>
             <div class="map-title">The Long Road</div>
-            <div class="map-level">Band level ${save.level}/${MAX_LEVEL} · ${save.xp}/${need} xp · <span class="gold-chip">${ico("coin")} <span class="gold-num">${save.gold}</span></span></div>
-            <div class="xp-bar"><div class="xp-fill" style="width:${xpPct}%"></div></div>
+            <div class="map-level">A band of ${save.heroes.filter((h) => h.recruited).length} · finest at level ${seasoned} · <span class="gold-chip">${ico("coin")} <span class="gold-num">${save.gold}</span></span></div>
           </div>
         </div>
         <div class="world-map"></div>
@@ -886,47 +884,56 @@ export class Menus {
     });
     this.mount(page, "battle");
     this.tickGold(page);
-    if (this.pendingLevelUp) {
-      const info = this.pendingLevelUp;
-      this.pendingLevelUp = null;
-      const talentsGained = Math.floor(info.level / 2) - Math.floor((info.level - info.gained) / 2);
-      const pop = el(`
-        <div class="levelup-pop">
-          <div class="levelup-card">
-            <div class="levelup-burst">✦</div>
-            <div class="levelup-title">LEVEL UP!</div>
-            <div class="levelup-line">The band reaches <strong>level ${info.level}</strong></div>
-            <div class="levelup-line">+${info.gained * POINTS_PER_LEVEL} attribute point${info.gained * POINTS_PER_LEVEL === 1 ? "" : "s"} for every hero${talentsGained > 0 ? ` · +${talentsGained} talent point${talentsGained === 1 ? "" : "s"}` : ""}</div>
-            ${
-              info.level - info.gained < CALLING_UNLOCK_LEVEL && info.level >= CALLING_UNLOCK_LEVEL
-                ? '<div class="levelup-line callings-unlocked">Callings unlocked — each hero may now swear an oath on the Party screen</div>'
-                : ""
-            }
-            ${
-              info.level - info.gained < ADV_CALLING_LEVEL && info.level >= ADV_CALLING_LEVEL
-                ? '<div class="levelup-line callings-unlocked">Advanced callings unlocked — every sworn oath can now deepen down one of two paths</div>'
-                : ""
-            }
-            <div class="levelup-actions">
-              <button class="big-btn primary" data-act="lv-spend">Spend points</button>
-              <button class="big-btn" data-act="lv-later">Later</button>
-            </div>
-          </div>
-        </div>
-      `);
-      navigator.vibrate?.([16, 40, 24]);
-      pop.addEventListener("click", (event) => {
-        const act = (event.target as HTMLElement).closest("[data-act]")?.getAttribute("data-act");
-        if (act === "lv-spend") {
-          audio.play("click");
-          this.renderParty();
-        } else if (act === "lv-later" || event.target === pop) {
-          audio.play("click");
-          pop.remove();
-        }
-      });
-      this.root.appendChild(pop);
+    this.maybeOfferBoons();
+  }
+
+  /** Level-up boon picks queue up here: one hero, two gifts, one choice. */
+  private maybeOfferBoons(): void {
+    const save = this.save;
+    const next = save.pendingBoons[0];
+    if (!next || document.querySelector(".boon-pop")) return;
+    const hero = save.heroes[next.hero];
+    const def = HEROES[next.hero];
+    if (!hero || !def) {
+      save.pendingBoons.shift();
+      return;
     }
+    const a = boonById(next.a);
+    const b = boonById(next.b);
+    if (!a || !b) {
+      save.pendingBoons.shift();
+      return;
+    }
+    const card = (boon: NonNullable<typeof a>, key: string) => `
+      <button class="big-btn boon-card ${boon.rarity === "rare" ? "rare" : ""}" data-boon="${key}">
+        <strong>${boon.name}${boon.rarity === "rare" ? " ✦" : ""}</strong>
+        <em>${boon.blurb}</em>
+      </button>`;
+    const pop = el(`
+      <div class="levelup-pop boon-pop">
+        <div class="levelup-card">
+          <div class="levelup-burst">✦</div>
+          <div class="levelup-title">LEVEL ${hero.level}</div>
+          <div class="levelup-line"><strong>${def.name}</strong> grows — choose their boon${save.pendingBoons.length > 1 ? ` <span class="boon-queue">(${save.pendingBoons.length} waiting)</span>` : ""}</div>
+          <div class="boon-row">${card(a, "a")}${card(b, "b")}</div>
+        </div>
+      </div>
+    `);
+    navigator.vibrate?.([16, 40, 24]);
+    audio.play("ready");
+    pop.addEventListener("click", (event) => {
+      const pick = (event.target as HTMLElement).closest("[data-boon]")?.getAttribute("data-boon");
+      if (!pick) return;
+      const chosen = pick === "a" ? a : b;
+      hero.boons.push(chosen.id);
+      save.pendingBoons.shift();
+      persist(save);
+      audio.play(chosen.rarity === "rare" ? "relic" : "levelup");
+      this.showToast(`${def.name} takes ${chosen.name}`);
+      pop.remove();
+      this.maybeOfferBoons();
+    });
+    this.root.appendChild(pop);
   }
 
   /** The Winterreach: act two's frost-painted panel. */
@@ -1785,7 +1792,7 @@ export class Menus {
           <div class="shop-note"><strong>🍺 The Tavern</strong> — recruit new heroes to the band. Anyone hired can be rotated in or out of your fighting party of ${PARTY_CAP} on the Party screen.</div>
           <div class="shop-note"><strong>${ico("shield")} The Armory</strong> — weapons upgrade in tiers, but armor is a WARDROBE across THREE slots: body, helm, and boots. The body piece grants its family's battle skill (cloth Surge, leather Tumble, mail Rally, plate Brace — the extra button in battle); wear two or three pieces of one family and the SET answers with more. The Forge reworks any owned piece up to +3, and the great foes each guard a RELIC piece for whoever fells them first.</div>
           <div class="shop-note"><strong>${ico("spark")} The Spell Shop</strong> — unlock a spell once for the whole band, then assign it to any hero whose attributes meet its bar. Each hero carries up to ${MAX_EQUIPPED} spells.</div>
-          <div class="shop-note"><strong>${ico("banner")} Callings</strong> — at band level ${CALLING_UNLOCK_LEVEL} each hero may swear an oath their stats have earned: an always-on passive, regalia, and an ULTIMATE that charges as they play their role. At level ${ADV_CALLING_LEVEL} every oath deepens down one of two paths. Stats never lock — but drop below an oath's bar and it sleeps.</div>
+          <div class="shop-note"><strong>${ico("banner")} Callings</strong> — at level ${CALLING_UNLOCK_LEVEL} a hero may swear an oath their stats have earned: an always-on passive, regalia, and an ULTIMATE that charges as they play their role. At level ${ADV_CALLING_LEVEL} every oath deepens down one of two paths. Stats never lock — but drop below an oath's bar and it sleeps.</div>
           <div class="shop-note"><strong>${ico("skull")} Bosses</strong> — the great foes hunt whoever HURTS them most. Pour damage in and a boss turns on you; your warrior holds its anger just by standing in its face, and taunts trump everything. Marked ground means MOVE.</div>
           <div class="shop-note"><strong>⌨ Keyboard</strong> — on a computer: 1–4 picks a hero, Q/W/E casts, R is the ultimate. Aimed spells follow the mouse; click casts, Esc cancels. Rebind in Settings.</div>
           <div class="shop-note"><strong>${ico("star")} Talents</strong> — every 2 band levels, each hero earns a talent point for the Strength, Dexterity, and Magic trees. Find them on the Party screen.</div>
@@ -1812,7 +1819,7 @@ export class Menus {
     const save = this.save;
     const def = HEROES[index];
     const hero = save.heroes[index];
-    const budget = talentPointBudget(save.level);
+    const budget = talentPointBudget(hero.level);
     const spent = talentPointsSpent(hero.talents);
     const free = budget - spent;
     const page = el(`
@@ -1909,7 +1916,7 @@ export class Menus {
           this.showToast(talent.keystone ? `${talent.name} is already learned` : `${talent.name} is already at max rank`);
           return;
         }
-        if (talentPointBudget(save.level) - talentPointsSpent(hero.talents) <= 0) {
+        if (talentPointBudget(hero.level) - talentPointsSpent(hero.talents) <= 0) {
           this.showToast("No talent points left — level up the band");
           return;
         }
@@ -2454,7 +2461,7 @@ export class Menus {
   /** Tab rail every hero screen shares: one hero, four facets, plus ‹ › to walk the roster. */
   private heroTabs(index: number, active: "overview" | "gear" | "spells" | "talents" | "calling"): HTMLElement {
     const save = this.save;
-    const canCall = !!save.heroes[index].calling || save.level >= CALLING_UNLOCK_LEVEL;
+    const canCall = !!save.heroes[index].calling || save.heroes[index].level >= CALLING_UNLOCK_LEVEL;
     const roster = save.heroes.map((h, i) => ({ h, i })).filter(({ h }) => h.recruited).map(({ i }) => i);
     const strip = el(`
       <div class="shop-tabs hero-tabs">
@@ -2472,7 +2479,7 @@ export class Menus {
       else if (tab === "gear") this.renderEquipment(i);
       else if (tab === "spells") this.renderSpells(i);
       else if (tab === "talents") this.renderTalents(i);
-      else if (this.save.heroes[i].calling || this.save.level >= CALLING_UNLOCK_LEVEL) this.renderCalling(i);
+      else if (this.save.heroes[i].calling || this.save.heroes[i].level >= CALLING_UNLOCK_LEVEL) this.renderCalling(i);
       else this.renderHeroOverview(i);
     };
     strip.addEventListener("click", (event) => {
@@ -2657,6 +2664,7 @@ export class Menus {
       }
     });
     this.mount(page, "party");
+    this.maybeOfferBoons();
   }
 
   private heroCard(index: number, full = false): HTMLElement {
@@ -2674,6 +2682,7 @@ export class Menus {
       hero.trinket,
       oathHolds ? hero.calling : null,
       oathHolds ? hero.advCalling : null,
+      hero.boons,
     );
     const weapon = dominantWeapon(hero.attrs, oathHolds ? hero.calling : null);
     const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
@@ -2695,7 +2704,8 @@ export class Menus {
                   ? `<span class="calling-tag" style="color:${sworn.color}">${advInfo ? advInfo.adv.name : sworn.name}</span> · `
                   : `<span class="calling-tag dormant">${sworn.name} — dormant</span> · `
                 : ""
-            }${WEAPON_LABEL[weapon]} · ${WEAPON_TIERS[hero.weaponTier].name} / ${armorById(hero.armor)?.name ?? "Traveler's Garb"}</div>
+            }<span class="hero-lv">Lv ${hero.level}</span> · ${WEAPON_LABEL[weapon]} · ${WEAPON_TIERS[hero.weaponTier].name} / ${armorById(hero.armor)?.name ?? "Traveler's Garb"}</div>
+            <div class="xp-bar hero-xp"><div class="xp-fill" style="width:${Math.min(100, Math.round((hero.xp / xpForLevel(hero.level)) * 100))}%"></div></div>
           </div>
           <button class="toggle-btn party-toggle ${inParty ? "in" : ""}" data-act="toggle-party">
             ${inParty ? `${ico("banner")} In party` : `${ico("moon")} Benched`}
@@ -2723,15 +2733,15 @@ export class Menus {
           <button class="toggle-btn equip-btn" data-act="equip">${ico("shield")} Equip</button>
           ${save.unspent[index] > 0 ? `<button class="toggle-btn suggest-btn" data-act="suggest">${ico("spark")} Suggest</button>` : ""}
           <button class="toggle-btn talents-btn" data-act="talents">${ico("star")} Talents</button>
-          <button class="toggle-btn calling-btn ${!sworn && save.level >= CALLING_UNLOCK_LEVEL ? "beckons" : ""}"
-            data-act="calling" ${!sworn && save.level < CALLING_UNLOCK_LEVEL ? "disabled" : ""}
+          <button class="toggle-btn calling-btn ${!sworn && hero.level >= CALLING_UNLOCK_LEVEL ? "beckons" : ""}"
+            data-act="calling" ${!sworn && hero.level < CALLING_UNLOCK_LEVEL ? "disabled" : ""}
             ${sworn ? (oathHolds ? `style="border-color:${sworn.color};color:${sworn.color}"` : 'style="border-color:#ff9a85;color:#ff9a85"') : ""}>
             ${
               sworn
                 ? `${ico(sworn.crest)} ${advInfo ? advInfo.adv.name : sworn.name}${oathHolds ? "" : " (dormant)"}`
-                : save.level >= CALLING_UNLOCK_LEVEL
+                : hero.level >= CALLING_UNLOCK_LEVEL
                   ? "Choose a Calling"
-                  : `Calling at band lv ${CALLING_UNLOCK_LEVEL}`
+                  : `Calling at level ${CALLING_UNLOCK_LEVEL}`
             }
           </button>
           <button class="toggle-btn respec" data-act="respec">Respec (free)</button>
@@ -2807,7 +2817,7 @@ export class Menus {
         return c && callingEligible(c, hero.attrs) ? hero.calling : null;
       };
       const effAdv = () => (effCalling() ? hero.advCalling : null);
-      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv());
+      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.boons);
       hero.attrs[key] += 1;
       save.unspent[index] -= 1;
       const before = unlocked.length;
@@ -2828,7 +2838,7 @@ export class Menus {
         audio.play("click");
       }
       persist(save);
-      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv());
+      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.boons);
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, statsBefore, statsAfter);
     });
@@ -2848,7 +2858,7 @@ export class Menus {
         const c = callingById(hero.calling);
         return c && callingEligible(c, hero.attrs) ? hero.calling : null;
       };
-      const before = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null);
+      const before = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.boons);
       for (let p = 0; p < pts; p++) {
         let bestK = ATTR_KEYS[0];
         let bestScore = -1;
@@ -2871,7 +2881,7 @@ export class Menus {
       persist(save);
       audio.play("levelup");
       this.showToast(`${def.name}'s training follows their nature — ${pts} point${pts === 1 ? "" : "s"} spent`);
-      const after = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null);
+      const after = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.boons);
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, before, after);
     });
@@ -2882,7 +2892,7 @@ export class Menus {
     });
 
     card.querySelector('[data-act="calling"]')!.addEventListener("click", () => {
-      if (!hero.calling && save.level < CALLING_UNLOCK_LEVEL) return;
+      if (!hero.calling && hero.level < CALLING_UNLOCK_LEVEL) return;
       audio.play("click");
       this.renderCalling(index);
     });
@@ -2969,10 +2979,10 @@ export class Menus {
       holder.appendChild(canvas);
       // level-20 advancement: the sworn calling shows its two branches
       if (isSworn && c.advanced) {
-        const advReady = save.level >= ADV_CALLING_LEVEL;
+        const advReady = hero.level >= ADV_CALLING_LEVEL;
         const advWrap = el(`
           <div class="adv-section">
-            <div class="adv-head">Advancement ${advReady ? "" : `<span>at band level ${ADV_CALLING_LEVEL}</span>`}</div>
+            <div class="adv-head">Advancement ${advReady ? "" : `<span>at level ${ADV_CALLING_LEVEL}</span>`}</div>
             <div class="adv-branches"></div>
           </div>
         `);
@@ -3005,7 +3015,7 @@ export class Menus {
       const advance = target.closest("[data-advance]");
       if (advance) {
         const id = advance.getAttribute("data-advance")!;
-        if (save.level < ADV_CALLING_LEVEL) return;
+        if (hero.level < ADV_CALLING_LEVEL) return;
         if (hero.advCalling && !this.spend(ADV_SWITCH_COST)) return;
         hero.advCalling = id;
         persist(save);
@@ -3119,7 +3129,7 @@ export class Menus {
     const gearHolder = page.querySelector(".gear-slots")!;
     const gearNow = () => heroGearOf(hero, save.forge);
     const statsWith = (gear: ReturnType<typeof gearNow>) =>
-      deriveStats(hero.attrs, hero.weaponTier, gear, hero.talents, hero.trinket, sheetHolds ? hero.calling : null, sheetHolds ? hero.advCalling : null);
+      deriveStats(hero.attrs, hero.weaponTier, gear, hero.talents, hero.trinket, sheetHolds ? hero.calling : null, sheetHolds ? hero.advCalling : null, hero.boons);
     const buildSlot = (kind: "body" | "helm" | "boots") => {
       const catalog = kind === "body" ? ARMORS : kind === "helm" ? HELMS : BOOTS;
       const wornId = kind === "body" ? hero.armor : kind === "helm" ? hero.helm : hero.boots;

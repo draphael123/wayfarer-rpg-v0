@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { ARMOR_ACTIVES, DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, talentMods, trinketMods, SET_BONUSES } from "./data";
+import { ARMOR_ACTIVES, DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, boonMods, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, talentMods, trinketMods, SET_BONUSES } from "./data";
 
 // Battleheart pacing: cooldowns run 2.5× longer, so each cast must matter more.
 // Heals compensate harder than damage — a mend that has to cover a 20s window
@@ -127,7 +127,7 @@ export class Battle {
       const sworn = callingById(heroSave.calling);
       const oath = sworn && callingEligible(sworn, heroSave.attrs) ? sworn : null;
       const advanced = oath ? heroSave.advCalling : null;
-      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroGearOf(heroSave, save.forge), heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced);
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroGearOf(heroSave, save.forge), heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced, heroSave.boons);
       const abilities: AbilityState[] = heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d)
@@ -450,6 +450,9 @@ export class Battle {
   /** Feed a hero's ultimate meter; announces the moment it fills. */
   private gainUlt(hero: Unit, amount: number): void {
     if (!hero.calling || !hero.alive || amount <= 0) return;
+    // the Wolf's Heart boon quickens the meter
+    const boons = this.saveRef?.heroes[hero.heroIndex]?.boons;
+    if (boons) amount *= 1 + boonMods(boons).ultRate;
     const before = hero.ultCharge;
     hero.ultCharge = Math.min(100, hero.ultCharge + amount);
     if (before < 100 && hero.ultCharge >= 100) {

@@ -1,4 +1,4 @@
-import { ATTR_KEYS, HEROES, MAX_EQUIPPED, MAX_LEVEL, POINTS_PER_LEVEL, unlockedAbilities, xpForLevel } from "./data";
+import { ATTR_KEYS, HEROES, MAX_EQUIPPED, MAX_LEVEL, POINTS_PER_LEVEL, rollBoonPair, unlockedAbilities, xpForLevel } from "./data";
 import type { Attributes, HeroSave, SaveData } from "./types";
 
 const KEY = "wayband-save-v1";
@@ -69,7 +69,7 @@ function defaultHero(index: number): HeroSave {
     .filter((a) => STARTING_SPELLS.includes(a.id))
     .slice(0, MAX_EQUIPPED)
     .map((a) => a.id);
-  return { attrs, equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null };
+  return { attrs, level: 1, xp: 0, boons: [], equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null };
 }
 
 /** Out of the box: 1-4 picks a hero, QWER casts their abilities (R = ultimate). */
@@ -117,6 +117,7 @@ export function defaultSave(): SaveData {
     bigText: false,
     keybinds: { ...DEFAULT_KEYBINDS },
     forge: {},
+    pendingBoons: [],
   };
 }
 
@@ -183,6 +184,10 @@ export function loadSave(): SaveData {
       }
       if (hero.helm === undefined) hero.helm = null;
       if (hero.boots === undefined) hero.boots = null;
+      // heroes level individually now — veterans inherit the old band level
+      if (typeof hero.level !== "number") hero.level = Math.max(1, parsed.level ?? 1);
+      if (typeof hero.xp !== "number") hero.xp = 0;
+      if (!Array.isArray(hero.boons)) hero.boons = [];
       if (!hero.talents || typeof hero.talents !== "object") hero.talents = {};
       if (hero.trinket === undefined) hero.trinket = null;
       if (hero.calling === undefined) hero.calling = null;
@@ -201,6 +206,7 @@ export function loadSave(): SaveData {
     if (!Array.isArray(parsed.inventory)) parsed.inventory = [];
     if (!Array.isArray(parsed.armory)) parsed.armory = [];
     if (!parsed.forge || typeof parsed.forge !== "object") parsed.forge = {};
+    if (!Array.isArray(parsed.pendingBoons)) parsed.pendingBoons = [];
     if (typeof parsed.difficulty !== "number" || parsed.difficulty < 0 || parsed.difficulty > 3) parsed.difficulty = 1;
     if (typeof parsed.seenIntro !== "boolean") parsed.seenIntro = parsed.unlockedStage > 0;
     if (typeof parsed.soundVol !== "number" || parsed.soundVol < 0 || parsed.soundVol > 1) parsed.soundVol = 1;
@@ -239,24 +245,25 @@ export function persist(save: SaveData): void {
   }
 }
 
-/** Grants XP, applying any level-ups. Returns number of levels gained. */
-export function grantXp(save: SaveData, amount: number): number {
-  save.xp += amount;
-  if (save.level >= MAX_LEVEL) {
-    save.xp = 0;
-    persist(save);
+/** Grants personal XP to one hero, applying level-ups: each level yields
+ *  attribute points AND a boon pair awaiting the player's pick. */
+export function grantHeroXp(save: SaveData, index: number, amount: number): number {
+  const hero = save.heroes[index];
+  if (!hero || hero.level >= MAX_LEVEL) {
+    if (hero) hero.xp = 0;
     return 0;
   }
+  hero.xp += Math.round(amount);
   let gained = 0;
-  while (save.level < MAX_LEVEL && save.xp >= xpForLevel(save.level)) {
-    save.xp -= xpForLevel(save.level);
-    save.level += 1;
+  while (hero.level < MAX_LEVEL && hero.xp >= xpForLevel(hero.level)) {
+    hero.xp -= xpForLevel(hero.level);
+    hero.level += 1;
     gained += 1;
-    for (let i = 0; i < save.unspent.length; i++) {
-      save.unspent[i] += POINTS_PER_LEVEL;
-    }
+    save.unspent[index] += POINTS_PER_LEVEL;
+    save.pendingBoons.push({ hero: index, ...rollBoonPair() });
   }
-  persist(save);
+  // legacy mirror: the band wears its most seasoned member's number
+  save.level = Math.max(save.level, hero.level);
   return gained;
 }
 

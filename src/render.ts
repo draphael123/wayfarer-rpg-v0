@@ -1876,7 +1876,7 @@ export function drawTitleDiorama(ctx: CanvasRenderingContext2D, save: SaveData, 
       x: ux,
       y: uy,
       radius: 13,
-      stats: deriveStats(hs.attrs, hs.weaponTier, heroGearOf(hs, save.forge), hs.talents, hs.trinket, active, active ? hs.advCalling : null),
+      stats: deriveStats(hs.attrs, hs.weaponTier, heroGearOf(hs, save.forge), hs.talents, hs.trinket, active, active ? hs.advCalling : null, hs.boons),
       hp: 1,
       attackTimer: 0,
       moveTarget: null,
@@ -1937,7 +1937,7 @@ export function drawHeroFigure(
   const hero = save.heroes[heroIndex];
   const oathDef = callingById(hero.calling);
   const activeOath = oathDef && callingEligible(oathDef, hero.attrs) ? hero.calling : null;
-  const stats = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null);
+  const stats = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null, hero.boons);
   const radius = 13;
   const scale = canvas.height / (radius * 3.7 * 1.55);
   const unit = {

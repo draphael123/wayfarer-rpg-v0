@@ -1,6 +1,6 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { ALL_GEAR, ARMORS, BOSS_STAGES, DIFFICULTIES, HEROES, STAGES, TRINKETS } from "./data";
+import { ADV_CALLING_LEVEL, ALL_GEAR, ARMORS, BOSS_STAGES, CALLING_UNLOCK_LEVEL, DIFFICULTIES, HEROES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { drawHeroPortrait, Menus } from "./menus";
@@ -19,7 +19,7 @@ import {
   drawZones,
   setColorSafe,
 } from "./render";
-import { defaultSave, grantXp, loadSave, nextSpeed, persist } from "./save";
+import { defaultSave, grantHeroXp, loadSave, nextSpeed, persist } from "./save";
 import { logEvent } from "./telemetry";
 import { Tutorial } from "./tutorial";
 import type { SaveData, StageDef } from "./types";
@@ -254,7 +254,19 @@ function settleVictory(): void {
   const rewardMult = DIFFICULTIES[save.difficulty ?? 1].rewardMult;
   const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * rewardMult);
   const gold = Math.round((battle.goldEarned + Math.round(battle.stage.xpReward * 0.8)) * rewardMult);
-  const levels = grantXp(save, xp);
+  // heroes grow individually now: the four who fought earn full XP, the bench
+  // keeps pace at half so nobody is ever hopeless to field
+  let levels = 0;
+  const milestones: string[] = [];
+  save.heroes.forEach((h, i) => {
+    if (!h.recruited) return;
+    const before = h.level;
+    levels += grantHeroXp(save, i, h.active ? xp : xp * 0.5);
+    if (before < CALLING_UNLOCK_LEVEL && h.level >= CALLING_UNLOCK_LEVEL) milestones.push(`${HEROES[i].name} may swear a CALLING`);
+    if (before < ADV_CALLING_LEVEL && h.level >= ADV_CALLING_LEVEL) milestones.push(`${HEROES[i].name}'s oath can DEEPEN`);
+  });
+  persist(save);
+  for (const m of milestones) setTimeout(() => menus.showToast(m), 1200);
   // Deep Pockets: someone in the band knows where coin hides
   const deepPockets = save.heroes.some((h) => h.active && (h.talents?.deepPockets ?? 0) > 0);
   save.gold += Math.round(gold * (deepPockets ? 1.2 : 1));
@@ -289,10 +301,7 @@ function settleVictory(): void {
     menus.travelFrom = currentStage;
   }
   persist(save);
-  if (levels > 0) {
-    audio.play("levelup");
-    menus.pendingLevelUp = { level: save.level, gained: levels };
-  }
+  if (levels > 0) audio.play("levelup");
   setTimeout(() => menus.showToast(`+${gold} gold · loot: ${drop.icon} ${drop.name}${rare ? " (RARE)" : ""}`), 150);
 }
 

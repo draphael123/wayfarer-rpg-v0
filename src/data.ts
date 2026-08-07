@@ -900,6 +900,75 @@ export interface CallingDef {
   advanced?: [AdvCallingDef, AdvCallingDef]; // level-20 branch choice (the founding ten)
 }
 
+// --- boons: level-up gifts, one chosen of two offered — a hero's personal story ---
+
+export interface BoonDef {
+  id: string;
+  name: string;
+  blurb: string;
+  rarity: "common" | "rare";
+  mods: Partial<{ hpFlat: number; armorFlat: number; moveSpeed: number; atkSpeed: number; spellPower: number; healPower: number; rangedDmg: number; meleeDmg: number; cdr: number; crit: number; ultRate: number }>;
+}
+
+export const BOONS: BoonDef[] = [
+  { id: "oakheart", name: "Oakheart", blurb: "+14 health", rarity: "common", mods: { hpFlat: 14 } },
+  { id: "keenEdge", name: "Keen Edge", blurb: "+4% melee damage", rarity: "common", mods: { meleeDmg: 0.04 } },
+  { id: "trueFlight", name: "True Flight", blurb: "+4% ranged damage", rarity: "common", mods: { rangedDmg: 0.04 } },
+  { id: "quickHands", name: "Quick Hands", blurb: "+3% attack speed", rarity: "common", mods: { atkSpeed: 0.03 } },
+  { id: "lightStep", name: "Light Step", blurb: "+3% move speed", rarity: "common", mods: { moveSpeed: 0.03 } },
+  { id: "ironSkin", name: "Iron Skin", blurb: "+2% armor", rarity: "common", mods: { armorFlat: 0.02 } },
+  { id: "clearMind", name: "Clear Mind", blurb: "+3% spell power", rarity: "common", mods: { spellPower: 0.03 } },
+  { id: "kindSoul", name: "Kind Soul", blurb: "+4% healing", rarity: "common", mods: { healPower: 0.04 } },
+  { id: "steadyBreath", name: "Steady Breath", blurb: "−2% cooldowns", rarity: "common", mods: { cdr: 0.02 } },
+  { id: "luckyCoin", name: "Lucky Coin", blurb: "+2% critical chance", rarity: "common", mods: { crit: 0.02 } },
+  { id: "giantsBlood", name: "Giant's Blood", blurb: "+30 health", rarity: "rare", mods: { hpFlat: 30 } },
+  { id: "secondSkin", name: "Second Skin", blurb: "+4% armor", rarity: "rare", mods: { armorFlat: 0.04 } },
+  { id: "huntersEye", name: "Hunter's Eye", blurb: "+5% critical chance", rarity: "rare", mods: { crit: 0.05 } },
+  { id: "wolfsHeart", name: "Wolf's Heart", blurb: "Ultimate charges 12% faster", rarity: "rare", mods: { ultRate: 0.12 } },
+];
+
+export function boonById(id: string): BoonDef | undefined {
+  return BOONS.find((b) => b.id === id);
+}
+
+/** Two distinct boons offered at a level-up; rares turn up now and then. */
+export function rollBoonPair(): { a: string; b: string } {
+  const commons = BOONS.filter((b) => b.rarity === "common");
+  const rares = BOONS.filter((b) => b.rarity === "rare");
+  const pick = () => (Math.random() < 0.16 ? rares[Math.floor(Math.random() * rares.length)] : commons[Math.floor(Math.random() * commons.length)]);
+  const a = pick();
+  let b = pick();
+  let guard = 0;
+  while (b.id === a.id && guard++ < 10) b = pick();
+  return { a: a.id, b: b.id };
+}
+
+export function boonMods(boons: string[] | undefined) {
+  const m = { meleeDmg: 0, rangedDmg: 0, hpFlat: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, ultRate: 0 };
+  if (!boons) return m;
+  for (const id of boons) {
+    const b = boonById(id);
+    if (!b) continue;
+    m.meleeDmg += b.mods.meleeDmg ?? 0;
+    m.rangedDmg += b.mods.rangedDmg ?? 0;
+    m.hpFlat += b.mods.hpFlat ?? 0;
+    m.armorFlat += b.mods.armorFlat ?? 0;
+    m.cdr += b.mods.cdr ?? 0;
+    m.atkSpeed += b.mods.atkSpeed ?? 0;
+    m.moveSpeed += b.mods.moveSpeed ?? 0;
+    m.crit += b.mods.crit ?? 0;
+    m.spellPower += b.mods.spellPower ?? 0;
+    m.healPower += b.mods.healPower ?? 0;
+    m.ultRate += b.mods.ultRate ?? 0;
+  }
+  return m;
+}
+
+/** The band's public face: its most seasoned member. */
+export function bandLevel(save: { heroes: { recruited: boolean; level: number }[] }): number {
+  return Math.max(1, ...save.heroes.filter((h) => h.recruited).map((h) => h.level));
+}
+
 export const CALLING_UNLOCK_LEVEL = 5;
 export const CALLING_SWITCH_COST = 150;
 export const ADV_CALLING_LEVEL = 20;
@@ -1429,11 +1498,11 @@ function callingStatMods(calling?: string | null, advCalling?: string | null) {
   return m;
 }
 
-/** Total ability-cooldown reduction from talents, trinket, and calling(s). */
+/** Total ability-cooldown reduction from talents, trinket, calling(s), and boons. */
 export function cooldownReduction(hero: HeroSave): number {
   return Math.min(
     0.5,
-    talentMods(hero.talents).cdr + trinketMods(hero.trinket).cdr + callingStatMods(hero.calling, hero.advCalling).cdr,
+    talentMods(hero.talents).cdr + trinketMods(hero.trinket).cdr + callingStatMods(hero.calling, hero.advCalling).cdr + boonMods(hero.boons).cdr,
   );
 }
 
@@ -1445,26 +1514,28 @@ export function deriveStats(
   trinket?: string | null,
   calling?: string | null,
   advCalling?: string | null,
+  boons?: string[],
 ): DerivedStats {
   const t = talentMods(talents);
   const k = trinketMods(trinket);
   const c = callingStatMods(calling, advCalling);
   const v = gearMods(armor);
+  const bn = boonMods(boons);
   const mods = {
-    meleeDmg: t.meleeDmg + k.meleeDmg + c.meleeDmg + v.meleeDmg,
-    rangedDmg: t.rangedDmg + k.rangedDmg + c.rangedDmg + v.rangedDmg,
+    meleeDmg: t.meleeDmg + k.meleeDmg + c.meleeDmg + v.meleeDmg + bn.meleeDmg,
+    rangedDmg: t.rangedDmg + k.rangedDmg + c.rangedDmg + v.rangedDmg + bn.rangedDmg,
     hpPct: t.hpPct + k.hpPct + c.hpPct + v.hpPct,
-    armorFlat: t.armorFlat + k.armorFlat + c.armorFlat + v.armorFlat,
-    cdr: Math.min(0.5, t.cdr + k.cdr + c.cdr + v.cdr),
-    atkSpeed: t.atkSpeed + k.atkSpeed + c.atkSpeed + v.atkSpeed,
-    moveSpeed: t.moveSpeed + k.moveSpeed + c.moveSpeed + v.moveSpeed,
-    crit: t.crit + k.crit + c.crit + v.crit,
-    spellPower: t.spellPower + k.spellPower + c.spellPower + v.spellPower,
-    healPower: t.healPower + k.healPower + c.healPower + v.healPower,
+    armorFlat: t.armorFlat + k.armorFlat + c.armorFlat + v.armorFlat + bn.armorFlat,
+    cdr: Math.min(0.5, t.cdr + k.cdr + c.cdr + v.cdr + bn.cdr),
+    atkSpeed: t.atkSpeed + k.atkSpeed + c.atkSpeed + v.atkSpeed + bn.atkSpeed,
+    moveSpeed: t.moveSpeed + k.moveSpeed + c.moveSpeed + v.moveSpeed + bn.moveSpeed,
+    crit: t.crit + k.crit + c.crit + v.crit + bn.crit,
+    spellPower: t.spellPower + k.spellPower + c.spellPower + v.spellPower + bn.spellPower,
+    healPower: t.healPower + k.healPower + c.healPower + v.healPower + bn.healPower,
     startShield: t.startShield + k.startShield + c.startShield + v.startShield,
   };
   const weapon = dominantWeapon(attrs, calling);
-  const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + v.hpFlat);
+  const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + v.hpFlat + bn.hpFlat);
   const armorFrac = Math.min(0.65, attrs.vit * 0.02 + attrs.str * 0.01);
   const speed = 95 + Math.min(45, attrs.dex * 3);
   const healPower = 2 + attrs.spi * 1.6;
