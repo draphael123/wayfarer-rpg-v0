@@ -383,6 +383,7 @@ export interface SaveData {
   autoBattle: boolean; // begin real battles with AUTO tactics enabled
   tutorialHints: boolean; // contextual coaching during the opening battles
   completedTutorials: string[]; // replayable field lessons completed by this band
+  rewardClaims: string[]; // bounded idempotency ledger for battle and milestone rewards
   keybinds: Record<string, string>; // action id -> key (hero1-4, ability1-4)
   pinnedGoal: string | null; // optional player-chosen expedition note
   formation: "line" | "wedge" | "guard"; // opening party arrangement

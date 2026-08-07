@@ -170,6 +170,7 @@ export class Battle {
   private bossObjectivePhase = 0;
   private nextObjectiveId = 1;
   castCounts: Record<string, number> = {};
+  damageTakenByMechanic: Record<string, number> = {};
   heroDeaths = 0;
   /** Per-hero battle ledger (keyed by heroIndex) — feeds the victory recap. */
   tallies: Record<number, { dealt: number; taken: number; healed: number }> = {};
@@ -1185,6 +1186,10 @@ export class Battle {
       if (amount <= 0) return;
     }
     target.hp -= amount;
+    if (target.team === "hero") {
+      const mechanic = source?.enemyKind ?? (opts.element && opts.element !== "physical" ? `${opts.element} hazard` : "environment");
+      this.damageTakenByMechanic[mechanic] = (this.damageTakenByMechanic[mechanic] ?? 0) + amount;
+    }
     if (target.team === "hero" && target.hp > 0 && target.hp < target.stats.maxHp * 0.35) {
       if (this.heroTalentRank(target, "holdFast") > 0 && !this.holdFastSpent.has(target.id)) {
         this.holdFastSpent.add(target.id);

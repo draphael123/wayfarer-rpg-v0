@@ -89,7 +89,7 @@ import { drawAbilityGlyph, ico } from "./icons";
 import { lateRoadMapMarkup, LATE_ROAD_REGIONS, type LateRoadRegion } from "./late-road";
 import { drawLateEnemyIcon } from "./late-sprites";
 import { drawHeroFigure, setColorSafe } from "./render";
-import { activeSlot, assignRecruitRoadKit, defaultSave, DEFAULT_KEYBINDS, grantHeroXp, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
+import { activeSlot, assignRecruitRoadKit, CURRENT_SAVE_VERSION, defaultSave, DEFAULT_KEYBINDS, grantHeroXp, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
 import { exportTelemetry, telemetrySummary } from "./telemetry";
 import type { SaveData } from "./types";
 
@@ -100,6 +100,14 @@ export interface MenuCallbacks {
   battleActive: () => boolean;
   pauseBattle: () => void;
   resetProgress: () => void;
+}
+
+export interface ProgressReportEntry {
+  heroIndex: number;
+  before: number;
+  after: number;
+  unlocked: string[];
+  next: string;
 }
 
 /** Each discipline receives three focused trees, mirroring Diablo's class identity. */
@@ -680,6 +688,7 @@ export class Menus {
   private bestiaryKnownOnly = false;
   private bestiaryBossesOnly = false;
   private bestiarySearch = "";
+  private queuedProgress: ProgressReportEntry[] = [];
 
   /** Animate the header gold chip counting from its last shown value. */
   private tickGold(page: HTMLElement): void {
@@ -901,6 +910,24 @@ export class Menus {
     setTimeout(() => toast.remove(), 3300);
   }
 
+  queueProgress(entries: ProgressReportEntry[]): void {
+    this.queuedProgress.push(...entries);
+  }
+
+  showQueuedProgress(): void {
+    if (!this.queuedProgress.length) return;
+    const entries = this.queuedProgress.splice(0);
+    const pop = el(`<div class="levelup-pop progress-pop"><div class="levelup-card progress-card" role="dialog" aria-modal="true" aria-labelledby="progress-title"><span class="save-code-kicker">Company growth</span><div class="levelup-title" id="progress-title">THE ROAD CHANGED YOU</div><p class="levelup-line">Every level grants an attribute point. Milestones below are ready now.</p><div class="progress-list">${entries.map((entry) => `<article><div><strong>${HEROES[entry.heroIndex].name}</strong><span>Level ${entry.before} → ${entry.after}</span></div><p><b>Changed:</b> +${entry.after - entry.before} attribute point${entry.after - entry.before === 1 ? "" : "s"}</p>${entry.unlocked.length ? `<p class="progress-unlock"><b>Unlocked:</b> ${entry.unlocked.join(" · ")}</p>` : ""}<p><b>Consider next:</b> ${entry.next}</p></article>`).join("")}</div><div class="levelup-actions"><button class="big-btn primary" data-progress="party">Open Party</button><button class="big-btn" data-progress="close">Continue</button></div></div></div>`);
+    pop.addEventListener("click", (event) => {
+      const act = (event.target as HTMLElement).closest("[data-progress]")?.getAttribute("data-progress");
+      if (!act) return;
+      audio.play("click");
+      pop.remove();
+      if (act === "party") this.renderParty();
+    });
+    this.root.appendChild(pop);
+  }
+
   private showImportPanel(): void {
     const pop = el(`
       <div class="levelup-pop save-code-pop">
@@ -930,7 +957,7 @@ export class Menus {
       if (action !== "import") return;
       try {
         const data = JSON.parse(decodeURIComponent(escape(atob(input.value.trim()))));
-        if (!data || data.version !== 1 || !Array.isArray(data.heroes)) throw new Error("bad");
+        if (!data || !Number.isInteger(data.version) || data.version < 1 || data.version > CURRENT_SAVE_VERSION || !Array.isArray(data.heroes)) throw new Error("bad");
         localStorage.setItem(slotKey(), JSON.stringify(data));
         audio.play("page");
         location.reload();
@@ -2132,6 +2159,19 @@ export class Menus {
           : stage.terrain === "hunt" ? "The red hunt periodically marks the weakest hero with a charging lane. Break the line."
           : stage.terrain === "void" ? "The road periodically unmakes clustered ground and leaves survivors vulnerable."
           : "No unusual terrain. Formation and target priority decide the opening.";
+    const regionProblems = [
+      "Learn clean focus fire: expose the support or hunter before the frontline grinds you down.",
+      "Cold control punishes a stationary band. Preserve spacing and answer frozen targets with Flame.",
+      "Tides compress safe ground while fliers and artillery split attention. Reposition before committing.",
+      "Furnace pressure rewards interrupts and short damage windows between eruptions.",
+      "The living canopy protects summoners. Cut the source before the field fills with bodies.",
+      "Gloamfen attackers isolate the backline. Identify assassins early and keep a rescue ready.",
+      "The Reliquary layers control and judgment. Solve the marked lane before chasing damage.",
+      "Shatterpeak tests movement under ranged pressure. Break artillery sightlines and punish landings.",
+      "The Bloodmoon hunts weakened heroes. Rotate danger and deny the enemy its chosen victim.",
+      "World's End remixes every lesson. Read the mechanic first; damage comes second.",
+    ];
+    const regionalProblem = regionProblems[Math.min(regionProblems.length - 1, Math.floor(stageIndex / 6))];
     const checks = [
       { warn: party.length < PARTY_CAP, text: `${party.length}/${PARTY_CAP} heroes taking the field` },
       { warn: pendingPoints > 0, text: pendingPoints > 0 ? `${pendingPoints} unspent attribute point${pendingPoints === 1 ? "" : "s"}` : "Attributes are accounted for" },
@@ -2153,6 +2193,7 @@ export class Menus {
             ${(["line", "wedge", "guard"] as const).map((formation) => `<button class="formation-btn ${this.save.formation === formation ? "on" : ""}" data-formation="${formation}"><i class="formation-glyph ${formation}"></i>${formation}</button>`).join("")}
           </div>
           <div class="intent-card"><span>${ico("skull")}</span><div><em>SCOUT'S WARNING · ${warning.name}</em><strong>${warning.habit}</strong></div></div>
+          <div class="intent-card"><span>⌖</span><div><em>REGIONAL COMBAT PROBLEM</em><strong>${regionalProblem}</strong></div></div>
           <div class="intent-card terrain-intent"><span>${stage.terrain ? "≋" : "◇"}</span><div><em>FIELD CONDITIONS${BOSS_STAGES.includes(stageIndex) ? " · GREAT FOE" : ""}</em><strong>${terrainCopy}${BOSS_STAGES.includes(stageIndex) ? " Marked ground means move; break the amber poise bar to stagger the boss." : ""}</strong></div></div>
           <div class="levelup-actions">
             <button class="big-btn primary" data-brief="embark">Embark now</button>
@@ -3037,11 +3078,16 @@ export class Menus {
     this.pushNav("handbook");
     this.root.innerHTML = "";
     this.show();
+    const heroLevel = bandLevel(this.save);
     const lessons = [
-      { kind: "basics", mark: "I", icon: "↗", name: "First Commands", time: "2 min", blurb: "Move, tap-order, attack, cast, heal, and change a stance." },
-      { kind: "fieldcraft", mark: "II", icon: "◎", name: "Read the Field", time: "2 min", blurb: "Escape telegraphs, focus the band, read Waymarks, and break boss poise." },
-      { kind: "gestures", mark: "III", icon: "⌁", name: "Aimed Techniques", time: "2 min", blurb: "Practice rays, blast circles, and trails while time bends around your aim." },
-      { kind: "healing", mark: "IV", icon: "✚", name: "Healing & Stances", time: "2 min", blurb: "Channel healing, place Mend, and switch a healer between support and attack." },
+      { kind: "basics", mark: "I", icon: "↗", name: "First Commands", time: "2 min", unlock: true, lockText: "", blurb: "Move, tap-order, attack, cast, heal, and change a stance." },
+      { kind: "healing", mark: "II", icon: "✚", name: "Healing & Stances", time: "2 min", unlock: this.save.unlockedStage >= 1, lockText: "Clear Stage 1", blurb: "Channel healing, place Mend, and switch a healer between support and attack." },
+      { kind: "roles", mark: "III", icon: "⌖", name: "Priority Enemies", time: "2 min", unlock: this.save.unlockedStage >= 2, lockText: "Clear Stage 2", blurb: "Read enemy roles, focus the dangerous support, then dismantle its protector." },
+      { kind: "gestures", mark: "IV", icon: "⌁", name: "Aimed Techniques", time: "2 min", unlock: this.save.unlockedStage >= 2, lockText: "Clear Stage 2", blurb: "Practice rays, blast circles, and trails while time bends around your aim." },
+      { kind: "elements", mark: "V", icon: "ϟ", name: "Elemental Reactions", time: "3 min", unlock: heroLevel >= 5, lockText: "Reach hero level 5", blurb: "Exploit a weakness, build a condition, then consume it with a counter-element." },
+      { kind: "building", mark: "VI", icon: "◇", name: "Build a Hero", time: "3 min", unlock: heroLevel >= 5, lockText: "Reach hero level 5", blurb: "Pair Discipline and Attunement, compare techniques, and plan your next attribute." },
+      { kind: "fieldcraft", mark: "VII", icon: "◎", name: "Read the Field", time: "2 min", unlock: this.save.unlockedStage >= 3, lockText: "Reach the first boss", blurb: "Escape telegraphs, focus the band, read Waymarks, and break boss poise." },
+      { kind: "bosses", mark: "VIII", icon: "▰", name: "Boss Rhythm", time: "3 min", unlock: this.save.unlockedStage >= 4, lockText: "Defeat the Alpha", blurb: "Break poise, escape a committed attack, and read phase thresholds." },
     ];
     const complete = lessons.filter((lesson) => this.save.completedTutorials.includes(lesson.kind)).length;
     const page = el(`
@@ -3058,7 +3104,7 @@ export class Menus {
           <div><kbd>HOLD</kbd><span><b>Technique</b>Read details</span></div>
           <div><kbd>MARK</kbd><span><b>Marked ground</b>Move now</span></div>
         </section>
-        <div class="handbook-section-title"><span>Practice ring</span><em>Replay any lesson · skip any time</em></div>
+        <div class="handbook-section-title"><span>Practice ring</span><em>Lessons appear when their rules matter</em></div>
         <div class="lesson-list handbook-lessons"></div>
         <div class="handbook-section-title"><span>Rules of the road</span><em>Keep the important math close</em></div>
         <section class="system-primer">
@@ -3075,13 +3121,13 @@ export class Menus {
     const list = page.querySelector(".lesson-list")!;
     for (const lesson of lessons) {
       const card = el(`
-        <button class="stage-card lesson-card" data-lesson="${lesson.kind}">
+        <button class="stage-card lesson-card ${lesson.unlock ? "" : "lesson-locked"}" data-lesson="${lesson.kind}" ${lesson.unlock ? "" : "aria-disabled=\"true\""}>
           <div class="lesson-mark"><span>${lesson.mark}</span><i>${lesson.icon}</i></div>
           <div class="stage-info">
             <div class="stage-name">${lesson.name}</div>
             <div class="stage-sub">${lesson.blurb}</div>
           </div>
-          <div class="lesson-status ${this.save.completedTutorials.includes(lesson.kind) ? "done" : ""}"><span>${this.save.completedTutorials.includes(lesson.kind) ? "Practiced" : lesson.time}</span><b>${this.save.completedTutorials.includes(lesson.kind) ? "✓" : "▶"}</b></div>
+          <div class="lesson-status ${this.save.completedTutorials.includes(lesson.kind) ? "done" : ""}"><span>${this.save.completedTutorials.includes(lesson.kind) ? "Practiced" : lesson.unlock ? lesson.time : lesson.lockText}</span><b>${this.save.completedTutorials.includes(lesson.kind) ? "✓" : lesson.unlock ? "▶" : "◇"}</b></div>
         </button>
       `);
       list.appendChild(card);
@@ -3094,7 +3140,12 @@ export class Menus {
         audio.play("click");
         const kind = lesson.getAttribute("data-lesson")!;
         if (kind === "village") this.renderVillageGuide();
-        else this.callbacks.startTutorial(kind, "handbook");
+        else {
+          const chosen = lessons.find((entry) => entry.kind === kind);
+          if (chosen && !chosen.unlock) { this.showToast(chosen.lockText); return; }
+          if (kind === "building") this.renderBuildLesson();
+          else this.callbacks.startTutorial(kind, "handbook");
+        }
         return;
       }
       if (target.closest('[data-act="back"]')) {
@@ -3108,6 +3159,54 @@ export class Menus {
         else if (this.handbookReturn === "settings") this.renderSettings();
         else this.renderTitle();
       }
+    });
+    this.root.appendChild(page);
+  }
+
+  /** A consequence-free workbench that teaches Path decisions before the
+   * player is asked to spend gold or commit a real hero. */
+  renderBuildLesson(): void {
+    this.pushNav("handbook");
+    this.root.innerHTML = "";
+    this.show();
+    let discipline: DisciplineId | null = null;
+    let element: ElementId | null = null;
+    const page = el(`
+      <div class="page build-lesson-page">
+        <header class="handbook-mast"><button class="back-rune" data-act="back" aria-label="Back">‹</button><div><span>FIELD LESSON VI</span><h1>Build a Hero</h1><p>A Path is a combat role shaped by an element. Nothing chosen here changes your save.</p></div></header>
+        <section class="build-lesson">
+          <div class="build-step"><span>1</span><div><h2>Choose the job</h2><p>Discipline decides weapon, battlefield role, core technique, and how the ultimate charges.</p></div></div>
+          <div class="build-choice-grid">${DISCIPLINES.map((d) => `<button data-discipline="${d.id}"><strong>${d.name}</strong><span>${d.epithet}</span></button>`).join("")}</div>
+          <div class="build-step"><span>2</span><div><h2>Choose the answer</h2><p>Attunement changes conditions, matchup advantages, and the second technique—not merely its color.</p></div></div>
+          <div class="build-choice-grid elements">${ELEMENTS.map((e) => `<button data-element="${e.id}" style="--choice:${e.color}"><strong>${e.name}</strong><span>${e.passive}</span></button>`).join("")}</div>
+          <section class="build-preview" aria-live="polite"><span>PATH PREVIEW</span><h2>Choose a Discipline and Attunement</h2><p>Your two normal techniques and build advice will appear here.</p></section>
+          <button class="big-btn primary build-finish" disabled>Finish lesson</button>
+        </section>
+      </div>`);
+    const preview = page.querySelector(".build-preview")!;
+    const finish = page.querySelector<HTMLButtonElement>(".build-finish")!;
+    const update = () => {
+      page.querySelectorAll("[data-discipline]").forEach((node) => node.classList.toggle("chosen", node.getAttribute("data-discipline") === discipline));
+      page.querySelectorAll("[data-element]").forEach((node) => node.classList.toggle("chosen", node.getAttribute("data-element") === element));
+      finish.disabled = !(discipline && element);
+      if (!discipline || !element) return;
+      const d = DISCIPLINES.find((entry) => entry.id === discipline)!;
+      const e = ELEMENTS.find((entry) => entry.id === element)!;
+      const techniques = pathAbilities(discipline, element);
+      preview.innerHTML = `<span>YOUR PRACTICE PATH</span><h2 style="color:${e.color}">${e.adjective} ${d.name}</h2><p><b>${techniques[0].name}</b> — ${techniques[0].blurb}</p><p><b>${techniques[1].name}</b> — ${techniques[1].blurb}</p><aside><strong>Consider next:</strong> raise the attributes named on the real Path card, then use talents to sharpen your role. At level ${ADV_CALLING_LEVEL}, a Specialization changes how that role plays.</aside>`;
+    };
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const d = target.closest("[data-discipline]")?.getAttribute("data-discipline") as DisciplineId | null;
+      const e = target.closest("[data-element]")?.getAttribute("data-element") as ElementId | null;
+      if (d) { discipline = d; audio.play("click"); update(); return; }
+      if (e) { element = e; audio.play("click"); update(); return; }
+      if (target.closest(".build-finish") && discipline && element) {
+        if (!this.save.completedTutorials.includes("building")) this.save.completedTutorials.push("building");
+        persist(this.save);
+        this.showToast("Hero building lesson complete");
+        this.renderTutorials();
+      } else if (target.closest('[data-act="back"]')) this.goBack(() => this.renderTutorials());
     });
     this.root.appendChild(page);
   }
@@ -3534,13 +3633,15 @@ export class Menus {
         }
         const cost = roadTutelageCost(hero.level);
         if (!this.spend(cost)) return;
+        const before = hero.level;
         const needed = Math.max(1, xpForLevel(hero.level) - hero.xp);
         grantHeroXp(save, index, needed);
         persist(save);
         audio.play("levelup");
         navigator.vibrate?.([14, 28, 20]);
-        this.showToast(`${HEROES[index].name} studies the road and reaches level ${hero.level}`);
         this.renderShop("tavern");
+        this.queueProgress([{ heroIndex: index, before, after: hero.level, unlocked: hero.level === ADV_CALLING_LEVEL ? ["Level-20 Specialization"] : [], next: !hero.calling && hero.level >= CALLING_UNLOCK_LEVEL ? "Choose a Discipline and Attunement on the Paths screen." : !hero.advCalling && hero.level >= ADV_CALLING_LEVEL ? "Compare both level-20 Specializations." : "Spend the new attribute point and review the next talent tier." }]);
+        this.showQueuedProgress();
         return;
       }
       const btn = (event.target as HTMLElement).closest("[data-recruit]");

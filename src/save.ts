@@ -27,6 +27,7 @@ import type { Attributes, DisciplineId, ElementId, HeroSave, SaveData } from "./
 
 const KEY = "wayband-save-v1";
 const SLOT_POINTER = "wayband-active-slot";
+export const CURRENT_SAVE_VERSION = 2;
 
 /** Six fully independent bands. Slot 0 keeps the legacy key so existing saves just work. */
 export const SLOT_NAMES = [
@@ -134,7 +135,7 @@ function emptyLifetime() {
 
 export function defaultSave(): SaveData {
   return {
-    version: 1,
+    version: CURRENT_SAVE_VERSION,
     unlockedStage: 0,
     level: 1,
     xp: 0,
@@ -174,6 +175,7 @@ export function defaultSave(): SaveData {
     autoBattle: false,
     tutorialHints: true,
     completedTutorials: [],
+    rewardClaims: [],
     keybinds: { ...DEFAULT_KEYBINDS },
     pinnedGoal: null,
     formation: "line",
@@ -205,7 +207,7 @@ export function rejectedSaveKey(n: number = activeSlot()): string {
 function structurallyValidSave(raw: string): boolean {
   try {
     const value = JSON.parse(raw) as Partial<SaveData> | null;
-    return !!value && value.version === 1 && Array.isArray(value.heroes) && value.heroes.length >= 4 && value.heroes.length <= HEROES.length;
+    return !!value && Number.isInteger(value.version) && value.version! >= 1 && value.version! <= CURRENT_SAVE_VERSION && Array.isArray(value.heroes) && value.heroes.length >= 4 && value.heroes.length <= HEROES.length;
   } catch {
     return false;
   }
@@ -324,7 +326,7 @@ export function loadSave(): SaveData {
     raw = localStorage.getItem(key);
     if (!raw) return defaultSave();
     const parsed = JSON.parse(raw) as SaveData;
-    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.heroes) || parsed.heroes.length < 4 || parsed.heroes.length > HEROES.length) {
+    if (!parsed || !Number.isInteger(parsed.version) || parsed.version < 1 || parsed.version > CURRENT_SAVE_VERSION || !Array.isArray(parsed.heroes) || parsed.heroes.length < 4 || parsed.heroes.length > HEROES.length) {
       return recoverSave(raw, key);
     }
     parsed.unlockedStage = finiteInteger(parsed.unlockedStage, 0, 0, Math.max(0, STAGES.length - 1));
@@ -542,6 +544,7 @@ export function loadSave(): SaveData {
     if (typeof parsed.autoBattle !== "boolean") parsed.autoBattle = false;
     if (typeof parsed.tutorialHints !== "boolean") parsed.tutorialHints = true;
     parsed.completedTutorials = cleanStrings(parsed.completedTutorials, 32);
+    parsed.rewardClaims = cleanStrings(parsed.rewardClaims, 128);
     if (!plainRecord(parsed.keybinds)) parsed.keybinds = { ...DEFAULT_KEYBINDS };
     // Migrate the exact former default (E = third spell, R = ultimate).
     // Custom key layouts remain untouched.
@@ -569,6 +572,7 @@ export function loadSave(): SaveData {
         at: finiteInteger(entry.at, 0, 0, Number.MAX_SAFE_INTEGER),
       }];
     });
+    parsed.version = CURRENT_SAVE_VERSION;
     return parsed;
   } catch {
     return recoverSave(raw, key);
@@ -591,6 +595,16 @@ export function persist(save: SaveData): void {
 export function personalBattleXp(baseXp: number, participated: boolean, survived: boolean): number {
   if (!participated || baseXp <= 0) return 0;
   return Math.round(baseXp * (survived ? 1 : 0.5));
+}
+
+/** Atomically marks a deterministic reward id in memory. The caller persists
+ * the completed settlement, preventing refresh/re-entry from paying it twice. */
+export function claimReward(save: SaveData, id: string): boolean {
+  save.rewardClaims ??= [];
+  if (!id || save.rewardClaims.includes(id)) return false;
+  save.rewardClaims.unshift(id);
+  save.rewardClaims = save.rewardClaims.slice(0, 128);
+  return true;
 }
 
 export function grantHeroXp(save: SaveData, index: number, amount: number): number {

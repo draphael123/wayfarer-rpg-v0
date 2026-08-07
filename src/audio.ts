@@ -564,7 +564,7 @@ class AudioKit {
     osc.stop(t0 + dur + 0.02);
   }
 
-  private noise(dur: number, volume: number, filterFreq: number, delay = 0): void {
+  private noise(dur: number, volume: number, filterFreq: number, delay = 0, dest?: AudioNode): void {
     const ctx = this.ensure();
     if (!ctx || !this.master) return;
     const t0 = ctx.currentTime + delay;
@@ -585,7 +585,7 @@ class AudioKit {
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     src.connect(filter);
     filter.connect(gain);
-    gain.connect(this.sfxOut ?? this.master);
+    gain.connect(dest ?? this.sfxOut ?? this.master);
     const playDuration = Math.min(dur, buffer.duration);
     const offset = Math.random() * Math.max(0, buffer.duration - playDuration);
     src.start(t0, offset, playDuration);
@@ -1242,13 +1242,28 @@ class AudioKit {
         }
         // Region-specific musical fingerprints layered over the shared road pulse.
         const lateRegion = Math.floor(this.stageId / 6);
-        if (lateRegion === 3 && beat % 2 === 0) this.noise(0.08, 0.12, 620, 0.02); // forge hammer
+        if (lateRegion === 3 && beat % 2 === 0) this.noise(0.08, 0.12, 620, 0.02, g); // forge hammer
         else if (lateRegion === 4 && beat === 3) this.tone(note * 3, 0.45, "sine", 0.08, 90, 0.08, g); // canopy answer
         else if (lateRegion === 5 && beat === 6) this.tone(note * 2.01, 1.1, "sine", 0.07, -note, 0, g); // falling shadow
         else if (lateRegion === 6 && beat % 4 === 2) this.tone(note * 4, 1.35, "triangle", 0.09, -60, 0, g); // bronze bell
-        else if (lateRegion === 7 && beat % 2 === 0) this.noise(0.1, 0.08, 2800, 0.04); // mountain gust
+        else if (lateRegion === 7 && beat % 2 === 0) this.noise(0.1, 0.08, 2800, 0.04, g); // mountain gust
         else if (lateRegion === 8 && (beat === 0 || beat === 1)) this.tone(58, 0.14, "sine", 0.2, -7, 0, g); // heartbeat
         else if (lateRegion === 9 && beat === 5) this.tone(note * 1.414, 1.2, "sine", 0.075, -note * 0.7, 0, g); // unstable interval
+      } else if (this.mood === "battle" && this.stageId >= 12) {
+        // Stormbreak Coast: an uneven sailor's pulse, low foghorn fifths, and
+        // bright spray accents. Bosses compress the rhythm into a warning beat.
+        const coast = [196, 220, 261.6, 293.7, 349.2];
+        const beat = this.musicStep % 8;
+        const note = coast[(this.musicStep * 2 + Math.floor(this.musicStep / 8)) % coast.length];
+        if (beat === 0 || (this.bossActive && beat === 4)) {
+          this.tone(49, this.bossActive ? 1.5 : 2.8, "sine", this.bossActive ? 0.42 : 0.28, 3, 0, g);
+          this.tone(73.4, 2.2, "sine", 0.14, -2, 0.08, g);
+        }
+        if (beat === 1 || beat === 4 || beat === 6 || (this.bossActive && beat % 2 === 0)) {
+          this.tone(note, this.bossActive ? 0.34 : 0.58, "triangle", this.bossActive ? 0.2 : 0.14, -8, 0, g);
+          this.noise(0.07, this.bossActive ? 0.11 : 0.065, 1800, 0.025, g);
+        }
+        if (this.bossActive && beat === 7) this.tone(98, 0.46, "sawtooth", 0.12, -24, 0, g);
       } else if (this.mood === "battle" && this.stageId >= 6) {
         // the winter theme: sparse bells over a deep double-drone, a cold fifth
         // shadowing the melody, and — rarely — a horn from across the ice

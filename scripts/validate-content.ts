@@ -42,7 +42,7 @@ import {
   talentMods,
   TRINKETS,
 } from "../src/data";
-import { assignRecruitRoadKit, defaultSave, grantHeroXp, loadSave, persist, personalBattleXp, recoveryKey, rejectedSaveKey, slotKey } from "../src/save";
+import { assignRecruitRoadKit, claimReward, CURRENT_SAVE_VERSION, defaultSave, grantHeroXp, loadSave, persist, personalBattleXp, recoveryKey, rejectedSaveKey, slotKey } from "../src/save";
 import { LATE_FOE_KINDS } from "../src/late-content";
 import { LATE_ROAD_BOSS_INTENTS, LATE_ROAD_ELITE_STAGES, LATE_ROAD_REGIONS, LATE_ROAD_STAGES } from "../src/late-road";
 import { Battle } from "../src/battle";
@@ -548,6 +548,9 @@ Object.defineProperty(globalThis, "localStorage", {
   },
 });
 const saveRoundTrip = defaultSave();
+assert.equal(saveRoundTrip.version, CURRENT_SAVE_VERSION, "new saves must use the current explicit version");
+assert.equal(claimReward(saveRoundTrip, "test:reward:1"), true, "a new deterministic reward should be claimable");
+assert.equal(claimReward(saveRoundTrip, "test:reward:1"), false, "the same reward id must never be paid twice");
 saveRoundTrip.gold = 137;
 saveRoundTrip.unlockedStage = 3;
 saveRoundTrip.formation = "wedge";
@@ -562,6 +565,12 @@ assert.equal(loadSave().pinnedGoal, "Recruit Wren", "pinned goals must persist")
 assert.equal(loadSave().journal[0]?.time, 42.5, "Chronicle entries must persist");
 assert.equal(loadSave().inventory.length, 2, "duplicate trinkets must remain available for tinkering");
 assert.equal(loadSave().armory.length, 2, "duplicate armor copies must remain independently equippable");
+const legacyV1 = { ...defaultSave(), version: 1 } as SaveData;
+delete (legacyV1 as Partial<SaveData>).rewardClaims;
+localStorage.setItem(slotKey(), JSON.stringify(legacyV1));
+const migratedV2 = loadSave();
+assert.equal(migratedV2.version, CURRENT_SAVE_VERSION, "version 1 saves must migrate to the current version");
+assert.deepEqual(migratedV2.rewardClaims, [], "migration must initialize the reward claim ledger");
 const masterySave = defaultSave();
 const recruitSave = defaultSave();
 const recruitedWren = recruitSave.heroes[1];

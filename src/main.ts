@@ -1,9 +1,9 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { ADV_CALLING_LEVEL, ALL_GEAR, ARMORS, arenaPurse, arenaTrialById, arenaTrialPurse, BOSS_STAGES, CALLING_UNLOCK_LEVEL, contractFulfilled, contractPurse, CONTRACTS, DIFFICULTIES, elementById, HEROES, STAGES, TRINKETS } from "./data";
+import { ADV_CALLING_LEVEL, advCallingById, ALL_GEAR, ARMORS, arenaPurse, arenaTrialById, arenaTrialPurse, BOSS_STAGES, CALLING_UNLOCK_LEVEL, callingById, contractFulfilled, contractPurse, CONTRACTS, DIFFICULTIES, elementById, HEROES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
-import { drawHeroPortrait, Menus } from "./menus";
+import { drawHeroPortrait, Menus, type ProgressReportEntry } from "./menus";
 import { RecoveryPanel } from "./recovery";
 import {
   drawBackground,
@@ -20,7 +20,7 @@ import {
   drawZones,
   setColorSafe,
 } from "./render";
-import { defaultSave, grantHeroXp, loadSave, nextSpeed, persist, personalBattleXp } from "./save";
+import { claimReward, defaultSave, grantHeroXp, loadSave, nextSpeed, persist, personalBattleXp } from "./save";
 import { autopilotTick, runBattleSimulation } from "./simulation";
 import { exportTelemetry, logEvent, logRuntimeError } from "./telemetry";
 import { Tutorial } from "./tutorial";
@@ -319,7 +319,7 @@ function startTutorial(kind = "basics", returnTo: "map" | "handbook" = "map"): v
   temp.bigText = save.bigText;
   temp.enemyHealthBars = save.enemyHealthBars;
   temp.keybinds = { ...save.keybinds };
-  if (kind === "gestures") {
+  if (kind === "gestures" || kind === "roles") {
     // Wren + Ezri practice squad with every aimed spell ready
     temp.heroes[0].active = false;
     temp.heroes[3].active = false;
@@ -327,9 +327,18 @@ function startTutorial(kind = "basics", returnTo: "map" | "handbook" = "map"): v
     temp.heroes[1].active = true;
     temp.heroes[2].recruited = true;
     temp.heroes[2].active = true;
-    temp.heroes[2].attrs.int = 12;
-    temp.unlockedSpells = ["pierce", "fireball", "frostwake"];
-    temp.heroes[1].equipped = ["pierce"];
+    if (kind === "gestures") {
+      temp.heroes[2].attrs.int = 12;
+      temp.unlockedSpells = ["pierce", "fireball", "frostwake"];
+      temp.heroes[1].equipped = ["pierce"];
+      temp.heroes[2].equipped = ["fireball", "frostwake"];
+    }
+  } else if (kind === "elements") {
+    temp.heroes.forEach((hero) => { hero.active = false; });
+    temp.heroes[2].recruited = true;
+    temp.heroes[2].active = true;
+    temp.heroes[2].attrs.int = 14;
+    temp.unlockedSpells = ["fireball", "frostwake"];
     temp.heroes[2].equipped = ["fireball", "frostwake"];
   } else if (kind === "healing") {
     temp.heroes[3].attrs.spi = 8;
@@ -383,6 +392,10 @@ function endBattleToMap(after?: () => void): void {
       wave: battle.waveIndex,
       heroDeaths: battle.heroDeaths,
       casts: battle.castCounts,
+      party: save.heroes.map((hero, index) => hero.recruited && hero.active ? index : -1).filter((index) => index >= 0),
+      heroLevels: save.heroes.filter((hero) => hero.recruited && hero.active).map((hero) => hero.level),
+      terrain: battle.stage.terrain ?? "none",
+      damageTakenByMechanic: battle.damageTakenByMechanic,
     });
   }
   bankRetreatSalvage();
@@ -396,6 +409,7 @@ function endBattleToMap(after?: () => void): void {
   audio.setMood("menu");
   menus.returnFromBattle(() => {
     if (showFinale) menus.renderFinale();
+    else menus.showQueuedProgress();
     after?.();
   });
 }
@@ -451,6 +465,8 @@ function settleVictory(): void {
     settleChallengeVictory(activeChallenge);
     return;
   }
+  const clearNumber = (save.stageStats[currentStage]?.clears ?? 0) + 1;
+  if (!claimReward(save, `campaign:${currentStage}:${clearNumber}`)) return;
   const rewardMult = DIFFICULTIES[save.difficulty ?? 1].rewardMult;
   const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * rewardMult);
   const gold = Math.round((battle.goldEarned + Math.round(battle.stage.xpReward * 0.8)) * rewardMult);
@@ -458,7 +474,7 @@ function settleVictory(): void {
   // anyone still fallen at victory earns half. Revived heroes count as alive,
   // while the bench advances through Road Tutelage rather than free battle XP.
   let levels = 0;
-  const milestones: string[] = [];
+  const progress: ProgressReportEntry[] = [];
   const outcomes = new Map(battle.heroes().map((unit) => [unit.heroIndex, unit.alive]));
   save.heroes.forEach((h, i) => {
     if (!h.recruited) return;
@@ -466,18 +482,28 @@ function settleVictory(): void {
     if (earnedXp <= 0) return;
     const before = h.level;
     const beforeMasteries = new Set(h.masteredElements);
-    levels += grantHeroXp(save, i, earnedXp);
-    if (before < CALLING_UNLOCK_LEVEL && h.level >= CALLING_UNLOCK_LEVEL) milestones.push(`${HEROES[i].name} may choose a PATH`);
-    if (before < ADV_CALLING_LEVEL && h.level >= ADV_CALLING_LEVEL) milestones.push(`${HEROES[i].name}'s path can be PROMOTED`);
-    for (const mastery of h.masteredElements) {
-      if (!beforeMasteries.has(mastery)) {
-        const elementName = elementById(mastery)?.name ?? mastery;
-        milestones.push(`${HEROES[i].name} mastered ${elementName} — its Legacy now travels between disciplines`);
-      }
+    const beforePaths = new Set(h.masteredCallings);
+    const beforeSpecs = new Set(h.masteredSpecializations);
+    const gained = grantHeroXp(save, i, earnedXp);
+    levels += gained;
+    if (gained > 0) {
+      const unlocked: string[] = [];
+      if (before < CALLING_UNLOCK_LEVEL && h.level >= CALLING_UNLOCK_LEVEL) unlocked.push("Path selection");
+      if (before < ADV_CALLING_LEVEL && h.level >= ADV_CALLING_LEVEL) unlocked.push("Level-20 Specialization");
+      for (const mastery of h.masteredElements) if (!beforeMasteries.has(mastery)) unlocked.push(`${elementById(mastery)?.name ?? mastery} Elemental Legacy`);
+      for (const path of h.masteredCallings) if (!beforePaths.has(path)) unlocked.push(`${callingById(path)?.name ?? "Path"} mastery`);
+      for (const spec of h.masteredSpecializations) if (!beforeSpecs.has(spec)) unlocked.push(`${advCallingById(spec)?.adv.name ?? "Specialization"} Legacy technique`);
+      const next = !h.calling && h.level >= CALLING_UNLOCK_LEVEL
+        ? "Choose a Discipline and Attunement on the Paths screen."
+        : !h.advCalling && h.level >= ADV_CALLING_LEVEL
+          ? "Compare both Specializations; each changes your combat rhythm."
+          : (save.unspent[i] ?? 0) > 0
+            ? "Spend the new attribute point toward your Path requirements or strongest scaling."
+            : "Review the next talent tier and keep building toward your chosen battlefield role.";
+      progress.push({ heroIndex: i, before, after: h.level, unlocked, next });
     }
   });
-  persist(save);
-  for (const m of milestones) setTimeout(() => menus.showToast(m), 1200);
+  menus.queueProgress(progress);
   save.gold += Math.round(gold);
   // stage record book: clears + fastest time feed the map's scout report
   const rec = save.stageStats[currentStage];
@@ -528,11 +554,30 @@ function settleChallengeVictory(challenge: NonNullable<typeof activeChallenge>):
   const t = Math.round(battle.time * 10) / 10;
   const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * 0.55);
   const outcomes = new Map(battle.heroes().map((unit) => [unit.heroIndex, unit.alive]));
+  const progress: ProgressReportEntry[] = [];
   save.heroes.forEach((hero, index) => {
     if (!hero.recruited) return;
     const earnedXp = personalBattleXp(xp, outcomes.has(index), outcomes.get(index) === true);
-    if (earnedXp > 0) grantHeroXp(save, index, earnedXp);
+    if (earnedXp > 0) {
+      const before = hero.level;
+      const beforeElements = new Set(hero.masteredElements);
+      const beforePaths = new Set(hero.masteredCallings);
+      const beforeSpecs = new Set(hero.masteredSpecializations);
+      const gained = grantHeroXp(save, index, earnedXp);
+      if (gained > 0) {
+        const unlocked: string[] = [];
+        if (before < CALLING_UNLOCK_LEVEL && hero.level >= CALLING_UNLOCK_LEVEL) unlocked.push("Path selection");
+        if (before < ADV_CALLING_LEVEL && hero.level >= ADV_CALLING_LEVEL) unlocked.push("Level-20 Specialization");
+        for (const element of hero.masteredElements) if (!beforeElements.has(element)) unlocked.push(`${elementById(element)?.name ?? element} Elemental Legacy`);
+        for (const path of hero.masteredCallings) if (!beforePaths.has(path)) unlocked.push(`${callingById(path)?.name ?? "Path"} mastery`);
+        for (const spec of hero.masteredSpecializations) if (!beforeSpecs.has(spec)) unlocked.push(`${advCallingById(spec)?.adv.name ?? "Specialization"} Legacy technique`);
+        const next = !hero.calling && hero.level >= CALLING_UNLOCK_LEVEL ? "Choose a Path before the next expedition." : !hero.advCalling && hero.level >= ADV_CALLING_LEVEL ? "Compare both level-20 Specializations." : "Spend the new attribute point and review the next talent tier.";
+        progress.push({ heroIndex: index, before, after: hero.level, unlocked, next });
+      }
+    }
   });
+  menus.queueProgress(progress);
+  if (progress.length) audio.play("levelup");
   if (challenge.kind === "arena") {
     const trial = arenaTrialById(challenge.id);
     const old = trial ? save.arenaTrialRecords[trial.id] : save.arenaRecords[challenge.stage];
