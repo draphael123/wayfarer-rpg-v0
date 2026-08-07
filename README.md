@@ -52,7 +52,11 @@ from two readable choices:
   through heavy impacts, Radiant Necromancers call ancestors, and Radiant
   Priests redirect danger and support allies rather than sharing a generic heal.
 
-Heroes choose a Path at level 5. Ten levels spent with an attunement unlock its
+Founders choose a Path at level 5. Tavern recruits arrive with an authored Path
+and complete Q/W/R battle bar that fits their historyâ€”Wren reads a storm firing
+lane, Kellan spends Earth Fury through a greatsword, and Maren calls drowned
+spirits as a Storm Necromancer. These are strong starting identities, not locks;
+the player can still change them. Ten levels spent with an attunement unlock its
 Elemental Legacy for use with another discipline. At level 20, a seasoned Path
 chooses one of two combat-changing Specializations. Ten active levels in that
 Specialization master its **Legacy technique**, which can then occupy the W slot
@@ -86,6 +90,12 @@ bars, contextual hints, color-independent danger boundaries, motion, and text si
 can all be tuned without changing rewards. A Field Handbook combines a quick
 reference with four replayable, action-checked lessons and records completion.
 Progress saves to localStorage, with six independent campaign slots plus export/import.
+
+The level-20 branches are maintained as fourteen explicit master specs. Each
+records its combat rhythm, payoff, sacrifice, and portable Legacy cooldown in a
+single tuning ledger. `npm run specializations` runs every branch through the
+same deterministic Normal benchmark so a visually complete branch cannot hide
+a dead or non-functional combat loop.
 
 Before each stage, a preparation table summarizes the active band, lets you
 choose an opening formation, and surfaces tactical notes for creatures already

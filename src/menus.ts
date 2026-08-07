@@ -57,6 +57,7 @@ import {
   DEEDS,
   ENEMIES,
   HEROES,
+  HERO_STARTER_PATHS,
   MAX_EQUIPPED,
   PARTY_CAP,
   RECRUIT_COST,
@@ -82,7 +83,7 @@ import { drawAbilityGlyph, ico } from "./icons";
 import { lateRoadMapMarkup, LATE_ROAD_REGIONS, type LateRoadRegion } from "./late-road";
 import { drawLateEnemyIcon } from "./late-sprites";
 import { drawHeroFigure, setColorSafe } from "./render";
-import { activeSlot, defaultSave, DEFAULT_KEYBINDS, grantHeroXp, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
+import { activeSlot, assignRecruitStarterPath, defaultSave, DEFAULT_KEYBINDS, grantHeroXp, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
 import { exportTelemetry, telemetrySummary } from "./telemetry";
 import type { SaveData } from "./types";
 
@@ -3385,8 +3386,12 @@ export class Menus {
       const hero = save.heroes[i];
       const cost = RECRUIT_COST[i];
       const arrived = heroArrived(save, i);
-      const starterAbilities = (HERO_STARTER_ABILITIES[i] ?? []).map(abilityById).filter(Boolean);
-      const starterNames = starterAbilities.map((ability) => ability.name).join(" and ");
+      const starterPath = HERO_STARTER_PATHS[i];
+      const starterCalling = starterPath ? callingById(pathId(starterPath.discipline, starterPath.element)) : null;
+      const starterAbilities = starterPath
+        ? pathAbilities(starterPath.discipline, starterPath.element)
+        : (HERO_STARTER_ABILITIES[i] ?? []).map(abilityById).filter(Boolean);
+      const currentCalling = callingById(hero.calling);
       if (!arrived && !hero.recruited) {
         body.appendChild(
           el(`
@@ -3412,7 +3417,10 @@ export class Menus {
             <div>
               <div class="hero-name">${def.name} <em>${def.title}</em></div>
               <div class="hero-meta">${hero.recruited ? "Already rides with the band." : `A wanderer for hire — ${ATTR_NAMES[bestAttr(i)]} comes naturally.`}</div>
-              <div class="recruit-kit"><b>Arrives battle-ready</b><span>${starterNames}</span></div>
+              ${hero.recruited && currentCalling
+                ? `<div class="recruit-path current"><b>Current Path</b><strong>${currentCalling.name}</strong><span>${DISCIPLINES.find((entry) => entry.id === currentCalling.discipline)?.name} × ${elementById(currentCalling.element)?.name}</span></div>`
+                : `<div class="recruit-path"><b>${hero.recruited ? "Path prospect" : "Arrives sworn"}</b><strong>${starterCalling?.name ?? "Road-trained"}</strong><span>${starterPath ? `${DISCIPLINES.find((entry) => entry.id === starterPath.discipline)?.name} × ${elementById(starterPath.element)?.name}` : "Personal road kit"}</span><em>${starterPath?.reason ?? "Ready for the opening road."}</em></div>
+                   <div class="recruit-kit"><b>Battle bar</b><span>Q ${starterAbilities[0]?.name ?? "—"} · W ${starterAbilities[1]?.name ?? "—"}${starterCalling ? ` · R ${starterCalling.signature.name}` : ""}</span></div>`}
             </div>
             ${
               hero.recruited
@@ -3458,14 +3466,13 @@ export class Menus {
       if (!this.spend(cost)) return;
       audio.play("tankard");
       const recruit = this.save.heroes[i];
-      const starters = (HERO_STARTER_ABILITIES[i] ?? []).filter((id) => !!abilityById(id)).slice(0, MAX_EQUIPPED);
       recruit.recruited = true;
       recruit.active = partyRoster(this.save).length < PARTY_CAP;
-      if (!recruit.calling) recruit.equipped = starters;
+      const starterCalling = assignRecruitStarterPath(recruit, i);
+      const starters = recruit.equipped.slice(0, MAX_EQUIPPED);
       for (const id of starters) if (!this.save.unlockedSpells.includes(id)) this.save.unlockedSpells.push(id);
       persist(this.save);
-      const kit = starters.map((id) => abilityById(id).name).join(" and ");
-      this.showToast(`${HEROES[i].name} joins with ${kit} ready.`);
+      this.showToast(`${HEROES[i].name} joins as ${starterCalling?.name ?? "a road-trained companion"}.`);
       this.renderShop("tavern");
     });
   }
@@ -4351,7 +4358,7 @@ export class Menus {
             const specProgress = Math.min(SPECIALIZATION_MASTERY_LEVELS, hero.specializationLevels?.[spec] ?? 0);
             const specMastered = hero.masteredSpecializations?.includes(spec);
             const legacy = SPECIALIZATION_TECHNIQUES.find((ability) => ability.legacySpec === spec);
-            return `<article class="promotion-card ${chosen ? "chosen" : ""} ${promotionReady ? "" : "locked"}"><span>${chosen ? "Chosen specialization" : "Specialization"}</span><strong>${promotion.name}</strong><em>${promotion.epithet}</em><p>${promotion.passive}</p><small>${promotion.ultNote}</small><div class="spec-legacy ${specMastered ? "mastered" : ""}"><b>${legacy?.name ?? "Legacy technique"}</b><em>${specMastered ? "MASTERED · may occupy W on another Path" : chosen ? `${specProgress}/${SPECIALIZATION_MASTERY_LEVELS} specialization levels` : "Choose this specialization to begin mastery"}</em><i><u style="width:${(specProgress / SPECIALIZATION_MASTERY_LEVELS) * 100}%"></u></i></div>${chosen || !promotionReady ? "" : `<button class="big-btn adv-btn" data-advance="${promotion.id}">${hero.advCalling ? `Change Promotion · ${ADV_SWITCH_COST}g` : "Take Promotion"}</button>`}</article>`;
+            return `<article class="promotion-card ${chosen ? "chosen" : ""} ${promotionReady ? "" : "locked"}"><span>${chosen ? "Chosen specialization" : "Specialization"}</span><strong>${promotion.name}</strong><em>${promotion.epithet}</em><p>${promotion.passive}</p><div class="spec-doctrine"><div><b>Rhythm</b><span>${promotion.rhythm ?? "Build the branch around its defining action."}</span></div><div><b>Payoff</b><span>${promotion.payoff ?? "The Path's strongest rule becomes more reliable."}</span></div><div><b>Gives up</b><span>${promotion.tradeoff ?? "The sibling branch's specialty."}</span></div></div><small>${promotion.ultNote}</small><div class="spec-legacy ${specMastered ? "mastered" : ""}"><b>${legacy?.name ?? "Legacy technique"}</b><em>${specMastered ? "MASTERED · may occupy W on another Path" : chosen ? `${specProgress}/${SPECIALIZATION_MASTERY_LEVELS} specialization levels` : "Choose this specialization to begin mastery"}</em><i><u style="width:${(specProgress / SPECIALIZATION_MASTERY_LEVELS) * 100}%"></u></i></div>${chosen || !promotionReady ? "" : `<button class="big-btn adv-btn" data-advance="${promotion.id}">${hero.advCalling ? `Change Promotion · ${ADV_SWITCH_COST}g` : "Take Promotion"}</button>`}</article>`;
           }).join("")}</div>
         </div>
         <button class="big-btn primary path-confirm ${isCurrent ? "is-current" : ""} ${changing && save.gold < CALLING_SWITCH_COST ? "cant" : ""}" data-set-path="${path.id}" ${isCurrent ? "disabled" : ""}>

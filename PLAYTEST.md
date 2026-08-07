@@ -103,3 +103,9 @@ highest-level hero.
   condition. Q and the Path ultimate must remain unchanged.
 - Verify Warrior Fury and Necromancer Remains appear on the combat portrait,
   rise from their intended actions, and are spent by their focus techniques.
+- Before hiring a companion, ask the tester what the Tavern card implies about
+  Q, W, R, Discipline, and element. After hiring, verify that exact Path and
+  battle bar arrive equipped, with zero free mastery progress.
+- Compare the sibling master specs using the Rhythm, Payoff, and Gives up rows.
+  The tester should be able to explain the decision without translating a list
+  of small percentage bonuses.

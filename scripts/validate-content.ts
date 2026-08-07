@@ -19,6 +19,7 @@ import {
   ELEMENT_IDS,
   elementTechniqueOptions,
   HEROES,
+  HERO_STARTER_PATHS,
   HERO_STARTER_ABILITIES,
   HERO_GATE_STAGE,
   PARTY_CAP,
@@ -29,13 +30,14 @@ import {
   roleElementTechniqueOptions,
   STAGES,
   SPECIALIZATION_MASTERY_LEVELS,
+  SPECIALIZATION_PROFILES,
   SPECIALIZATION_TECHNIQUES,
   specializationKey,
   TALENTS,
   talentMods,
   TRINKETS,
 } from "../src/data";
-import { defaultSave, grantHeroXp, loadSave, persist, recoveryKey, rejectedSaveKey, slotKey } from "../src/save";
+import { assignRecruitStarterPath, defaultSave, grantHeroXp, loadSave, persist, recoveryKey, rejectedSaveKey, slotKey } from "../src/save";
 import { LATE_FOE_KINDS } from "../src/late-content";
 import { LATE_ROAD_BOSS_INTENTS, LATE_ROAD_ELITE_STAGES, LATE_ROAD_REGIONS, LATE_ROAD_STAGES } from "../src/late-road";
 import { Battle } from "../src/battle";
@@ -63,6 +65,12 @@ for (const ability of ABILITIES) {
   assert.ok(ability.gate.value >= 0, `${ability.id} has an invalid attribute gate`);
 }
 assert.equal(HERO_STARTER_ABILITIES.length, HEROES.length, "every recruit needs an archetype starter kit");
+assert.equal(HERO_STARTER_PATHS.length, HEROES.length, "every companion needs an authored starter Path");
+assert.equal(new Set(HERO_STARTER_PATHS.map((starter) => starter.discipline)).size, DISCIPLINE_IDS.length, "the starter roster should represent every Discipline");
+HERO_STARTER_PATHS.forEach((starter, index) => {
+  assert.ok(CALLINGS.some((calling) => calling.id === pathId(starter.discipline, starter.element)), `${HEROES[index].name} needs a valid starter Path`);
+  assert.ok(starter.reason.length >= 45, `${HEROES[index].name}'s starter Path needs an authored reason`);
+});
 HERO_STARTER_ABILITIES.forEach((ids, index) => {
   assert.equal(ids.length, 2, `${HEROES[index].name} needs exactly two road skills`);
   for (const id of ids) assert.ok(ABILITIES.some((ability) => ability.id === id), `${HEROES[index].name} references missing starter skill ${id}`);
@@ -268,6 +276,10 @@ for (const discipline of DISCIPLINE_IDS) {
     const ability = SPECIALIZATION_TECHNIQUES.find((entry) => entry.legacySpec === spec);
     assert.ok(ability, `${spec} needs a portable Legacy technique`);
     assert.ok(ability.blurb.includes("Legacy:"), `${spec} must explain its portability`);
+    const profile = SPECIALIZATION_PROFILES[discipline][branch];
+    assert.ok(profile.rhythm.length >= 35 && profile.payoff.length >= 35 && profile.tradeoff.length >= 30, `${spec} needs a clear rhythm, payoff, and tradeoff`);
+    assert.ok(profile.legacyCooldown >= 16 && profile.legacyCooldown <= 22, `${spec} portable cooldown is outside the tuning band`);
+    assert.equal(ability.cooldown, profile.legacyCooldown, `${spec} must use its authored portable cooldown`);
   }
 }
 assert.equal(SPECIALIZATION_MASTERY_LEVELS, 10, "specializations should take ten active levels to master");
@@ -425,6 +437,12 @@ assert.equal(loadSave().journal[0]?.time, 42.5, "Chronicle entries must persist"
 assert.equal(loadSave().inventory.length, 2, "duplicate trinkets must remain available for tinkering");
 assert.equal(loadSave().armory.length, 2, "duplicate armor copies must remain independently equippable");
 const masterySave = defaultSave();
+const recruitSave = defaultSave();
+const recruitedWren = recruitSave.heroes[1];
+const wrenPath = assignRecruitStarterPath(recruitedWren, 1);
+assert.equal(wrenPath?.id, pathId("archer", "storm"), "Wren should arrive on her authored Storm Archer Path");
+assert.deepEqual(recruitedWren.equipped, pathAbilities("archer", "storm").map((ability) => ability.id), "a recruited hero should arrive with the Path's coherent Q/W bar");
+assert.equal(recruitedWren.callingLevels[wrenPath!.id], 0, "starter Path practice begins at zero rather than granting free mastery");
 const firstPath = pathId("knight", "earth");
 masterySave.heroes[0].calling = firstPath;
 masterySave.heroes[0].discipline = "knight";

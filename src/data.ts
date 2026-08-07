@@ -44,6 +44,12 @@ export interface HeroDef {
   build: { torso: number; limb: number; head: number };
 }
 
+export interface HeroStarterPath {
+  discipline: DisciplineId;
+  element: ElementId;
+  reason: string;
+}
+
 // Starting biases are suggestions only — every point can be reallocated freely.
 export const HEROES: HeroDef[] = [
   {
@@ -546,6 +552,20 @@ export const HERO_STARTER_ABILITIES: readonly (readonly [string, string])[] = [
   ["hailknives", "frostwake"],
 ];
 
+/** Each companion has a believable road behind them. Founders still wait for
+ * the player's level-five choice; anyone hired in the Tavern arrives sworn to
+ * this Path, with a coherent Q/W/R kit that can be changed later. */
+export const HERO_STARTER_PATHS: readonly HeroStarterPath[] = [
+  { discipline: "knight", element: "earth", reason: "Bram's oath was forged by holding ground others had abandoned." },
+  { discipline: "archer", element: "storm", reason: "Wren reads crosswinds and changes lanes before the enemy can close." },
+  { discipline: "mage", element: "flame", reason: "Ezri learned to shape dangerous heat instead of merely surviving it." },
+  { discipline: "priest", element: "radiant", reason: "Sol turns the last lantern toward whoever needs it most." },
+  { discipline: "necromancer", element: "storm", reason: "Maren calls the drowned as swift spirit-lightning, never as permanent pets." },
+  { discipline: "warrior", element: "earth", reason: "Kellan meets every impact with a heavier answer and refuses interruption." },
+  { discipline: "knight", element: "frost", reason: "Sigrid makes a shieldwall as still and punishing as Winterreach ice." },
+  { discipline: "rogue", element: "frost", reason: "Vesna crosses frozen openings and shatters the weakness she creates." },
+] as const;
+
 export function abilityById(id: string): AbilityDef | undefined {
   return ABILITIES.find((a) => a.id === id);
 }
@@ -903,6 +923,9 @@ export interface AdvCallingDef {
   epithet: string;
   passive: string; // what the advancement adds on top of the base calling
   ultNote: string; // how it upgrades the ultimate
+  rhythm?: string; // the repeated decision this branch asks the player to make
+  payoff?: string; // what clean execution earns
+  tradeoff?: string; // what the sibling branch does better
 }
 
 export interface CallingDef {
@@ -2694,6 +2717,46 @@ const PROMOTION_PROMISES: Record<DisciplineId, readonly [string, string]> = {
   necromancer: ["Remains call durable guardians that intercept pressure and return elemental answers.", "Remains feed curses and spectral volleys; kills refund cooldown and empower the next death rite."],
 };
 
+export interface SpecializationProfile {
+  rhythm: string;
+  payoff: string;
+  tradeoff: string;
+  legacyCooldown: number;
+}
+
+/** The fourteen master specs are deliberately asymmetric. These profiles are
+ * both player-facing doctrine and a single tuning ledger for portable skills. */
+export const SPECIALIZATION_PROFILES: Record<DisciplineId, Record<SpecializationBranch, SpecializationProfile>> = {
+  knight: {
+    ascendant: { rhythm: "Stay close to the ally carrying the most pressure.", payoff: "Shared guard and emergency interception turn formation into armor.", tradeoff: "Lower personal finishing power than the Avenger.", legacyCooldown: 17 },
+    paragon: { rhythm: "Taunt first, then answer every marked attacker.", payoff: "Retaliation converts endured pressure into a damaging charge loop.", tradeoff: "Protects distant allies less reliably than the Bastion.", legacyCooldown: 19 },
+  },
+  warrior: {
+    ascendant: { rhythm: "Build Fury with deliberate arcs; spend only into armor or poise.", payoff: "Uninterruptible finishers deliver the strongest boss stagger.", tradeoff: "Less explosive while wounded than the Berserker.", legacyCooldown: 18 },
+    paragon: { rhythm: "Fight near the red line and keep Fury moving.", payoff: "Speed, life-steal, and execution chains reward controlled risk.", tradeoff: "Sacrifices safety and stagger control.", legacyCooldown: 21 },
+  },
+  rogue: {
+    ascendant: { rhythm: "Break pursuit after every commitment and attack from a new angle.", payoff: "Shroud and decoys erase mistakes while preserving assassination tempo.", tradeoff: "Creates fewer persistent kill zones than the Saboteur.", legacyCooldown: 16 },
+    paragon: { rhythm: "Prepare ground, expose the priority target, then cash in the trap.", payoff: "Priority hits and kills accelerate the entire technique cycle.", tradeoff: "Needs setup and offers no emergency vanish.", legacyCooldown: 19 },
+  },
+  archer: {
+    ascendant: { rhythm: "Hold a clean lane and commit to one quarry.", payoff: "Distance becomes damage, vulnerability, and boss stagger.", tradeoff: "Loses output when forced to reposition repeatedly.", legacyCooldown: 18 },
+    paragon: { rhythm: "Move after every volley and fire into the space you opened.", payoff: "Momentum produces haste, ricochets, and safer firing lanes.", tradeoff: "Lower single-target pressure than the Deadeye.", legacyCooldown: 17 },
+  },
+  priest: {
+    ascendant: { rhythm: "Read the next crisis before the health bar collapses.", payoff: "Overhealing becomes wards and critical allies receive a second chance.", tradeoff: "Contributes less pressure than the Oracle.", legacyCooldown: 18 },
+    paragon: { rhythm: "Judge the priority enemy while tracking the weakest ally.", payoff: "Offense returns as focused healing and harsher priority punishment.", tradeoff: "Cannot prevent sudden damage as safely as the Hierophant.", legacyCooldown: 20 },
+  },
+  mage: {
+    ascendant: { rhythm: "Layer conditions, then rewrite the field where they overlap.", payoff: "Reliable control zones force stronger elemental reactions.", tradeoff: "Lower burst ceiling than the Runebinder.", legacyCooldown: 19 },
+    paragon: { rhythm: "Spend health only when a large cast can decide the exchange.", payoff: "Overchannel dramatically enlarges force and coverage.", tradeoff: "Long recovery and blood cost punish careless casting.", legacyCooldown: 22 },
+  },
+  necromancer: {
+    ascendant: { rhythm: "Spend Remains near the ally currently absorbing pressure.", payoff: "Durable shades intercept attacks and return elemental answers.", tradeoff: "Fewer curse resets and less execution damage than the Lich.", legacyCooldown: 18 },
+    paragon: { rhythm: "Seed a curse, claim a death, and reinvest the refunded tempo.", payoff: "Kills compound into larger death rites and spectral volleys.", tradeoff: "Guardians are brief and the loop weakens without corpses.", legacyCooldown: 21 },
+  },
+};
+
 const ELEMENT_ABILITY_ICONS: Record<ElementId, string> = {
   flame: "fireball",
   frost: "frostwake",
@@ -2782,7 +2845,7 @@ export const SPECIALIZATION_TECHNIQUES: readonly AbilityDef[] = DISCIPLINES.flat
       name: copy.name,
       gate: { attr: "str", value: 0 },
       targeting: copy.targeting,
-      cooldown: branch === "ascendant" ? 18 : 20,
+      cooldown: SPECIALIZATION_PROFILES[discipline.id][branch].legacyCooldown,
       color: discipline.color,
       icon: copy.icon,
       blurb: copy.blurb,
@@ -2954,8 +3017,8 @@ export const CALLINGS: CallingDef[] = DISCIPLINES.flatMap((discipline) =>
         pathSkill: "ultimate",
       },
       advanced: [
-        { id: `${id}-ascendant`, name: `${element.adjective} ${firstPromotion}`, epithet: "the Exalted Path", passive: firstPromise, ultNote: `${lore.ultimate} gains the ${firstPromotion}'s defining rule. Master this specialization over ${SPECIALIZATION_MASTERY_LEVELS} levels to carry ${SPECIALIZATION_TECHNIQUE_COPY[discipline.id].ascendant.name} to another Path.` },
-        { id: `${id}-paragon`, name: `${element.adjective} ${secondPromotion}`, epithet: "the Unbound Path", passive: secondPromise, ultNote: `${lore.ultimate} gains the ${secondPromotion}'s defining rule. Master this specialization over ${SPECIALIZATION_MASTERY_LEVELS} levels to carry ${SPECIALIZATION_TECHNIQUE_COPY[discipline.id].paragon.name} to another Path.` },
+        { id: `${id}-ascendant`, name: `${element.adjective} ${firstPromotion}`, epithet: "the Exalted Path", passive: firstPromise, ultNote: `${lore.ultimate} gains the ${firstPromotion}'s defining rule. Master this specialization over ${SPECIALIZATION_MASTERY_LEVELS} levels to carry ${SPECIALIZATION_TECHNIQUE_COPY[discipline.id].ascendant.name} to another Path.`, ...SPECIALIZATION_PROFILES[discipline.id].ascendant },
+        { id: `${id}-paragon`, name: `${element.adjective} ${secondPromotion}`, epithet: "the Unbound Path", passive: secondPromise, ultNote: `${lore.ultimate} gains the ${secondPromotion}'s defining rule. Master this specialization over ${SPECIALIZATION_MASTERY_LEVELS} levels to carry ${SPECIALIZATION_TECHNIQUE_COPY[discipline.id].paragon.name} to another Path.`, ...SPECIALIZATION_PROFILES[discipline.id].paragon },
       ],
     } satisfies CallingDef;
   }),

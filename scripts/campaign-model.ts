@@ -5,6 +5,7 @@ import {
   ENEMIES,
   HEROES,
   HERO_GATE_STAGE,
+  HERO_STARTER_PATHS,
   MAX_LEVEL,
   pathAbilities,
   pathId,
@@ -17,26 +18,19 @@ import type { AttrKey, DisciplineId, ElementId, HeroSave, SaveData, StageDef } f
 
 /**
  * Authored reference identities for deterministic reports.  These deliberately
- * cover all seven disciplines and all eight elements instead of giving every
- * hero whichever legacy spell happens to pass an attribute gate first.
+ * cover all seven disciplines and mirror the Tavern's authored starter Paths
+ * instead of giving every hero whichever legacy spell passes a gate first.
  */
-export const REFERENCE_PATHS: readonly { discipline: DisciplineId; element: ElementId }[] = [
-  { discipline: "knight", element: "earth" },
-  { discipline: "archer", element: "storm" },
-  { discipline: "mage", element: "flame" },
-  { discipline: "priest", element: "radiant" },
-  { discipline: "priest", element: "frost" },
-  { discipline: "knight", element: "blood" },
-  { discipline: "knight", element: "frost" },
-  { discipline: "rogue", element: "shadow" },
-] as const;
+export const REFERENCE_PATHS: readonly { discipline: DisciplineId; element: ElementId }[] = HERO_STARTER_PATHS;
 
 const ROLE_ATTRIBUTE: Record<DisciplineId, AttrKey> = {
   knight: "str",
+  warrior: "str",
   rogue: "dex",
   archer: "dex",
   priest: "spi",
   mage: "int",
+  necromancer: "int",
 };
 
 interface ReferenceKit {
@@ -47,10 +41,12 @@ interface ReferenceKit {
 
 const REFERENCE_KITS: Record<DisciplineId, ReferenceKit> = {
   knight: { body: "ironholdPlate", helm: "greathelm", boots: "bulwarkGreaves" },
+  warrior: { body: "ironholdPlate", helm: "greathelm", boots: "roadstriders" },
   rogue: { body: "skirmisherHarness", helm: "trackersCap", boots: "springheels" },
   archer: { body: "huntsmanHarness", helm: "huntersHood", boots: "roadstriders" },
   priest: { body: "pilgrimRobe", helm: "pilgrimCowl", boots: "driftSandals" },
   mage: { body: "emberweave", helm: "sageCirclet", boots: "quietSlippers" },
+  necromancer: { body: "emberweave", helm: "pilgrimCowl", boots: "quietSlippers" },
 };
 
 export interface ScheduledStageReward {

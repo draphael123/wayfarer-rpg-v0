@@ -219,6 +219,63 @@ html, body {
 .legacy-technique-picker { border-top-color: rgba(183, 154, 88, .55); }
 .legacy-option small { color: #d8bd79; }
 
+/* Master-spec doctrine reads like a field manual: action, reward, sacrifice.
+   The three ruled rows make the choice comparable without turning it into a
+   generic stat card. */
+.spec-doctrine {
+  display: grid;
+  gap: 1px;
+  margin: 8px 0 6px;
+  background: rgba(183, 154, 88, .18);
+  border: 1px solid rgba(183, 154, 88, .22);
+}
+.spec-doctrine > div {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 9px;
+  padding: 7px 8px;
+  background: #1a1d18;
+}
+.spec-doctrine b {
+  color: var(--path-color, #d8bd79);
+  font: 900 8px/1.4 var(--font-ui, sans-serif);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.spec-doctrine span { color: #aaa18b; font-size: 9px; line-height: 1.35; }
+
+/* A new hire's Path is presented as a stamped travel credential, tying the
+   Tavern to the road-ledger visual language instead of another perk pill. */
+.recruit-path {
+  position: relative;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 9px;
+  margin-top: 8px;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid rgba(183, 154, 88, .24);
+  background: linear-gradient(95deg, rgba(183,154,88,.1), rgba(12,16,13,.45));
+  box-shadow: inset 4px 0 var(--accent, #b79a58);
+}
+.recruit-path::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  top: 7px;
+  width: 17px;
+  height: 17px;
+  border: 1px solid color-mix(in srgb, var(--accent, #b79a58), transparent 35%);
+  transform: rotate(45deg);
+  opacity: .55;
+}
+.recruit-path b { color: var(--accent, #d8bd79); font-size: 8px; letter-spacing: .1em; text-transform: uppercase; }
+.recruit-path strong { color: #eee3c7; font: 800 12px/1.2 var(--font-display, serif); }
+.recruit-path span { grid-column: 1 / -1; color: #b8b09c; font-size: 9px; }
+.recruit-path em { grid-column: 1 / -1; max-width: 62ch; color: #8f897a; font: italic 9px/1.35 Georgia, serif; }
+.recruit-path.current { box-shadow: inset 4px 0 #7f9f70; }
+.recruit-path.current b { color: #9cc28a; }
+
 @media (max-width: 720px) {
   .path-braid { grid-template-columns: 1fr; }
   .path-braid > i { height: 18px; }

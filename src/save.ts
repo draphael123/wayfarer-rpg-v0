@@ -8,12 +8,14 @@ import {
   disciplineById,
   elementById,
   HERO_STARTER_ABILITIES,
+  HERO_STARTER_PATHS,
   HEROES,
   LEGACY_ADVANCED_BRANCH,
   LEGACY_CALLING_PATHS,
   MAX_EQUIPPED,
   MAX_LEVEL,
   pathId,
+  pathAbilities,
   POINTS_PER_LEVEL,
   resolvedPathAbilities,
   SPECIALIZATION_MASTERY_LEVELS,
@@ -101,6 +103,23 @@ function defaultHero(index: number): HeroSave {
     .slice(0, MAX_EQUIPPED)
     .map((ability) => ability.id);
   return { attrs, level: 1, xp: 0, equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null, discipline: null, element: null, callingLevels: {}, masteredCallings: [], advancedCallings: {}, specializationLevels: {}, masteredSpecializations: [], elementLevels: {}, masteredElements: [] };
+}
+
+/** Tavern hires arrive with a complete authored Path. Existing or imported
+ * choices always win, so this never overwrites a player's build. */
+export function assignRecruitStarterPath(hero: HeroSave, index: number): ReturnType<typeof callingById> {
+  if (hero.calling) return callingById(hero.calling);
+  const starter = HERO_STARTER_PATHS[index];
+  if (!starter) return null;
+  const calling = callingById(pathId(starter.discipline, starter.element));
+  if (!calling) return null;
+  hero.calling = calling.id;
+  hero.discipline = starter.discipline;
+  hero.element = starter.element;
+  hero.equipped = pathAbilities(starter.discipline, starter.element).map((ability) => ability.id);
+  hero.callingLevels[calling.id] ??= 0;
+  hero.elementLevels[starter.element] ??= 0;
+  return calling;
 }
 
 /** Out of the box: 1-4 picks a hero, Q/W cast chosen abilities, R casts the ultimate. */

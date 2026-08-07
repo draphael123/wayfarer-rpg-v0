@@ -2388,25 +2388,35 @@ export class Battle {
       if (discipline === "knight" && hitTargets.length) {
         for (const ally of this.livingHeroes().filter((ally) => ally !== hero && unitDist(hero, ally) < 125)) {
           this.refreshPathEffect(ally, "guard", 3.5 + tierRank, 0.12 + tierRank * 0.05, hero);
+          if (tier === "ultimate") this.refreshPathEffect(ally, "shield", 7, damage * 0.28, hero);
         }
       } else if (discipline === "rogue") {
         this.refreshPathEffect(hero, "shrouded", 2.2 + tierRank, 1, hero);
         for (const enemy of enemies) if (enemy.aggro === hero || enemy.attackTarget === hero) { enemy.aggro = null; enemy.attackTarget = null; }
+        if (tier === "ultimate") for (const ally of this.livingHeroes().filter((ally) => unitDist(hero, ally) < 110)) this.refreshPathEffect(ally, "guard", 3, 0.16, hero);
       } else if (discipline === "archer" && hitTargets.length) {
         const quarry = hitTargets[0];
         if (quarry.alive) this.refreshPathEffect(quarry, "vulnerable", 4 + tierRank, 0.1 + tierRank * 0.05, hero);
         if (quarry === this.bossRef && this.bossStaggerMax > 0) this.bossStagger += 5 + tierRank * 6;
       } else if (discipline === "priest" && supportedAllies.length) {
-        for (const ally of supportedAllies) this.refreshPathEffect(ally, "shield", 6, damage * (0.22 + tierRank * 0.1), hero);
+        for (const ally of supportedAllies) {
+          this.refreshPathEffect(ally, "shield", 6, damage * (0.22 + tierRank * 0.1), hero);
+          if (ally.hp / ally.stats.maxHp <= 0.25) {
+            this.heal(ally, damage * (0.28 + tierRank * 0.08), true, hero);
+            this.fx.floatText(ally.x, ally.y - ally.radius * 2.8, "FATE HELD", color, 10);
+          }
+        }
       } else if (discipline === "mage" && hitTargets.length) {
         for (const target of hitTargets) if (target.alive) this.refreshPathEffect(target, "slow", 3 + tierRank, 0.28 + tierRank * 0.07, hero);
+        if (tier === "focus") for (const ability of hero.abilities) if (ability.def.pathSkill === "core") ability.timer = Math.max(0, ability.timer - 1.5);
       }
       if (tier === "ultimate") this.fx.floatText(hero.x, hero.y - hero.radius * 4.2, "SPECIALIZATION · EXALTED", color, 11);
     } else if (paragon) {
       if (discipline === "knight") {
         for (const target of hitTargets) if (target.alive && this.effect(target, "taunt")) this.damage(target, damage * (0.18 + tierRank * 0.08), hero, { spell: true, color, element, secondary: true });
-      } else if (discipline === "rogue" && hitTargets.some((target) => !target.alive)) {
-        for (const ability of hero.abilities) if (!ability.ult) ability.timer = Math.max(0, ability.timer - 3);
+      } else if (discipline === "rogue" && (hitTargets.some((target) => !target.alive) || hitTargets.some((target) => PRIORITY_ENEMIES.has(target.enemyKind!)))) {
+        const refund = hitTargets.some((target) => !target.alive) ? 3 : 1.5;
+        for (const ability of hero.abilities) if (!ability.ult) ability.timer = Math.max(0, ability.timer - refund);
       } else if (discipline === "archer" && hitTargets.length) {
         this.refreshPathEffect(hero, "haste", 3 + tierRank, 1.18 + tierRank * 0.08, hero);
         const away = this.normalize({ x: hero.x - signatureCenter.x, y: hero.y - signatureCenter.y });
@@ -2415,6 +2425,7 @@ export class Battle {
       } else if (discipline === "priest" && hitTargets.length) {
         const weakest = this.livingHeroes().sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0];
         if (weakest) this.heal(weakest, damage * hitTargets.length * (0.12 + tierRank * 0.05), true, hero);
+        for (const target of hitTargets) if (target.alive && PRIORITY_ENEMIES.has(target.enemyKind!)) this.refreshPathEffect(target, "vulnerable", 4, 0.12 + tierRank * 0.04, hero);
       } else if (discipline === "mage" && hitTargets.length) {
         const price = Math.min(hero.hp - 1, hero.stats.maxHp * (0.025 + tierRank * 0.015));
         if (price > 0) hero.hp -= price;
