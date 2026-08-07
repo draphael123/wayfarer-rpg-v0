@@ -2434,6 +2434,26 @@ export function trinketFlatHp(id: string | null | undefined): number {
 /** Stages whose final wave is a boss — these drop rare trinkets. */
 export const BOSS_STAGES = [4, 5, 11, 15, 17];
 
+export interface ContractDef {
+  id: string;
+  name: string;
+  issuer: string;
+  stage: number;
+  unlockStage: number;
+  brief: string;
+  condition: "flawless" | "threeHeroes" | "swift" | "hard";
+  target?: number;
+  reward: number;
+}
+
+/** Tavern work reuses campaign ground but changes what counts as a successful job. */
+export const CONTRACTS: ContractDef[] = [
+  { id: "cleanSweep", name: "No Graves Tonight", issuer: "Millbrook reeve", stage: 2, unlockStage: 2, brief: "Clear Mirebrook Hollow without losing a hero.", condition: "flawless", reward: 130 },
+  { id: "leanCompany", name: "Three Shares", issuer: "South-road factor", stage: 3, unlockStage: 3, brief: "Clear the Charwood with no more than three active heroes.", condition: "threeHeroes", reward: 165 },
+  { id: "bellBeforeDark", name: "Before the Bell", issuer: "Winterreach courier", stage: 8, unlockStage: 8, brief: "Cross the Frozen Lake in under 55 seconds.", condition: "swift", target: 55, reward: 230 },
+  { id: "hardTerms", name: "Salt in the Wound", issuer: "Stormbreak quartermaster", stage: 13, unlockStage: 13, brief: "Clear the Weeping Reeds on Hard or Brutal.", condition: "hard", reward: 320 },
+];
+
 // ------------------------------------------------------------------ deeds
 
 export interface DeedDef {

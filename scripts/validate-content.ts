@@ -6,6 +6,7 @@ import {
   BOONS,
   BOSS_STAGES,
   CALLINGS,
+  CONTRACTS,
   ENEMIES,
   HEROES,
   HERO_GATE_STAGE,
@@ -57,6 +58,12 @@ STAGES.forEach((stage, index) => {
 
 unique(BOSS_STAGES.map(String), "boss stage indexes");
 for (const stageIndex of BOSS_STAGES) assert.ok(STAGES[stageIndex], `boss stage ${stageIndex} does not exist`);
+unique(CONTRACTS.map((contract) => contract.id), "contract ids");
+for (const contract of CONTRACTS) {
+  assert.ok(STAGES[contract.stage], `${contract.id} references missing stage ${contract.stage}`);
+  assert.ok(contract.unlockStage >= contract.stage, `${contract.id} cannot unlock before its stage is reachable`);
+  assert.ok(contract.reward > 0, `${contract.id} needs a positive reward`);
+}
 
 unique(ALL_GEAR.map((piece) => piece.id), "gear ids");
 unique(TRINKETS.map((trinket) => trinket.id), "trinket ids");

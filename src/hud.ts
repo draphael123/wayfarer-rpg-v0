@@ -152,6 +152,7 @@ export class Hud {
   overlayAge = 0;
   private lootRevealed = false; // the reveal chime fires once per victory
   pendingLoot: { icon: string; name: string; rare: boolean } | null = null;
+  rewardOverride: { xp: number; gold: number; note: string } | null = null;
   cam: { x: number; y: number; zoom: number } = { x: 0, y: 0, zoom: 1 };
 
   /** Convert a screen-space point into battle-world coordinates (camera-aware). */
@@ -1718,8 +1719,8 @@ export class Hud {
     const secs = String(Math.floor(this.battle.time % 60)).padStart(2, "0");
     if (victory) {
       const mult = DIFFICULTIES[this.save.difficulty ?? 1]?.rewardMult ?? 1;
-      const xp = Math.round((this.battle.xpEarned + this.battle.stage.xpReward) * mult);
-      const gold = Math.round((this.battle.goldEarned + Math.round(this.battle.stage.xpReward * 0.8)) * mult);
+      const xp = this.rewardOverride?.xp ?? Math.round((this.battle.xpEarned + this.battle.stage.xpReward) * mult);
+      const gold = this.rewardOverride?.gold ?? Math.round((this.battle.goldEarned + Math.round(this.battle.stage.xpReward * 0.8)) * mult);
       const shownGold = Math.min(gold, Math.floor(this.overlayAge * gold * 1.6));
       const shownXp = Math.min(xp, Math.floor(this.overlayAge * xp * 1.6));
       // reward rows with drawn icons (no OS emoji)
@@ -1761,7 +1762,7 @@ export class Hud {
       ctx.font = "600 12px 'Trebuchet MS', Verdana, sans-serif";
       ctx.fillStyle = "#a89fc0";
       ctx.fillText(
-        `Cleared in ${mins}:${secs} · ${this.battle.heroDeaths === 0 ? "no heroes fell" : `${this.battle.heroDeaths} hero${this.battle.heroDeaths === 1 ? "" : "es"} fell`}`,
+        this.rewardOverride?.note ?? `Cleared in ${mins}:${secs} · ${this.battle.heroDeaths === 0 ? "no heroes fell" : `${this.battle.heroDeaths} hero${this.battle.heroDeaths === 1 ? "" : "es"} fell`}`,
         this.width / 2,
         rowY + 44,
       );

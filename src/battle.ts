@@ -693,13 +693,15 @@ export class Battle {
       this.kickY += (kdy / klen) * Math.min(3, amount * 0.08);
     }
     target.hitFlash = 0.18;
-    this.fx.floatText(
-      target.x + (Math.random() * 16 - 8),
-      target.y - target.radius - 14,
-      `${amount}`,
-      opts.color ?? (target.team === "hero" ? "#ff7d6b" : "#f2ead8"),
-      target.team === "hero" ? 15 : 14,
-    );
+    if (this.saveRef?.damageNumbers !== false) {
+      this.fx.floatText(
+        target.x + (Math.random() * 16 - 8),
+        target.y - target.radius - 14,
+        `${amount}`,
+        opts.color ?? (target.team === "hero" ? "#ff7d6b" : "#f2ead8"),
+        target.team === "hero" ? 15 : 14,
+      );
+    }
     if (source) {
       const dx = target.x - source.x;
       const dy = target.y - source.y;
@@ -710,7 +712,7 @@ export class Battle {
     }
     if (target.hp - amount <= 0 && target.hp > 0) {
       // killing blow: bigger, golder, longer
-      this.fx.floatText(target.x, target.y - target.radius - 26, `${amount}`, "#ffd76b", 20);
+      if (this.saveRef?.damageNumbers !== false) this.fx.floatText(target.x, target.y - target.radius - 26, `${amount}`, "#ffd76b", 20);
       this.hitstop = Math.max(this.hitstop, 0.09);
     }
     if (target.team === "enemy" && source && source.team === "hero" && !target.aggro) {
@@ -776,7 +778,9 @@ export class Battle {
       this.gainUlt(from, applied * (from.calling === "chaplain" ? 0.36 : from.calling === "seer" ? 0.3 : from.calling === "bard" ? 0.25 : from.calling === "warden" ? 0.2 : 0.12));
     }
     if (showText && applied >= 1) {
-      this.fx.floatText(target.x, target.y - target.radius - 14, `+${Math.round(applied)}`, "#8ee88b", 14);
+      if (this.saveRef?.damageNumbers !== false) {
+        this.fx.floatText(target.x, target.y - target.radius - 14, `+${Math.round(applied)}`, "#8ee88b", 14);
+      }
     }
     if (from && from.team === "hero") {
       // Overflow: healing past full spills onto the most wounded other ally

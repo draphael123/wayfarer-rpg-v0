@@ -236,9 +236,14 @@ export interface SaveData {
   difficulty: number; // index into DIFFICULTIES
   seenIntro: boolean; // first-run tutorial prompt shown
   stageStats: Record<number, { bestTime: number; clears: number }>; // per-stage clear records
+  arenaRecords: Record<number, { clears: number; bestTime: number }>;
+  contractRecords: Record<string, { clears: number; bestTime: number }>;
   lifetime: LifetimeStats; // the band's whole story in numbers
   presets: (PartyPreset | null)[]; // two savable band configurations
   reducedMotion: boolean; // calmer screen: no shake/zoom punch, no menu animation
+  screenShake: boolean; // camera impact, independent of other motion
+  damageNumbers: boolean; // floating damage and healing values
+  pauseOnBlur: boolean; // pause an active fight when the tab loses focus
   colorSafe: boolean; // colorblind-friendly health bars (hero bars go blue)
   bigText: boolean; // larger menu + hint text
   keybinds: Record<string, string>; // action id -> key (hero1-4, ability1-4)

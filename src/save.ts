@@ -109,9 +109,14 @@ export function defaultSave(): SaveData {
     difficulty: 1,
     seenIntro: false,
     stageStats: {},
+    arenaRecords: {},
+    contractRecords: {},
     lifetime: emptyLifetime(),
     presets: [null, null],
     reducedMotion: false,
+    screenShake: true,
+    damageNumbers: true,
+    pauseOnBlur: true,
     colorSafe: false,
     bigText: false,
     keybinds: { ...DEFAULT_KEYBINDS },
@@ -214,6 +219,8 @@ export function loadSave(): SaveData {
     if (typeof parsed.soundVol !== "number" || parsed.soundVol < 0 || parsed.soundVol > 1) parsed.soundVol = 1;
     if (typeof parsed.musicVol !== "number" || parsed.musicVol < 0 || parsed.musicVol > 1) parsed.musicVol = 1;
     if (!parsed.stageStats || typeof parsed.stageStats !== "object") parsed.stageStats = {};
+    if (!parsed.arenaRecords || typeof parsed.arenaRecords !== "object") parsed.arenaRecords = {};
+    if (!parsed.contractRecords || typeof parsed.contractRecords !== "object") parsed.contractRecords = {};
     if (!parsed.lifetime || typeof parsed.lifetime !== "object") {
       // veterans keep credit for what the save already proves
       parsed.lifetime = emptyLifetime();
@@ -227,6 +234,9 @@ export function loadSave(): SaveData {
     if (!Array.isArray(parsed.presets)) parsed.presets = [null, null];
     while (parsed.presets.length < 2) parsed.presets.push(null);
     if (typeof parsed.reducedMotion !== "boolean") parsed.reducedMotion = false;
+    if (typeof parsed.screenShake !== "boolean") parsed.screenShake = true;
+    if (typeof parsed.damageNumbers !== "boolean") parsed.damageNumbers = true;
+    if (typeof parsed.pauseOnBlur !== "boolean") parsed.pauseOnBlur = true;
     if (typeof parsed.colorSafe !== "boolean") parsed.colorSafe = false;
     if (typeof parsed.bigText !== "boolean") parsed.bigText = false;
     if (!parsed.keybinds || typeof parsed.keybinds !== "object") parsed.keybinds = { ...DEFAULT_KEYBINDS };

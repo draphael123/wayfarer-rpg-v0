@@ -1,6 +1,6 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { ADV_CALLING_LEVEL, ALL_GEAR, ARMORS, BOSS_STAGES, CALLING_UNLOCK_LEVEL, DIFFICULTIES, HEROES, STAGES, TRINKETS } from "./data";
+import { ADV_CALLING_LEVEL, ALL_GEAR, ARMORS, BOSS_STAGES, CALLING_UNLOCK_LEVEL, CONTRACTS, DIFFICULTIES, HEROES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { drawHeroPortrait, Menus } from "./menus";
@@ -53,6 +53,7 @@ let tutorial: Tutorial | null = null;
 let battleSave: SaveData = save; // the save the running battle reads (tutorial uses a throwaway)
 let currentStage = 0;
 let xpGranted = false;
+let activeChallenge: { kind: "arena" | "contract"; id: string; stage: number } | null = null;
 
 /** Battle fields run nearly two screens wide — the fight itself travels the land. */
 const FIELD_SCREENS = 1.9;
@@ -107,7 +108,12 @@ resize();
 
 const menus = new Menus("ui", save, {
   startStage(stageIndex: number) {
+    activeChallenge = null;
     startBattle(stageIndex);
+  },
+  startChallenge(kind, stageIndex, id) {
+    activeChallenge = { kind, stage: stageIndex, id };
+    startBattle(stageIndex, true);
   },
   startTutorial(kind: string) {
     startTutorial(kind);
@@ -124,7 +130,8 @@ const menus = new Menus("ui", save, {
   },
 });
 
-function startBattle(stageIndex: number): void {
+function startBattle(stageIndex: number, keepChallenge = false): void {
+  if (!keepChallenge) activeChallenge = null;
   rolledLoot = null;
   logEvent("battle_start", {
     stage: stageIndex,
@@ -137,7 +144,11 @@ function startBattle(stageIndex: number): void {
   tutorial = null;
   battleSave = save;
   fx = new FxSystem();
-  battle = new Battle(STAGES[stageIndex], save, fieldRect(), fx);
+  const baseStage = STAGES[stageIndex];
+  const arenaStage: StageDef | null = activeChallenge?.kind === "arena"
+    ? { ...baseStage, name: `${baseStage.name} · Arena`, subtitle: "The crowd calls for the great foe", waves: [baseStage.waves[baseStage.waves.length - 1]], xpReward: Math.round(baseStage.xpReward * 0.55) }
+    : null;
+  battle = new Battle(arenaStage ?? baseStage, save, fieldRect(), fx);
   hud = new Hud(battle, save, logicalW, logicalH);
   hud.freshPlayer = save.unlockedStage === 0 && save.level < 3;
   audio.setMood("battle", stageIndex);
@@ -201,6 +212,7 @@ function mergeBestiary(): void {
 }
 
 function endBattleToMap(): void {
+  const returnTo = activeChallenge?.kind ?? null;
   if (battle && !battle.tutorialMode) {
     logEvent("battle_end", {
       stage: currentStage,
@@ -212,7 +224,7 @@ function endBattleToMap(): void {
       casts: battle.castCounts,
     });
   }
-  if (battle && !battle.tutorialMode && !xpGranted && battle.goldEarned > 0) {
+  if (battle && !battle.tutorialMode && !activeChallenge && !xpGranted && battle.goldEarned > 0) {
     save.gold += Math.round(battle.goldEarned / 2);
     persist(save);
   }
@@ -222,8 +234,11 @@ function endBattleToMap(): void {
   fx = null;
   tutorial = null;
   battleSave = save;
+  activeChallenge = null;
   audio.setMood("menu");
   if (menus.pendingFinale) menus.renderFinale();
+  else if (returnTo === "arena") menus.renderArena();
+  else if (returnTo === "contract") menus.renderContracts();
   else menus.renderMap();
 }
 
@@ -254,6 +269,10 @@ function rollLoot(): void {
 function settleVictory(): void {
   if (!battle || xpGranted) return;
   xpGranted = true;
+  if (activeChallenge) {
+    settleChallengeVictory(activeChallenge);
+    return;
+  }
   const rewardMult = DIFFICULTIES[save.difficulty ?? 1].rewardMult;
   const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * rewardMult);
   const gold = Math.round((battle.goldEarned + Math.round(battle.stage.xpReward * 0.8)) * rewardMult);
@@ -315,6 +334,77 @@ function settleVictory(): void {
   persist(save);
   if (levels > 0) audio.play("levelup");
   setTimeout(() => menus.showToast(`+${gold} gold · loot: ${drop.icon} ${drop.name}${rare ? " (RARE)" : ""}`), 150);
+}
+
+function settleChallengeVictory(challenge: NonNullable<typeof activeChallenge>): void {
+  if (!battle) return;
+  const t = Math.round(battle.time * 10) / 10;
+  const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * 0.55);
+  save.heroes.forEach((hero, index) => {
+    if (hero.recruited) grantHeroXp(save, index, hero.active ? xp : xp * 0.35);
+  });
+  if (challenge.kind === "arena") {
+    const old = save.arenaRecords[challenge.stage];
+    const first = !old?.clears;
+    const gold = 70 + challenge.stage * 9 + (first ? 120 : 0);
+    save.gold += gold;
+    save.arenaRecords[challenge.stage] = { clears: (old?.clears ?? 0) + 1, bestTime: old ? Math.min(old.bestTime, t) : t };
+    setTimeout(() => menus.showToast(`${first ? "FIRST ARENA VICTORY" : "ARENA CLEARED"} · +${gold} gold · +${xp} xp`), 120);
+  } else {
+    const contract = CONTRACTS.find((item) => item.id === challenge.id);
+    if (!contract) return;
+    const activeHeroes = save.heroes.filter((hero) => hero.recruited && hero.active).length;
+    const fulfilled =
+      contract.condition === "flawless" ? battle.heroDeaths === 0
+        : contract.condition === "threeHeroes" ? activeHeroes <= 3
+          : contract.condition === "swift" ? t <= (contract.target ?? Infinity)
+            : save.difficulty >= 2;
+    if (!fulfilled) {
+      const consolation = Math.round(contract.reward * 0.2);
+      save.gold += consolation;
+      setTimeout(() => menus.showToast(`CONTRACT MISSED · the fight is won, but the terms were not · +${consolation} gold`), 120);
+    } else {
+      const old = save.contractRecords[contract.id];
+      const first = !old?.clears;
+      const gold = contract.reward + (first ? Math.round(contract.reward * 0.5) : 0);
+      save.gold += gold;
+      save.contractRecords[contract.id] = { clears: (old?.clears ?? 0) + 1, bestTime: old ? Math.min(old.bestTime, t) : t };
+      let prize = "";
+      if (first) {
+        const unowned = ALL_GEAR.filter((piece) => piece.cost > 0 && piece.cost <= 600 && !save.armory.includes(piece.id));
+        const piece = unowned[Math.min(unowned.length - 1, Math.max(0, Math.floor(challenge.stage / 3)))] ?? null;
+        if (piece) {
+          save.armory.push(piece.id);
+          prize = ` · ${piece.name}`;
+        }
+      }
+      setTimeout(() => menus.showToast(`CONTRACT FULFILLED · +${gold} gold · +${xp} xp${prize}`), 120);
+    }
+  }
+  persist(save);
+}
+
+function syncChallengeReward(): void {
+  if (!activeChallenge || !battle || !hud || battle.state !== "victory" || hud.rewardOverride) return;
+  const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * 0.55);
+  if (activeChallenge.kind === "arena") {
+    const first = !(save.arenaRecords[activeChallenge.stage]?.clears ?? 0);
+    hud.rewardOverride = { xp, gold: 70 + activeChallenge.stage * 9 + (first ? 120 : 0), note: first ? "First-clear purse secured" : "Arena rematch complete" };
+    return;
+  }
+  const contract = CONTRACTS.find((item) => item.id === activeChallenge?.id);
+  if (!contract) return;
+  const activeHeroes = save.heroes.filter((hero) => hero.recruited && hero.active).length;
+  const fulfilled = contract.condition === "flawless" ? battle.heroDeaths === 0
+    : contract.condition === "threeHeroes" ? activeHeroes <= 3
+      : contract.condition === "swift" ? battle.time <= (contract.target ?? Infinity)
+        : save.difficulty >= 2;
+  const first = !(save.contractRecords[contract.id]?.clears ?? 0);
+  hud.rewardOverride = {
+    xp,
+    gold: fulfilled ? contract.reward + (first ? Math.round(contract.reward * 0.5) : 0) : Math.round(contract.reward * 0.2),
+    note: fulfilled ? "Contract terms fulfilled" : "Battle won · contract terms missed",
+  };
 }
 
 /** Compose a 1200x630 victory card and hand it to the OS share sheet (or download). */
@@ -420,7 +510,7 @@ function handleHudAction(action: string): void {
         });
       }
       mergeBestiary();
-      startBattle(currentStage);
+      startBattle(currentStage, activeChallenge !== null);
       break;
     case "map":
     case "skip-tutorial":
@@ -547,6 +637,7 @@ window.addEventListener("keydown", (event) => {
 // but if the player backgrounds the tab on victory, still bank it.
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && battle?.state === "victory") settleVictory();
+  if (document.hidden && save.pauseOnBlur && hud && battle?.state === "fighting") hud.paused = true;
 });
 
 // ------------------------------------------------------------------ loop
@@ -578,6 +669,7 @@ function frame(now: number): void {
       // AUTO: the band runs on the sim's judgment until the player takes over
       if (hud.autopilot && battle.state === "fighting" && !tutorial) autopilotTick(battle, battleSave);
       battle.update(simDt, battleSave);
+      syncChallengeReward();
       fx.update(simDt);
       if (tutorial) {
         tutorial.update(simDt);
@@ -648,8 +740,8 @@ function frame(now: number): void {
 
     const calm = save.reducedMotion;
     if (calm) cam.punch = 0;
-    const shakeX = !calm && fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
-    const shakeY = !calm && fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
+    const shakeX = !calm && save.screenShake && fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
+    const shakeY = !calm && save.screenShake && fx.shake > 0 ? (Math.random() - 0.5) * fx.shake : 0;
 
     const CY = (logicalH - HUD_H) * 0.5;
     const worldH = logicalH - HUD_H + 20;

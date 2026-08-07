@@ -23,6 +23,7 @@ import {
   CALLING_UNLOCK_LEVEL,
   callingById,
   callingEligible,
+  CONTRACTS,
   DIFFICULTIES,
   heroArrived,
   TRINKETS,
@@ -71,6 +72,7 @@ import type { SaveData } from "./types";
 
 export interface MenuCallbacks {
   startStage: (stageIndex: number) => void;
+  startChallenge: (kind: "arena" | "contract", stageIndex: number, id: string) => void;
   startTutorial: (kind: string) => void;
   resetProgress: () => void;
 }
@@ -465,7 +467,6 @@ export class Menus {
   private figureTimer: number | null = null; // idle animation for the hero-sheet figure
   private justDonned = false; // flash the figure preview on the next sheet render
   private selectedStage: number | null = null; // map node the scout report is showing
-  private mapAct: 0 | 1 | 2 = 0; // which panel of the world we're looking at
   pendingFinale = false; // set when the Winterreach's king falls
   private shopAttr: AttrKey | "all" = "all"; // spell-shop filter
   private shopHideOwned = false;
@@ -520,6 +521,8 @@ export class Menus {
             case "shop": this.renderShop("armory"); break;
             case "bestiary": this.renderBestiary(); break;
             case "chronicle": this.renderChronicle(); break;
+            case "arena": this.renderArena(); break;
+            case "contracts": this.renderContracts(); break;
             case "hero": this.renderHeroOverview(st.a ?? 0); break;
             case "equip": this.renderEquipment(st.a ?? 0); break;
             case "spells": this.renderSpells(st.a ?? 0); break;
@@ -601,8 +604,9 @@ export class Menus {
     const page = el(`
       <div class="page title-page">
         <div class="title-block">
+          <div class="title-kicker">A COMPANY RPG</div>
           <div class="game-logo">WAYBAND</div>
-          <div class="game-sub">a classless company of four</div>
+          <div class="game-sub">No chosen one. Four travelers, and the road ahead.</div>
         </div>
         <div class="campfire-scene" aria-hidden="true">
           <svg viewBox="0 0 360 120">
@@ -638,34 +642,60 @@ export class Menus {
             <circle class="cf-ember e3" cx="181" cy="66" r="1.4" fill="#f2d16b"/>
           </svg>
         </div>
+        <div class="title-company" aria-label="Current company">
+          ${this.save.heroes.map((hero, index) => ({ hero, index })).filter(({ hero }) => hero.recruited).map(({ index }) => `<span style="--company:${HEROES[index].accent}"><i></i>${HEROES[index].name}</span>`).join("")}
+        </div>
+        <div class="title-road-status">
+          <span>${this.save.unlockedStage > 0 ? `The road remembers ${this.save.lifetime.victories} victor${this.save.lifetime.victories === 1 ? "y" : "ies"}.` : "Millbrook's west bell has stopped ringing."}</span>
+          <strong>${this.save.unlockedStage > 0 ? `${STAGES[Math.min(this.save.unlockedStage, STAGES.length - 1)].name} waits.` : "Someone has to take the south road."}</strong>
+        </div>
         <div class="title-buttons">
           <button class="big-btn primary" data-act="start">${this.save.seenIntro ? "Continue the Journey" : "Begin Your Journey"}</button>
           <button class="big-btn" data-act="tutorial">How to Play</button>
         </div>
         <details class="settings-card travel-kit">
-          <summary class="settings-title"><span>Travel kit</span><em>Sound · comfort · saves</em></summary>
+          <summary class="settings-title"><span>Settings</span><em>Audio, play, access, saves</em></summary>
           <div class="settings-body">
-          <div class="settings-row">
-            <button class="toggle-btn" data-act="sound"></button>
-            <button class="toggle-btn" data-act="music"></button>
-          </div>
-          <div class="slider-row"><span>Effects</span><input type="range" min="0" max="100" data-vol="sound"></div>
-          <div class="slider-row"><span>Music</span><input type="range" min="0" max="100" data-vol="music"></div>
-          <button class="toggle-btn" data-act="speed"></button>
-          <div class="settings-row">
-            <button class="toggle-btn" data-act="motion"></button>
-            <button class="toggle-btn" data-act="colorsafe"></button>
-          </div>
-          <button class="toggle-btn" data-act="bigtext"></button>
-          <button class="toggle-btn" data-act="hotkeys">⌨ Hotkeys</button>
-          <button class="toggle-btn" data-act="bands">${ico("banner")} Bands — save slots</button>
-          <div class="settings-row">
-            <button class="toggle-btn" data-act="export-save">${ico("upload")} Export save</button>
-            <button class="toggle-btn" data-act="import-save">${ico("download")} Import save</button>
-          </div>
-          <button class="toggle-btn" data-act="export-data">${ico("chart")} Export playtest data</button>
-          ${(window as unknown as { __installPrompt?: unknown }).__installPrompt ? `<button class="toggle-btn" data-act="install">${ico("download")} Install app</button>` : ""}
-          <button class="toggle-btn danger" data-act="reset">Reset all progress</button>
+            <section class="setting-section" aria-labelledby="settings-audio">
+              <div class="setting-section-head"><span id="settings-audio">Audio</span><em>Mix the road</em></div>
+              <div class="settings-row setting-switches">
+                <button class="setting-switch" data-act="sound"></button>
+                <button class="setting-switch" data-act="music"></button>
+              </div>
+              <label class="slider-row"><span>Effects</span><input aria-label="Effects volume" type="range" min="0" max="100" data-vol="sound"><output data-vol-out="sound"></output></label>
+              <label class="slider-row"><span>Music</span><input aria-label="Music volume" type="range" min="0" max="100" data-vol="music"><output data-vol-out="music"></output></label>
+            </section>
+            <section class="setting-section" aria-labelledby="settings-battle">
+              <div class="setting-section-head"><span id="settings-battle">Battle</span><em>Pace and feedback</em></div>
+              <div class="settings-row setting-switches">
+                <button class="setting-switch wide" data-act="speed"></button>
+                <button class="setting-switch" data-act="numbers"></button>
+              </div>
+              <div class="settings-row setting-switches">
+                <button class="setting-switch" data-act="shake"></button>
+                <button class="setting-switch" data-act="pauseblur"></button>
+              </div>
+              <button class="setting-link" data-act="hotkeys"><span>Key bindings</span><em>Heroes, abilities, pause</em><b>›</b></button>
+            </section>
+            <section class="setting-section" aria-labelledby="settings-access">
+              <div class="setting-section-head"><span id="settings-access">Display &amp; access</span><em>Read the field clearly</em></div>
+              <div class="settings-row setting-switches three">
+                <button class="setting-switch" data-act="motion"></button>
+                <button class="setting-switch" data-act="colorsafe"></button>
+                <button class="setting-switch" data-act="bigtext"></button>
+              </div>
+            </section>
+            <section class="setting-section" aria-labelledby="settings-save">
+              <div class="setting-section-head"><span id="settings-save">Campaign data</span><em>Stored on this device</em></div>
+              <button class="setting-link" data-act="bands"><span>Band saves</span><em>Three separate campaigns</em><b>›</b></button>
+              <div class="settings-row compact-actions">
+                <button class="toggle-btn" data-act="export-save">Copy save</button>
+                <button class="toggle-btn" data-act="import-save">Import save</button>
+              </div>
+              <button class="setting-link quiet" data-act="export-data"><span>Copy playtest report</span><em>Battle results only</em><b>›</b></button>
+              ${(window as unknown as { __installPrompt?: unknown }).__installPrompt ? `<button class="setting-link quiet" data-act="install"><span>Install Wayband</span><em>Play from your home screen</em><b>›</b></button>` : ""}
+              <button class="setting-link danger" data-act="reset"><span>Erase this band</span><em>Levels, heroes, gear, and records</em><b>›</b></button>
+            </section>
           </div>
         </details>
         <div class="credit">drag your heroes · draw your spells · shape your band</div>
@@ -673,20 +703,33 @@ export class Menus {
       </div>
     `);
     const syncToggles = () => {
-      (page.querySelector('[data-act="sound"]') as HTMLElement).textContent = `Sound: ${this.save.sound ? "on" : "off"}`;
-      (page.querySelector('[data-act="music"]') as HTMLElement).textContent = `Music: ${this.save.music ? "on" : "off"}`;
-      (page.querySelector('[data-act="speed"]') as HTMLElement).textContent = `Combat speed: ${speedLabel(this.save.speed)}`;
-      (page.querySelector('[data-act="motion"]') as HTMLElement).textContent = `Calm motion: ${this.save.reducedMotion ? "on" : "off"}`;
-      (page.querySelector('[data-act="colorsafe"]') as HTMLElement).textContent = `Safe colors: ${this.save.colorSafe ? "on" : "off"}`;
-      (page.querySelector('[data-act="bigtext"]') as HTMLElement).textContent = `Large text: ${this.save.bigText ? "on" : "off"}`;
+      const setSwitch = (act: string, label: string, on: boolean) => {
+        const button = page.querySelector(`[data-act="${act}"]`) as HTMLElement;
+        button.classList.toggle("on", on);
+        button.innerHTML = `<span>${label}</span><b>${on ? "On" : "Off"}</b>`;
+        button.setAttribute("aria-pressed", String(on));
+      };
+      setSwitch("sound", "Effects", this.save.sound);
+      setSwitch("music", "Music", this.save.music);
+      const speed = page.querySelector('[data-act="speed"]') as HTMLElement;
+      speed.innerHTML = `<span>Combat pace</span><b>${speedLabel(this.save.speed)}</b>`;
+      setSwitch("numbers", "Combat numbers", this.save.damageNumbers);
+      setSwitch("shake", "Screen shake", this.save.screenShake);
+      setSwitch("pauseblur", "Pause when away", this.save.pauseOnBlur);
+      setSwitch("motion", "Calm motion", this.save.reducedMotion);
+      setSwitch("colorsafe", "Blue health bars", this.save.colorSafe);
+      setSwitch("bigtext", "Larger type", this.save.bigText);
     };
     syncToggles();
     // volume sliders live-update the mixer, persisting on release
     for (const kind of ["sound", "music"] as const) {
       const slider = page.querySelector(`[data-vol="${kind}"]`) as HTMLInputElement;
       slider.value = String(Math.round((kind === "sound" ? this.save.soundVol : this.save.musicVol) * 100));
+      const output = page.querySelector(`[data-vol-out="${kind}"]`) as HTMLOutputElement;
+      output.value = `${slider.value}%`;
       slider.addEventListener("input", () => {
         const v = Number(slider.value) / 100;
+        output.value = `${slider.value}%`;
         if (kind === "sound") {
           this.save.soundVol = v;
           audio.setSoundVolume(v);
@@ -731,6 +774,21 @@ export class Menus {
       }
       if (act === "speed") {
         this.save.speed = nextSpeed(this.save.speed);
+        persist(this.save);
+        syncToggles();
+      }
+      if (act === "numbers") {
+        this.save.damageNumbers = !this.save.damageNumbers;
+        persist(this.save);
+        syncToggles();
+      }
+      if (act === "shake") {
+        this.save.screenShake = !this.save.screenShake;
+        persist(this.save);
+        syncToggles();
+      }
+      if (act === "pauseblur") {
+        this.save.pauseOnBlur = !this.save.pauseOnBlur;
         persist(this.save);
         syncToggles();
       }
@@ -845,7 +903,7 @@ export class Menus {
           </div>
         </div>
         <aside class="journey-ribbon" aria-label="Journey progress">
-          <div class="journey-chapter">${save.unlockedStage < 6 ? "Act I · The South Road" : save.unlockedStage < 12 ? "Act II · The Winterreach" : "Act III · Stormbreak Coast"}</div>
+          <div class="journey-chapter">${save.unlockedStage < 6 ? "The South Road · stages I–VI" : save.unlockedStage < 12 ? "The Winterreach · stages VII–XII" : "Stormbreak Coast · stages XIII–XVIII"}</div>
           <div class="journey-track" aria-hidden="true">
             ${STAGES.map((_, index) => `<i class="${index < save.unlockedStage ? "done" : index === save.unlockedStage ? "current" : ""}"></i>`).join("")}
           </div>
@@ -861,15 +919,14 @@ export class Menus {
     `);
     const maxIdx = Math.min(save.unlockedStage, STAGES.length - 1);
     this.selectedStage = Math.min(this.selectedStage ?? maxIdx, maxIdx);
-    this.mapAct = (this.selectedStage ?? 0) >= 12 ? 2 : (this.selectedStage ?? 0) >= 6 ? 1 : 0;
-    page.querySelector(".world-map")!.appendChild(
-      el(`<div class="act-tabs" aria-label="Campaign worlds">
-        <button class="shop-tab ${this.mapAct === 0 ? "on" : ""}" data-mapact="0">⛰ The South Road</button>
-        <button class="shop-tab ${this.mapAct === 1 ? "on" : ""} ${save.unlockedStage < 6 ? "locked" : ""}" data-mapact="1" aria-disabled="${save.unlockedStage < 6}">${save.unlockedStage < 6 ? "🔒" : "❄"} The Winterreach</button>
-        <button class="shop-tab ${this.mapAct === 2 ? "on" : ""} ${save.unlockedStage < 12 ? "locked" : ""}" data-mapact="2" aria-disabled="${save.unlockedStage < 12}">${save.unlockedStage < 12 ? "🔒" : "≋"} Stormbreak Coast</button>
-      </div>`),
-    );
     page.querySelector(".world-map")!.appendChild(this.buildWorldMap());
+    page.querySelector(".world-map")!.appendChild(el(`
+      <div class="road-sites">
+        <button class="road-site arena-site" data-act="arena">
+          <span class="site-sigil">♜</span><span><em>Off the old king's road</em><strong>The Ruined Ring</strong><small>Face any great foe you have already defeated.</small></span><b>Enter ›</b>
+        </button>
+      </div>
+    `));
     const caption = page.querySelector(".stage-caption")!;
     caption.appendChild(this.buildScoutCard(this.selectedStage));
     page.addEventListener("click", (event) => {
@@ -880,27 +937,13 @@ export class Menus {
         this.showEmbarkBriefing(this.selectedStage ?? maxIdx);
       }
       if (act === "goal") this.showGoalPicker(suggestedJourneyNote);
+      if (act === "arena") {
+        audio.play("page");
+        this.renderArena();
+      }
       if (act === "party") {
         audio.play("click");
         this.renderParty();
-      }
-      const mapActBtn = (event.target as HTMLElement).closest("[data-mapact]");
-      if (mapActBtn) {
-        audio.play("click");
-        const requestedAct = Number(mapActBtn.getAttribute("data-mapact")) as 0 | 1 | 2;
-        const requiredStage = requestedAct === 2 ? 12 : requestedAct === 1 ? 6 : 0;
-        if (this.save.unlockedStage < requiredStage) {
-          this.showToast(requestedAct === 2 ? "Stormbreak Coast unlocks after The Hollow Crown." : "The Winterreach unlocks after Gorehulk's Hollow.");
-          return;
-        }
-        this.mapAct = requestedAct;
-        this.selectedStage = this.mapAct === 2
-          ? Math.max(12, Math.min(this.save.unlockedStage, 17))
-          : this.mapAct === 1
-            ? Math.max(6, Math.min(this.save.unlockedStage, 11))
-            : Math.min(this.save.unlockedStage, 5);
-        this.renderMap();
-        return;
       }
       if (act === "bestiary") {
         audio.play("click");
@@ -930,6 +973,112 @@ export class Menus {
     this.mount(page, "battle");
     this.tickGold(page);
     this.maybeOfferBoons();
+  }
+
+  renderArena(): void {
+    this.pushNav("arena");
+    this.root.innerHTML = "";
+    this.show();
+    const defeated = BOSS_STAGES.filter((stage) => (this.save.stageStats[stage]?.clears ?? 0) > 0);
+    const page = el(`
+      <div class="page challenge-page arena-page">
+        <div class="challenge-mast arena-mast">
+          <button class="back-rune" data-act="back" aria-label="Back to map">‹</button>
+          <span><em>The Ruined Ring</em><strong>Old victories do not stay buried.</strong></span>
+          <div class="challenge-count">${Object.values(this.save.arenaRecords).reduce((n, r) => n + (r?.clears ?? 0), 0)} wins</div>
+        </div>
+        <div class="arena-rule"><span>THE TERMS</span><p>Choose a defeated boss. Arena victories grant experience and gold; the first clear of each rematch pays an additional purse.</p></div>
+        <div class="challenge-list"></div>
+      </div>
+    `);
+    const list = page.querySelector(".challenge-list")!;
+    if (!defeated.length) {
+      list.appendChild(el(`<div class="challenge-empty"><strong>The gates remain barred.</strong><span>Defeat the Gloaming Alpha on the Long Road to draw the arena keeper's attention.</span></div>`));
+    }
+    for (const stageIndex of BOSS_STAGES) {
+      const stage = STAGES[stageIndex];
+      const unlocked = defeated.includes(stageIndex);
+      const rec = this.save.arenaRecords[stageIndex];
+      const purse = 70 + stageIndex * 9 + (rec?.clears ? 0 : 120);
+      const finalWave = stage.waves[stage.waves.length - 1];
+      const bossKind = finalWave?.[finalWave.length - 1]?.kind;
+      const card = el(`
+        <article class="challenge-card boss-contract ${unlocked ? "" : "sealed"}">
+          <div class="challenge-portrait">${unlocked && bossKind ? `<canvas width="72" height="72"></canvas>` : "?"}</div>
+          <div class="challenge-copy"><em>${unlocked ? `Rematch · stage ${stageIndex + 1}` : "Unknown contender"}</em><strong>${unlocked ? stage.name : "A name not yet earned"}</strong><p>${unlocked ? stage.subtitle : "Defeat this foe on the Long Road first."}</p><small>${rec ? `Best ${rec.bestTime.toFixed(1)}s · ${rec.clears} clear${rec.clears === 1 ? "" : "s"}` : unlocked ? "First-clear purse available" : "Locked"}</small></div>
+          <div class="challenge-pay"><span>${ico("coin")} ${purse}</span><button class="big-btn primary" data-arena="${stageIndex}" ${unlocked ? "" : "disabled"}>Fight</button></div>
+        </article>
+      `);
+      if (unlocked && bossKind) drawBeastIcon(card.querySelector("canvas")!, bossKind);
+      list.appendChild(card);
+    }
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      if (target.closest('[data-act="back"]')) return void this.renderMap();
+      const fight = target.closest("[data-arena]");
+      if (!fight) return;
+      const stage = Number(fight.getAttribute("data-arena"));
+      audio.play("warcry");
+      this.callbacks.startChallenge("arena", stage, `boss-${stage}`);
+    });
+    this.mount(page, "battle");
+  }
+
+  renderContracts(): void {
+    this.pushNav("contracts");
+    this.root.innerHTML = "";
+    this.show();
+    const page = el(`
+      <div class="page challenge-page contracts-page">
+        <div class="challenge-mast contract-mast">
+          <button class="back-rune" data-act="back" aria-label="Back to tavern">‹</button>
+          <span><em>The Nail &amp; Notice</em><strong>Work that cannot wait for heroes.</strong></span>
+          <div class="challenge-count">${Object.keys(this.save.contractRecords).length}/${CONTRACTS.length} signed</div>
+        </div>
+        <div class="arena-rule"><span>PAYMENT</span><p>Every fulfilled contract pays gold and experience. Its first completion also includes a useful piece of unowned gear.</p></div>
+        <div class="contract-ledger"></div>
+      </div>
+    `);
+    const ledger = page.querySelector(".contract-ledger")!;
+    for (const contract of CONTRACTS) {
+      const available = this.save.unlockedStage >= contract.unlockStage;
+      const rec = this.save.contractRecords[contract.id];
+      const firstPay = contract.reward + Math.round(contract.reward * 0.5);
+      const term = contract.condition === "flawless" ? "No hero may fall"
+        : contract.condition === "threeHeroes" ? "Three active heroes maximum"
+          : contract.condition === "swift" ? `Finish within ${contract.target} seconds`
+            : "Hard or Brutal difficulty";
+      ledger.appendChild(el(`
+        <article class="contract-sheet ${available ? "" : "sealed"}">
+          <div class="contract-pin"></div>
+          <div class="contract-issuer">${available ? contract.issuer : "Notice obscured"}</div>
+          <h3>${available ? contract.name : "Work farther up the road"}</h3>
+          <p>${available ? contract.brief : `Reach stage ${contract.unlockStage + 1} to read this notice.`}</p>
+          <div class="contract-term"><span>Condition</span><strong>${available ? term : "Locked"}</strong></div>
+          <div class="contract-bottom"><span>${ico("coin")} ${rec ? contract.reward : firstPay}${!rec && available ? " + gear" : ""}</span><em>${rec ? `${rec.clears} clear${rec.clears === 1 ? "" : "s"} · best ${rec.bestTime.toFixed(1)}s` : "Unclaimed"}</em><button class="big-btn primary" data-contract="${contract.id}" ${available ? "" : "disabled"}>Take contract</button></div>
+        </article>
+      `));
+    }
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      if (target.closest('[data-act="back"]')) return void this.renderShop("tavern");
+      const button = target.closest("[data-contract]");
+      if (!button) return;
+      const contract = CONTRACTS.find((item) => item.id === button.getAttribute("data-contract"));
+      if (!contract) return;
+      const active = this.save.heroes.filter((hero) => hero.recruited && hero.active).length;
+      if (contract.condition === "threeHeroes" && active > 3) {
+        this.showToast("Bench one hero in Party before taking this contract.");
+        return;
+      }
+      if (contract.condition === "hard" && this.save.difficulty < 2) {
+        this.showToast("Set the road to Hard or Brutal before taking this contract.");
+        return;
+      }
+      audio.play("page");
+      this.callbacks.startChallenge("contract", contract.stage, contract.id);
+    });
+    this.mount(page, "tavern");
   }
 
   /** Level-up boon picks queue up here: one hero, two gifts, one choice. */
@@ -1340,10 +1489,63 @@ export class Menus {
     return card;
   }
 
-  /** Painted SVG overworld: dawn sky, layered ridges, a river, themed regions, and tappable stage nodes. */
+  /** One continuous atlas. Each six-stage panel is a readable stretch of the same road.
+   *  Adding the eventual 60 levels means adding panels here, not another world picker. */
   private buildWorldMap(): HTMLElement {
-    if (this.mapAct === 2) return this.buildCoastMap();
-    if (this.mapAct === 1) return this.buildWinterMap();
+    const regions = [
+      { name: "The South Road", range: "I–VI", start: 0, build: () => this.buildSouthMap() },
+      { name: "The Winterreach", range: "VII–XII", start: 6, build: () => this.buildWinterMap() },
+      { name: "Stormbreak Coast", range: "XIII–XVIII", start: 12, build: () => this.buildCoastMap() },
+    ];
+    const currentRegion = Math.min(regions.length - 1, Math.floor((this.selectedStage ?? this.save.unlockedStage) / 6));
+    const atlas = el(`
+      <div class="road-atlas" style="--regions:${regions.length}">
+        <div class="atlas-heading">
+          <button class="atlas-step" data-road-step="-1" aria-label="Previous stretch of road">‹</button>
+          <div><span>One road · ${STAGES.length} stages charted</span><strong data-region-name>${regions[currentRegion].name}</strong></div>
+          <button class="atlas-step" data-road-step="1" aria-label="Next stretch of road">›</button>
+        </div>
+        <div class="atlas-ruler" aria-label="Known stretches of the Long Road">
+          ${regions.map((region, i) => `<button class="atlas-mark ${i === currentRegion ? "on" : ""}" data-road-region="${i}"><i></i><span>${region.range}</span><em>${region.name}</em></button>`).join("")}
+          <div class="atlas-beyond"><i></i><span>XIX–LX</span><em>Road uncharted</em></div>
+        </div>
+        <div class="road-viewport"><div class="road-strip"></div></div>
+      </div>
+    `);
+    const strip = atlas.querySelector(".road-strip")!;
+    for (const [index, region] of regions.entries()) {
+      const panel = el(`<section class="road-region" data-road-panel="${index}" aria-label="${region.name}"><div class="region-seam"><span>${region.range}</span><strong>${region.name}</strong></div></section>`);
+      panel.appendChild(region.build());
+      strip.appendChild(panel);
+    }
+    const viewport = atlas.querySelector(".road-viewport") as HTMLElement;
+    const name = atlas.querySelector("[data-region-name]")!;
+    let active = currentRegion;
+    const showRegion = (next: number, smooth = true) => {
+      active = Math.max(0, Math.min(regions.length - 1, next));
+      viewport.scrollTo({ left: viewport.clientWidth * active, behavior: smooth && !this.save.reducedMotion ? "smooth" : "auto" });
+      name.textContent = regions[active].name;
+      atlas.querySelectorAll(".atlas-mark").forEach((mark, i) => mark.classList.toggle("on", i === active));
+      (atlas.querySelector('[data-road-step="-1"]') as HTMLButtonElement).disabled = active === 0;
+      (atlas.querySelector('[data-road-step="1"]') as HTMLButtonElement).disabled = active === regions.length - 1;
+    };
+    atlas.addEventListener("click", (event) => {
+      const mark = (event.target as HTMLElement).closest("[data-road-region]");
+      const step = (event.target as HTMLElement).closest("[data-road-step]");
+      if (mark) showRegion(Number(mark.getAttribute("data-road-region")));
+      if (step) showRegion(active + Number(step.getAttribute("data-road-step")));
+    });
+    let scrollTimer = 0;
+    viewport.addEventListener("scroll", () => {
+      window.clearTimeout(scrollTimer);
+      scrollTimer = window.setTimeout(() => showRegion(Math.round(viewport.scrollLeft / Math.max(1, viewport.clientWidth)), false), 90);
+    }, { passive: true });
+    requestAnimationFrame(() => showRegion(currentRegion, false));
+    return atlas;
+  }
+
+  /** The first painted stretch: dawn fields, deep wood, mire, and the Gloaming. */
+  private buildSouthMap(): HTMLElement {
     const save = this.save;
     const nodes = [
       { x: 80, y: 252 },
@@ -2310,6 +2512,14 @@ export class Menus {
 
   private buildTavern(body: Element): void {
     const save = this.save;
+    const availableContracts = CONTRACTS.filter((contract) => save.unlockedStage >= contract.unlockStage).length;
+    body.appendChild(el(`
+      <button class="notice-board" data-contract-board>
+        <span class="notice-nail"></span>
+        <span><em>THE NAIL &amp; NOTICE</em><strong>${availableContracts ? `${availableContracts} contract${availableContracts === 1 ? "" : "s"} available` : "No work posted yet"}</strong><small>Special terms · repeatable pay · first-clear gear</small></span>
+        <b>Read notices ›</b>
+      </button>
+    `));
     for (let i = 0; i < HEROES.length; i++) {
       const def = HEROES[i];
       const hero = save.heroes[i];
@@ -2353,6 +2563,11 @@ export class Menus {
       body.appendChild(card);
     }
     body.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest("[data-contract-board]")) {
+        audio.play("page");
+        this.renderContracts();
+        return;
+      }
       const btn = (event.target as HTMLElement).closest("[data-recruit]");
       if (!btn) return;
       const i = Number(btn.getAttribute("data-recruit"));
