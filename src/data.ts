@@ -2948,12 +2948,19 @@ export const TRINKETS: TrinketDef[] = [
   { id: "reeftalon", name: "Reef Talon", blurb: "+7% melee damage, +3% critical chance", rarity: "common", icon: "🪸" },
   { id: "widowsChime", name: "The Widow's Chime", blurb: "+12% healing, -8% cooldowns, battles start with a 20 hp ward", rarity: "rare", icon: "🔔" },
   { id: "stormjawHeart", name: "Stormjaw's Heart", blurb: "+14% max health, +8% melee damage, +5% attack speed", rarity: "rare", icon: "🌊" },
+  { id: "kilnmasterSigil", name: "Kilnmaster Sigil", blurb: "+8% spell power, +4% attack speed", rarity: "rare", icon: "♨" },
   { id: "cindermawCoal", name: "Cindermaw Coal", blurb: "+12% spell power, +4% armor", rarity: "rare", icon: "◆" },
+  { id: "matriarchKnot", name: "Matriarch's Knot", blurb: "+10% max health, +6% healing", rarity: "rare", icon: "⌇" },
   { id: "colossusSeed", name: "Colossus Seed", blurb: "+15% max health, +10% healing", rarity: "rare", icon: "♣" },
+  { id: "revenantGlass", name: "Revenant Glass", blurb: "+6% critical chance, +6% move speed", rarity: "rare", icon: "◐" },
   { id: "nightmotherSilk", name: "Nightmother Silk", blurb: "-10% cooldowns, +6% critical chance", rarity: "rare", icon: "☾" },
+  { id: "inquisitorSeal", name: "Inquisitor's Seal", blurb: "+5% armor, battles start with a 20 hp ward", rarity: "rare", icon: "✥" },
   { id: "seraphicPinion", name: "Seraphic Pinion", blurb: "+12% healing, battles start with a 30 hp ward", rarity: "rare", icon: "✦" },
+  { id: "rocPinion", name: "Tempest Pinion", blurb: "+7% ranged damage, +6% attack speed", rarity: "rare", icon: "ϟ" },
   { id: "skybreakerPrism", name: "Skybreaker Prism", blurb: "+10% ranged damage, +8% attack speed", rarity: "rare", icon: "◇" },
+  { id: "huntsmanHorn", name: "Red Huntsman's Horn", blurb: "+8% melee damage, +5% critical chance", rarity: "rare", icon: "♞" },
   { id: "bloodmoonTine", name: "Bloodmoon Tine", blurb: "+12% melee damage, +6% critical chance", rarity: "rare", icon: "♜" },
+  { id: "pilgrimCompass", name: "Broken Pilgrim Compass", blurb: "-7% cooldowns, +5% move speed", rarity: "rare", icon: "⌖" },
   { id: "lastWaystone", name: "The Last Waystone", blurb: "+10% max health, -8% cooldowns, +6% move speed", rarity: "rare", icon: "◈" },
 ];
 
@@ -2996,12 +3003,19 @@ export function trinketMods(id: string | null | undefined): TalentMods {
     case "reeftalon": return { ...none, meleeDmg: 0.07, crit: 0.03 };
     case "widowsChime": return { ...none, healPower: 0.12, cdr: 0.08, startShield: 20 };
     case "stormjawHeart": return { ...none, hpPct: 0.14, meleeDmg: 0.08, atkSpeed: 0.05 };
+    case "kilnmasterSigil": return { ...none, spellPower: 0.08, atkSpeed: 0.04 };
     case "cindermawCoal": return { ...none, spellPower: 0.12, armorFlat: 0.04 };
+    case "matriarchKnot": return { ...none, hpPct: 0.1, healPower: 0.06 };
     case "colossusSeed": return { ...none, hpPct: 0.15, healPower: 0.1 };
+    case "revenantGlass": return { ...none, crit: 0.06, moveSpeed: 0.06 };
     case "nightmotherSilk": return { ...none, cdr: 0.1, crit: 0.06 };
+    case "inquisitorSeal": return { ...none, armorFlat: 0.05, startShield: 20 };
     case "seraphicPinion": return { ...none, healPower: 0.12, startShield: 30 };
+    case "rocPinion": return { ...none, rangedDmg: 0.07, atkSpeed: 0.06 };
     case "skybreakerPrism": return { ...none, rangedDmg: 0.1, atkSpeed: 0.08 };
+    case "huntsmanHorn": return { ...none, meleeDmg: 0.08, crit: 0.05 };
     case "bloodmoonTine": return { ...none, meleeDmg: 0.12, crit: 0.06 };
+    case "pilgrimCompass": return { ...none, cdr: 0.07, moveSpeed: 0.05 };
     case "lastWaystone": return { ...none, hpPct: 0.1, cdr: 0.08, moveSpeed: 0.06 };
     default: return none;
   }
@@ -3016,7 +3030,7 @@ export function trinketFlatHp(id: string | null | undefined): number {
 }
 
 /** Stages whose final wave is a boss — these drop rare trinkets. */
-export const BOSS_STAGES = [4, 5, 11, 15, 17, 23, 29, 35, 41, 47, 53, 59];
+export const BOSS_STAGES = [4, 5, 11, 15, 17, 21, 23, 27, 29, 33, 35, 39, 41, 45, 47, 51, 53, 57, 59];
 
 /** Health thresholds belong to the boss definition, not the HUD. */
 export const BOSS_PHASES: Partial<Record<EnemyKind, number[]>> = {

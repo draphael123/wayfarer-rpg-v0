@@ -909,22 +909,31 @@ export class Hud {
       }
     }
     if (this.battle.stage.terrain && !this.tutorial) {
-      const tide = this.battle.stage.terrain === "tide" || this.battle.stage.terrain === "tide-storm";
-      const storm = this.battle.stage.terrain === "storm" || this.battle.stage.terrain === "tide-storm";
-      const label = tide ? (this.battle.tideHigh ? "TIDE HIGH" : "TIDE TURNING") : "STORM ACTIVE";
-      const chipW = storm && tide ? 176 : 118;
+      const terrain = this.battle.stage.terrain;
+      const tide = terrain === "tide" || terrain === "tide-storm";
+      const labels: Record<typeof terrain, string> = {
+        tide: this.battle.tideHigh ? "TIDE HIGH" : "TIDE TURNING", storm: "STORM ACTIVE", "tide-storm": `${this.battle.tideHigh ? "TIDE HIGH" : "TIDE TURNING"} · LIGHTNING`,
+        cinder: "VENTS ERUPTING", overgrowth: "ROOTS STIRRING", mirage: "MIRAGE SHIFTING", sanctified: "VERDICT GATHERING", hunt: "THE HUNT MOVES", void: "ROAD UNMAKING",
+      };
+      const colors: Record<typeof terrain, [string, string, string]> = {
+        tide: ["rgba(18,42,50,.78)", "#9ee9ed", "#c9eef0"], storm: ["rgba(18,42,50,.78)", "#9ee9ed", "#c9eef0"], "tide-storm": ["rgba(18,42,50,.78)", "#9ee9ed", "#c9eef0"],
+        cinder: ["rgba(61,29,25,.82)", "#ff9b52", "#ffe0b2"], overgrowth: ["rgba(25,55,38,.82)", "#a8d978", "#e5f3bb"], mirage: ["rgba(35,29,63,.82)", "#c5adeb", "#eee3ff"],
+        sanctified: ["rgba(67,54,35,.82)", "#f0d187", "#fff0bc"], hunt: ["rgba(67,25,37,.82)", "#ef7c75", "#ffd3c9"], void: ["rgba(27,23,42,.86)", "#aa9ce0", "#e5dcff"],
+      };
+      const label = labels[terrain];
+      const chipW = terrain === "tide-storm" ? 176 : Math.max(118, label.length * 7 + 28);
       const chipX = this.width / 2 - chipW / 2;
-      ctx.fillStyle = "rgba(18, 42, 50, 0.78)";
+      ctx.fillStyle = colors[terrain][0];
       roundRect(ctx, chipX, 10, chipW, 30, 8);
       ctx.fill();
-      ctx.strokeStyle = this.battle.tideHigh ? "#9ee9ed" : "rgba(145, 194, 196, 0.55)";
+      ctx.strokeStyle = tide && !this.battle.tideHigh ? "rgba(145, 194, 196, 0.55)" : colors[terrain][1];
       ctx.lineWidth = 1.2;
       roundRect(ctx, chipX, 10, chipW, 30, 8);
       ctx.stroke();
-      ctx.fillStyle = "#c9eef0";
+      ctx.fillStyle = colors[terrain][2];
       ctx.font = "800 10px 'Trebuchet MS', Verdana, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(`${label}${storm && tide ? " · LIGHTNING" : ""}`, this.width / 2, 29);
+      ctx.fillText(label, this.width / 2, 29);
       ctx.textAlign = "left";
     }
     // pause button

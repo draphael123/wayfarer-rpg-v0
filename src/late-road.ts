@@ -1,5 +1,5 @@
 import type { EnemyKind, StageDef, WaveEntry } from "./types";
-import type { LateFoeKind } from "./late-content";
+import type { LateBossKind, LateFoeKind } from "./late-content";
 
 export type LateRoadRegionId =
   | "cinderwild"
@@ -41,7 +41,8 @@ export interface LateRoadRegion {
   eliteStage: number;
   bossStage: number;
   bossKind: LateRoadBossKind;
-  signatureFoe: LateFoeKind;
+  eliteKind: LateBossKind;
+  signatureFoes: readonly [LateFoeKind, LateFoeKind, LateFoeKind];
   bossName: string;
   promise: string;
   atmosphere: LateRoadAtmosphere;
@@ -62,54 +63,54 @@ export interface LateRoadBossIntent {
 
 const w = (...entries: Array<[EnemyKind, number]>): WaveEntry[] => entries.map(([kind, count]) => ({ kind, count }));
 const foe = (kind: LateFoeKind): EnemyKind => kind as EnemyKind;
-const bossWave = (kind: LateRoadBossKind): WaveEntry[] => [{ kind: kind as EnemyKind, count: 1 }];
+const bossWave = (kind: LateBossKind): WaveEntry[] => [{ kind: kind as EnemyKind, count: 1 }];
 
 export const LATE_ROAD_REGIONS: readonly LateRoadRegion[] = [
   {
     id: "cinderwild", act: 4, name: "The Cinderwild", range: "XIX–XXIV", start: 18, eliteStage: 21, bossStage: 23,
-    bossKind: "cindermaw", signatureFoe: "cinderkin", bossName: "Cindermaw", promise: "Break the furnace-heart before the crater becomes its weapon.",
+    bossKind: "cindermaw", eliteKind: "kilntyrant", signatureFoes: ["cinderkin", "ashenhound", "furnacecantor"], bossName: "Cindermaw", promise: "Break the furnace-heart before the crater becomes its weapon.",
     atmosphere: "embers", route: [246, 184, 232, 155, 208, 104], night: false, darkness: 0.12,
     grade: "rgba(255, 104, 46, 0.22)",
     map: { skyTop: "#2a1c2a", skyBottom: "#a84e36", land: "#5d332c", landDark: "#281d24", road: "#dc9b65", accent: "#ffb15f", ink: "#1d161b", glow: "#ff643f" },
   },
   {
     id: "verdant-maw", act: 5, name: "The Verdant Maw", range: "XXV–XXX", start: 24, eliteStage: 27, bossStage: 29,
-    bossKind: "verdantcolossus", signatureFoe: "briarback", bossName: "The Verdant Colossus", promise: "Sever the walking grove's root-anchors before it closes the arena.",
+    bossKind: "verdantcolossus", eliteKind: "rootboundmatriarch", signatureFoes: ["briarback", "sporeseer", "vinelurker"], bossName: "The Verdant Colossus", promise: "Sever the walking grove's root-anchors before it closes the arena.",
     atmosphere: "spores", route: [226, 166, 232, 142, 194, 92], night: false, darkness: 0.2,
     grade: "rgba(74, 190, 108, 0.19)",
     map: { skyTop: "#183d3b", skyBottom: "#86aa68", land: "#315d43", landDark: "#173a30", road: "#d2b873", accent: "#b9e275", ink: "#112a25", glow: "#81e89a" },
   },
   {
     id: "nightglass", act: 6, name: "The Nightglass Waste", range: "XXXI–XXXVI", start: 30, eliteStage: 33, bossStage: 35,
-    bossKind: "nightmother", signatureFoe: "gloomwing", bossName: "The Night Mother", promise: "Read the true shadow among her reflections, then strike while the moons align.",
+    bossKind: "nightmother", eliteKind: "dunerevenant", signatureFoes: ["gloomwing", "glassjackal", "mirageseer"], bossName: "The Night Mother", promise: "Read the true shadow among her reflections, then strike while the moons align.",
     atmosphere: "glasswind", route: [238, 198, 228, 160, 184, 112], night: true, darkness: 0.48,
     grade: "rgba(112, 82, 212, 0.25)",
     map: { skyTop: "#11152d", skyBottom: "#514b83", land: "#403c61", landDark: "#19182c", road: "#bcb1d8", accent: "#d9c8ff", ink: "#10101d", glow: "#a18aff" },
   },
   {
     id: "reliquary", act: 7, name: "The Shattered Reliquary", range: "XXXVII–XLII", start: 36, eliteStage: 39, bossStage: 41,
-    bossKind: "reliquaryseraph", signatureFoe: "reliquaryguard", bossName: "The Reliquary Seraph", promise: "Shatter the saint-vessels that renew its borrowed wings.",
+    bossKind: "reliquaryseraph", eliteKind: "gildedinquisitor", signatureFoes: ["reliquaryguard", "censerwraith", "oathbreaker"], bossName: "The Reliquary Seraph", promise: "Shatter the saint-vessels that renew its borrowed wings.",
     atmosphere: "gold-dust", route: [242, 178, 222, 148, 194, 96], night: false, darkness: 0.14,
     grade: "rgba(235, 196, 110, 0.17)",
     map: { skyTop: "#50475b", skyBottom: "#d2b878", land: "#8b7654", landDark: "#3f3542", road: "#ead9a9", accent: "#ffe6a1", ink: "#2a2430", glow: "#ffd477" },
   },
   {
     id: "skygrave", act: 8, name: "Skygrave Heights", range: "XLIII–XLVIII", start: 42, eliteStage: 45, bossStage: 47,
-    bossKind: "skybreaker", signatureFoe: "shardling", bossName: "The Skybreaker", promise: "Ground the tempest titan by turning its lightning into the summit rods.",
+    bossKind: "skybreaker", eliteKind: "tempestroc", signatureFoes: ["shardling", "galeroc", "thundermonk"], bossName: "The Skybreaker", promise: "Ground the tempest titan by turning its lightning into the summit rods.",
     atmosphere: "high-storm", route: [254, 206, 214, 150, 170, 82], night: false, darkness: 0.18,
     grade: "rgba(76, 170, 220, 0.2)",
     map: { skyTop: "#1d3550", skyBottom: "#8bb8c9", land: "#526f7e", landDark: "#243b4a", road: "#d2d8cb", accent: "#a9f2ff", ink: "#162936", glow: "#73dcff" },
   },
   {
     id: "bloodwood", act: 9, name: "The Bloodwood", range: "XLIX–LIV", start: 48, eliteStage: 51, bossStage: 53,
-    bossKind: "bloodmoonstag", signatureFoe: "bloodreaver", bossName: "The Blood-Moon Stag", promise: "Survive the marked hunt, then follow the heart-trail back to its crown.",
+    bossKind: "bloodmoonstag", eliteKind: "redhuntsman", signatureFoes: ["bloodreaver", "briarwitch", "moonfang"], bossName: "The Blood-Moon Stag", promise: "Survive the marked hunt, then follow the heart-trail back to its crown.",
     atmosphere: "red-leaves", route: [232, 178, 226, 146, 196, 100], night: true, darkness: 0.42,
     grade: "rgba(185, 45, 72, 0.22)",
     map: { skyTop: "#24192d", skyBottom: "#8a384b", land: "#59323d", landDark: "#231923", road: "#c79b79", accent: "#ef9b8c", ink: "#190f18", glow: "#e34c62" },
   },
   {
     id: "last-meridian", act: 10, name: "The Last Meridian", range: "LV–LX", start: 54, eliteStage: 57, bossStage: 59,
-    bossKind: "wayeater", signatureFoe: "nullwalker", bossName: "The Way-Eater", promise: "Anchor the company to the last waystone while the battlefield is erased around them.",
+    bossKind: "wayeater", eliteKind: "lastpilgrim", signatureFoes: ["nullwalker", "waylostarcher", "rifthound"], bossName: "The Way-Eater", promise: "Anchor the company to the last waystone while the battlefield is erased around them.",
     atmosphere: "road-ash", route: [246, 204, 222, 170, 190, 118], night: true, darkness: 0.55,
     grade: "rgba(118, 86, 170, 0.26)",
     map: { skyTop: "#11101c", skyBottom: "#50465f", land: "#47404e", landDark: "#17141e", road: "#c8b7a0", accent: "#eee1c7", ink: "#0d0b12", glow: "#bf9cf0" },
@@ -128,178 +129,178 @@ export const LATE_ROAD_ELITE_STAGES: readonly number[] = LATE_ROAD_REGIONS.map((
 
 export const LATE_ROAD_STAGES: StageDef[] = [
   {
-    id: 18, name: "Emberfall Verge", subtitle: "Ash drifts where rain once fell",
+    id: 18, name: "Emberfall Verge", subtitle: "Ash drifts where rain once fell", terrain: "cinder",
     palette: { skyTop: "#47313b", skyBottom: "#c46b48", hills: "#663d35", ground: "#775044", groundDark: "#432f31", prop: "#2b2227" },
     scale: 3.7, xpReward: 350,
-    waves: [w([foe("cinderkin"), 1], ["brute", 2]), w(["warbanner", 1], ["archer", 2], [foe("cinderkin"), 1]), w(["shieldbearer", 2], ["stormcaller", 1])],
+    waves: [w([foe("ashenhound"), 2], [foe("cinderkin"), 1]), w([foe("furnacecantor"), 1], ["brute", 2]), w([foe("cinderkin"), 1], [foe("ashenhound"), 2], ["shieldbearer", 1])],
   },
   {
-    id: 19, name: "Obsidian Steps", subtitle: "Every foothold keeps the heat",
+    id: 19, name: "Obsidian Steps", subtitle: "Every foothold keeps the heat", terrain: "cinder",
     palette: { skyTop: "#372735", skyBottom: "#aa563e", hills: "#513136", ground: "#62423d", groundDark: "#33262c", prop: "#211b22" },
     scale: 3.82, xpReward: 370,
-    waves: [w(["stalker", 2], [foe("cinderkin"), 1]), w(["rimetroll", 1], ["harrier", 2], ["drummer", 1]), w(["brute", 2], ["warbanner", 1], [foe("cinderkin"), 1])],
+    waves: [w([foe("ashenhound"), 3], [foe("furnacecantor"), 1]), w([foe("cinderkin"), 2], ["shieldbearer", 1]), w([foe("ashenhound"), 2], [foe("furnacecantor"), 1], ["brute", 1])],
   },
   {
-    id: 20, name: "Furnace Orchard", subtitle: "Iron trees bear glass fruit",
+    id: 20, name: "Furnace Orchard", subtitle: "Iron trees bear glass fruit", terrain: "cinder",
     palette: { skyTop: "#503139", skyBottom: "#d27b45", hills: "#713d30", ground: "#82503c", groundDark: "#472a28", prop: "#2f2020" },
     scale: 3.94, xpReward: 390,
-    waves: [w(["galeharrier", 2], [foe("cinderkin"), 1], ["brute", 1]), w(["bonecaller", 1], ["shambler", 3], ["drummer", 1]), w(["rimetroll", 1], ["shieldbearer", 2], [foe("cinderkin"), 1])],
+    waves: [w([foe("furnacecantor"), 2], [foe("ashenhound"), 2]), w([foe("cinderkin"), 2], ["drummer", 1]), w([foe("furnacecantor"), 1], [foe("ashenhound"), 2], [foe("cinderkin"), 1])],
   },
   {
-    id: 21, name: "Smokevein Cut", subtitle: "The road disappears between breaths",
+    id: 21, name: "Smokevein Cut", subtitle: "The Kiln Tyrant bars the pass", terrain: "cinder",
     palette: { skyTop: "#28252f", skyBottom: "#80605a", hills: "#41363b", ground: "#574647", groundDark: "#2d272e", prop: "#201d23" },
     scale: 4.12, xpReward: 425,
-    waves: [w(["stalker", 2], [foe("cinderkin"), 2]), w(["shieldbearer", 2], ["warbanner", 1], [foe("cinderkin"), 1]), w(["rimetroll", 2], ["stormcaller", 1])],
+    waves: [bossWave("kilntyrant")],
   },
   {
-    id: 22, name: "Pyrewatch Caldera", subtitle: "The sentries wake beneath the crust",
+    id: 22, name: "Pyrewatch Caldera", subtitle: "The sentries wake beneath the crust", terrain: "cinder",
     palette: { skyTop: "#3b2228", skyBottom: "#ba4c32", hills: "#5a2928", ground: "#6b392e", groundDark: "#321f25", prop: "#20171d" },
     scale: 4.18, xpReward: 445,
-    waves: [w(["warbanner", 1], ["shieldbearer", 2], [foe("cinderkin"), 1]), w(["bonecaller", 1], ["shambler", 3], [foe("cinderkin"), 1]), w(["rimetroll", 2], ["galeharrier", 2], [foe("cinderkin"), 1])],
+    waves: [w([foe("cinderkin"), 2], [foe("furnacecantor"), 1]), w([foe("ashenhound"), 3], [foe("furnacecantor"), 1]), w([foe("cinderkin"), 2], [foe("ashenhound"), 2], [foe("furnacecantor"), 1])],
   },
   {
-    id: 23, name: "Cindermaw Crater", subtitle: "The mountain has learned to hunger",
+    id: 23, name: "Cindermaw Crater", subtitle: "The mountain has learned to hunger", terrain: "cinder",
     palette: { skyTop: "#21151d", skyBottom: "#8f2f2b", hills: "#3c2024", ground: "#4e2827", groundDark: "#21171d", prop: "#171117" },
     scale: 3.98, xpReward: 510, waves: [bossWave("cindermaw")],
   },
 
   {
-    id: 24, name: "Greenwater Gate", subtitle: "Vines close behind the living",
+    id: 24, name: "Greenwater Gate", subtitle: "Vines close behind the living", terrain: "overgrowth",
     palette: { skyTop: "#2a5b54", skyBottom: "#a0b975", hills: "#497c55", ground: "#628359", groundDark: "#36583f", prop: "#234831" },
     scale: 4.16, xpReward: 455,
-    waves: [w([foe("briarback"), 1], ["reefhound", 2]), w(["shaman", 1], ["wolf", 3], ["harrier", 1]), w(["brinecrawler", 1], [foe("briarback"), 1], ["saltwitch", 1])],
+    waves: [w([foe("vinelurker"), 2], [foe("briarback"), 1]), w([foe("sporeseer"), 1], ["wolf", 3]), w([foe("briarback"), 1], [foe("vinelurker"), 2], [foe("sporeseer"), 1])],
   },
   {
-    id: 25, name: "Cathedral of Boughs", subtitle: "Noon never touches the floor",
+    id: 25, name: "Cathedral of Boughs", subtitle: "Noon never touches the floor", terrain: "overgrowth",
     palette: { skyTop: "#1f4946", skyBottom: "#759c6a", hills: "#37694a", ground: "#4d7150", groundDark: "#294d37", prop: "#173a2a" },
     scale: 4.3, xpReward: 480,
-    waves: [w([foe("briarback"), 1], ["wolf", 2]), w(["conchseer", 1], [foe("briarback"), 1], ["harrier", 2]), w(["brute", 2], ["shaman", 1], ["reefhound", 2])],
+    waves: [w([foe("vinelurker"), 3], [foe("sporeseer"), 1]), w([foe("briarback"), 2], ["harrier", 1]), w([foe("sporeseer"), 1], [foe("vinelurker"), 2], [foe("briarback"), 1])],
   },
   {
-    id: 26, name: "Sporelight Basin", subtitle: "Each footprint blooms twice",
+    id: 26, name: "Sporelight Basin", subtitle: "Each footprint blooms twice", terrain: "overgrowth",
     palette: { skyTop: "#254d55", skyBottom: "#8cae83", hills: "#416f5b", ground: "#547967", groundDark: "#315348", prop: "#24503e" },
     scale: 4.44, xpReward: 505,
-    waves: [w([foe("briarback"), 1], ["icewisp", 2]), w(["snowhag", 1], [foe("briarback"), 1], ["stalker", 2]), w(["conchseer", 1], ["brinecrawler", 2], ["saltwitch", 1])],
+    waves: [w([foe("sporeseer"), 2], [foe("vinelurker"), 2]), w([foe("briarback"), 2], [foe("sporeseer"), 1]), w([foe("vinelurker"), 3], [foe("sporeseer"), 1], ["brinecrawler", 1])],
   },
   {
-    id: 27, name: "The Rootbound City", subtitle: "Stone remembers the canopy",
+    id: 27, name: "The Rootbound City", subtitle: "The Matriarch wakes below", terrain: "overgrowth",
     palette: { skyTop: "#183d3a", skyBottom: "#668c62", hills: "#315a43", ground: "#456148", groundDark: "#253f32", prop: "#173025" },
     scale: 4.62, xpReward: 540,
-    waves: [w([foe("briarback"), 2], ["stalker", 2]), w(["bonecaller", 1], ["shambler", 3], ["conchseer", 1]), w(["rimetroll", 1], [foe("briarback"), 1], ["reefhound", 2])],
+    waves: [bossWave("rootboundmatriarch")],
   },
   {
-    id: 28, name: "Heartvine Stair", subtitle: "The forest climbs to meet you",
+    id: 28, name: "Heartvine Stair", subtitle: "The forest climbs to meet you", terrain: "overgrowth",
     palette: { skyTop: "#21443a", skyBottom: "#91a95f", hills: "#406b43", ground: "#557548", groundDark: "#2f4b32", prop: "#1d3b25" },
     scale: 4.7, xpReward: 565,
-    waves: [w(["galeharrier", 2], ["saltwitch", 1], [foe("briarback"), 1]), w(["shaman", 1], [foe("briarback"), 2], ["drummer", 1]), w(["conchseer", 1], ["rimetroll", 2], ["stalker", 2])],
+    waves: [w([foe("briarback"), 2], [foe("sporeseer"), 1]), w([foe("vinelurker"), 3], [foe("sporeseer"), 1]), w([foe("briarback"), 2], [foe("vinelurker"), 2], [foe("sporeseer"), 1])],
   },
   {
-    id: 29, name: "Colossus Grove", subtitle: "The oldest tree stands up",
+    id: 29, name: "Colossus Grove", subtitle: "The oldest tree stands up", terrain: "overgrowth",
     palette: { skyTop: "#102f2c", skyBottom: "#57784f", hills: "#274b36", ground: "#38533b", groundDark: "#1d3528", prop: "#11261b" },
     scale: 4.42, xpReward: 630, waves: [bossWave("verdantcolossus")],
   },
 
   {
-    id: 30, name: "Moonshard Flats", subtitle: "Starlight cuts the dunes",
+    id: 30, name: "Moonshard Flats", subtitle: "Starlight cuts the dunes", terrain: "mirage",
     palette: { skyTop: "#151a38", skyBottom: "#68618e", hills: "#514b70", ground: "#625d78", groundDark: "#37344e", prop: "#292640" },
     scale: 4.66, xpReward: 575,
-    waves: [w([foe("gloomwing"), 1], ["icewisp", 2]), w(["stalker", 2], ["saltwitch", 1], [foe("gloomwing"), 1]), w(["stormeel", 2], ["conchseer", 1], ["harrier", 2])],
+    waves: [w([foe("glassjackal"), 2], [foe("gloomwing"), 1]), w([foe("mirageseer"), 1], ["stalker", 2]), w([foe("gloomwing"), 1], [foe("glassjackal"), 2], [foe("mirageseer"), 1])],
   },
   {
-    id: 31, name: "Whispering Erg", subtitle: "The sand repeats your last word",
+    id: 31, name: "Whispering Erg", subtitle: "The sand repeats your last word", terrain: "mirage",
     palette: { skyTop: "#11162f", skyBottom: "#574f79", hills: "#443f61", ground: "#585269", groundDark: "#302d45", prop: "#222038" },
     scale: 4.82, xpReward: 600,
-    waves: [w(["stalker", 2], [foe("gloomwing"), 1]), w(["snowhag", 1], ["icewisp", 2], [foe("gloomwing"), 2]), w(["bonecaller", 1], ["shambler", 3], ["stormcaller", 1])],
+    waves: [w([foe("glassjackal"), 3], [foe("mirageseer"), 1]), w([foe("gloomwing"), 2], ["icewisp", 2]), w([foe("glassjackal"), 2], [foe("mirageseer"), 1], [foe("gloomwing"), 1])],
   },
   {
-    id: 32, name: "Mirror Wells", subtitle: "Reflections arrive before travelers",
+    id: 32, name: "Mirror Wells", subtitle: "Reflections arrive before travelers", terrain: "mirage",
     palette: { skyTop: "#171735", skyBottom: "#766a94", hills: "#554e73", ground: "#67607b", groundDark: "#39334d", prop: "#2a2540" },
     scale: 4.98, xpReward: 625,
-    waves: [w(["icewisp", 2], [foe("gloomwing"), 2], ["conchseer", 1]), w(["stalker", 2], ["shieldbearer", 2], ["saltwitch", 1]), w([foe("gloomwing"), 2], ["stormeel", 2], ["snowhag", 1])],
+    waves: [w([foe("mirageseer"), 2], [foe("glassjackal"), 2]), w([foe("gloomwing"), 2], ["shieldbearer", 1]), w([foe("glassjackal"), 2], [foe("mirageseer"), 2], [foe("gloomwing"), 1])],
   },
   {
-    id: 33, name: "Black Lantern Caravan", subtitle: "No flame survives the crossing",
+    id: 33, name: "Black Lantern Caravan", subtitle: "The Dune Revenant waits", terrain: "mirage",
     palette: { skyTop: "#0d1127", skyBottom: "#443d62", hills: "#37334e", ground: "#484354", groundDark: "#292638", prop: "#1b1929" },
     scale: 5.18, xpReward: 665,
-    waves: [w(["stalker", 2], [foe("gloomwing"), 2]), w(["shieldbearer", 2], [foe("gloomwing"), 2], ["drummer", 1]), w(["rimetroll", 2], ["icewisp", 3])],
+    waves: [bossWave("dunerevenant")],
   },
   {
-    id: 34, name: "Observatory of Knives", subtitle: "The heavens look back",
+    id: 34, name: "Observatory of Knives", subtitle: "The heavens look back", terrain: "mirage",
     palette: { skyTop: "#14122c", skyBottom: "#594976", hills: "#403755", ground: "#51455e", groundDark: "#2d263d", prop: "#211b32" },
     scale: 5.26, xpReward: 690,
-    waves: [w(["stormcaller", 1], [foe("gloomwing"), 2]), w(["conchseer", 1], ["stalker", 2], [foe("gloomwing"), 2]), w(["snowhag", 2], ["rimetroll", 1], ["icewisp", 3])],
+    waves: [w([foe("gloomwing"), 2], [foe("mirageseer"), 1]), w([foe("glassjackal"), 3], [foe("mirageseer"), 1]), w([foe("gloomwing"), 2], [foe("glassjackal"), 2], [foe("mirageseer"), 1])],
   },
   {
-    id: 35, name: "Cradle of Night", subtitle: "The dark remembers its mother",
+    id: 35, name: "Cradle of Night", subtitle: "The dark remembers its mother", terrain: "mirage",
     palette: { skyTop: "#080b1d", skyBottom: "#332849", hills: "#27223b", ground: "#362e43", groundDark: "#1c1829", prop: "#13101d" },
     scale: 4.88, xpReward: 760, waves: [bossWave("nightmother")],
   },
 
   {
-    id: 36, name: "Pilgrim's Causeway", subtitle: "Bells ring beneath the dust",
+    id: 36, name: "Pilgrim's Causeway", subtitle: "Bells ring beneath the dust", terrain: "sanctified",
     palette: { skyTop: "#655c6f", skyBottom: "#d5bd84", hills: "#998262", ground: "#a28c69", groundDark: "#675849", prop: "#514550" },
     scale: 5.2, xpReward: 700,
-    waves: [w([foe("reliquaryguard"), 1], ["bellkeeper", 1]), w(["bonecaller", 1], ["archer", 2], [foe("reliquaryguard"), 1]), w(["warbanner", 1], ["conchseer", 1], ["brute", 2])],
+    waves: [w([foe("oathbreaker"), 1], [foe("censerwraith"), 1]), w([foe("reliquaryguard"), 1], ["archer", 2]), w([foe("oathbreaker"), 1], [foe("censerwraith"), 1], [foe("reliquaryguard"), 1])],
   },
   {
-    id: 37, name: "Reliquary Fields", subtitle: "Saints lie open to the weather",
+    id: 37, name: "Reliquary Fields", subtitle: "Saints lie open to the weather", terrain: "sanctified",
     palette: { skyTop: "#554d62", skyBottom: "#c9af78", hills: "#897358", ground: "#927e62", groundDark: "#5b4d43", prop: "#483d47" },
     scale: 5.36, xpReward: 730,
-    waves: [w(["shambler", 3], [foe("reliquaryguard"), 1]), w([foe("reliquaryguard"), 1], ["warbanner", 1], ["galeharrier", 2]), w(["conchseer", 1], ["rimetroll", 1], ["harrier", 2])],
+    waves: [w([foe("oathbreaker"), 2], [foe("censerwraith"), 1]), w([foe("reliquaryguard"), 2], ["shambler", 2]), w([foe("censerwraith"), 2], [foe("oathbreaker"), 1], [foe("reliquaryguard"), 1])],
   },
   {
-    id: 38, name: "Choirless Cloister", subtitle: "Every arch keeps one last note",
+    id: 38, name: "Choirless Cloister", subtitle: "Every arch keeps one last note", terrain: "sanctified",
     palette: { skyTop: "#4c4559", skyBottom: "#bca873", hills: "#7b6a52", ground: "#867357", groundDark: "#51463e", prop: "#413843" },
     scale: 5.52, xpReward: 760,
-    waves: [w(["bellkeeper", 1], ["saltwitch", 1], [foe("reliquaryguard"), 1]), w(["drummer", 1], [foe("reliquaryguard"), 2], ["archer", 2]), w(["bonecaller", 2], ["stalker", 2], ["harrier", 1])],
+    waves: [w([foe("censerwraith"), 2], [foe("oathbreaker"), 1]), w([foe("reliquaryguard"), 2], ["bellkeeper", 1]), w([foe("oathbreaker"), 2], [foe("censerwraith"), 1], ["harrier", 1])],
   },
   {
-    id: 39, name: "The Golden Ossuary", subtitle: "Mercy was buried in armor",
+    id: 39, name: "The Golden Ossuary", subtitle: "The Inquisitor passes judgment", terrain: "sanctified",
     palette: { skyTop: "#3f394a", skyBottom: "#aa925f", hills: "#705f49", ground: "#796649", groundDark: "#483b35", prop: "#38303a" },
     scale: 5.72, xpReward: 805,
-    waves: [w([foe("reliquaryguard"), 2], ["bellkeeper", 1]), w(["bonecaller", 2], ["shambler", 3]), w(["warbanner", 1], ["rimetroll", 2], [foe("reliquaryguard"), 1])],
+    waves: [bossWave("gildedinquisitor")],
   },
   {
-    id: 40, name: "Ascendant Stair", subtitle: "Kneel, or be measured",
+    id: 40, name: "Ascendant Stair", subtitle: "Kneel, or be measured", terrain: "sanctified",
     palette: { skyTop: "#5b4f5f", skyBottom: "#dfc77f", hills: "#9e8558", ground: "#a18a5f", groundDark: "#645044", prop: "#4b3d47" },
     scale: 5.82, xpReward: 835,
-    waves: [w(["galeharrier", 2], [foe("reliquaryguard"), 1]), w([foe("reliquaryguard"), 2], ["conchseer", 1], ["wreckgunner", 1]), w(["bonecaller", 1], ["rimetroll", 2], ["warbanner", 1])],
+    waves: [w([foe("reliquaryguard"), 2], [foe("censerwraith"), 1]), w([foe("oathbreaker"), 2], [foe("censerwraith"), 1]), w([foe("reliquaryguard"), 2], [foe("oathbreaker"), 1], [foe("censerwraith"), 1])],
   },
   {
-    id: 41, name: "Heaven's Broken Door", subtitle: "The last angel guards an empty throne",
+    id: 41, name: "Heaven's Broken Door", subtitle: "The last angel guards an empty throne", terrain: "sanctified",
     palette: { skyTop: "#332e3d", skyBottom: "#9f8358", hills: "#675744", ground: "#705f49", groundDark: "#403638", prop: "#302a32" },
     scale: 5.34, xpReward: 910, waves: [bossWave("reliquaryseraph")],
   },
 
   {
-    id: 42, name: "Thunderhead Trail", subtitle: "The road climbs into the storm",
+    id: 42, name: "Thunderhead Trail", subtitle: "The road climbs into the storm", terrain: "storm",
     palette: { skyTop: "#29455d", skyBottom: "#9fc2c8", hills: "#668392", ground: "#70878b", groundDark: "#425e69", prop: "#36505e" },
     scale: 5.7, xpReward: 845,
-    waves: [w([foe("shardling"), 1], ["galeharrier", 2]), w(["stormcaller", 1], ["reefhound", 2], [foe("shardling"), 1]), w(["wreckgunner", 2], ["shieldbearer", 2])],
+    waves: [w([foe("galeroc"), 2], [foe("shardling"), 1]), w([foe("thundermonk"), 1], ["stormcaller", 1]), w([foe("shardling"), 2], [foe("galeroc"), 2], [foe("thundermonk"), 1])],
   },
   {
-    id: 43, name: "Hanging Monastery", subtitle: "Ropes pray in the crosswind",
+    id: 43, name: "Hanging Monastery", subtitle: "Ropes pray in the crosswind", terrain: "storm",
     palette: { skyTop: "#223b53", skyBottom: "#8db3c0", hills: "#587585", ground: "#657d82", groundDark: "#3a5562", prop: "#304957" },
     scale: 5.86, xpReward: 875,
-    waves: [w(["galeharrier", 2], [foe("shardling"), 1]), w(["stormcaller", 1], ["harrier", 2], [foe("shardling"), 1]), w(["shieldbearer", 2], ["wreckgunner", 2], ["drummer", 1])],
+    waves: [w([foe("galeroc"), 3], [foe("thundermonk"), 1]), w([foe("shardling"), 2], ["galeharrier", 2]), w([foe("thundermonk"), 2], [foe("galeroc"), 2], [foe("shardling"), 1])],
   },
   {
     id: 44, name: "Cloudscar Bridge", subtitle: "One railing. No ground.", terrain: "storm",
     palette: { skyTop: "#1c354e", skyBottom: "#789fac", hills: "#4e6978", ground: "#5c7177", groundDark: "#344d5a", prop: "#2b4350" },
     scale: 6.02, xpReward: 905,
-    waves: [w(["galeharrier", 2], [foe("shardling"), 2]), w(["wreckgunner", 1], ["reefhound", 2], [foe("shardling"), 1]), w(["stormeel", 3], ["conchseer", 1], ["harrier", 1])],
+    waves: [w([foe("shardling"), 2], [foe("galeroc"), 2]), w([foe("thundermonk"), 2], ["wreckgunner", 1]), w([foe("galeroc"), 2], [foe("shardling"), 2], [foe("thundermonk"), 1])],
   },
   {
-    id: 45, name: "The Kite Graveyard", subtitle: "Broken wings still hunt", terrain: "storm",
+    id: 45, name: "The Kite Graveyard", subtitle: "The Tempest Roc descends", terrain: "storm",
     palette: { skyTop: "#172e45", skyBottom: "#6f929d", hills: "#465f6b", ground: "#53676d", groundDark: "#2d4652", prop: "#253b47" },
     scale: 6.22, xpReward: 955,
-    waves: [w(["galeharrier", 2], [foe("shardling"), 2]), w(["wreckgunner", 2], ["shieldbearer", 1], [foe("shardling"), 1]), w(["stormeel", 3], ["conchseer", 1], ["reefhound", 2])],
+    waves: [bossWave("tempestroc")],
   },
   {
     id: 46, name: "Crown of Tempests", subtitle: "Lightning chooses its champion", terrain: "storm",
     palette: { skyTop: "#14283d", skyBottom: "#5f7f8c", hills: "#3c5361", ground: "#495d64", groundDark: "#283e49", prop: "#213542" },
     scale: 6.32, xpReward: 985,
-    waves: [w(["stormcaller", 1], ["galeharrier", 2], [foe("shardling"), 2]), w(["wreckgunner", 2], ["stormeel", 2], [foe("shardling"), 1]), w(["rimetroll", 2], ["conchseer", 1], ["harrier", 2])],
+    waves: [w([foe("thundermonk"), 2], [foe("shardling"), 1]), w([foe("galeroc"), 3], ["stormcaller", 1]), w([foe("shardling"), 2], [foe("thundermonk"), 2], [foe("galeroc"), 1])],
   },
   {
     id: 47, name: "Skybreak Summit", subtitle: "The peak refuses the horizon", terrain: "storm",
@@ -308,73 +309,73 @@ export const LATE_ROAD_STAGES: StageDef[] = [
   },
 
   {
-    id: 48, name: "Redleaf Border", subtitle: "Autumn arrives ahead of you",
+    id: 48, name: "Redleaf Border", subtitle: "Autumn arrives ahead of you", terrain: "hunt",
     palette: { skyTop: "#38263b", skyBottom: "#a84d55", hills: "#673944", ground: "#71454a", groundDark: "#402b35", prop: "#2d2130" },
     scale: 6.16, xpReward: 995,
-    waves: [w([foe("bloodreaver"), 1], ["wolf", 2]), w(["bonecaller", 1], ["shambler", 3], [foe("bloodreaver"), 1]), w(["reefhound", 2], ["saltwitch", 1], ["galeharrier", 2])],
+    waves: [w([foe("moonfang"), 2], [foe("bloodreaver"), 1]), w([foe("briarwitch"), 1], ["wolf", 3]), w([foe("bloodreaver"), 1], [foe("moonfang"), 2], [foe("briarwitch"), 1])],
   },
   {
-    id: 49, name: "Hunter's Lanterns", subtitle: "The lights move between the trunks",
+    id: 49, name: "Hunter's Lanterns", subtitle: "The lights move between the trunks", terrain: "hunt",
     palette: { skyTop: "#2d2034", skyBottom: "#93434f", hills: "#58313d", ground: "#653c43", groundDark: "#382632", prop: "#281d2b" },
     scale: 6.32, xpReward: 1025,
-    waves: [w(["stalker", 2], [foe("bloodreaver"), 1]), w(["snowhag", 1], ["icewisp", 2], [foe("bloodreaver"), 1]), w(["harrier", 2], ["shieldbearer", 2], ["drummer", 1])],
+    waves: [w([foe("moonfang"), 3], [foe("briarwitch"), 1]), w([foe("bloodreaver"), 2], ["stalker", 1]), w([foe("briarwitch"), 2], [foe("moonfang"), 2], [foe("bloodreaver"), 1])],
   },
   {
-    id: 50, name: "Antlerfen", subtitle: "Hoofprints fill with moonlight",
+    id: 50, name: "Antlerfen", subtitle: "Hoofprints fill with moonlight", terrain: "hunt",
     palette: { skyTop: "#30233a", skyBottom: "#87505d", hills: "#55404d", ground: "#5d474c", groundDark: "#342a35", prop: "#25202b" },
     scale: 6.48, xpReward: 1055,
-    waves: [w(["kelpbound", 2], [foe("bloodreaver"), 1]), w(["saltwitch", 1], ["stalker", 2], [foe("bloodreaver"), 2]), w(["reefhound", 3], ["bonecaller", 1], ["harrier", 1])],
+    waves: [w([foe("briarwitch"), 2], [foe("moonfang"), 2]), w([foe("bloodreaver"), 2], [foe("briarwitch"), 1]), w([foe("moonfang"), 3], [foe("bloodreaver"), 1], ["reefhound", 1])],
   },
   {
-    id: 51, name: "Scarlet Orchard", subtitle: "Every fallen fruit beats once",
+    id: 51, name: "Scarlet Orchard", subtitle: "The Red Huntsman sounds his horn", terrain: "hunt",
     palette: { skyTop: "#261b2f", skyBottom: "#7c3444", hills: "#4b2a37", ground: "#59343d", groundDark: "#30222d", prop: "#211923" },
     scale: 6.68, xpReward: 1110,
-    waves: [w(["stalker", 2], ["bonecaller", 1], [foe("bloodreaver"), 2]), w(["shieldbearer", 2], ["warbanner", 1], [foe("bloodreaver"), 1]), w(["rimetroll", 2], ["snowhag", 1], ["harrier", 2])],
+    waves: [bossWave("redhuntsman")],
   },
   {
-    id: 52, name: "The Hartless Court", subtitle: "The hunt names its quarry",
+    id: 52, name: "The Hartless Court", subtitle: "The hunt names its quarry", terrain: "hunt",
     palette: { skyTop: "#2b1b2e", skyBottom: "#963846", hills: "#562735", ground: "#63323a", groundDark: "#341f29", prop: "#241720" },
     scale: 6.78, xpReward: 1145,
-    waves: [w(["wolf", 2], [foe("bloodreaver"), 2]), w(["bonecaller", 2], ["shambler", 3], [foe("bloodreaver"), 1]), w(["reefhound", 3], ["saltwitch", 1], ["galeharrier", 2])],
+    waves: [w([foe("bloodreaver"), 2], [foe("briarwitch"), 1]), w([foe("moonfang"), 3], [foe("briarwitch"), 1]), w([foe("bloodreaver"), 2], [foe("moonfang"), 2], [foe("briarwitch"), 1])],
   },
   {
-    id: 53, name: "Bloodmoon Glade", subtitle: "The forest raises its crown",
+    id: 53, name: "Bloodmoon Glade", subtitle: "The forest raises its crown", terrain: "hunt",
     palette: { skyTop: "#190f20", skyBottom: "#6b2637", hills: "#3a1e2a", ground: "#48262e", groundDark: "#251720", prop: "#190f17" },
     scale: 6.16, xpReward: 1230, waves: [bossWave("bloodmoonstag")],
   },
 
   {
-    id: 54, name: "Mile Zero", subtitle: "All roads cast the same shadow",
+    id: 54, name: "Mile Zero", subtitle: "All roads cast the same shadow", terrain: "void",
     palette: { skyTop: "#171421", skyBottom: "#655a6e", hills: "#4f4855", ground: "#5b535c", groundDark: "#39323e", prop: "#2a2530" },
     scale: 6.66, xpReward: 1150,
-    waves: [w([foe("nullwalker"), 1], ["shieldbearer", 2]), w(["bonecaller", 1], ["stormcaller", 1], [foe("nullwalker"), 1]), w(["rimetroll", 2], ["conchseer", 1], ["drummer", 1])],
+    waves: [w([foe("rifthound"), 2], [foe("nullwalker"), 1]), w([foe("waylostarcher"), 1], ["shieldbearer", 2]), w([foe("nullwalker"), 1], [foe("rifthound"), 2], [foe("waylostarcher"), 1])],
   },
   {
-    id: 55, name: "The Unwritten Mile", subtitle: "Footprints vanish before they land",
+    id: 55, name: "The Unwritten Mile", subtitle: "Footprints vanish before they land", terrain: "void",
     palette: { skyTop: "#13111d", skyBottom: "#574d61", hills: "#443e4b", ground: "#504851", groundDark: "#312c36", prop: "#24202a" },
     scale: 6.84, xpReward: 1185,
-    waves: [w(["stalker", 2], [foe("nullwalker"), 1]), w(["icewisp", 2], ["saltwitch", 1], [foe("nullwalker"), 1]), w(["shieldbearer", 2], ["wreckgunner", 2], ["bonecaller", 1])],
+    waves: [w([foe("rifthound"), 3], [foe("waylostarcher"), 1]), w([foe("nullwalker"), 2], ["stalker", 1]), w([foe("waylostarcher"), 2], [foe("rifthound"), 2], [foe("nullwalker"), 1])],
   },
   {
-    id: 56, name: "Compass Grave", subtitle: "North has been eaten",
+    id: 56, name: "Compass Grave", subtitle: "North has been eaten", terrain: "void",
     palette: { skyTop: "#100e19", skyBottom: "#494152", hills: "#393440", ground: "#453f47", groundDark: "#2a2630", prop: "#1e1b24" },
     scale: 7.02, xpReward: 1220,
-    waves: [w(["stormcaller", 1], ["galeharrier", 2], [foe("nullwalker"), 1]), w(["bonecaller", 2], ["shambler", 3], [foe("nullwalker"), 1]), w(["rimetroll", 2], ["conchseer", 1], ["harrier", 2])],
+    waves: [w([foe("waylostarcher"), 2], [foe("rifthound"), 2]), w([foe("nullwalker"), 2], [foe("waylostarcher"), 1]), w([foe("rifthound"), 3], [foe("nullwalker"), 1], ["stormcaller", 1])],
   },
   {
-    id: 57, name: "Pilgrim's End", subtitle: "The road walks without you",
+    id: 57, name: "Pilgrim's End", subtitle: "The Last Pilgrim turns back", terrain: "void",
     palette: { skyTop: "#0c0b13", skyBottom: "#3d3547", hills: "#302c37", ground: "#3b353d", groundDark: "#242029", prop: "#191720" },
     scale: 7.24, xpReward: 1280,
-    waves: [w(["stalker", 2], ["shieldbearer", 1], [foe("nullwalker"), 2]), w(["bonecaller", 2], ["icewisp", 2], [foe("nullwalker"), 1]), w(["rimetroll", 2], ["stormcaller", 2], ["conchseer", 1])],
+    waves: [bossWave("lastpilgrim")],
   },
   {
-    id: 58, name: "The Last Waystone", subtitle: "Every journey leaves one witness",
+    id: 58, name: "The Last Waystone", subtitle: "Every journey leaves one witness", terrain: "void",
     palette: { skyTop: "#0a0910", skyBottom: "#332d3c", hills: "#292531", ground: "#332e35", groundDark: "#1e1b23", prop: "#15131a" },
     scale: 7.36, xpReward: 1320,
-    waves: [w(["galeharrier", 2], ["stormcaller", 1], [foe("nullwalker"), 1]), w(["shieldbearer", 2], ["warbanner", 1], [foe("nullwalker"), 2]), w(["bonecaller", 2], ["rimetroll", 2], ["stalker", 2])],
+    waves: [w([foe("nullwalker"), 2], [foe("waylostarcher"), 1]), w([foe("rifthound"), 3], [foe("waylostarcher"), 1]), w([foe("nullwalker"), 2], [foe("rifthound"), 2], [foe("waylostarcher"), 1])],
   },
   {
-    id: 59, name: "Mouth of the Road", subtitle: "The horizon opens",
+    id: 59, name: "Mouth of the Road", subtitle: "The horizon opens", terrain: "void",
     palette: { skyTop: "#06050a", skyBottom: "#24202d", hills: "#1e1a24", ground: "#29242b", groundDark: "#17141a", prop: "#0f0d12" },
     scale: 6.58, xpReward: 1450, waves: [bossWave("wayeater")],
   },

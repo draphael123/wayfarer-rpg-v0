@@ -82,21 +82,26 @@ assert.equal(LATE_ROAD_REGIONS.length, 7, "the late road needs seven distinct re
 unique(LATE_ROAD_REGIONS.map((region) => region.id), "late-road region ids");
 unique(LATE_ROAD_REGIONS.map((region) => region.name), "late-road region names");
 unique(LATE_ROAD_STAGES.map((stage) => stage.name), "late-road stage names");
-assert.deepEqual(LATE_ROAD_REGIONS.map((region) => region.signatureFoe), [...LATE_FOE_KINDS], "each late region must own one signature foe");
+assert.deepEqual(LATE_ROAD_REGIONS.flatMap((region) => [...region.signatureFoes]), [...LATE_FOE_KINDS], "each late region must own three signature foes");
 assert.deepEqual(LATE_ROAD_STAGES.map((stage) => stage.id), Array.from({ length: 42 }, (_, index) => index + 18), "late-road stage ids must continue the opening road");
-assert.deepEqual(LATE_ROAD_ELITE_STAGES, LATE_ROAD_REGIONS.map((region) => region.start + 3), "each late region needs a fourth-stage elite remix");
+assert.deepEqual(LATE_ROAD_ELITE_STAGES, LATE_ROAD_REGIONS.map((region) => region.start + 3), "each late region needs a fourth-stage named elite");
 assert.deepEqual(LATE_ROAD_BOSS_INTENTS.map((boss) => boss.stage), LATE_ROAD_REGIONS.map((region) => region.start + 5), "each late region needs a sixth-stage boss");
 for (const region of LATE_ROAD_REGIONS) {
   assert.equal(region.bossStage, region.start + 5, `${region.name} finale must close its six-stage stretch`);
-  assert.equal(region.eliteStage, region.start + 3, `${region.name} elite remix must break up the middle of the act`);
+  assert.equal(region.eliteStage, region.start + 3, `${region.name} named elite must break up the middle of the act`);
   const finale = STAGES[region.bossStage];
   const finalWave = finale.waves.at(-1)!;
   assert.deepEqual(finalWave, [{ kind: region.bossKind, count: 1 }], `${region.name} must end with its planned unique boss`);
+  assert.deepEqual(STAGES[region.eliteStage].waves, [[{ kind: region.eliteKind, count: 1 }]], `${region.name} must have a standalone named elite encounter`);
   assert.ok(region.promise.trim(), `${region.name} boss needs a mechanic promise for later integration`);
   const approach = STAGES.slice(region.start, region.bossStage);
-  assert.ok(approach.every((stage) => stage.waves.some((wave) => wave.some((entry) => entry.kind === region.signatureFoe))), `${region.name} must develop its signature ${region.signatureFoe} across every approach stage`);
-  const introduction = approach[0].waves[0].find((entry) => entry.kind === region.signatureFoe);
-  assert.equal(introduction?.count, 1, `${region.name} must introduce ${region.signatureFoe} in a readable single-foe wave`);
+  const roadStages = approach.filter((stage) => stage.id !== region.eliteStage);
+  for (const foe of region.signatureFoes) {
+    const deployments = roadStages.filter((stage) => stage.waves.some((wave) => wave.some((entry) => entry.kind === foe)));
+    assert.ok(deployments.length >= 3, `${region.name} must develop ${foe} across at least three road stages`);
+  }
+  assert.ok(roadStages.every((stage) => region.signatureFoes.filter((foe) => stage.waves.some((wave) => wave.some((entry) => entry.kind === foe))).length >= 2), `${region.name} road stages must use at least two local enemy roles`);
+  assert.ok(roadStages.every((stage) => !!stage.terrain), `${region.name} road stages need an active regional battlefield rule`);
   for (const stage of approach) {
     for (const wave of stage.waves) {
       const headcount = wave.reduce((total, entry) => total + entry.count, 0);
@@ -129,12 +134,19 @@ const BOSS_AUDIT = [
   { kind: "wyrm", stage: 11, main: true, renderer: "drawWyrm", mechanic: "coil+frost-breath+submerged-hunt+bare-heart" },
   { kind: "bellwidow", stage: 15, main: true, renderer: "drawBellWidow", mechanic: "bell-toll+safe-lane+drowned-reinforcements" },
   { kind: "stormjaw", stage: 17, main: true, renderer: "drawStormjaw", mechanic: "conductive-lightning+breach+surfaced-heart" },
+  { kind: "kilntyrant", stage: 21, main: true, renderer: "drawLateEnemy:kilntyrant", mechanic: "elite-eruption+iron-shell+ashen-attendant" },
   { kind: "cindermaw", stage: 23, main: true, renderer: "drawLateEnemy:cindermaw", mechanic: "sequenced-eruptions+furnace-vent+plate-break" },
+  { kind: "rootboundmatriarch", stage: 27, main: true, renderer: "drawLateEnemy:rootboundmatriarch", mechanic: "elite-root-cage+heartroot+vine-attendant" },
   { kind: "verdantcolossus", stage: 29, main: true, renderer: "drawLateEnemy:verdantcolossus", mechanic: "root-cages+heartwood-opening+briar-attendants" },
+  { kind: "dunerevenant", stage: 33, main: true, renderer: "drawLateEnemy:dunerevenant", mechanic: "elite-eclipse+mirage-break+jackal-attendant" },
   { kind: "nightmother", stage: 35, main: true, renderer: "drawLateEnemy:nightmother", mechanic: "safe-center-eclipse+false-moon+silence" },
+  { kind: "gildedinquisitor", stage: 39, main: true, renderer: "drawLateEnemy:gildedinquisitor", mechanic: "elite-verdict+judgment-reversal+censer-attendant" },
   { kind: "reliquaryseraph", stage: 41, main: true, renderer: "drawLateEnemy:reliquaryseraph", mechanic: "crossing-verdict-beams+silence+seraphic-guard" },
+  { kind: "tempestroc", stage: 45, main: true, renderer: "drawLateEnemy:tempestroc", mechanic: "elite-shatter+storm-overlap+roc-attendant" },
   { kind: "skybreaker", stage: 47, main: true, renderer: "drawLateEnemy:skybreaker", mechanic: "cross-shaped-shatter+aftershock+crystal-stun" },
+  { kind: "redhuntsman", stage: 51, main: true, renderer: "drawLateEnemy:redhuntsman", mechanic: "elite-marked-hunt+starvation+moonfang-attendant" },
   { kind: "bloodmoonstag", stage: 53, main: true, renderer: "drawLateEnemy:bloodmoonstag", mechanic: "marked-charge+miss-stagger+blood-drain" },
+  { kind: "lastpilgrim", stage: 57, main: true, renderer: "drawLateEnemy:lastpilgrim", mechanic: "elite-void+vulnerability+rift-attendant" },
   { kind: "wayeater", stage: 59, main: true, renderer: "drawLateEnemy:wayeater", mechanic: "remembered-omens+four-phases+void-unmaking" },
   // Fully implemented legacy boss, currently absent from campaign waves.
   { kind: "rimeheart", stage: null, main: false, renderer: "drawRimeheartBoss", mechanic: "hail+cracking-ice+long-breath+armor-shatter" },

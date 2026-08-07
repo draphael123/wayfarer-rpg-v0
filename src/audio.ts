@@ -3,7 +3,8 @@
  * lazily as MP3, with the original synthesized WebAudio kit as an instant
  * fallback while samples stream in (or if they fail to load).
  *
- * Music: medieval-fantasy & rpg-battle-system packs (Superpowers, CC0).
+ * Music: medieval-fantasy & rpg-battle-system packs (Superpowers, CC0), plus
+ * TAD's "Once Upon a Time" title loop (CC0; see audio/LICENSES.md).
  * SFX: ninja-adventure & medieval-fantasy packs (Superpowers, CC0).
  */
 
@@ -98,9 +99,10 @@ const SAMPLE_SFX: Partial<Record<SfxName, string[]>> = {
   defeat: ["sfx-defeat"],
 };
 
-// music-menu.mp3 is deliberately NOT loaded — the title belongs to the live
-// campfire-folk synth theme now.
+// Recorded scene music is loaded lazily; the synth bed begins immediately and
+// then yields through a short crossfade when the requested track is ready.
 const MUSIC_TRACKS = [
+  "music-menu",
   "music-stage0",
   "music-stage1",
   "music-stage2",
@@ -114,6 +116,7 @@ const MUSIC_TRACKS = [
 ];
 
 const SAMPLE_FILES: Partial<Record<string, string>> = {
+  "music-menu": "audio/music-menu-new.mp3",
   "music-coast": "audio/music-coast.ogg",
 };
 
@@ -456,8 +459,8 @@ class AudioKit {
     const buffer = this.samples.get(want);
     if (!buffer) {
       this.loadSample(want);
-      // nothing recorded bears this name (the title theme, the Winterreach) —
-      // hand the music back to the live synth bed
+      // Nothing recorded bears this name (notably the Winterreach), so hand
+      // the music back to the live synth bed.
       this.stopTrack(0.7);
       this.startMusic();
       return;
@@ -474,7 +477,9 @@ class AudioKit {
     src.loopStart = 0.03;
     src.loopEnd = Math.max(0.1, buffer.duration - 0.06);
     const gain = ctx.createGain();
-    const level = 0.32;
+    // The orchestral title loop is deliberately a touch broader than the
+    // combat beds; the user's music-volume setting still controls both.
+    const level = want === "music-menu" ? 0.38 : 0.32;
     gain.gain.setValueAtTime(0.0001, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(level, ctx.currentTime + 0.8);
     src.connect(gain);
@@ -1062,13 +1067,23 @@ class AudioKit {
         ];
         const theme = lateThemes[Math.min(lateThemes.length - 1, Math.max(0, Math.floor(this.stageId / 6) - 3))];
         const beat = this.musicStep % 8;
+        const eliteActive = this.bossActive && this.stageId % 6 === 3;
+        const finaleActive = this.bossActive && this.stageId % 6 === 5;
         const note = theme.scale[(this.musicStep * 3 + Math.floor(this.musicStep / 8)) % theme.scale.length];
         if (beat === 0 || (this.bossActive && beat === 4)) {
           this.tone(theme.root, this.bossActive ? 1.7 : 2.8, "sine", this.bossActive ? 0.42 : 0.28, -4, 0, g);
           this.tone(theme.root * 1.5, 1.5, "triangle", 0.1, 0, 0.03, g);
         }
         if (this.bossActive || beat % 2 === 1) {
-          this.tone(note * (this.bossActive ? 1 : 2), this.bossActive ? 0.38 : 0.7, theme.wave, this.bossActive ? 0.18 : 0.13, 0, 0, g);
+          this.tone(note * (eliteActive ? 1.5 : this.bossActive ? 1 : 2), this.bossActive ? 0.38 : 0.7, theme.wave, this.bossActive ? 0.18 : 0.13, 0, 0, g);
+        }
+        // Elites drive the regional melody in a tense upper register. Final
+        // bosses answer with a slower low brass-like pedal and a second pulse,
+        // making the two encounter tiers immediately distinguishable.
+        if (eliteActive && beat % 2 === 1) this.tone(note * 2.5, 0.24, "triangle", 0.08, -35, 0, g);
+        if (finaleActive && beat === 6) {
+          this.tone(theme.root * 0.5, 2.2, "sawtooth", 0.18, -3, 0, g);
+          this.tone(theme.root * 2, 0.42, theme.wave, 0.1, 0, 0.08, g);
         }
         // Region-specific musical fingerprints layered over the shared road pulse.
         const lateRegion = Math.floor(this.stageId / 6);

@@ -202,6 +202,100 @@ export function drawLateEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: n
     ctx.beginPath();
     ctx.ellipse(r * 0.08, -r * 1.55 + bob, r * 0.29, r * 0.42, 0, 0, Math.PI * 2);
     ctx.stroke();
+  } else if (["ashenhound", "vinelurker", "glassjackal", "moonfang", "rifthound"].includes(kind)) {
+    const styles: Record<string, [string, string]> = {
+      ashenhound: ["#4d3733", "#ff8f4f"], vinelurker: ["#284b3c", "#8fcf6a"], glassjackal: ["#3a3852", "#d8c7ff"],
+      moonfang: ["#4d2834", "#ff8176"], rifthound: ["#262337", "#a99ae0"],
+    };
+    const [body, glow] = styles[kind];
+    castHalo(ctx, unit, glow, r);
+    ellipse(ctx, -r * 0.12, -r * 0.66 + bob * 0.15, r * 0.92, r * 0.47, body, -0.08);
+    ellipse(ctx, r * 0.72, -r * 0.88 + bob * 0.15, r * 0.46, r * 0.4, body);
+    for (const x of [-0.62, -0.18, 0.38, 0.7]) limb(ctx, r * x, -r * 0.5, r * (x + (x > 0 ? 0.1 : -0.08)), 0, 5, body);
+    ctx.fillStyle = glow; ctx.shadowColor = glow; ctx.shadowBlur = 9;
+    ctx.beginPath(); ctx.arc(r * 0.88, -r * 0.94, 2.8, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+    if (kind === "ashenhound") {
+      for (let i = 0; i < 4; i++) crystal(ctx, -r * 0.55 + i * r * 0.28, -r * 0.95, r * 0.1, r * (0.32 + i * 0.05), glow);
+      ctx.strokeStyle = "rgba(255,130,65,.55)"; ctx.beginPath(); ctx.arc(-r * 0.92, -r * 0.75, r * 0.55, 2.9, 5.2); ctx.stroke();
+    } else if (kind === "vinelurker") {
+      ctx.strokeStyle = glow; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(-r * 0.8, -r * 0.72); ctx.bezierCurveTo(-r * 1.5, -r * 1.25, -r * 1.4, 0, -r * 0.92, -r * 0.05); ctx.stroke();
+      ellipse(ctx, -r * 0.38, -r * 1.08, r * 0.22, r * 0.12, glow, -0.4);
+    } else if (kind === "glassjackal") {
+      for (const side of [-1, 1]) crystal(ctx, r * (0.63 + side * 0.18), -r * 1.1, r * 0.12, r * (0.48 + (side > 0 ? 0.12 : 0)), glow);
+      ctx.strokeStyle = glow; ctx.beginPath(); ctx.moveTo(-r * 0.75, -r * 0.82); ctx.lineTo(-r * 1.35, -r * 1.15); ctx.stroke();
+    } else if (kind === "moonfang") {
+      ctx.strokeStyle = "#e7cfb2"; ctx.lineWidth = 2.6; for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(r * 0.67, -r * 1.13); ctx.lineTo(r * (0.7 + side * 0.28), -r * 1.55); ctx.lineTo(r * (0.82 + side * 0.38), -r * 1.38); ctx.stroke(); }
+    } else {
+      ctx.strokeStyle = glow; ctx.lineWidth = 2; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.ellipse(-r * 0.12, -r * 0.66, r * 1.02, r * 0.58, -0.08, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = "#11101a"; ctx.beginPath(); ctx.ellipse(-r * 0.15, -r * 0.68, r * 0.32, r * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  } else if (["furnacecantor", "sporeseer", "mirageseer", "censerwraith", "briarwitch", "waylostarcher"].includes(kind)) {
+    const styles: Record<string, [string, string]> = {
+      furnacecantor: ["#592f2b", "#ffd06b"], sporeseer: ["#3e5947", "#d6ea82"], mirageseer: ["#51476b", "#edddff"],
+      censerwraith: ["#655d58", "#f4d997"], briarwitch: ["#542938", "#f1a08a"], waylostarcher: ["#343044", "#c3b5e9"],
+    };
+    const [robe, glow] = styles[kind];
+    castHalo(ctx, unit, glow, r);
+    ctx.beginPath(); ctx.moveTo(-r * 0.72, 0); ctx.lineTo(-r * 0.43, -r * 1.58 + bob); ctx.quadraticCurveTo(0, -r * 2, r * 0.43, -r * 1.58 + bob); ctx.lineTo(r * 0.72, 0); ctx.closePath(); fillStroke(ctx, robe);
+    ellipse(ctx, 0, -r * 1.72 + bob, r * 0.34, r * 0.4, "#251f2c");
+    if (kind === "furnacecantor") {
+      limb(ctx, r * 0.38, -r * 1.15, r * 0.9, -r * 0.1, 3, "#3c2826"); ellipse(ctx, r * 0.9, -r * 1.55, r * 0.19, r * 0.24, glow);
+      ctx.strokeStyle = glow; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, -r * 2.08, r * 0.42, Math.PI, Math.PI * 2); ctx.stroke();
+    } else if (kind === "sporeseer") {
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.ellipse(0, -r * 2.08, r * 0.72, r * 0.24, 0, Math.PI, Math.PI * 2); ctx.fill(); ctx.stroke();
+      for (const x of [-0.38, 0, 0.4]) ellipse(ctx, r * x, -r * 2.2, r * 0.08, r * 0.08, "#f5f2b1");
+    } else if (kind === "mirageseer") {
+      ctx.strokeStyle = glow; ctx.lineWidth = 2; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(0, -r * (1.78 + i * 0.15), r * (0.46 + i * 0.14), r * 0.16, 0, 0, Math.PI * 2); ctx.stroke(); }
+    } else if (kind === "censerwraith") {
+      ctx.strokeStyle = glow; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(r * 0.35, -r * 1.2); ctx.quadraticCurveTo(r * 1.0, -r * 0.8, r * 0.76, -r * 0.2); ctx.stroke(); ellipse(ctx, r * 0.76, -r * 0.08, r * 0.18, r * 0.2, glow);
+      ctx.globalAlpha = 0.4; for (let i = 0; i < 3; i++) ellipse(ctx, -r * 0.2 + i * r * 0.2, -r * (2.2 + i * 0.12), r * 0.16, r * 0.09, glow); ctx.globalAlpha = 1;
+    } else if (kind === "briarwitch") {
+      ctx.strokeStyle = "#d9c2aa"; ctx.lineWidth = 3; for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(side * r * 0.18, -r * 1.98); ctx.lineTo(side * r * 0.55, -r * 2.52); ctx.lineTo(side * r * 0.72, -r * 2.3); ctx.stroke(); }
+      limb(ctx, r * 0.35, -r * 1.1, r * 0.95, -r * 0.25, 3, glow);
+    } else {
+      ctx.strokeStyle = glow; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(r * 0.58, -r * 1.05, r * 0.62, Math.PI * 0.55, Math.PI * 1.45); ctx.stroke(); ctx.beginPath(); ctx.moveTo(r * 0.56, -r * 1.62); ctx.lineTo(r * 0.56, -r * 0.48); ctx.stroke();
+    }
+  } else if (kind === "oathbreaker" || kind === "thundermonk") {
+    const storm = kind === "thundermonk";
+    const body = storm ? "#526a79" : "#6f665b";
+    const glow = storm ? "#f1fdff" : "#d9b866";
+    castHalo(ctx, unit, glow, r);
+    limb(ctx, -r * 0.28, -r * 0.55, -r * 0.42, 0, 7, body); limb(ctx, r * 0.28, -r * 0.55, r * 0.42, 0, 7, body);
+    ellipse(ctx, 0, -r * 1.15 + bob * 0.2, r * 0.62, r * 0.8, body); ellipse(ctx, 0, -r * 1.92 + bob * 0.2, r * 0.4, r * 0.4, storm ? "#344e5d" : "#857866");
+    if (storm) {
+      ctx.strokeStyle = glow; ctx.lineWidth = 3; for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(side * r * 0.4, -r * 1.25); ctx.lineTo(side * r * 0.95, -r * 0.8); ctx.stroke(); }
+      ctx.beginPath(); ctx.arc(0, -r * 1.95, r * 0.2, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      ctx.fillStyle = "#2a2329"; ctx.fillRect(-r * 0.28, -r * 2.0, r * 0.56, r * 0.12); limb(ctx, r * 0.45, -r * 1.25, r * 0.95, -r * 0.15, 5, glow);
+      ctx.strokeStyle = glow; ctx.beginPath(); ctx.arc(0, -r * 2.45, r * 0.52, 0, Math.PI * 2); ctx.stroke();
+    }
+  } else if (kind === "galeroc") {
+    castHalo(ctx, unit, "#c9f7ff", r);
+    ctx.save(); ctx.translate(0, -r * 0.82 + bob);
+    for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(side * r * 1.55, -r * 1.1, side * r * 1.45, r * 0.28); ctx.lineTo(side * r * 0.35, r * 0.38); ctx.closePath(); fillStroke(ctx, side < 0 ? "#41677b" : "#527f91"); }
+    ellipse(ctx, 0, 0, r * 0.38, r * 0.72, "#355767"); crystal(ctx, r * 0.08, -r * 0.75, r * 0.22, r * 0.55, "#c9f7ff");
+    ctx.restore();
+  } else if (["kilntyrant", "rootboundmatriarch", "dunerevenant", "gildedinquisitor", "tempestroc", "redhuntsman", "lastpilgrim"].includes(kind)) {
+    const styles: Record<string, [string, string]> = {
+      kilntyrant: ["#66342b", "#ffb253"], rootboundmatriarch: ["#3d5439", "#b9dc78"], dunerevenant: ["#403650", "#d7c1f3"],
+      gildedinquisitor: ["#746a57", "#ffe195"], tempestroc: ["#416477", "#c7f6ff"], redhuntsman: ["#542733", "#f47a70"], lastpilgrim: ["#302b40", "#c3b2e8"],
+    };
+    const [body, glow] = styles[kind];
+    castHalo(ctx, unit, glow, r * 1.25);
+    if (kind === "rootboundmatriarch") {
+      ellipse(ctx, 0, -r * 0.72, r * 0.9, r * 0.65, body); for (const side of [-1, 1]) for (let i = 0; i < 3; i++) limb(ctx, side * r * (0.3 + i * 0.2), -r * 0.55, side * r * (1.15 + i * 0.16), -r * (0.05 + i * 0.18), 7, body);
+      ctx.strokeStyle = glow; ctx.lineWidth = 4; for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(side * r * 0.2, -r * 1.2); ctx.lineTo(side * r * 0.62, -r * 2.05); ctx.stroke(); }
+    } else if (kind === "tempestroc") {
+      ctx.save(); ctx.translate(0, -r * 0.7 + bob); for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(side * r * 2.0, -r * 1.35, side * r * 1.75, r * 0.45); ctx.lineTo(side * r * 0.38, r * 0.55); ctx.closePath(); fillStroke(ctx, side < 0 ? body : "#547d8e", 4); } ellipse(ctx, 0, 0, r * 0.42, r * 0.95, body); crystal(ctx, 0, -r * 0.95, r * 0.3, r * 0.75, glow); ctx.restore();
+    } else {
+      ctx.beginPath(); ctx.moveTo(-r * 0.9, 0); ctx.lineTo(-r * 0.56, -r * 2.05 + bob * 0.15); ctx.quadraticCurveTo(0, -r * 2.55 + bob * 0.15, r * 0.56, -r * 2.05 + bob * 0.15); ctx.lineTo(r * 0.9, 0); ctx.closePath(); fillStroke(ctx, body, 4);
+      ellipse(ctx, 0, -r * 2.0 + bob * 0.15, r * 0.46, r * 0.48, kind === "lastpilgrim" ? "#15131e" : body);
+      if (kind === "kilntyrant") { ctx.fillStyle = "#251a1c"; ctx.fillRect(-r * 0.46, -r * 1.42, r * 0.92, r * 0.68); ctx.strokeStyle = glow; ctx.strokeRect(-r * 0.36, -r * 1.32, r * 0.72, r * 0.45); for (const x of [-0.45, 0, 0.45]) crystal(ctx, r * x, -r * 2.42, r * 0.12, r * 0.48, glow); }
+      else if (kind === "dunerevenant") { ctx.strokeStyle = glow; ctx.lineWidth = 2.5; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(0, -r * (1.45 + i * 0.35), r * (0.72 + i * 0.2), r * 0.22, 0, 0, Math.PI * 2); ctx.stroke(); } }
+      else if (kind === "gildedinquisitor") { ctx.fillStyle = "#1c1820"; ctx.fillRect(-r * 0.3, -r * 2.1, r * 0.6, r * 0.14); ctx.strokeStyle = glow; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(0, -r * 2.72, r * 0.8, r * 0.22, 0, 0, Math.PI * 2); ctx.stroke(); limb(ctx, r * 0.42, -r * 1.5, r * 1.15, -r * 0.1, 6, glow); }
+      else if (kind === "redhuntsman") { ctx.strokeStyle = "#e4ceb0"; ctx.lineWidth = 4; for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(side * r * 0.15, -r * 2.35); ctx.lineTo(side * r * 0.62, -r * 3.0); ctx.lineTo(side * r * 0.88, -r * 2.7); ctx.stroke(); } limb(ctx, r * 0.42, -r * 1.35, r * 1.2, -r * 0.05, 6, glow); }
+      else { ctx.strokeStyle = glow; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, -r * 1.65, r * 0.82, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-r * 0.35, 0); ctx.lineTo(0, -r * 1.45); ctx.lineTo(r * 0.35, 0); ctx.stroke(); }
+    }
   } else if (kind === "cindermaw") {
     castHalo(ctx, unit, "#ff7d38", r * 1.25);
     ellipse(ctx, -r * 0.15, -r * 0.68 + bob * 0.2, r * 1.25, r * 0.68, "#663025", -0.08);

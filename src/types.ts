@@ -35,12 +35,33 @@ export type EnemyKind =
   | "bellwidow"
   | "stormjaw"
   | "cinderkin"
+  | "ashenhound"
+  | "furnacecantor"
   | "briarback"
+  | "sporeseer"
+  | "vinelurker"
   | "gloomwing"
+  | "glassjackal"
+  | "mirageseer"
   | "reliquaryguard"
+  | "censerwraith"
+  | "oathbreaker"
   | "shardling"
+  | "galeroc"
+  | "thundermonk"
   | "bloodreaver"
+  | "briarwitch"
+  | "moonfang"
   | "nullwalker"
+  | "waylostarcher"
+  | "rifthound"
+  | "kilntyrant"
+  | "rootboundmatriarch"
+  | "dunerevenant"
+  | "gildedinquisitor"
+  | "tempestroc"
+  | "redhuntsman"
+  | "lastpilgrim"
   | "cindermaw"
   | "verdantcolossus"
   | "nightmother"
@@ -203,6 +224,8 @@ export interface Telegraph {
     | "void";
   /** Short action verb shown above late-road warnings. */
   label?: string;
+  /** Stage-owned warning: it borrows an enemy for timing but not damage or movement. */
+  environmental?: boolean;
   /** Direction and reach for lane-shaped attacks such as beams and charges. */
   angle?: number;
   length?: number;
@@ -241,7 +264,7 @@ export interface StageDef {
   waves: WaveEntry[][];
   scale: number; // enemy stat multiplier
   xpReward: number;
-  terrain?: "tide" | "storm" | "tide-storm";
+  terrain?: "tide" | "storm" | "tide-storm" | "cinder" | "overgrowth" | "mirage" | "sanctified" | "hunt" | "void";
 }
 
 export interface HeroSave {

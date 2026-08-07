@@ -61,7 +61,8 @@ road opens. Heroes earn personal XP, levels, boon choices, talents, equipment,
 and eventually path promotions. The sixty-stage campaign is one continuous Long
 Road across ten regions, from the South Road and Winterreach through Stormbreak,
 the Cinderwild, Verdant Maw, Nightglass Waste, Shattered Reliquary, Skygrave,
-Bloodwood, and the Last Meridian. Twelve campaign bosses anchor the journey, and
+Bloodwood, and the Last Meridian. Twelve great bosses and seven named late-road
+elites anchor the journey, and
 the illustrated atlas advances section by section instead of splitting the game
 into disconnected level lists. A bestiary catalogues every foe you've slain with lore and tactical
 notes. The dedicated Wayfinder's Kit separates sound, battle, readability, and
@@ -82,8 +83,9 @@ periodically slows units caught in the flooded lower field, and telegraphed
 lightning strikes that become more dangerous at high tide. Its bosses, the Bell
 Widow and Stormjaw, turn those rules into position-focused encounters.
 
-Acts IV–X each introduce a signature regular enemy, arena warning, regional
-sound palette, and one-off boss silhouette. Their warnings use different shapes
+Acts IV–X each introduce three signature regular enemies, a named elite with a
+dedicated rare reward, an active battlefield rule, a regional sound palette,
+and a one-off final-boss silhouette. Their warnings use different shapes
 and plain-language countdown labels, so eruption, roots, eclipse, verdict beams,
 crystal shatters, marked charges, and voids remain readable even without color.
 The final Way-Eater recalls those learned patterns as a capstone. Boss victories
@@ -95,7 +97,7 @@ companions up one level at a time without ever pushing them past the active band
 - `src/data.ts` — all tuning: heroes, elemental paths and techniques,
   attributes, derived-stat formulas, enemies, and stage/wave definitions.
 - `src/late-road.ts` / `src/late-content.ts` — the seven late regions, their
-  atlas art, signature foes, bosses, affinities, and encounter promises.
+  atlas art, three-role enemy ecosystems, elites, bosses, affinities, and encounter promises.
 - `src/battle.ts` — the simulation: orders, enemy AI (aggro, taunts, kiting
   snipers, healing shamans, a boss), abilities, projectiles, ground zones, waves.
 - `src/hud.ts` — in-canvas battle UI and the drag/gesture input model.
@@ -103,7 +105,8 @@ companions up one level at a time without ever pushing them past the active band
   backgrounds, particles, floating text, screen shake.
 - `src/menus.ts` — DOM screens: title, atlas, party, handbook, and settings ledger.
 - `src/audio.ts` — regional WebAudio music/ambience with a small optional
-  recorded layer and synthesized fallbacks.
+  recorded layer and synthesized fallbacks. Track sources and licenses are
+  recorded in `audio/LICENSES.md`.
 - `src/save.ts` — localStorage persistence, XP/levels, respec.
 - `src/main.ts` — game loop, canvas scaling, pointer wiring, screen flow.
 

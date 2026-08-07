@@ -1924,6 +1924,12 @@ export class Menus {
         ? "Rising water slows anyone fighting in the lower field."
         : stage.terrain === "storm"
           ? "Lightning circles strike after their countdown. Leave the mark before it closes."
+          : stage.terrain === "cinder" ? "Furnace vents periodically erupt beneath the band. Spread before the orange cores close."
+          : stage.terrain === "overgrowth" ? "Living roots periodically seize clustered heroes. Regroup after the root rings close."
+          : stage.terrain === "mirage" ? "False eclipses periodically silence their outer rim. Find the quiet center."
+          : stage.terrain === "sanctified" ? "Golden verdict-lines periodically divide the field. Cross into a dark seam."
+          : stage.terrain === "hunt" ? "The red hunt periodically marks the weakest hero with a charging lane. Break the line."
+          : stage.terrain === "void" ? "The road periodically unmakes clustered ground and leaves survivors vulnerable."
           : "No unusual terrain. Formation and target priority decide the opening.";
     const checks = [
       { warn: party.length < PARTY_CAP, text: `${party.length}/${PARTY_CAP} heroes taking the field` },
@@ -2005,6 +2011,7 @@ export class Menus {
     for (const wave of stage.waves) for (const entry of wave) if (!kinds.includes(entry.kind)) kinds.push(entry.kind);
     const mult = DIFFICULTIES[save.difficulty]?.rewardMult ?? 1;
     const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+    const terrainScout = stage.terrain ? ({ tide: "≋ shifting tide", storm: "ϟ lightning", "tide-storm": "≋ tide · ϟ lightning", cinder: "♨ furnace vents", overgrowth: "⌇ grasping roots", mirage: "◐ false eclipses", sanctified: "✦ verdict-lines", hunt: "◉ marked hunt", void: "◇ unmaking road" } as const)[stage.terrain] : "";
     const card = el(`
       <div class="embark-card scout-card">
         <div class="embark-main">
@@ -2018,7 +2025,7 @@ export class Menus {
           <span class="scout-chip">${ico("sword")} ${stage.waves.length <= 1 ? "a single great trial" : stage.waves.length <= 3 ? "a short road" : "a long road"}</span>
           <span class="scout-chip">${ico("star")} ≈${Math.round(stage.xpReward * mult)} xp</span>
           <span class="scout-chip">${ico("gem")} ${rare ? "RARE trinket" : "trinket drop"}</span>
-          ${stage.terrain ? `<span class="scout-chip">${stage.terrain.includes("tide") ? "≋ shifting tide" : ""}${stage.terrain === "tide-storm" ? " · " : ""}${stage.terrain.includes("storm") ? "ϟ lightning" : ""}</span>` : ""}
+          ${terrainScout ? `<span class="scout-chip">${terrainScout}</span>` : ""}
           ${
             rec
               ? `<span class="scout-chip best">✓ best ${fmt(rec.bestTime)} · ×${rec.clears}</span>`
@@ -2779,7 +2786,7 @@ export class Menus {
           <article><i>✦</i><div><strong>Elemental Waymarks</strong><p>Normal foes take <b>+25%</b> from a weakness and <b>−20%</b> from a resistance. Boss values are +15% and −10%.</p></div></article>
           <article><i>◇</i><div><strong>One Path, three techniques</strong><p>A Discipline and Attunement grant two normal techniques plus one charge-based ultimate. Armor is passive unless a future legendary says otherwise.</p></div></article>
           <article><i>▰</i><div><strong>Boss language</strong><p>Marked ground warns of impact. The amber bar is poise: break it to stagger. Diamonds mark phase changes.</p></div></article>
-          <article><i>≋</i><div><strong>Terrain matters</strong><p>Flooded low ground slows the band. Lightning circles detonate after their countdown. Scout chips name terrain before you embark.</p></div></article>
+          <article><i>≋</i><div><strong>Terrain matters</strong><p>Tides slow, storms strike, furnace vents erupt, roots seize, mirages silence, verdicts divide, hunts mark, and voids unmake. Scout chips name the rule before you embark.</p></div></article>
         </section>
         <button class="handbook-reference" data-lesson="village"><span>COMPANY REFERENCE</span><strong>Gear, recruits, Paths, talents &amp; keyboard</strong><b>Open ›</b></button>
       </div>

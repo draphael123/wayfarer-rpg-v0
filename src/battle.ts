@@ -112,6 +112,7 @@ export class Battle {
   tideLevel = 0;
   tideHigh = false;
   private lightningTimer = 7;
+  private regionHazardTimer = 6.5;
   private widowToll = 4.5;
   private widowRite: { safeLane: number; safeY: number; halfWidth: number; time: number; duration: number } | null = null;
   private widowTollCount = 0;
@@ -496,13 +497,7 @@ export class Battle {
     if (kind === "warlord") audio.play("warhorn");
     else if (kind === "alpha") audio.play("howl");
     else if (kind === "rimeheart" || kind === "wyrm") audio.play("glacialGroan");
-    else if (kind === "cindermaw") audio.play("bossEruption");
-    else if (kind === "verdantcolossus") audio.play("bossRoots");
-    else if (kind === "nightmother") audio.play("bossEclipse");
-    else if (kind === "reliquaryseraph") audio.play("bossBeam");
-    else if (kind === "skybreaker") audio.play("bossShatter");
-    else if (kind === "bloodmoonstag") audio.play("bossBloodmoon");
-    else if (kind === "wayeater") audio.play("bossVoid");
+    else if (isLateBossKind(kind)) this.playLatePatternSound(this.latePatternOf(kind));
     else audio.play("roar");
   }
 
@@ -3525,6 +3520,31 @@ export class Battle {
         this.lightningTimer = 9 + Math.random() * 4;
       }
     }
+    const regionalPatterns: Partial<Record<NonNullable<StageDef["terrain"]>, Telegraph["kind"]>> = {
+      cinder: "eruption",
+      overgrowth: "roots",
+      mirage: "eclipse",
+      sanctified: "beam",
+      hunt: "bloodmoon",
+      void: "void",
+    };
+    const regionalPattern = this.stage.terrain ? regionalPatterns[this.stage.terrain] : undefined;
+    if (regionalPattern && this.state === "fighting" && !this.tutorialMode && !this.bossRef?.alive) {
+      this.regionHazardTimer -= dt;
+      const lateKinds: Telegraph["kind"][] = ["eruption", "roots", "eclipse", "beam", "shatter", "bloodmoon", "void"];
+      if (this.regionHazardTimer <= 0 && !this.telegraphs.some((mark) => lateKinds.includes(mark.kind))) {
+        const owner = [...this.livingEnemies()].sort((a, b) => b.hp - a.hp)[0];
+        if (owner) {
+          const before = this.telegraphs.length;
+          this.queueLatePattern(owner, regionalPattern, false);
+          for (const mark of this.telegraphs.slice(before)) {
+            mark.environmental = true;
+            mark.label = `FIELD: ${mark.label ?? "HAZARD"}`;
+          }
+        }
+        this.regionHazardTimer = 10.5 + (this.stage.id % 3) * 1.4;
+      }
+    }
   }
 
   private updateEffects(unit: Unit, dt: number): void {
@@ -3910,12 +3930,12 @@ export class Battle {
   }
 
   private latePatternOf(kind: LateEnemyKind): Telegraph["kind"] {
-    if (kind === "cinderkin" || kind === "cindermaw") return "eruption";
-    if (kind === "briarback" || kind === "verdantcolossus") return "roots";
-    if (kind === "gloomwing" || kind === "nightmother") return "eclipse";
-    if (kind === "reliquaryguard" || kind === "reliquaryseraph") return "beam";
-    if (kind === "shardling" || kind === "skybreaker") return "shatter";
-    if (kind === "bloodreaver" || kind === "bloodmoonstag") return "bloodmoon";
+    if (["cinderkin", "ashenhound", "furnacecantor", "kilntyrant", "cindermaw"].includes(kind)) return "eruption";
+    if (["briarback", "sporeseer", "vinelurker", "rootboundmatriarch", "verdantcolossus"].includes(kind)) return "roots";
+    if (["gloomwing", "glassjackal", "mirageseer", "dunerevenant", "nightmother"].includes(kind)) return "eclipse";
+    if (["reliquaryguard", "censerwraith", "oathbreaker", "gildedinquisitor", "reliquaryseraph"].includes(kind)) return "beam";
+    if (["shardling", "galeroc", "thundermonk", "tempestroc", "skybreaker"].includes(kind)) return "shatter";
+    if (["bloodreaver", "briarwitch", "moonfang", "redhuntsman", "bloodmoonstag"].includes(kind)) return "bloodmoon";
     return "void";
   }
 
@@ -4051,12 +4071,19 @@ export class Battle {
       boss.phase = nextPhase;
       boss.supportTimer = Math.min(boss.supportTimer, nextPhase === 1 ? 1.15 : 0.7);
       const phaseWords: Record<LateBossKind, string[]> = {
+        kilntyrant: ["THE CRUCIBLE WALKS", "IRON SHELL CRACKED"],
         cindermaw: ["THE FURNACE OPENS", "THE CRUST SPLITS", "ALL FIRES BELOW"],
+        rootboundmatriarch: ["THE NURSERY WAKES", "HEARTROOT EXPOSED"],
         verdantcolossus: ["THE GROVE WALKS", "ROOTS TAKE HOLD", "HEARTWOOD BARED"],
+        dunerevenant: ["THE FALSE KING RIDES", "THE MIRAGE BREAKS"],
         nightmother: ["THE VEIL DESCENDS", "A SECOND MOON", "NIGHT WITHOUT LAMPS"],
+        gildedinquisitor: ["THE TRIAL BEGINS", "JUDGMENT REVERSED"],
         reliquaryseraph: ["THE VOW AWAKES", "VERDICT IN GOLD", "SEVEN WINGS BURN"],
+        tempestroc: ["THE ROC DESCENDS", "THUNDER-WINGS BROKEN"],
         skybreaker: ["THE PEAK TAKES FLIGHT", "CRYSTAL STORM", "THE SKY COMES APART"],
+        redhuntsman: ["THE HORN NAMES PREY", "THE HUNTER STARVES"],
         bloodmoonstag: ["THE HUNT NAMES YOU", "THE RED TRAIL", "NO QUARRY ESCAPES"],
+        lastpilgrim: ["THE PILGRIM RETURNS", "NO ROAD BEHIND"],
         wayeater: ["THE HORIZON OPENS", "IT REMEMBERS FIRE", "IT REMEMBERS NIGHT", "THE LAST ROAD"],
       };
       const words = phaseWords[boss.enemyKind][Math.min(nextPhase - 1, phaseWords[boss.enemyKind].length - 1)];
@@ -4074,18 +4101,25 @@ export class Battle {
         }
         boss.stats.armor = Math.max(0.05, boss.stats.armor - 0.035 * crossedPhases);
         const attendant: Partial<Record<LateBossKind, EnemyKind>> = {
+          kilntyrant: "ashenhound",
           cindermaw: "cinderkin",
+          rootboundmatriarch: "vinelurker",
           verdantcolossus: "briarback",
+          dunerevenant: "glassjackal",
           nightmother: "gloomwing",
+          gildedinquisitor: "censerwraith",
           reliquaryseraph: "reliquaryguard",
+          tempestroc: "galeroc",
           skybreaker: "shardling",
+          redhuntsman: "moonfang",
           bloodmoonstag: "bloodreaver",
+          lastpilgrim: "rifthound",
           wayeater: "nullwalker",
         };
         const attendantScale = boss.enemyKind === "reliquaryseraph"
           ? 0.68
           : boss.enemyKind === "wayeater"
-            ? 0.58
+            ? 0.45
             : 0.82;
         // Burst damage may cross more than one threshold in a frame. Preserve
         // every phase's reinforcement instead of silently skipping the middle.
@@ -4111,7 +4145,9 @@ export class Battle {
       this.lateBossCycles.set(boss.id, cursor + 1);
     }
     this.queueLatePattern(boss, pattern, true);
-    boss.supportTimer = Math.max(4.25, 7.4 - boss.phase * 0.72);
+    boss.supportTimer = boss.enemyKind === "wayeater"
+      ? Math.max(5.15, 7.9 - boss.phase * 0.62)
+      : Math.max(4.25, 7.4 - boss.phase * 0.72);
     return true;
   }
 
@@ -5384,7 +5420,7 @@ export class Battle {
     const lateKinds: Telegraph["kind"][] = ["eruption", "roots", "eclipse", "beam", "shatter", "bloodmoon", "void"];
     if (!lateKinds.includes(mark.kind)) return false;
     const owner = mark.owner;
-    const boss = owner === this.bossRef && isLateBossKind(owner.enemyKind);
+    const boss = !mark.environmental && owner === this.bossRef && isLateBossKind(owner.enemyKind);
     const angle = mark.angle ?? 0;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
@@ -5443,9 +5479,10 @@ export class Battle {
       const patternScale = owner.enemyKind === "reliquaryseraph" && mark.kind === "beam"
         ? 0.84
         : owner.enemyKind === "wayeater"
-          ? 0.68
+          ? 0.56
           : 1;
-      this.damage(hero, owner.stats.damage * multipliers[mark.kind] * patternScale, owner, {
+      const sourceDamage = mark.environmental ? 14 + this.stage.scale * 2.5 : owner.stats.damage;
+      this.damage(hero, sourceDamage * multipliers[mark.kind] * patternScale, mark.environmental ? null : owner, {
         spell: mark.kind !== "bloodmoon",
         color: colors[mark.kind],
         element: elements[mark.kind],
@@ -5463,7 +5500,7 @@ export class Battle {
       else if (mark.kind === "void") hero.effects.push(makeEffect("vulnerable", boss ? 3.4 : 2, boss ? 0.3 : 0.18, owner));
     }
 
-    if (mark.kind === "bloodmoon") {
+    if (mark.kind === "bloodmoon" && !mark.environmental) {
       const length = mark.length ?? mark.radius * 5;
       const arrive = this.clampToField({ x: mark.x + Math.cos(angle) * length * 0.5, y: mark.y + Math.sin(angle) * length * 0.5 }, owner.radius);
       owner.x = arrive.x;
@@ -5839,7 +5876,8 @@ export class Battle {
     }
     if (ranged) {
       const coastalCaster = attacker.enemyKind === "saltwitch" || attacker.enemyKind === "stormcaller" || attacker.enemyKind === "conchseer";
-      const weapon = attacker.team === "hero" ? attacker.stats.weapon : attacker.enemyKind === "shaman" || attacker.enemyKind === "bonecaller" || coastalCaster ? "staff" : "bow";
+      const lateCaster = ["cinderkin", "furnacecantor", "sporeseer", "gloomwing", "mirageseer", "censerwraith", "shardling", "briarwitch", "nullwalker", "waylostarcher"].includes(attacker.enemyKind ?? "");
+      const weapon = attacker.team === "hero" ? attacker.stats.weapon : attacker.enemyKind === "shaman" || attacker.enemyKind === "bonecaller" || coastalCaster || lateCaster ? "staff" : "bow";
       const isArcane = weapon === "staff";
       const isHoly = weapon === "stave";
       const missile = {
@@ -5851,7 +5889,7 @@ export class Battle {
         damage: dmg,
         from: attacker,
         kind: (isArcane ? "bolt" : isHoly ? "spark" : "arrow") as "bolt" | "spark" | "arrow",
-        color: isArcane ? (coastalCaster ? "#a9e1d8" : attacker.enemyKind === "shaman" ? "#7de8c9" : "#b48ae8") : isHoly ? "#ffe9a3" : "#e8d9b0",
+        color: isArcane ? (coastalCaster ? "#a9e1d8" : lateCaster ? ENEMIES[attacker.enemyKind!].trim : attacker.enemyKind === "shaman" ? "#7de8c9" : "#b48ae8") : isHoly ? "#ffe9a3" : "#e8d9b0",
         heals: false,
         life: 3,
       };

@@ -1,27 +1,48 @@
 import type { ElementId } from "./types";
 
 /**
- * The back half of the road introduces one readable field role and one bespoke
- * boss per region. Keeping these blueprints together makes the campaign's
+ * Every late-road region owns a three-foe field ecosystem, a named elite, and
+ * a bespoke final boss. Keeping the blueprints together makes the campaign's
  * elemental vocabulary inspectable instead of scattering it through AI code.
  */
 export const LATE_FOE_KINDS = [
   "cinderkin",
+  "ashenhound",
+  "furnacecantor",
   "briarback",
+  "sporeseer",
+  "vinelurker",
   "gloomwing",
+  "glassjackal",
+  "mirageseer",
   "reliquaryguard",
+  "censerwraith",
+  "oathbreaker",
   "shardling",
+  "galeroc",
+  "thundermonk",
   "bloodreaver",
+  "briarwitch",
+  "moonfang",
   "nullwalker",
+  "waylostarcher",
+  "rifthound",
 ] as const;
 
 export const LATE_BOSS_KINDS = [
+  "kilntyrant",
   "cindermaw",
+  "rootboundmatriarch",
   "verdantcolossus",
+  "dunerevenant",
   "nightmother",
+  "gildedinquisitor",
   "reliquaryseraph",
+  "tempestroc",
   "skybreaker",
+  "redhuntsman",
   "bloodmoonstag",
+  "lastpilgrim",
   "wayeater",
 ] as const;
 
@@ -65,6 +86,16 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
     weakTo: "frost",
     resists: "flame",
   },
+  ashenhound: {
+    name: "Ashen Hound", maxHp: 82, damage: 18, range: 31, attackCooldown: 1.1, speed: 145, armor: 0.02, radius: 14, xp: 42,
+    body: "#4d3733", trim: "#ff8f4f", lore: "Kiln-dogs whose ribs glow brighter when they scent fear.",
+    habit: "Fast flankers. Their ember pounce blooms under isolated heroes, so keep the band within rescuing distance.", weakTo: "frost", resists: "flame",
+  },
+  furnacecantor: {
+    name: "Furnace Cantor", maxHp: 76, damage: 12, range: 210, attackCooldown: 2.15, speed: 58, armor: 0.04, radius: 15, xp: 48,
+    body: "#592f2b", trim: "#ffd06b", lore: "A masked chorister who keeps dead furnaces singing.",
+    habit: "A fragile back-line caster. Interrupt the hymn before its eruption divides your formation.", weakTo: "frost", resists: "flame",
+  },
   briarback: {
     name: "Briarback",
     maxHp: 176,
@@ -81,6 +112,16 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
     habit: "Pins a hero with roots before lumbering into melee. Fire cuts through its living armor.",
     weakTo: "flame",
     resists: "earth",
+  },
+  sporeseer: {
+    name: "Spore Seer", maxHp: 80, damage: 11, range: 205, attackCooldown: 2.25, speed: 55, armor: 0.05, radius: 15, xp: 51,
+    body: "#3e5947", trim: "#d6ea82", lore: "Its fruiting crown dreams tomorrow's battlefield and roots the company inside it.",
+    habit: "A back-line controller. Its spore-ring punishes clustered heroes; close the distance early.", weakTo: "flame", resists: "earth",
+  },
+  vinelurker: {
+    name: "Vine Lurker", maxHp: 96, damage: 19, range: 33, attackCooldown: 1.25, speed: 132, armor: 0.08, radius: 14, xp: 49,
+    body: "#284b3c", trim: "#8fcf6a", lore: "A panther-shaped snarl of creepers that hunts by feeling footsteps through the soil.",
+    habit: "A quick back-line hunter. Move out of its root mark, then punish it before it circles again.", weakTo: "flame", resists: "earth",
   },
   gloomwing: {
     name: "Gloomwing",
@@ -99,6 +140,16 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
     weakTo: "radiant",
     resists: "shadow",
   },
+  glassjackal: {
+    name: "Glass Jackal", maxHp: 88, damage: 20, range: 32, attackCooldown: 1.18, speed: 142, armor: 0.04, radius: 14, xp: 53,
+    body: "#3a3852", trim: "#d8c7ff", lore: "It runs one pace ahead of its reflection and bites from whichever image you ignored.",
+    habit: "A fast executioner. The violet eclipse around its prey silences anyone who remains on the rim.", weakTo: "radiant", resists: "shadow",
+  },
+  mirageseer: {
+    name: "Mirage Seer", maxHp: 74, damage: 14, range: 225, attackCooldown: 2.0, speed: 62, armor: 0.03, radius: 15, xp: 55,
+    body: "#51476b", trim: "#edddff", lore: "A veiled exile who remembers roads the desert has not yet invented.",
+    habit: "A long-range controller. Step into the eclipse's quiet center, then break the seer before the next omen.", weakTo: "radiant", resists: "shadow",
+  },
   reliquaryguard: {
     name: "Reliquary Guard",
     maxHp: 205,
@@ -115,6 +166,16 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
     habit: "Draws a narrow sun-line across the field. Step out of the gold lane before it fires.",
     weakTo: "shadow",
     resists: "radiant",
+  },
+  censerwraith: {
+    name: "Censer Wraith", maxHp: 82, damage: 15, range: 215, attackCooldown: 2.05, speed: 64, armor: 0.08, radius: 15, xp: 59,
+    body: "#655d58", trim: "#f4d997", lore: "Incense and old judgment gathered into the shape of a priest.",
+    habit: "A ranged lane-maker. Cross the gold line before the censer completes its swing.", weakTo: "shadow", resists: "radiant",
+  },
+  oathbreaker: {
+    name: "Oathbreaker", maxHp: 168, damage: 22, range: 38, attackCooldown: 1.55, speed: 76, armor: 0.27, radius: 20, xp: 62,
+    body: "#6f665b", trim: "#d9b866", lore: "A knight sealed inside the armor it abandoned at the altar.",
+    habit: "An armored bruiser whose verdict-line protects the ranged dead behind it. Flank or use Shadow damage.", weakTo: "shadow", resists: "radiant",
   },
   shardling: {
     name: "Shardling",
@@ -133,6 +194,16 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
     weakTo: "earth",
     resists: "storm",
   },
+  galeroc: {
+    name: "Gale Roc", maxHp: 92, damage: 21, range: 36, attackCooldown: 1.35, speed: 148, armor: 0.03, radius: 17, xp: 60,
+    body: "#41677b", trim: "#c9f7ff", lore: "A cliff-eagle with thunder trapped beneath each pinion.",
+    habit: "A swift diver. Its cross-shaped shock leaves diagonal escape lanes—do not dodge straight back.", weakTo: "earth", resists: "storm",
+  },
+  thundermonk: {
+    name: "Thunder Monk", maxHp: 146, damage: 24, range: 42, attackCooldown: 1.5, speed: 86, armor: 0.18, radius: 18, xp: 64,
+    body: "#526a79", trim: "#f1fdff", lore: "A summit ascetic who replaced breath with the rhythm of lightning.",
+    habit: "A durable skirmisher. Move diagonally through its shatter-cross, then strike while the stance resets.", weakTo: "earth", resists: "storm",
+  },
   bloodreaver: {
     name: "Blood Reaver",
     maxHp: 112,
@@ -150,6 +221,16 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
     weakTo: "frost",
     resists: "blood",
   },
+  briarwitch: {
+    name: "Briar Witch", maxHp: 86, damage: 16, range: 210, attackCooldown: 2.1, speed: 61, armor: 0.05, radius: 15, xp: 66,
+    body: "#542938", trim: "#f1a08a", lore: "She knots hunters' last promises into thorns and fires them back across the moonlight.",
+    habit: "A back-line hunter. Her marked lane seeks the weakest hero; break line and pressure her quickly.", weakTo: "frost", resists: "blood",
+  },
+  moonfang: {
+    name: "Moonfang", maxHp: 104, damage: 25, range: 32, attackCooldown: 1.08, speed: 152, armor: 0.05, radius: 15, xp: 64,
+    body: "#4d2834", trim: "#ff8176", lore: "A red wolf that drinks the shadow cast by a wounded traveler.",
+    habit: "The region's fastest hunter. Its marked charge heals it if it reaches the weakest hero.", weakTo: "frost", resists: "blood",
+  },
   nullwalker: {
     name: "Nullwalker",
     maxHp: 124,
@@ -166,6 +247,51 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
     habit: "Opens a small void that leaves survivors vulnerable. Its dark center is not a safe zone.",
     weakTo: "radiant",
     resists: "shadow",
+  },
+  waylostarcher: {
+    name: "Waylost Archer", maxHp: 84, damage: 21, range: 235, attackCooldown: 2.0, speed: 67, armor: 0.05, radius: 15, xp: 72,
+    body: "#343044", trim: "#c3b5e9", lore: "Its arrows arrive from roads that no longer connect to this world.",
+    habit: "A distant executioner. Its void mark leaves survivors vulnerable; rush it before the road opens again.", weakTo: "radiant", resists: "shadow",
+  },
+  rifthound: {
+    name: "Rift Hound", maxHp: 112, damage: 26, range: 34, attackCooldown: 1.2, speed: 146, armor: 0.08, radius: 16, xp: 70,
+    body: "#262337", trim: "#a99ae0", lore: "A four-legged absence held together by the memory of pursuit.",
+    habit: "A fast flanker that opens voids beneath clustered heroes. Split briefly, then collapse on it.", weakTo: "radiant", resists: "shadow",
+  },
+  kilntyrant: {
+    name: "The Kiln Tyrant", maxHp: 990, damage: 26, range: 48, attackCooldown: 1.65, speed: 70, armor: 0.2, radius: 28, xp: 150,
+    body: "#66342b", trim: "#ffb253", lore: "The foreman remained when the foundry burned, fused forever to its walking crucible.",
+    habit: "A true elite. Empty its eruption marks to crack its iron shell and stagger the furnace within.", weakTo: "frost", resists: "flame",
+  },
+  rootboundmatriarch: {
+    name: "Rootbound Matriarch", maxHp: 1140, damage: 25, range: 48, attackCooldown: 1.9, speed: 52, armor: 0.3, radius: 31, xp: 170,
+    body: "#3d5439", trim: "#b9dc78", lore: "Mother of the walking thicket, dragging a nursery of hungry roots behind her.",
+    habit: "Her cages punish a scattered band. Regroup through one opening and burn the exposed heartwood.", weakTo: "flame", resists: "earth",
+  },
+  dunerevenant: {
+    name: "Dune Revenant", maxHp: 1050, damage: 28, range: 170, attackCooldown: 1.8, speed: 83, armor: 0.16, radius: 29, xp: 185,
+    body: "#403650", trim: "#d7c1f3", lore: "A caravan king reflected once too often in the black glass dunes.",
+    habit: "Its false eclipse reverses safe space between phases. Read the ring instead of following habit.", weakTo: "radiant", resists: "shadow",
+  },
+  gildedinquisitor: {
+    name: "The Gilded Inquisitor", maxHp: 820, damage: 30, range: 185, attackCooldown: 2.0, speed: 58, armor: 0.28, radius: 30, xp: 205,
+    body: "#746a57", trim: "#ffe195", lore: "The last judge of the Reliquary, still conducting trials for a congregation of dust.",
+    habit: "Crossing verdict-lines leave narrow dark seams. Stand in those seams, then answer the judgment.", weakTo: "shadow", resists: "radiant",
+  },
+  tempestroc: {
+    name: "The Tempest Roc", maxHp: 1140, damage: 32, range: 64, attackCooldown: 1.55, speed: 105, armor: 0.16, radius: 32, xp: 225,
+    body: "#416477", trim: "#c7f6ff", lore: "The summit's oldest thunderhead learned wings and began collecting climbers.",
+    habit: "Its cross-shaped shatters overlap with the storm. Dodge diagonally and turn lightning against it.", weakTo: "earth", resists: "storm",
+  },
+  redhuntsman: {
+    name: "The Red Huntsman", maxHp: 1170, damage: 34, range: 46, attackCooldown: 1.35, speed: 112, armor: 0.14, radius: 29, xp: 245,
+    body: "#542733", trim: "#f47a70", lore: "The Stag's favored rider, wearing the antlers of every quarry that begged.",
+    habit: "It names the weakest hero and heals on contact. Make the marked charge miss to starve the hunt.", weakTo: "frost", resists: "blood",
+  },
+  lastpilgrim: {
+    name: "The Last Pilgrim", maxHp: 1180, damage: 32, range: 175, attackCooldown: 1.8, speed: 72, armor: 0.2, radius: 31, xp: 275,
+    body: "#302b40", trim: "#c3b2e8", lore: "The final traveler before the map ended, walking backward to warn a world already gone.",
+    habit: "Its voids leave survivors vulnerable and multiply after the threshold. Keep moving toward solid ground.", weakTo: "radiant", resists: "shadow",
   },
   cindermaw: {
     name: "Cindermaw, Furnace Below",
@@ -272,7 +398,10 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
   wayeater: {
     name: "The Way-Eater",
     maxHp: 2680,
-    damage: 29,
+    // The finale layers seven remembered arena patterns and three attendant
+    // thresholds. Keep its basic hit below the specialist bosses so learning
+    // the sequence—not unavoidable attrition—decides the encounter.
+    damage: 25,
     range: 180,
     attackCooldown: 1.8,
     speed: 68,
@@ -289,12 +418,19 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
 };
 
 export const LATE_BOSS_PHASES: Record<LateBossKind, number[]> = {
+  kilntyrant: [0.5],
   cindermaw: [0.68, 0.34],
+  rootboundmatriarch: [0.5],
   verdantcolossus: [0.68, 0.34],
+  dunerevenant: [0.5],
   nightmother: [0.66, 0.33],
+  gildedinquisitor: [0.5],
   reliquaryseraph: [0.7, 0.36],
+  tempestroc: [0.5],
   skybreaker: [0.65, 0.3],
+  redhuntsman: [0.5],
   bloodmoonstag: [0.67, 0.33],
+  lastpilgrim: [0.5],
   wayeater: [0.75, 0.5, 0.25],
 };
 
