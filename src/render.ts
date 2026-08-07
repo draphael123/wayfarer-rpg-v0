@@ -2966,6 +2966,15 @@ const ENEMY_COLORS: Record<string, { body: string; shade: string; trim: string }
   drummer: { body: "#a05c3c", shade: "#7c462e44", trim: "#e8a05a" },
   warbanner: { body: "#9a2f28", shade: "#742420", trim: "#5a4a52" },
   wyrm: { body: "#8fb8cc", shade: "#6f98ac", trim: "#dcedf5" },
+  brinecrawler: { body: "#587f78", shade: "#3e625e", trim: "#a9c6ac" },
+  kelpbound: { body: "#496e59", shade: "#345243", trim: "#8ea36f" },
+  saltwitch: { body: "#7ca1a0", shade: "#587b7c", trim: "#e2d6a5" },
+  galeharrier: { body: "#70899a", shade: "#526b7b", trim: "#d6e4df" },
+  bellkeeper: { body: "#526b70", shade: "#394f54", trim: "#b59458" },
+  reefhound: { body: "#467b82", shade: "#315c63", trim: "#b2d2c7" },
+  stormcaller: { body: "#506a8b", shade: "#394e6b", trim: "#b7e5df" },
+  bellwidow: { body: "#526e75", shade: "#385158", trim: "#d2ae67" },
+  stormjaw: { body: "#315f69", shade: "#20464f", trim: "#9ed2c7" },
 };
 
 function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
@@ -2977,7 +2986,13 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
   const leapK = unit.leap ? Math.min(1, unit.leap.t / unit.leap.dur) : 0;
   const leapLift = unit.leap ? Math.sin(leapK * Math.PI) * r * 2.4 : 0;
   const gy = pose.groundY - pose.bounce * 0.7 - leapLift;
-  const colors = isAlpha ? { body: "#3f3a4d", trim: "#292534" } : unit.enemyKind === "frostwolf" ? ENEMY_COLORS.frostwolf : ENEMY_COLORS.wolf;
+  const colors = isAlpha
+    ? { body: "#3f3a4d", trim: "#292534" }
+    : unit.enemyKind === "frostwolf"
+      ? ENEMY_COLORS.frostwolf
+      : unit.enemyKind === "reefhound"
+        ? ENEMY_COLORS.reefhound
+        : ENEMY_COLORS.wolf;
   const stretchB = (isAlpha ? 1.18 : 1) * (unit.leap ? 1.22 : 1); // stretched out mid-flight
   drawShadow(ctx, unit, pose.bounce * 0.7 + leapLift);
   if (unit.leap) {
@@ -3182,7 +3197,9 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
 const REGION_TRIM: Record<number, string> = { 2: "#566047", 3: "#463c34", 4: "#46536b", 5: "#5e3a44", 6: "#9ab4c4", 7: "#8aa8ba", 8: "#7ba4b8", 9: "#5a7a94", 10: "#98a8b4", 11: "#6a84a0" };
 
 function regionalColors(kind: string): { body: string; shade: string; trim: string } {
-  const base = ENEMY_COLORS[kind];
+  // Never let presentation data take down the simulation. New enemies receive
+  // a readable neutral palette until their bespoke colors are added above.
+  const base = ENEMY_COLORS[kind] ?? { body: "#6f7780", shade: "#4d555e", trim: "#c9d0d2" };
   const trim = REGION_TRIM[regionStage];
   if (!trim || kind === "warlord" || kind === "ogre" || kind === "rimeheart") return base;
   return { ...base, trim };
@@ -3428,7 +3445,7 @@ function drawWyrm(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
 
 function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
   const kind = unit.enemyKind!;
-  if (kind === "wolf" || kind === "alpha" || kind === "frostwolf") {
+  if (kind === "wolf" || kind === "alpha" || kind === "frostwolf" || kind === "reefhound") {
     drawWolf(ctx, unit, time);
     return;
   }
@@ -3436,7 +3453,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     drawIceWisp(ctx, unit, time);
     return;
   }
-  if (kind === "harrier") {
+  if (kind === "harrier" || kind === "galeharrier") {
     drawHarrier(ctx, unit, time);
     return;
   }
