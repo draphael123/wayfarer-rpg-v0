@@ -259,17 +259,17 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
     habit: "A fast flanker that opens voids beneath clustered heroes. Split briefly, then collapse on it.", weakTo: "radiant", resists: "shadow",
   },
   kilntyrant: {
-    name: "The Kiln Tyrant", maxHp: 990, damage: 26, range: 48, attackCooldown: 1.65, speed: 70, armor: 0.2, radius: 28, xp: 150,
+    name: "The Kiln Tyrant", maxHp: 1525, damage: 26, range: 48, attackCooldown: 1.65, speed: 70, armor: 0.2, radius: 28, xp: 150,
     body: "#66342b", trim: "#ffb253", lore: "The foreman remained when the foundry burned, fused forever to its walking crucible.",
     habit: "A true elite. Empty its eruption marks to crack its iron shell and stagger the furnace within.", weakTo: "frost", resists: "flame",
   },
   rootboundmatriarch: {
-    name: "Rootbound Matriarch", maxHp: 1140, damage: 25, range: 48, attackCooldown: 1.9, speed: 52, armor: 0.3, radius: 31, xp: 170,
+    name: "Rootbound Matriarch", maxHp: 2310, damage: 25, range: 48, attackCooldown: 1.9, speed: 52, armor: 0.3, radius: 31, xp: 170,
     body: "#3d5439", trim: "#b9dc78", lore: "Mother of the walking thicket, dragging a nursery of hungry roots behind her.",
     habit: "Her cages punish a scattered band. Regroup through one opening and burn the exposed heartwood.", weakTo: "flame", resists: "earth",
   },
   dunerevenant: {
-    name: "Dune Revenant", maxHp: 1050, damage: 28, range: 170, attackCooldown: 1.8, speed: 83, armor: 0.16, radius: 29, xp: 185,
+    name: "Dune Revenant", maxHp: 1900, damage: 28, range: 170, attackCooldown: 1.8, speed: 83, armor: 0.16, radius: 29, xp: 185,
     body: "#403650", trim: "#d7c1f3", lore: "A caravan king reflected once too often in the black glass dunes.",
     habit: "Its false eclipse reverses safe space between phases. Read the ring instead of following habit.", weakTo: "radiant", resists: "shadow",
   },
@@ -279,17 +279,17 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
     habit: "Crossing verdict-lines leave narrow dark seams. Stand in those seams, then answer the judgment.", weakTo: "shadow", resists: "radiant",
   },
   tempestroc: {
-    name: "The Tempest Roc", maxHp: 1140, damage: 32, range: 64, attackCooldown: 1.55, speed: 105, armor: 0.16, radius: 32, xp: 225,
+    name: "The Tempest Roc", maxHp: 1260, damage: 32, range: 64, attackCooldown: 1.55, speed: 105, armor: 0.16, radius: 32, xp: 225,
     body: "#416477", trim: "#c7f6ff", lore: "The summit's oldest thunderhead learned wings and began collecting climbers.",
     habit: "Its cross-shaped shatters overlap with the storm. Dodge diagonally and turn lightning against it.", weakTo: "earth", resists: "storm",
   },
   redhuntsman: {
-    name: "The Red Huntsman", maxHp: 1170, damage: 34, range: 46, attackCooldown: 1.35, speed: 112, armor: 0.14, radius: 29, xp: 245,
+    name: "The Red Huntsman", maxHp: 2205, damage: 34, range: 46, attackCooldown: 1.35, speed: 112, armor: 0.14, radius: 29, xp: 245,
     body: "#542733", trim: "#f47a70", lore: "The Stag's favored rider, wearing the antlers of every quarry that begged.",
     habit: "It names the weakest hero and heals on contact. Make the marked charge miss to starve the hunt.", weakTo: "frost", resists: "blood",
   },
   lastpilgrim: {
-    name: "The Last Pilgrim", maxHp: 1180, damage: 32, range: 175, attackCooldown: 1.8, speed: 72, armor: 0.2, radius: 31, xp: 275,
+    name: "The Last Pilgrim", maxHp: 2145, damage: 32, range: 175, attackCooldown: 1.8, speed: 72, armor: 0.2, radius: 31, xp: 275,
     body: "#302b40", trim: "#c3b2e8", lore: "The final traveler before the map ended, walking backward to warn a world already gone.",
     habit: "Its voids leave survivors vulnerable and multiply after the threshold. Keep moving toward solid ground.", weakTo: "radiant", resists: "shadow",
   },
@@ -329,7 +329,7 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
   },
   nightmother: {
     name: "Nightmother of the Veil",
-    maxHp: 2685,
+    maxHp: 3400,
     damage: 25,
     range: 190,
     attackCooldown: 1.9,
@@ -380,7 +380,7 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
   },
   bloodmoonstag: {
     name: "The Bloodmoon Stag",
-    maxHp: 3275,
+    maxHp: 3600,
     damage: 32,
     range: 48,
     attackCooldown: 1.45,

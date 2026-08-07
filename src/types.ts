@@ -87,7 +87,11 @@ export type ElementId = "flame" | "frost" | "storm" | "earth" | "venom" | "radia
 
 export type DamageElement = "physical" | ElementId;
 
-export type EffectKind = "stun" | "slow" | "silence" | "taunt" | "shield" | "haste" | "guard" | "burn" | "vulnerable";
+export type EnemyRole = "vanguard" | "tank" | "hunter" | "assassin" | "artillery" | "support" | "controller" | "disruptor" | "summoner";
+
+export type EffectKind =
+  | "stun" | "slow" | "silence" | "taunt" | "shield" | "haste" | "guard" | "burn" | "vulnerable"
+  | "frozen" | "conductive" | "brittle" | "poisoned" | "exposed" | "bleeding" | "shrouded";
 
 export interface StatusEffect {
   kind: EffectKind;
@@ -158,6 +162,10 @@ export interface Unit {
   autoOrder: boolean;
   abilities: AbilityState[];
   effects: StatusEffect[];
+  /** Elemental pressure is readable and temporary: normal attacks build it
+   * slowly, techniques quickly, and crossing 100 triggers a condition. */
+  elementBuildup: Partial<Record<ElementId, number>>;
+  lastBuildElement: ElementId | null;
   // presentation
   facing: 1 | -1;
   bobPhase: number;

@@ -6,6 +6,7 @@ import type {
   DisciplineId,
   ElementId,
   EnemyKind,
+  EnemyRole,
   HeroSave,
   SaveData,
   StageDef,
@@ -1612,6 +1613,11 @@ export interface EnemyDef {
   trim: string;
   lore: string;
   habit: string; // one-line tactical note shown in the bestiary
+  role?: EnemyRole;
+  secondaryRoles?: EnemyRole[];
+  affinity?: ElementId;
+  /** Only these units consume a wave's one-or-two attention slots. */
+  priority?: boolean;
   weakTo?: ElementId;
   resists?: ElementId;
 }
@@ -1799,7 +1805,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     body: "#8fb8cc",
     trim: "#dcedf5",
     lore: "The crown was never the king. Under the Hollow Crown's ice something older coils — the heart of winter itself, wearing the mountain like a shell.",
-    habit: "It circles, it breathes, it hunts beneath the ice. When it breaches, its heart lies bare — that is the whole fight.",
+    habit: "It circles, breathes, and hunts beneath the ice. In its last stand frostfire turns to Flame: answer with Frost while its heart lies bare.",
   },
 
   warbanner: {
@@ -1835,7 +1841,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   },
   alpha: {
     name: "Alpha of Thornwood",
-    maxHp: 2175,
+    maxHp: 3260,
     damage: 19,
     range: 34,
     attackCooldown: 1.1,
@@ -1979,11 +1985,11 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     body: "#735f79", trim: "#e0c79d", lore: "It listens to tomorrow through a shell grown around yesterday's dead.", habit: "Raises pearlescent wards around nearby allies. Break the seer before the shields bury the field.",
   },
   bellwidow: {
-    name: "The Bell Widow", maxHp: 2250, damage: 22, range: 180, attackCooldown: 2.45, speed: 48, armor: 0.22, radius: 32, xp: 190,
+    name: "The Bell Widow", maxHp: 2475, damage: 22, range: 180, attackCooldown: 2.45, speed: 48, armor: 0.22, radius: 32, xp: 190,
     body: "#526e75", trim: "#d2ae67", lore: "Abbess, lighthouse keeper, and last voice of a drowned abbey.", habit: "Each toll floods two lanes and silences stragglers. Gather the whole band in the named quiet lane to stop the clapper and expose her.",
   },
   stormjaw: {
-    name: "Stormjaw", maxHp: 3260, damage: 25, range: 62, attackCooldown: 2.7, speed: 55, armor: 0.26, radius: 40, xp: 260,
+    name: "Stormjaw", maxHp: 3585, damage: 25, range: 62, attackCooldown: 2.7, speed: 55, armor: 0.26, radius: 40, xp: 260,
     body: "#315f69", trim: "#9ed2c7", lore: "The coast was never land. It was only sleeping.", habit: "Bait marked lightning onto its reef plates, run against the undertow, then dodge the breach for a long exposed-heart window.",
   },
   ...LATE_ENEMIES,
@@ -2031,7 +2037,47 @@ const ENEMY_AFFINITIES: Record<EnemyKind, { weakTo: ElementId; resists: ElementI
   ...LATE_ENEMY_AFFINITIES,
 };
 
-for (const kind of Object.keys(ENEMY_AFFINITIES) as EnemyKind[]) Object.assign(ENEMIES[kind], ENEMY_AFFINITIES[kind]);
+export const ENEMY_ROLES: Record<EnemyKind, EnemyRole> = {
+  goblin: "vanguard", wolf: "hunter", archer: "artillery", brute: "tank", ogre: "tank", shaman: "support",
+  bonecaller: "summoner", shambler: "vanguard", stalker: "assassin", shieldbearer: "tank", harrier: "assassin",
+  drummer: "support", warbanner: "support", alpha: "assassin", warlord: "tank",
+  frostwolf: "hunter", icewisp: "artillery", rimetroll: "tank", snowhag: "support", rimeheart: "controller", wyrm: "controller",
+  brinecrawler: "tank", kelpbound: "controller", saltwitch: "support", galeharrier: "assassin", bellkeeper: "support",
+  reefhound: "hunter", stormcaller: "disruptor", wreckgunner: "artillery", stormeel: "controller", conchseer: "support",
+  bellwidow: "controller", stormjaw: "tank",
+  cinderkin: "vanguard", ashenhound: "hunter", furnacecantor: "support", kilntyrant: "tank", cindermaw: "controller",
+  briarback: "tank", sporeseer: "support", vinelurker: "controller", rootboundmatriarch: "summoner", verdantcolossus: "tank",
+  gloomwing: "assassin", glassjackal: "hunter", mirageseer: "artillery", dunerevenant: "controller", nightmother: "summoner",
+  reliquaryguard: "tank", censerwraith: "controller", oathbreaker: "disruptor", gildedinquisitor: "disruptor", reliquaryseraph: "artillery",
+  shardling: "vanguard", galeroc: "hunter", thundermonk: "disruptor", tempestroc: "assassin", skybreaker: "controller",
+  bloodreaver: "vanguard", briarwitch: "support", moonfang: "assassin", redhuntsman: "hunter", bloodmoonstag: "controller",
+  nullwalker: "tank", waylostarcher: "artillery", rifthound: "hunter", lastpilgrim: "summoner", wayeater: "controller",
+};
+
+const ENEMY_SECONDARY_ROLES: Partial<Record<EnemyKind, EnemyRole[]>> = {
+  ogre: ["controller"], alpha: ["summoner"], warlord: ["artillery"], rimeheart: ["tank"], wyrm: ["tank"],
+  bellwidow: ["summoner"], stormjaw: ["controller"], kilntyrant: ["artillery"], cindermaw: ["tank"],
+  rootboundmatriarch: ["controller"], verdantcolossus: ["controller"], dunerevenant: ["assassin"], nightmother: ["artillery"],
+  gildedinquisitor: ["controller"], reliquaryseraph: ["summoner"], tempestroc: ["artillery"], skybreaker: ["tank"],
+  redhuntsman: ["assassin"], bloodmoonstag: ["summoner"], lastpilgrim: ["controller"], wayeater: ["summoner"],
+};
+
+/** Priority is authored rather than inferred from role: an ordinary archer is
+ * artillery pressure, while a Wreck Gunner is a must-answer artillery piece. */
+export const PRIORITY_ENEMIES = new Set<EnemyKind>([
+  "shaman", "bonecaller", "stalker", "snowhag", "saltwitch", "stormcaller", "wreckgunner",
+  "furnacecantor", "sporeseer", "mirageseer", "oathbreaker", "thundermonk", "briarwitch", "waylostarcher",
+]);
+
+for (const kind of Object.keys(ENEMY_AFFINITIES) as EnemyKind[]) {
+  const affinity = ENEMY_AFFINITIES[kind];
+  Object.assign(ENEMIES[kind], affinity, {
+    role: ENEMY_ROLES[kind],
+    secondaryRoles: ENEMY_SECONDARY_ROLES[kind],
+    affinity: affinity.resists,
+    priority: PRIORITY_ENEMIES.has(kind),
+  });
+}
 
 export const STAGES: StageDef[] = [
   {
@@ -2112,7 +2158,7 @@ export const STAGES: StageDef[] = [
     waves: [
       [{ kind: "archer", count: 2 }, { kind: "wolf", count: 2 }, { kind: "stalker", count: 1 }],
       [{ kind: "brute", count: 2 }, { kind: "bonecaller", count: 1 }, { kind: "harrier", count: 1 }],
-      [{ kind: "goblin", count: 4 }, { kind: "archer", count: 2 }, { kind: "bonecaller", count: 1 }, { kind: "stalker", count: 1 }],
+      [{ kind: "goblin", count: 4 }, { kind: "archer", count: 2 }, { kind: "bonecaller", count: 1 }, { kind: "wolf", count: 1 }],
     ],
   },
   {
@@ -2776,8 +2822,9 @@ export interface TalentDef {
   name: string;
   blurb: string; // per-rank effect, human readable
   maxRank: number;
-  tier: 1 | 2 | 3; // deeper tiers unlock with points spent in the tree
+  tier: 1 | 2 | 3 | 4 | 5; // deeper rows unlock at hero-level milestones
   keystone?: boolean; // one-rank talents that change how you fight
+  requires?: string; // direct prerequisite, Diablo-style
 }
 
 export const TALENT_TREES: Record<TalentTree, { name: string; color: string; icon: string }> = {
@@ -2790,55 +2837,83 @@ export const TALENT_TREES: Record<TalentTree, { name: string; color: string; ico
   fortune: { name: "Fortune", color: "#e8c25a", icon: "◈" },
 };
 
-/** Points that must be spent inside a tree before each tier opens. */
-export const TIER_UNLOCK = [0, 5, 12];
+/** Hero levels that open each row. Direct prerequisites still have to be learned. */
+export const TALENT_TIER_LEVELS = [2, 8, 14, 22, 30] as const;
 
 export const TALENTS: TalentDef[] = [
   // MIGHT — hit harder
   { id: "ironGrip", tree: "might", tier: 1, name: "Iron Grip", blurb: "+3% melee damage", maxRank: 5 },
   { id: "slayer", tree: "might", tier: 1, name: "Slayer's Eye", blurb: "+2% melee damage and +2% crit", maxRank: 3 },
-  { id: "battleRoar", tree: "might", tier: 2, name: "Battle Roar", blurb: "Kills whip you into a fury: +35% attack speed for 2.5s", maxRank: 1, keystone: true },
-  { id: "lastStand", tree: "might", tier: 2, name: "Last Stand", blurb: "+8% damage while below 30% health", maxRank: 3 },
-  { id: "cleavingBlows", tree: "might", tier: 3, name: "Cleaving Blows", blurb: "Melee strikes splash 30% damage to other nearby foes", maxRank: 1, keystone: true },
+  { id: "battleRoar", tree: "might", tier: 2, name: "Battle Roar", blurb: "Kills whip you into a fury: +35% attack speed for 2.5s", maxRank: 1, keystone: true, requires: "ironGrip" },
+  { id: "lastStand", tree: "might", tier: 2, name: "Last Stand", blurb: "+8% damage while below 30% health", maxRank: 3, requires: "slayer" },
+  { id: "cleavingBlows", tree: "might", tier: 3, name: "Cleaving Blows", blurb: "Melee strikes splash 30% damage to other nearby foes", maxRank: 1, keystone: true, requires: "battleRoar" },
+  { id: "relentless", tree: "might", tier: 4, name: "Relentless", blurb: "+3% melee damage and +2% attack speed", maxRank: 5, requires: "cleavingBlows" },
+  { id: "warFeast", tree: "might", tier: 4, name: "War Feast", blurb: "Kills restore 2% maximum health", maxRank: 3, requires: "lastStand" },
+  { id: "avatarOfWar", tree: "might", tier: 5, name: "Avatar of War", blurb: "+15% melee damage and +10% maximum health", maxRank: 1, keystone: true, requires: "relentless" },
+  { id: "redHarvest", tree: "might", tier: 5, name: "Red Harvest", blurb: "Kills restore another 8% maximum health", maxRank: 1, keystone: true, requires: "warFeast" },
   // PRECISION — the perfect shot
   { id: "keenEye", tree: "precision", tier: 1, name: "Keen Eye", blurb: "+3% ranged damage", maxRank: 5 },
-  { id: "deadEye", tree: "precision", tier: 2, name: "Dead Eye", blurb: "+3% chance to crit for 60% extra", maxRank: 5 },
-  { id: "huntersMark", tree: "precision", tier: 2, name: "Hunter's Mark", blurb: "+25% damage to foes still at full health", maxRank: 1, keystone: true },
-  { id: "twinArrows", tree: "precision", tier: 2, name: "Twin Arrows", blurb: "Every 4th ranged attack looses two missiles", maxRank: 1, keystone: true },
-  { id: "executioner", tree: "precision", tier: 3, name: "Executioner", blurb: "Foes below a quarter health take double damage from you", maxRank: 1, keystone: true },
-  { id: "huntersRhythm", tree: "precision", tier: 3, name: "Hunter's Rhythm", blurb: "+2% attack speed and move speed", maxRank: 3 },
+  { id: "deadEye", tree: "precision", tier: 2, name: "Dead Eye", blurb: "+3% chance to crit for 60% extra", maxRank: 5, requires: "keenEye" },
+  { id: "huntersMark", tree: "precision", tier: 2, name: "Hunter's Mark", blurb: "+25% damage to foes still at full health", maxRank: 1, keystone: true, requires: "keenEye" },
+  { id: "twinArrows", tree: "precision", tier: 2, name: "Twin Arrows", blurb: "Every 4th ranged attack looses two missiles", maxRank: 1, keystone: true, requires: "keenEye" },
+  { id: "executioner", tree: "precision", tier: 3, name: "Executioner", blurb: "Foes below a quarter health take double damage from you", maxRank: 1, keystone: true, requires: "deadEye" },
+  { id: "huntersRhythm", tree: "precision", tier: 3, name: "Hunter's Rhythm", blurb: "+2% attack speed and move speed", maxRank: 3, requires: "twinArrows" },
+  { id: "puncture", tree: "precision", tier: 4, name: "Puncture", blurb: "+3% ranged damage", maxRank: 5, requires: "executioner" },
+  { id: "patientKiller", tree: "precision", tier: 4, name: "Patient Killer", blurb: "+2% critical chance and +2% ranged damage", maxRank: 3, requires: "huntersRhythm" },
+  { id: "perfectVolley", tree: "precision", tier: 5, name: "Perfect Volley", blurb: "Twin Arrows now fires on every third ranged attack", maxRank: 1, keystone: true, requires: "puncture" },
+  { id: "eagleSoul", tree: "precision", tier: 5, name: "Eagle Soul", blurb: "+12% ranged damage and +6% critical chance", maxRank: 1, keystone: true, requires: "patientKiller" },
   // SORCERY — the burning mind
   { id: "focus", tree: "sorcery", tier: 1, name: "Focus", blurb: "+4% spell power", maxRank: 5 },
   { id: "runeMemory", tree: "sorcery", tier: 1, name: "Rune Memory", blurb: "+2% spell power, -1% cooldowns", maxRank: 5 },
-  { id: "attune", tree: "sorcery", tier: 2, name: "Attunement", blurb: "-3% ability cooldowns", maxRank: 5 },
-  { id: "kindledMind", tree: "sorcery", tier: 2, name: "Kindled Mind", blurb: "Your damaging spells scorch foes for 8 over 3s", maxRank: 1, keystone: true },
-  { id: "archon", tree: "sorcery", tier: 3, name: "Archon", blurb: "+3% spell power and healing power", maxRank: 3 },
+  { id: "attune", tree: "sorcery", tier: 2, name: "Attunement", blurb: "-3% ability cooldowns", maxRank: 5, requires: "focus" },
+  { id: "kindledMind", tree: "sorcery", tier: 2, name: "Kindled Mind", blurb: "Your damaging spells scorch foes for 8 over 3s", maxRank: 1, keystone: true, requires: "runeMemory" },
+  { id: "archon", tree: "sorcery", tier: 3, name: "Archon", blurb: "+3% spell power and healing power", maxRank: 3, requires: "attune" },
+  { id: "deepReservoir", tree: "sorcery", tier: 4, name: "Deep Reservoir", blurb: "+3% spell power and -1% cooldowns", maxRank: 5, requires: "archon" },
+  { id: "arcanePulse", tree: "sorcery", tier: 4, name: "Arcane Pulse", blurb: "+4% spell power", maxRank: 3, requires: "kindledMind" },
+  { id: "spellstorm", tree: "sorcery", tier: 5, name: "Spellstorm", blurb: "Kills reduce all technique cooldowns by 1 second", maxRank: 1, keystone: true, requires: "deepReservoir" },
+  { id: "highArcanum", tree: "sorcery", tier: 5, name: "High Arcanum", blurb: "+15% spell power and -5% cooldowns", maxRank: 1, keystone: true, requires: "arcanePulse" },
   // FAITH — the mender's road
   { id: "springs", tree: "faith", tier: 1, name: "Vital Springs", blurb: "+4% healing power", maxRank: 5 },
   { id: "devotion", tree: "faith", tier: 1, name: "Devotion", blurb: "+2% healing, +1% armor", maxRank: 5 },
-  { id: "aegis", tree: "faith", tier: 2, name: "Lesser Aegis", blurb: "Start battles with an 8 hp ward", maxRank: 5 },
-  { id: "overflow", tree: "faith", tier: 3, name: "Overflow", blurb: "Overhealing spills onto the most wounded other ally", maxRank: 1, keystone: true },
-  { id: "mendersWard", tree: "faith", tier: 3, name: "Mender's Ward", blurb: "Topping off an ally leaves a 10 hp ward on them", maxRank: 1, keystone: true },
+  { id: "aegis", tree: "faith", tier: 2, name: "Lesser Aegis", blurb: "Start battles with an 8 hp ward", maxRank: 5, requires: "devotion" },
+  { id: "overflow", tree: "faith", tier: 3, name: "Overflow", blurb: "Overhealing spills onto the most wounded other ally", maxRank: 1, keystone: true, requires: "springs" },
+  { id: "mendersWard", tree: "faith", tier: 3, name: "Mender's Ward", blurb: "Topping off an ally leaves a 10 hp ward on them", maxRank: 1, keystone: true, requires: "aegis" },
+  { id: "sanctified", tree: "faith", tier: 4, name: "Sanctified", blurb: "+3% healing power and an opening 4 hp ward", maxRank: 5, requires: "mendersWard" },
+  { id: "graceUnderFire", tree: "faith", tier: 4, name: "Grace Under Fire", blurb: "+4% healing power and +0.5% armor", maxRank: 3, requires: "overflow" },
+  { id: "miracle", tree: "faith", tier: 5, name: "Miracle", blurb: "Once per battle, survive a fatal blow at 25% health", maxRank: 1, keystone: true, requires: "sanctified" },
+  { id: "hierophant", tree: "faith", tier: 5, name: "Hierophant", blurb: "+15% healing power and an opening 15 hp ward", maxRank: 1, keystone: true, requires: "graceUnderFire" },
   // BULWARK — stand and be struck
   { id: "oxBlood", tree: "bulwark", tier: 1, name: "Ox Blood", blurb: "+3% max health", maxRank: 5 },
   { id: "thickHide", tree: "bulwark", tier: 1, name: "Thick Hide", blurb: "+1% armor", maxRank: 5 },
-  { id: "stoneSkin", tree: "bulwark", tier: 2, name: "Stone Skin", blurb: "+1.5% armor", maxRank: 5 },
-  { id: "secondBreath", tree: "bulwark", tier: 2, name: "Second Breath", blurb: "Recover 6% health as each new fight begins", maxRank: 1, keystone: true },
-  { id: "juggernaut", tree: "bulwark", tier: 3, name: "Juggernaut", blurb: "Cannot be stunned while above two-thirds health", maxRank: 1, keystone: true },
-  { id: "fortress", tree: "bulwark", tier: 3, name: "Fortress", blurb: "+2% health and +0.5% armor", maxRank: 3 },
+  { id: "stoneSkin", tree: "bulwark", tier: 2, name: "Stone Skin", blurb: "+1.5% armor", maxRank: 5, requires: "thickHide" },
+  { id: "secondBreath", tree: "bulwark", tier: 2, name: "Second Breath", blurb: "Recover 6% health as each new fight begins", maxRank: 1, keystone: true, requires: "oxBlood" },
+  { id: "juggernaut", tree: "bulwark", tier: 3, name: "Juggernaut", blurb: "Cannot be stunned while above two-thirds health", maxRank: 1, keystone: true, requires: "stoneSkin" },
+  { id: "fortress", tree: "bulwark", tier: 3, name: "Fortress", blurb: "+2% health and +0.5% armor", maxRank: 3, requires: "secondBreath" },
+  { id: "ironHeart", tree: "bulwark", tier: 4, name: "Iron Heart", blurb: "+3% maximum health and +0.5% armor", maxRank: 5, requires: "juggernaut" },
+  { id: "retaliation", tree: "bulwark", tier: 4, name: "Retaliation", blurb: "Return 5% of melee damage to the attacker", maxRank: 3, requires: "fortress" },
+  { id: "undying", tree: "bulwark", tier: 5, name: "Undying", blurb: "Once per battle, survive a fatal blow at 15% health", maxRank: 1, keystone: true, requires: "ironHeart" },
+  { id: "livingCitadel", tree: "bulwark", tier: 5, name: "Living Citadel", blurb: "+12% maximum health and +5% armor", maxRank: 1, keystone: true, requires: "retaliation" },
   // SWIFTNESS — never where the blow lands
   { id: "fleetFoot", tree: "swiftness", tier: 1, name: "Fleet Foot", blurb: "+3% move speed", maxRank: 5 },
   { id: "quickHands", tree: "swiftness", tier: 1, name: "Quick Hands", blurb: "+3% attack speed", maxRank: 5 },
-  { id: "surefoot", tree: "swiftness", tier: 2, name: "Surefoot", blurb: "+2% move speed, -1% cooldowns", maxRank: 5 },
-  { id: "warEcho", tree: "swiftness", tier: 2, name: "War Echo", blurb: "-3% ability cooldowns", maxRank: 5 },
-  { id: "windStep", tree: "swiftness", tier: 3, name: "Wind Step", blurb: "Shrug off the first hit of every wave", maxRank: 1, keystone: true },
-  { id: "momentum", tree: "swiftness", tier: 3, name: "Momentum", blurb: "+2% attack speed and +2% move", maxRank: 3 },
+  { id: "surefoot", tree: "swiftness", tier: 2, name: "Surefoot", blurb: "+2% move speed, -1% cooldowns", maxRank: 5, requires: "fleetFoot" },
+  { id: "warEcho", tree: "swiftness", tier: 2, name: "War Echo", blurb: "-3% ability cooldowns", maxRank: 5, requires: "quickHands" },
+  { id: "windStep", tree: "swiftness", tier: 3, name: "Wind Step", blurb: "Shrug off the first hit of every wave", maxRank: 1, keystone: true, requires: "surefoot" },
+  { id: "momentum", tree: "swiftness", tier: 3, name: "Momentum", blurb: "+2% attack speed and +2% move", maxRank: 3, requires: "warEcho" },
+  { id: "tempo", tree: "swiftness", tier: 4, name: "Tempo", blurb: "+2% attack speed and +2% move speed", maxRank: 5, requires: "momentum" },
+  { id: "evasiveFootwork", tree: "swiftness", tier: 4, name: "Evasive Footwork", blurb: "+3% move speed and +0.5% armor", maxRank: 3, requires: "windStep" },
+  { id: "afterimage", tree: "swiftness", tier: 5, name: "Afterimage", blurb: "Wind Step avoids the first two hits of every wave", maxRank: 1, keystone: true, requires: "tempo" },
+  { id: "stormDancer", tree: "swiftness", tier: 5, name: "Storm Dancer", blurb: "+10% attack speed and +10% move speed", maxRank: 1, keystone: true, requires: "evasiveFootwork" },
   // FORTUNE — the road provides
   { id: "luckyCharm", tree: "fortune", tier: 1, name: "Lucky Charm", blurb: "+2% crit", maxRank: 5 },
   { id: "providence", tree: "fortune", tier: 1, name: "Providence", blurb: "Start battles with a 10 hp ward", maxRank: 5 },
-  { id: "deepPockets", tree: "fortune", tier: 2, name: "Deep Pockets", blurb: "+20% gold from every battle", maxRank: 1, keystone: true },
-  { id: "windfall", tree: "fortune", tier: 2, name: "Windfall", blurb: "Your kills shake 3 extra gold loose", maxRank: 1, keystone: true },
-  { id: "gamblersEdge", tree: "fortune", tier: 3, name: "Gambler's Edge", blurb: "+3% crit", maxRank: 3 },
+  { id: "deepPockets", tree: "fortune", tier: 2, name: "Deep Pockets", blurb: "+20% gold from every battle", maxRank: 1, keystone: true, requires: "providence" },
+  { id: "windfall", tree: "fortune", tier: 2, name: "Windfall", blurb: "Your kills shake 3 extra gold loose", maxRank: 1, keystone: true, requires: "luckyCharm" },
+  { id: "gamblersEdge", tree: "fortune", tier: 3, name: "Gambler's Edge", blurb: "+3% crit", maxRank: 3, requires: "windfall" },
+  { id: "loadedDice", tree: "fortune", tier: 4, name: "Loaded Dice", blurb: "+2% critical chance", maxRank: 5, requires: "gamblersEdge" },
+  { id: "scavenger", tree: "fortune", tier: 4, name: "Scavenger's Instinct", blurb: "+5% battle gold", maxRank: 3, requires: "deepPockets" },
+  { id: "fateweaver", tree: "fortune", tier: 5, name: "Fateweaver", blurb: "+5% critical chance and an opening 40 hp ward", maxRank: 1, keystone: true, requires: "loadedDice" },
+  { id: "kingsRansom", tree: "fortune", tier: 5, name: "King's Ransom", blurb: "+25% battle gold", maxRank: 1, keystone: true, requires: "scavenger" },
 ];
 
 export interface TalentRanks {
@@ -2862,23 +2937,23 @@ export interface TalentMods {
 export function talentMods(ranks: TalentRanks | undefined): TalentMods {
   const r = (id: string) => ranks?.[id] ?? 0;
   return {
-    meleeDmg: r("ironGrip") * 0.03 + r("slayer") * 0.02,
-    rangedDmg: r("keenEye") * 0.03,
-    hpPct: r("oxBlood") * 0.03 + r("fortress") * 0.02,
-    armorFlat: r("stoneSkin") * 0.015 + r("thickHide") * 0.01 + r("devotion") * 0.01 + r("fortress") * 0.005,
-    cdr: Math.min(0.45, r("warEcho") * 0.03 + r("attune") * 0.03 + r("runeMemory") * 0.01 + r("surefoot") * 0.01),
-    atkSpeed: r("quickHands") * 0.03 + r("huntersRhythm") * 0.02 + r("momentum") * 0.02,
-    moveSpeed: r("fleetFoot") * 0.03 + r("huntersRhythm") * 0.02 + r("surefoot") * 0.02 + r("momentum") * 0.02,
-    crit: r("deadEye") * 0.03 + r("slayer") * 0.02 + r("luckyCharm") * 0.02 + r("gamblersEdge") * 0.03,
-    spellPower: r("focus") * 0.04 + r("archon") * 0.03 + r("runeMemory") * 0.02,
-    healPower: r("springs") * 0.04 + r("archon") * 0.03 + r("devotion") * 0.02,
-    startShield: r("aegis") * 8 + r("providence") * 10,
+    meleeDmg: r("ironGrip") * 0.03 + r("slayer") * 0.02 + r("relentless") * 0.03 + r("avatarOfWar") * 0.15,
+    rangedDmg: r("keenEye") * 0.03 + r("puncture") * 0.03 + r("patientKiller") * 0.02 + r("eagleSoul") * 0.12,
+    hpPct: r("oxBlood") * 0.03 + r("fortress") * 0.02 + r("ironHeart") * 0.03 + r("avatarOfWar") * 0.1 + r("livingCitadel") * 0.12,
+    armorFlat: r("stoneSkin") * 0.015 + r("thickHide") * 0.01 + r("devotion") * 0.01 + r("fortress") * 0.005 + r("graceUnderFire") * 0.005 + r("ironHeart") * 0.005 + r("evasiveFootwork") * 0.005 + r("livingCitadel") * 0.05,
+    cdr: Math.min(0.45, r("warEcho") * 0.03 + r("attune") * 0.03 + r("runeMemory") * 0.01 + r("surefoot") * 0.01 + r("deepReservoir") * 0.01 + r("highArcanum") * 0.05),
+    atkSpeed: r("quickHands") * 0.03 + r("huntersRhythm") * 0.02 + r("momentum") * 0.02 + r("relentless") * 0.02 + r("tempo") * 0.02 + r("stormDancer") * 0.1,
+    moveSpeed: r("fleetFoot") * 0.03 + r("huntersRhythm") * 0.02 + r("surefoot") * 0.02 + r("momentum") * 0.02 + r("tempo") * 0.02 + r("evasiveFootwork") * 0.03 + r("stormDancer") * 0.1,
+    crit: r("deadEye") * 0.03 + r("slayer") * 0.02 + r("luckyCharm") * 0.02 + r("gamblersEdge") * 0.03 + r("patientKiller") * 0.02 + r("eagleSoul") * 0.06 + r("loadedDice") * 0.02 + r("fateweaver") * 0.05,
+    spellPower: r("focus") * 0.04 + r("archon") * 0.03 + r("runeMemory") * 0.02 + r("deepReservoir") * 0.03 + r("arcanePulse") * 0.04 + r("highArcanum") * 0.15,
+    healPower: r("springs") * 0.04 + r("archon") * 0.03 + r("devotion") * 0.02 + r("sanctified") * 0.03 + r("graceUnderFire") * 0.04 + r("hierophant") * 0.15,
+    startShield: r("aegis") * 8 + r("providence") * 10 + r("sanctified") * 4 + r("hierophant") * 15 + r("fateweaver") * 40,
   };
 }
 
-/** Talent points each hero can spend at a given band level (1 every 2 levels). */
+/** One talent point per hero level after level 1, in the Diablo tradition. */
 export function talentPointBudget(level: number): number {
-  return Math.floor(Math.min(level, MAX_LEVEL) / 2);
+  return Math.max(0, Math.min(level, MAX_LEVEL) - 1);
 }
 
 export function talentPointsSpent(ranks: TalentRanks | undefined): number {

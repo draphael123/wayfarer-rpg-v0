@@ -154,6 +154,7 @@ export class Battle {
   private detonations: { x: number; y: number; at: number; dmg: number; r: number }[] = []; // vengeful elites' last words
   private elementWeakShown = new Set<string>();
   private elementResistShown = new Set<string>();
+  private roleIntroduced = new Set<EnemyKind>();
   private warningScale = 1;
 
   constructor(
@@ -237,6 +238,8 @@ export class Battle {
         autoOrder: false,
         abilities,
         effects: [],
+        elementBuildup: {},
+        lastBuildElement: null,
         facing: 1,
         bobPhase: Math.random() * Math.PI * 2,
         lunge: 0,
@@ -298,7 +301,7 @@ export class Battle {
       calling: null,
       advCalling: null,
       discipline: null,
-      element: null,
+      element: def.affinity ?? null,
       ultCharge: 0,
       entered: false,
       x,
@@ -324,6 +327,8 @@ export class Battle {
       autoOrder: false,
       abilities: [],
       effects: [],
+      elementBuildup: {},
+      lastBuildElement: null,
       facing: -1,
       bobPhase: Math.random() * Math.PI * 2,
       lunge: 0,
@@ -415,8 +420,9 @@ export class Battle {
     const bossWave = this.stage.waves[this.waveIndex].some((e) => BOSS_KINDS.includes(e.kind));
     // bosses stride in alone and at once; the rest trickle through the treeline
     let stagger = 0;
+    const extraAt = this.stage.waves[this.waveIndex].findIndex((entry) => !BOSS_KINDS.includes(entry.kind) && !ENEMIES[entry.kind].priority);
     this.stage.waves[this.waveIndex].forEach((entry, at) => {
-      const count = entry.count + (at === 0 && !BOSS_KINDS.includes(entry.kind) ? this.extraSpawn : 0);
+      const count = entry.count + (at === extraAt ? this.extraSpawn : 0);
       for (let i = 0; i < count; i++) {
         if (BOSS_KINDS.includes(entry.kind)) {
           this.spawnEnemy(entry.kind);
@@ -467,7 +473,10 @@ export class Battle {
     // Wind Step: dodge-ready again at the start of every wave
     for (const hero of this.livingHeroes()) {
       hero.marching = false;
+      hero.elementBuildup = {};
+      hero.lastBuildElement = null;
       if (this.heroTalentRank(hero, "windStep") > 0) this.windstepReady.add(hero.id);
+      if (this.heroTalentRank(hero, "afterimage") > 0) this.armorDodgeReady.add(hero.id);
       // Second Breath: a gulp of air between fights
       if (this.heroTalentRank(hero, "secondBreath") > 0 && hero.hp < hero.stats.maxHp) {
         this.heal(hero, hero.stats.maxHp * 0.06, true, null);
@@ -511,6 +520,8 @@ export class Battle {
 
   private windstepReady = new Set<number>();
   private armorDodgeReady = new Set<number>();
+  private miracleSpent = new Set<number>();
+  private undyingSpent = new Set<number>();
 
   /** The battle-relevant quirk of whatever this hero is wearing. */
   private armorHookOf(unit: Unit): string | null {
@@ -548,6 +559,51 @@ export class Battle {
       (strongest, candidate) => candidate.kind === "haste" && (!strongest || candidate.power > strongest.power) ? candidate : strongest,
       undefined,
     );
+  }
+
+  private setElementCondition(target: Unit, element: ElementId, source: Unit | null): void {
+    const specs: Record<ElementId, { kind: StatusEffect["kind"]; time: number; power: number; label: string }> = {
+      flame: { kind: "burn", time: 4.5, power: target.team === "hero" ? 2.4 : 3.2, label: "BURNING" },
+      frost: { kind: "frozen", time: target.team === "hero" ? 2 : 2.7, power: 0.48, label: "FROZEN" },
+      storm: { kind: "conductive", time: 5.5, power: 0.15, label: "CONDUCTIVE" },
+      earth: { kind: "brittle", time: 6, power: 0.2, label: "BRITTLE" },
+      venom: { kind: "poisoned", time: 6, power: target.team === "hero" ? 1.4 : 2, label: "POISONED" },
+      radiant: { kind: "exposed", time: 5, power: 0.15, label: "EXPOSED" },
+      blood: { kind: "bleeding", time: 5.5, power: target.team === "hero" ? 1.5 : 2.2, label: "BLEEDING" },
+      shadow: { kind: "shrouded", time: 5, power: 0.15, label: "SHROUDED" },
+    };
+    const spec = specs[element];
+    const existing = this.effect(target, spec.kind);
+    if (existing) {
+      existing.time = Math.max(existing.time, spec.time);
+      existing.power = Math.max(existing.power, spec.power);
+      existing.source = source;
+    } else {
+      target.effects.push(makeEffect(spec.kind, spec.time, spec.power, source));
+    }
+    if (element === "frost") {
+      const slow = this.effect(target, "slow");
+      if (slow) { slow.time = Math.max(slow.time, spec.time); slow.power = Math.max(slow.power, spec.power); }
+      else target.effects.push(makeEffect("slow", spec.time, spec.power, source));
+    }
+    this.fx.floatText(target.x, target.y - target.radius * 3 - 18, spec.label, ELEMENT_COLORS[element], 12);
+    this.fx.ring(target.x, target.y, target.radius * 2.1, ELEMENT_COLORS[element], { width: 2.5, life: 0.45 });
+  }
+
+  private applyElementBuildup(target: Unit, element: DamageElement, amount: number, source: Unit | null, spell: boolean, secondary: boolean): void {
+    if (element === "physical" || !source || source.team === target.team || secondary || !target.alive || target.hp <= 0) return;
+    const def = target.enemyKind ? ENEMIES[target.enemyKind] : null;
+    const boss = target.enemyKind ? BOSS_KINDS.includes(target.enemyKind) : false;
+    let gain = (spell ? 24 : 10) + Math.min(24, amount * (spell ? 0.34 : 0.2));
+    if (def?.affinity === element) gain *= 0.7;
+    if (def?.weakTo === element) gain *= 1.15;
+    const threshold = boss ? 165 : 100;
+    const next = Math.min(threshold, (target.elementBuildup[element] ?? 0) + gain);
+    target.elementBuildup[element] = next;
+    target.lastBuildElement = element;
+    if (next < threshold) return;
+    target.elementBuildup[element] = 0;
+    this.setElementCondition(target, element, source);
   }
 
   private speedOf(unit: Unit): number {
@@ -603,6 +659,7 @@ export class Battle {
     opts: { spell?: boolean; color?: string; element?: DamageElement; secondary?: boolean } = {},
   ): void {
     if (!target.alive) return;
+    const damageElement: DamageElement = opts.element ?? source?.element ?? "physical";
     // Wind Step: shrug off the first hit of the wave entirely
     if (target.team === "hero" && this.windstepReady.has(target.id)) {
       this.windstepReady.delete(target.id);
@@ -634,6 +691,33 @@ export class Battle {
         if (Math.random() < 0.2) this.fx.floatText(target.x, target.y - target.radius - 28, "flanked!", "#ffd27d", 10);
       }
     }
+    // Conditions create advantages, never hard locks. Reactions consume the
+    // setup that enabled them so control cannot become permanent.
+    const frozen = this.effect(target, "frozen");
+    const burning = this.effect(target, "burn");
+    const conductive = this.effect(target, "conductive");
+    const brittle = this.effect(target, "brittle");
+    if (damageElement === "flame" && frozen) {
+      rawAmount *= 1.25;
+      target.effects = target.effects.filter((effect) => effect !== frozen && effect.kind !== "slow");
+      this.fx.floatText(target.x, target.y - target.radius * 3 - 22, "THAW SHATTER +25%", ELEMENT_COLORS.flame, 11);
+    } else if (damageElement === "frost" && burning) {
+      rawAmount *= 1.2;
+      target.effects = target.effects.filter((effect) => effect !== burning);
+      this.fx.floatText(target.x, target.y - target.radius * 3 - 22, "QUENCHED +20%", ELEMENT_COLORS.frost, 11);
+    } else if (damageElement === "storm" && conductive) {
+      rawAmount *= 1.15;
+      target.effects = target.effects.filter((effect) => effect !== conductive);
+      target.effects.push(makeEffect("stun", target.team === "hero" ? 0.35 : 0.6, 1, source));
+      this.fx.floatText(target.x, target.y - target.radius * 3 - 22, "SURGE +15%", ELEMENT_COLORS.storm, 11);
+    } else if ((damageElement === "earth" || damageElement === "physical") && brittle) {
+      rawAmount *= 1.2;
+      target.effects = target.effects.filter((effect) => effect !== brittle);
+      this.fx.floatText(target.x, target.y - target.radius * 3 - 22, "FRACTURED +20%", ELEMENT_COLORS.earth, 11);
+    }
+    const exposed = this.effect(target, "exposed");
+    if (exposed) rawAmount *= 1 + exposed.power;
+    if (source && this.effect(source, "shrouded")) rawAmount *= 0.85;
     // a BURNING elite's blows set you alight
     if (source?.affix === "burning" && !opts.spell && target.team === "hero") {
       target.effects.push(makeEffect("burn", 2.5, 3, source));
@@ -647,19 +731,21 @@ export class Battle {
     // Bosses use gentler values so their mechanics, rather than loadout luck,
     // remain the deciding factor.
     if (target.team === "enemy" && target.enemyKind) {
-      const element: DamageElement = opts.element ?? "physical";
+      const element = damageElement;
       const def = ENEMIES[target.enemyKind];
       const boss = BOSS_KINDS.includes(target.enemyKind);
+      const phaseWeakness: ElementId | undefined = target.enemyKind === "wyrm" && target.element === "flame" ? "frost" : def.weakTo;
+      const phaseResistance: ElementId | undefined = target.enemyKind === "wyrm" && target.element === "flame" ? "flame" : def.resists;
       const key = `${target.id}:${element}`;
-      if (def.weakTo === element) {
+      if (phaseWeakness === element) {
         const bonus = boss ? 0.15 : 0.25;
         amount *= 1 + bonus;
         if (!this.elementWeakShown.has(key)) {
           this.elementWeakShown.add(key);
           this.fx.floatText(target.x, target.y - target.radius * 3 - 12, `WEAK +${Math.round(bonus * 100)}%`, ELEMENT_COLORS[element], 12);
         }
-      } else if (def.resists === element) {
-        const reduction = boss ? 0.1 : 0.2;
+      } else if (phaseResistance === element) {
+        const reduction = boss ? 0.1 : 0.15;
         amount *= 1 - reduction;
         if (!this.elementResistShown.has(key)) {
           this.elementResistShown.add(key);
@@ -769,6 +855,10 @@ export class Battle {
     ) {
       this.damage(source, 6, target, { spell: true, color: "#c9a06b" });
     }
+    const retaliation = this.heroTalentRank(target, "retaliation");
+    if (retaliation > 0 && source?.team === "enemy" && source.alive && source.stats.range <= 90 && !opts.spell) {
+      this.damage(source, rawAmount * retaliation * 0.05, target, { spell: true, color: "#d6b37a", secondary: true });
+    }
     // the Seer's foresight: one heavy blow a wave lands soft
     if (target.team === "hero" && this.seerGuard > 0 && amount > target.stats.maxHp * 0.25) {
       amount *= 0.5;
@@ -788,7 +878,21 @@ export class Battle {
     target.hp -= amount;
     if (this.carry && target === this.carry.ogre) this.carry.hurt += amount;
     if (this.tutorialMode && target.team === "hero" && target.hp < 1) target.hp = 1;
+    if (target.team === "hero" && target.hp <= 0 && this.heroTalentRank(target, "miracle") > 0 && !this.miracleSpent.has(target.id)) {
+      this.miracleSpent.add(target.id);
+      target.hp = Math.max(1, Math.round(target.stats.maxHp * 0.25));
+      this.fx.ring(target.x, target.y - 12, 48, "#ffe9a3", { width: 4, life: 0.7 });
+      this.fx.floatText(target.x, target.y - target.radius * 3, "miracle!", "#ffe9a3", 15);
+      audio.play("levelup");
+    } else if (target.team === "hero" && target.hp <= 0 && this.heroTalentRank(target, "undying") > 0 && !this.undyingSpent.has(target.id)) {
+      this.undyingSpent.add(target.id);
+      target.hp = Math.max(1, Math.round(target.stats.maxHp * 0.15));
+      this.fx.burst(target.x, target.y - 10, "#d99b78", 14, 120, { glow: true });
+      this.fx.floatText(target.x, target.y - target.radius * 3, "undying!", "#f0b38e", 15);
+      audio.play("thud");
+    }
     const lethal = target.hp <= 0;
+    this.applyElementBuildup(target, damageElement, amount, source, !!opts.spell, !!opts.secondary);
     if (source && source.team === "hero" && source.heroIndex >= 0 && target.team === "enemy") {
       this.tally(source.heroIndex).dealt += amount;
       if (BOSS_KINDS.includes(target.enemyKind ?? "")) {
@@ -924,6 +1028,7 @@ export class Battle {
 
   heal(target: Unit, amount: number, showText = true, from: Unit | null = null): void {
     if (!target.alive || target.hp >= target.stats.maxHp) return;
+    if (this.effect(target, "poisoned")) amount *= 0.7;
     // spell heals share the potency compensation (channel healing keeps its own pace)
     if (this.castingSpell && from && from.team === "hero") amount *= HEAL_POTENCY;
     if (from?.discipline === "priest") amount *= 1.05;
@@ -1056,6 +1161,14 @@ export class Battle {
       killer.effects = killer.effects.filter((e) => e.kind !== "haste");
       killer.effects.push(makeEffect("haste", 2.5, 1.35, killer));
       this.fx.burst(killer.x, killer.y - 16, "#ffd27d", 8, 90, { glow: true });
+    }
+    if (unit.team === "enemy" && killer?.team === "hero") {
+      const feast = this.heroTalentRank(killer, "warFeast") * 0.02 + this.heroTalentRank(killer, "redHarvest") * 0.08;
+      if (feast > 0) this.heal(killer, killer.stats.maxHp * feast, false, killer);
+      if (this.heroTalentRank(killer, "spellstorm") > 0) {
+        for (const ability of killer.abilities) ability.timer = Math.max(0, ability.timer - 1);
+        this.fx.floatText(killer.x, killer.y - killer.radius * 3, "spellstorm", "#c8a8f0", 11);
+      }
     }
     // Windfall: kills shake loose extra coin
     if (unit.team === "enemy" && killer?.team === "hero" && this.heroTalentRank(killer, "windfall") > 0) {
@@ -3172,7 +3285,7 @@ export class Battle {
       case "cleansing": {
         for (const ally of this.livingHeroes()) {
           this.heal(ally, 14 + attrs.spi * 2.2, true, hero);
-          ally.effects = ally.effects.filter((e) => !["burn", "slow", "silence", "stun", "vulnerable"].includes(e.kind));
+          ally.effects = ally.effects.filter((e) => !["burn", "slow", "silence", "stun", "vulnerable", "frozen", "conductive", "brittle", "poisoned", "exposed", "bleeding", "shrouded"].includes(e.kind));
         }
         this.fx.ring(hero.x, hero.y, 160, "#f0f5d8", { width: 4, life: 0.7 });
         audio.play("spJudgement");
@@ -3561,6 +3674,10 @@ export class Battle {
   }
 
   private updateEffects(unit: Unit, dt: number): void {
+    for (const element of Object.keys(unit.elementBuildup) as ElementId[]) {
+      unit.elementBuildup[element] = Math.max(0, (unit.elementBuildup[element] ?? 0) - dt * 3.5);
+    }
+    if (unit.lastBuildElement && (unit.elementBuildup[unit.lastBuildElement] ?? 0) <= 0) unit.lastBuildElement = null;
     // ember-lined cloth: chill cannot take hold
     if (unit.team === "hero" && this.armorHookOf(unit) === "slowProof") {
       unit.effects = unit.effects.filter((e) => e.kind !== "slow");
@@ -3575,6 +3692,15 @@ export class Battle {
       effect.time -= dt;
       if (effect.kind === "burn") {
         unit.hp -= effect.power * dt;
+        if (unit.hp <= 0) {
+          this.kill(unit, effect.source);
+          return;
+        }
+      }
+      if (effect.kind === "poisoned" || effect.kind === "bleeding") {
+        const moving = unit.moveTarget !== null || unit.leap !== null;
+        const motionMult = effect.kind === "bleeding" && moving ? 1.6 : 1;
+        unit.hp -= effect.power * motionMult * dt;
         if (unit.hp <= 0) {
           this.kill(unit, effect.source);
           return;
@@ -3838,6 +3964,14 @@ export class Battle {
         this.fx.floatText(enemy.x, enemy.y - enemy.radius * 3 - 8, Battle.AFFIX_NAMES[enemy.affix] ?? enemy.affix, "#ffd76b", 13);
         this.fx.ring(enemy.x, enemy.y, enemy.radius * 2.6, "#ffd76b", { width: 2.5, life: 0.6 });
       }
+      const def = enemy.enemyKind ? ENEMIES[enemy.enemyKind] : null;
+      if (enemy.enemyKind && def?.priority && !this.roleIntroduced.has(enemy.enemyKind)) {
+        this.roleIntroduced.add(enemy.enemyKind);
+        const role = (def.role ?? "vanguard").toUpperCase();
+        this.fx.floatText(enemy.x, enemy.y - enemy.radius * 3.5 - 14, `${def.name.toUpperCase()} · ${role}`, def.trim, 13);
+        this.fx.ring(enemy.x, enemy.y, enemy.radius * 2.8, def.trim, { width: 3, life: 0.7 });
+        audio.play("page");
+      }
     }
     // mid-leap the body belongs to the arc, not the brain
     if (enemy.leap) return;
@@ -3908,6 +4042,21 @@ export class Battle {
 
     const taunt = this.effect(enemy, "taunt");
     let target: Unit | null = taunt && taunt.source && taunt.source.alive ? taunt.source : null;
+    const role = enemy.enemyKind ? ENEMIES[enemy.enemyKind].role : undefined;
+    const heroes = this.livingHeroes();
+    if (!target && role === "assassin" && heroes.length) {
+      target = [...heroes].sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0];
+    }
+    if (!target && role === "hunter" && heroes.length > 1) {
+      target = [...heroes].sort((a, b) => {
+        const aPack = Math.min(...heroes.filter((hero) => hero !== a).map((hero) => unitDist(a, hero)));
+        const bPack = Math.min(...heroes.filter((hero) => hero !== b).map((hero) => unitDist(b, hero)));
+        return bPack - aPack;
+      })[0];
+    }
+    if (!target && role === "disruptor" && heroes.length) {
+      target = [...heroes].sort((a, b) => b.abilities.filter((ability) => ability.timer <= 0).length - a.abilities.filter((ability) => ability.timer <= 0).length)[0];
+    }
     // bosses answer the loudest threat — pour damage in and they turn on you
     const bossBrain = BOSS_KINDS.includes(enemy.enemyKind ?? "");
     if (!target && bossBrain) target = this.topThreat(enemy.aggro && enemy.aggro.alive ? enemy.aggro : null);
@@ -3984,13 +4133,16 @@ export class Battle {
     if (kind === "eruption") {
       const count = boss ? Math.min(heroes.length, Math.max(2, owner.phase + 1)) : 1;
       for (let i = 0; i < count; i++) addCircle(heroes[(i + owner.id) % heroes.length], boss ? 68 : 48, "ERUPT", i * 0.16);
-      if (boss && owner.phase >= 3) addCircle(owner, 96, "VENT", 0.28);
+      if (boss && (owner.phase >= 3 || (owner.enemyKind === "kilntyrant" && owner.phase >= 2))) {
+        addCircle(owner, owner.enemyKind === "kilntyrant" ? 82 : 96, "VENT", 0.28);
+      }
     } else if (kind === "roots") {
-      const targets = boss ? heroes.slice(0, owner.phase >= 3 ? heroes.length : 2) : [clustered];
+      const rootsClose = owner.enemyKind === "rootboundmatriarch" && owner.phase >= 2;
+      const targets = boss ? heroes.slice(0, owner.phase >= 3 || rootsClose ? heroes.length : 2) : [clustered];
       targets.forEach((hero, index) => addCircle(hero, boss ? 72 : 50, "ROOTS", index * 0.12));
     } else if (kind === "eclipse") {
       addCircle(clustered, boss ? 126 : 66, "ECLIPSE");
-      if (boss && owner.phase >= 3) {
+      if (boss && (owner.phase >= 3 || (owner.enemyKind === "dunerevenant" && owner.phase >= 2))) {
         const other = heroes.find((hero) => hero !== clustered) ?? clustered;
         addCircle(other, 88, "FALSE MOON", 0.32);
       }
@@ -4025,7 +4177,9 @@ export class Battle {
       }
     } else if (kind === "shatter") {
       addCircle(clustered, boss ? 128 : 64, "SHATTER");
-      if (boss && owner.phase >= 3) addCircle(weakest, 90, "AFTERSHOCK", 0.38);
+      if (boss && (owner.phase >= 3 || (owner.enemyKind === "tempestroc" && owner.phase >= 2))) {
+        addCircle(weakest, owner.enemyKind === "tempestroc" ? 78 : 90, "AFTERSHOCK", 0.38);
+      }
     } else if (kind === "bloodmoon") {
       const dx = weakest.x - owner.x;
       const dy = weakest.y - owner.y;
@@ -4048,7 +4202,9 @@ export class Battle {
       owner.facing = (dx >= 0 ? 1 : -1) as 1 | -1;
     } else {
       addCircle(clustered, boss ? 122 : 68, "UNMAKE");
-      if (boss && owner.phase >= 4) addCircle(weakest, 82, "NO ROAD", 0.4);
+      if (boss && (owner.phase >= 4 || (owner.enemyKind === "lastpilgrim" && owner.phase >= 2))) {
+        addCircle(weakest, owner.enemyKind === "lastpilgrim" ? 74 : 82, "NO ROAD", 0.4);
+      }
     }
     this.playLatePatternSound(kind);
   }
@@ -4058,14 +4214,39 @@ export class Battle {
    * replacing the existing combat grammar. */
   private updateLateFoe(enemy: Unit, dt: number): boolean {
     if (!isLateFoeKind(enemy.enemyKind)) return false;
+    const role = ENEMIES[enemy.enemyKind].role ?? "vanguard";
     enemy.supportTimer -= dt;
     if (this.telegraphs.some((mark) => mark.owner === enemy)) {
       enemy.castGlow = Math.max(enemy.castGlow, 0.5);
       return true;
     }
+    // Late-road enemies keep the region's visual language, but their role now
+    // decides what they actually contribute to the composition.
+    if (role === "support" && enemy.supportTimer <= 0 && !this.effect(enemy, "stun")) {
+      const ally = this.livingEnemies()
+        .filter((unit) => unit !== enemy)
+        .sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0];
+      if (ally) {
+        const shield = this.effect(ally, "shield");
+        const strength = 28 + this.stage.scale * 4;
+        if (shield) shield.power += strength;
+        else ally.effects.push(makeEffect("shield", 5.5, strength, enemy));
+        ally.effects.push(makeEffect("haste", 4.5, 1.14, enemy));
+        this.fx.floatText(enemy.x, enemy.y - enemy.radius * 3, "WARDING", ENEMIES[enemy.enemyKind].trim, 11);
+        this.fx.ring(ally.x, ally.y, ally.radius * 2, ENEMIES[enemy.enemyKind].trim, { width: 2, life: 0.45 });
+      }
+      enemy.supportTimer = 7.5 + (enemy.id % 3) * 0.6;
+      return !!ally;
+    }
+    if (role === "tank") {
+      const guarded = this.livingEnemies().find((unit) => unit !== enemy && ENEMIES[unit.enemyKind!].priority && unit.x > enemy.x && unit.x - enemy.x < 125 && Math.abs(unit.y - enemy.y) < 60);
+      if (guarded && !this.effect(guarded, "guard")) guarded.effects.push(makeEffect("guard", 1.2, 0.22, enemy));
+      return false;
+    }
+    if (role === "vanguard" || role === "hunter" || role === "assassin") return false;
     if (enemy.supportTimer <= 0 && !this.effect(enemy, "stun")) {
       this.queueLatePattern(enemy, this.latePatternOf(enemy.enemyKind), false);
-      enemy.supportTimer = 8.5 + (enemy.id % 4) * 0.55;
+      enemy.supportTimer = role === "disruptor" ? 7.2 + (enemy.id % 3) * 0.5 : 8.5 + (enemy.id % 4) * 0.55;
       return true;
     }
     return false;
@@ -4102,6 +4283,12 @@ export class Battle {
       const words = phaseWords[boss.enemyKind][Math.min(nextPhase - 1, phaseWords[boss.enemyKind].length - 1)];
       this.fx.floatText(boss.x, boss.y - boss.radius * 3.1, words, "#ffe9a3", nextPhase === 1 ? 17 : 20);
       this.fx.ring(boss.x, boss.y, boss.radius * (2.2 + nextPhase * 0.3), ENEMIES[boss.enemyKind].trim, { width: 4, life: 0.7 });
+      this.hitstop = Math.max(this.hitstop, nextPhase === 1 ? 0.04 : 0.1);
+      this.zoomPunch = Math.max(this.zoomPunch, nextPhase === 1 ? 0.45 : 1.05);
+      if (nextPhase > 1) {
+        this.fx.burst(boss.x, boss.y - boss.radius, ENEMIES[boss.enemyKind].trim, 22, 180, { glow: true, gravity: 30 });
+        audio.play("staggerBreak");
+      }
       if (nextPhase > 1) {
         const crossedPhases = nextPhase - Math.max(1, previousPhase);
         const phaseHaste = 1.05 + nextPhase * 0.06;
@@ -4599,7 +4786,11 @@ export class Battle {
     }
     if (frac < 0.33 && wyrm.phase < 3) {
       wyrm.phase = 3;
-      this.fx.floatText(wyrm.x, wyrm.y - wyrm.radius * 2.4, "WINTER UNBOUND!", "#ff8a70", 20);
+      wyrm.element = "flame";
+      wyrm.elementBuildup = {};
+      this.fx.floatText(wyrm.x, wyrm.y - wyrm.radius * 2.4, "FROSTFIRE UNBOUND · FLAME", "#ff8a70", 20);
+      this.fx.ring(wyrm.x, wyrm.y, wyrm.radius * 3.4, ELEMENT_COLORS.flame, { width: 6, life: 0.9 });
+      this.fx.burst(wyrm.x, wyrm.y - 14, ELEMENT_COLORS.flame, 26, 190, { glow: true, gravity: -40 });
       wyrm.effects.push(makeEffect("haste", 999, 1.2, null));
       this.forbidSpell(wyrm);
       this.fx.addShake(9);
@@ -5528,6 +5719,21 @@ export class Battle {
       this.bossStagger += this.bossStaggerMax * poise;
       if (poise >= 0.18) this.fx.floatText(mark.x, mark.y - mark.radius * 0.7, mark.kind === "bloodmoon" ? "THE HUNT MISSES!" : "PATTERN BROKEN", "#ffe9a3", 15);
       if (mark.kind === "bloodmoon") owner.effects.push(makeEffect("vulnerable", 2.2, 0.3, null));
+      const signatureOpenings: Partial<Record<LateBossKind, { pattern: Telegraph["kind"]; label: string; time: number; power: number; stun?: number }>> = {
+        kilntyrant: { pattern: "eruption", label: "FURNACE STALLED", time: 2.4, power: 0.3 },
+        rootboundmatriarch: { pattern: "roots", label: "HEARTROOT OPEN", time: 3, power: 0.36 },
+        dunerevenant: { pattern: "eclipse", label: "TRUE SHAPE FOUND", time: 2.6, power: 0.34 },
+        tempestroc: { pattern: "shatter", label: "WINGS GROUNDED", time: 2.2, power: 0.28, stun: 1.1 },
+        redhuntsman: { pattern: "bloodmoon", label: "THE HUNT STARVES", time: 2.8, power: 0.38 },
+        lastpilgrim: { pattern: "void", label: "THE ROAD HOLDS", time: 2.8, power: 0.34 },
+      };
+      const opening = isLateBossKind(owner.enemyKind) ? signatureOpenings[owner.enemyKind] : undefined;
+      if (opening?.pattern === mark.kind) {
+        owner.effects.push(makeEffect("vulnerable", opening.time, opening.power, null));
+        if (opening.stun) owner.effects.push(makeEffect("stun", opening.stun, 1, null));
+        this.fx.floatText(owner.x, owner.y - owner.radius * 3.1, opening.label, "#ffe9a3", 16);
+        this.fx.ring(owner.x, owner.y, owner.radius * 2.8, "#ffe9a3", { width: 4, life: 0.55 });
+      }
       if (this.bossStagger >= this.bossStaggerMax) this.staggerBoss(owner);
     }
 
@@ -5826,9 +6032,9 @@ export class Battle {
     }
     let dmg = attacker.stats.damage;
     let crit = false;
-    // A hero's weapon carries a restrained elemental imprint. It participates
-    // in readable matchup math, while the stronger statuses stay on path casts.
-    const attackElement: DamageElement = attacker.team === "hero" && attacker.element ? attacker.element : "physical";
+    // Every typed combatant carries a restrained elemental imprint. Basic
+    // attacks build conditions slowly; techniques and warnings build faster.
+    const attackElement: DamageElement = attacker.element ?? "physical";
     if (attacker.team === "hero" && this.saveRef) {
       const chance = talentMods(this.saveRef.heroes[attacker.heroIndex].talents).crit;
       if (Math.random() < chance) {
@@ -5913,7 +6119,8 @@ export class Battle {
       if (this.heroTalentRank(attacker, "twinArrows") > 0) {
         const n = (this.shotCounts.get(attacker.id) ?? 0) + 1;
         this.shotCounts.set(attacker.id, n);
-        if (n % 4 === 0) {
+        const volleyEvery = this.heroTalentRank(attacker, "perfectVolley") > 0 ? 3 : 4;
+        if (n % volleyEvery === 0) {
           this.projectiles.push({ ...missile, y: missile.y - 7, speed: missile.speed * 0.88 });
           this.fx.floatText(attacker.x, attacker.y - attacker.radius * 3 - 4, "twin!", "#b6f0a8", 11);
         }
@@ -6073,7 +6280,7 @@ export class Battle {
           this.heal(p.target, p.damage, true, p.from);
           this.fx.burst(p.target.x, p.target.y - 16, p.color, 8, 80, { glow: true, gravity: -40 });
         } else {
-          const element: DamageElement = p.from.team === "hero" && p.from.element ? p.from.element : "physical";
+          const element: DamageElement = p.element ?? p.from.element ?? "physical";
           this.damage(p.target, p.damage, p.from, { color: p.kind === "bolt" ? "#d3b6f0" : undefined, element });
         }
         this.projectiles.splice(i, 1);

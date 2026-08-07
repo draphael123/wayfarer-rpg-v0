@@ -809,6 +809,15 @@ export class Hud {
     ctx.textAlign = "center";
     ctx.fillStyle = "#ffb4a0";
     ctx.fillText(boss.name.toUpperCase(), this.width / 2, y + 7);
+    if (boss.enemyKind) {
+      const def = ENEMIES[boss.enemyKind];
+      ctx.font = "800 8px 'Trebuchet MS', Verdana, sans-serif";
+      ctx.fillStyle = "rgba(232, 217, 160, 0.78)";
+      ctx.textAlign = "left";
+      ctx.fillText((def.role ?? "vanguard").toUpperCase(), x, y + 7);
+      ctx.textAlign = "right";
+      ctx.fillText((boss.element ?? def.affinity ?? "earth").toUpperCase(), x + w, y + 7);
+    }
     const frac = Math.max(0, boss.hp / boss.stats.maxHp);
     roundRect(ctx, x, y + 11, w, 9, 4.5);
     ctx.fillStyle = "rgba(0,0,0,0.6)";

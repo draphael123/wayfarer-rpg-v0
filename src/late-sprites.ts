@@ -62,6 +62,114 @@ function castHalo(ctx: CanvasRenderingContext2D, unit: Unit, color: string, radi
   ctx.restore();
 }
 
+/** Phase changes should alter a boss's read at a glance, not merely tint its
+ * health bar. Each late-road family exposes the physical thing the player is
+ * learning to break: furnace seams, heartroot, false moon, verdict halo,
+ * storm crown, blood mark, or the last road itself. */
+function drawBossPhaseCrest(ctx: CanvasRenderingContext2D, unit: Unit, kind: string, time: number, r: number): void {
+  if (!isLateBossKind(kind) || (unit.phase ?? 0) < 2) return;
+  const pulse = 0.72 + Math.sin(time * 6 + unit.id) * 0.18;
+  const finalPhase = (unit.phase ?? 0) >= 3;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.globalAlpha = finalPhase ? 0.95 : 0.72;
+
+  if (["kilntyrant", "cindermaw"].includes(kind)) {
+    ctx.strokeStyle = finalPhase ? "#ffe29a" : "#ff8d42";
+    ctx.shadowColor = "#ff5a2f";
+    ctx.shadowBlur = finalPhase ? 16 : 9;
+    ctx.lineWidth = finalPhase ? 3.4 : 2.4;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * r * 0.16, -r * 1.9);
+      ctx.lineTo(side * r * 0.42, -r * 1.42);
+      ctx.lineTo(side * r * 0.18, -r * 1.02);
+      ctx.lineTo(side * r * 0.55, -r * 0.62);
+      ctx.stroke();
+    }
+  } else if (["rootboundmatriarch", "verdantcolossus"].includes(kind)) {
+    ctx.fillStyle = finalPhase ? "#f2ffae" : "#b9dc78";
+    ctx.shadowColor = "#8bd35f";
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.moveTo(0, -r * (1.72 + pulse * 0.18));
+    ctx.lineTo(r * 0.28 * pulse, -r * 1.45);
+    ctx.lineTo(0, -r * (1.18 - pulse * 0.12));
+    ctx.lineTo(-r * 0.28 * pulse, -r * 1.45);
+    ctx.closePath();
+    ctx.fill();
+  } else if (["dunerevenant", "nightmother"].includes(kind)) {
+    ctx.strokeStyle = finalPhase ? "#f1deff" : "#c2a4e8";
+    ctx.shadowColor = "#ad7ee3";
+    ctx.shadowBlur = 12;
+    ctx.lineWidth = 2.6;
+    const orbit = time * 0.8;
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 1.45, r * 1.18, r * 0.42, -0.25, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.beginPath();
+    ctx.arc(Math.cos(orbit) * r * 1.08, -r * 1.45 + Math.sin(orbit) * r * 0.38, r * 0.11, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (["gildedinquisitor", "reliquaryseraph"].includes(kind)) {
+    ctx.strokeStyle = finalPhase ? "#fff6c7" : "#ffe195";
+    ctx.shadowColor = "#ffd66f";
+    ctx.shadowBlur = 11;
+    ctx.lineWidth = 2.8;
+    ctx.rotate(Math.sin(time * 0.8) * 0.08);
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 1.58, r * 1.05, r * 0.27, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.78, -r * 1.58);
+    ctx.lineTo(r * 0.78, -r * 1.58);
+    ctx.moveTo(0, -r * 2.05);
+    ctx.lineTo(0, -r * 1.1);
+    ctx.stroke();
+  } else if (["tempestroc", "skybreaker"].includes(kind)) {
+    ctx.strokeStyle = finalPhase ? "#ffffff" : "#bdefff";
+    ctx.shadowColor = "#72dbff";
+    ctx.shadowBlur = 14;
+    ctx.lineWidth = 2.5;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * r * 0.15, -r * 2.05);
+      ctx.lineTo(side * r * 0.52, -r * 1.66);
+      ctx.lineTo(side * r * 0.2, -r * 1.45);
+      ctx.lineTo(side * r * 0.62, -r * 1.02);
+      ctx.stroke();
+    }
+  } else if (["redhuntsman", "bloodmoonstag"].includes(kind)) {
+    ctx.strokeStyle = finalPhase ? "#ffb09a" : "#f47a70";
+    ctx.shadowColor = "#e54855";
+    ctx.shadowBlur = 13;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, -r * 1.55, r * (0.55 + pulse * 0.08), -Math.PI * 0.75, Math.PI * 0.75);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.48, -r * 1.92);
+    ctx.lineTo(0, -r * 1.55);
+    ctx.lineTo(-r * 0.48, -r * 1.18);
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = finalPhase ? "#e7ddff" : "#c3b2e8";
+    ctx.shadowColor = "#8e79c9";
+    ctx.shadowBlur = 13;
+    ctx.lineWidth = finalPhase ? 3.2 : 2.3;
+    ctx.setLineDash(finalPhase ? [3, 4] : [6, 5]);
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.45, 0);
+    ctx.lineTo(-r * 0.12, -r * 1.12);
+    ctx.lineTo(0, -r * 2.1);
+    ctx.lineTo(r * 0.12, -r * 1.12);
+    ctx.lineTo(r * 0.45, 0);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
 /** Draws every enemy introduced after Stormbreak. Returns false for old foes. */
 export function drawLateEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): boolean {
   const kind = String(unit.enemyKind);
@@ -460,6 +568,8 @@ export function drawLateEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: n
     }
     ctx.restore();
   }
+
+  if (boss) drawBossPhaseCrest(ctx, unit, kind, time, r);
 
   if (unit.hitFlash > 0) {
     ctx.globalCompositeOperation = "screen";

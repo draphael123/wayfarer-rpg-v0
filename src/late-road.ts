@@ -204,7 +204,7 @@ export const LATE_ROAD_STAGES: StageDef[] = [
     id: 30, name: "Moonshard Flats", subtitle: "Starlight cuts the dunes", terrain: "mirage",
     palette: { skyTop: "#151a38", skyBottom: "#68618e", hills: "#514b70", ground: "#625d78", groundDark: "#37344e", prop: "#292640" },
     scale: 4.66, xpReward: 575,
-    waves: [w([foe("glassjackal"), 2], [foe("gloomwing"), 1]), w([foe("mirageseer"), 1], ["stalker", 2]), w([foe("gloomwing"), 1], [foe("glassjackal"), 2], [foe("mirageseer"), 1])],
+    waves: [w([foe("glassjackal"), 2], [foe("gloomwing"), 1]), w([foe("mirageseer"), 1], [foe("glassjackal"), 2]), w([foe("gloomwing"), 1], [foe("glassjackal"), 2], [foe("mirageseer"), 1])],
   },
   {
     id: 31, name: "Whispering Erg", subtitle: "The sand repeats your last word", terrain: "mirage",
@@ -288,7 +288,7 @@ export const LATE_ROAD_STAGES: StageDef[] = [
     id: 44, name: "Cloudscar Bridge", subtitle: "One railing. No ground.", terrain: "storm",
     palette: { skyTop: "#1c354e", skyBottom: "#789fac", hills: "#4e6978", ground: "#5c7177", groundDark: "#344d5a", prop: "#2b4350" },
     scale: 6.02, xpReward: 905,
-    waves: [w([foe("shardling"), 2], [foe("galeroc"), 2]), w([foe("thundermonk"), 2], ["wreckgunner", 1]), w([foe("galeroc"), 2], [foe("shardling"), 2], [foe("thundermonk"), 1])],
+    waves: [w([foe("shardling"), 2], [foe("galeroc"), 2]), w([foe("thundermonk"), 2], ["archer", 1]), w([foe("galeroc"), 2], [foe("shardling"), 2], [foe("thundermonk"), 1])],
   },
   {
     id: 45, name: "The Kite Graveyard", subtitle: "The Tempest Roc descends", terrain: "storm",

@@ -54,11 +54,17 @@ on exactly two techniques plus one ultimate.
 
 Enemies can have one discoverable elemental weakness and one resistance. These
 are tactical advantages rather than hard counters: there are no elemental
-immunities and boss modifiers are deliberately gentler.
+immunities and boss modifiers are deliberately gentler. Every species also has
+one fixed, readable combat role. Elemental hits build toward Burning, Frozen,
+Conductive, Brittle, Poisoned, Exposed, Bleeding, or Shrouded conditions, and
+counter-hits consume selected conditions for a short reaction bonus. Authored
+waves cap must-answer priority enemies at one early and two later in the road.
 
 You set out with Bram and Sol, then recruit and shape a larger company as the
-road opens. Heroes earn personal XP, levels, boon choices, talents, equipment,
-and eventually path promotions. The sixty-stage campaign is one continuous Long
+road opens. Heroes earn personal XP, levels, boon choices, equipment, and one
+talent point per level after the first. Each Discipline offers three connected,
+five-row talent trees with ranked skills, prerequisites, and build-changing
+keystones, followed later by Path promotions. The sixty-stage campaign is one continuous Long
 Road across ten regions, from the South Road and Winterreach through Stormbreak,
 the Cinderwild, Verdant Maw, Nightglass Waste, Shattered Reliquary, Skygrave,
 Bloodwood, and the Last Meridian. Twelve great bosses and seven named late-road

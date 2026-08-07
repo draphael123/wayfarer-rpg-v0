@@ -1,5 +1,5 @@
 import type { Battle } from "./battle";
-import { ARMOR_FAMILY_TIER, armorById, callingById, callingEligible, deriveStats, heroGearOf, HEROES } from "./data";
+import { ARMOR_FAMILY_TIER, BOSS_PHASES, ENEMIES, armorById, callingById, callingEligible, deriveStats, heroGearOf, HEROES } from "./data";
 import {
   drawLateRoadAtmosphere,
   drawLateRoadSetDressing,
@@ -11,9 +11,17 @@ import {
 import { isLateBossKind } from "./late-content";
 import { drawLateEnemy } from "./late-sprites";
 import { drawLateTelegraph } from "./late-telegraphs";
-import type { SaveData, StageDef, Unit } from "./types";
+import type { ElementId, EnemyRole, SaveData, StageDef, Unit } from "./types";
 
 const OUTLINE = "#241b2e";
+const ROLE_GLYPHS: Record<EnemyRole, string> = {
+  vanguard: "◆", tank: "▣", hunter: "⌖", assassin: "✦", artillery: "⌁",
+  support: "+", controller: "◎", disruptor: "×", summoner: "◇",
+};
+const ELEMENT_MARK_COLORS: Record<ElementId, string> = {
+  flame: "#ff9b42", frost: "#a9ddf5", storm: "#8fc7e8", earth: "#c9a06b",
+  venom: "#9ad06a", radiant: "#ffe9a3", blood: "#d95763", shadow: "#a89bd8",
+};
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   ctx.beginPath();
@@ -1894,16 +1902,49 @@ function drawHealthBar(ctx: CanvasRenderingContext2D, unit: Unit, top: number): 
     ctx.fillStyle = "#9fc6e8";
     ctx.fill();
   }
+  if (unit.team === "enemy" && unit.enemyKind) {
+    const def = ENEMIES[unit.enemyKind];
+    const role = def.role ?? "vanguard";
+    ctx.font = "bold 8px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = def.priority ? "#ffe9a3" : "#9b90aa";
+    ctx.fillText(ROLE_GLYPHS[role], x - 6, y + 2);
+    ctx.beginPath();
+    ctx.arc(x + w + 5, y + 2, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = ELEMENT_MARK_COLORS[unit.element ?? def.affinity ?? "earth"];
+    ctx.fill();
+  }
+  const buildupElement = unit.lastBuildElement;
+  if (buildupElement) {
+    const threshold = unit.enemyKind && Object.prototype.hasOwnProperty.call(BOSS_PHASES, unit.enemyKind) ? 165 : 100;
+    const buildup = Math.max(0, Math.min(1, (unit.elementBuildup[buildupElement] ?? 0) / threshold));
+    if (buildup > 0.01) {
+      roundRect(ctx, x, y + 6.5, w, 2.2, 1.1);
+      ctx.fillStyle = "rgba(18,12,24,0.62)";
+      ctx.fill();
+      roundRect(ctx, x, y + 6.5, Math.max(1.5, w * buildup), 2.2, 1.1);
+      ctx.fillStyle = ELEMENT_MARK_COLORS[buildupElement];
+      ctx.fill();
+    }
+  }
 }
 
 function drawEffectPips(ctx: CanvasRenderingContext2D, unit: Unit, x: number, y: number): void {
   const marks: { color: string; label: string }[] = [];
   for (const effect of unit.effects) {
     if (effect.kind === "stun") marks.push({ color: "#f2d16b", label: "✦" });
-    if (effect.kind === "slow") marks.push({ color: "#9fd6f2", label: "❄" });
+    if (effect.kind === "slow" && !unit.effects.some((other) => other.kind === "frozen")) marks.push({ color: "#9fd6f2", label: "❄" });
     if (effect.kind === "haste") marks.push({ color: "#8ed081", label: "»" });
     if (effect.kind === "guard") marks.push({ color: "#e0904b", label: "▲" });
     if (effect.kind === "burn") marks.push({ color: "#ff9b42", label: "♨" });
+    if (effect.kind === "frozen") marks.push({ color: "#a9ddf5", label: "❄" });
+    if (effect.kind === "conductive") marks.push({ color: "#8fc7e8", label: "ϟ" });
+    if (effect.kind === "brittle") marks.push({ color: "#c9a06b", label: "◇" });
+    if (effect.kind === "poisoned") marks.push({ color: "#9ad06a", label: "⌁" });
+    if (effect.kind === "exposed") marks.push({ color: "#ffe9a3", label: "☼" });
+    if (effect.kind === "bleeding") marks.push({ color: "#d95763", label: "♦" });
+    if (effect.kind === "shrouded") marks.push({ color: "#a89bd8", label: "◐" });
   }
   if (!marks.length) return;
   ctx.font = "10px sans-serif";

@@ -20,6 +20,7 @@ import {
   HEROES,
   HERO_GATE_STAGE,
   PARTY_CAP,
+  PRIORITY_ENEMIES,
   pathAbilities,
   pathId,
   STAGES,
@@ -55,7 +56,10 @@ for (const ability of ABILITIES) {
 }
 
 const enemyKinds = new Set(Object.keys(ENEMIES));
+const enemyRoles = new Set(["vanguard", "tank", "hunter", "assassin", "artillery", "support", "controller", "disruptor", "summoner"]);
 for (const [kind, enemy] of Object.entries(ENEMIES)) {
+  assert.ok(enemy.role && enemyRoles.has(enemy.role), `${kind} needs one fixed combat role`);
+  assert.ok(enemy.affinity && ELEMENT_IDS.includes(enemy.affinity), `${kind} needs one elemental type`);
   assert.ok(enemy.weakTo && ELEMENT_IDS.includes(enemy.weakTo), `${kind} needs one valid elemental weakness`);
   assert.ok(enemy.resists && ELEMENT_IDS.includes(enemy.resists), `${kind} needs one valid elemental resistance`);
   assert.notEqual(enemy.weakTo, enemy.resists, `${kind} cannot resist its own weakness`);
@@ -64,10 +68,16 @@ assert.ok(STAGES.length > 0, "the campaign needs at least one stage");
 assert.equal(STAGES.length, 60, "the Long Road must contain the planned sixty stages");
 assert.equal(STAGES.length % 6, 0, "the continuous map requires complete six-stage regions");
 unique(STAGES.map((stage) => String(stage.id)), "stage ids");
+const priorityViolations: string[] = [];
 STAGES.forEach((stage, index) => {
   assert.equal(stage.id, index, `stage ${index} must keep a sequential id`);
   assert.ok(stage.name.trim() && stage.subtitle.trim(), `stage ${index} needs presentation text`);
   assert.ok(stage.scale > 0 && stage.xpReward > 0, `stage ${index} needs positive tuning values`);
+  stage.waves.forEach((wave, waveIndex) => {
+    const priorityCount = wave.reduce((sum, entry) => sum + (PRIORITY_ENEMIES.has(entry.kind) ? entry.count : 0), 0);
+    const budget = stage.id < 6 ? 1 : 2;
+    if (priorityCount > budget) priorityViolations.push(`${stage.name} wave ${waveIndex + 1}: ${priorityCount}/${budget}`);
+  });
   assert.ok(stage.waves.length > 0, `stage ${index} needs at least one wave`);
   stage.waves.forEach((wave, waveIndex) => {
     assert.ok(wave.length > 0, `stage ${index} wave ${waveIndex} is empty`);
@@ -77,6 +87,19 @@ STAGES.forEach((stage, index) => {
     }
   });
 });
+assert.equal(priorityViolations.length, 0, `priority-enemy budget exceeded:\n${priorityViolations.join("\n")}`);
+for (let start = 0; start < STAGES.length; start += 6) {
+  const counts = new Map<string, number>();
+  for (const stage of STAGES.slice(start, start + 6)) {
+    for (const wave of stage.waves) for (const entry of wave) {
+      const affinity = ENEMIES[entry.kind].affinity!;
+      counts.set(affinity, (counts.get(affinity) ?? 0) + entry.count);
+    }
+  }
+  const spread = [...counts.values()].sort((a, b) => b - a);
+  assert.ok(spread.length >= 2, `region ${start / 6 + 1} needs an elemental mixture`);
+  assert.ok(spread[0] > spread[1], `region ${start / 6 + 1} needs one clear dominant elemental ecology`);
+}
 assert.equal(LATE_ROAD_STAGES.length, 42, "Acts IV-X must add seven complete six-stage regions");
 assert.equal(LATE_ROAD_REGIONS.length, 7, "the late road needs seven distinct regions");
 unique(LATE_ROAD_REGIONS.map((region) => region.id), "late-road region ids");
@@ -202,6 +225,18 @@ unique(ALL_GEAR.map((piece) => piece.id), "gear ids");
 unique(TRINKETS.map((trinket) => trinket.id), "trinket ids");
 unique(BOONS.map((boon) => boon.id), "boon ids");
 unique(TALENTS.map((talent) => talent.id), "talent ids");
+for (const talent of TALENTS) {
+  if (!talent.requires) continue;
+  const prerequisite = TALENTS.find((entry) => entry.id === talent.requires);
+  assert.ok(prerequisite, `${talent.id} requires missing talent ${talent.requires}`);
+  assert.equal(prerequisite.tree, talent.tree, `${talent.id} prerequisite must stay inside its tree`);
+  assert.ok(prerequisite.tier < talent.tier, `${talent.id} prerequisite must be on an earlier row`);
+}
+for (const tree of new Set(TALENTS.map((talent) => talent.tree))) {
+  const branch = TALENTS.filter((talent) => talent.tree === tree);
+  assert.ok(branch.length >= 9, `${tree} needs an expansive set of at least nine talents`);
+  assert.ok(branch.filter((talent) => talent.tier === 5 && talent.keystone).length >= 2, `${tree} needs two final-row capstones`);
+}
 unique(CALLINGS.map((calling) => calling.id), "calling ids");
 assert.equal(DISCIPLINE_IDS.length, 5, "the path system needs five readable combat disciplines");
 assert.equal(ELEMENT_IDS.length, 8, "the path system needs eight elemental attunements");

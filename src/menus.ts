@@ -39,7 +39,7 @@ import {
   TALENTS,
   TALENT_TREES,
   type TalentTree,
-  TIER_UNLOCK,
+  TALENT_TIER_LEVELS,
   talentPointBudget,
   talentPointsInTree,
   talentPointsSpent,
@@ -90,6 +90,23 @@ export interface MenuCallbacks {
   resetProgress: () => void;
 }
 
+/** Each discipline receives three focused trees, mirroring Diablo's class identity. */
+const DISCIPLINE_TALENT_TREES: Record<DisciplineId, readonly TalentTree[]> = {
+  knight: ["might", "bulwark", "faith"],
+  rogue: ["precision", "swiftness", "fortune"],
+  archer: ["precision", "sorcery", "fortune"],
+  priest: ["faith", "bulwark", "sorcery"],
+  mage: ["sorcery", "swiftness", "faith"],
+};
+
+const NATURAL_DISCIPLINE: Record<AttrKey, DisciplineId> = {
+  str: "knight",
+  dex: "archer",
+  int: "mage",
+  vit: "knight",
+  spi: "priest",
+};
+
 const WEAPON_LABEL: Record<string, string> = {
   sword: "Blade",
   bow: "Bow",
@@ -114,6 +131,26 @@ function enemyWaymark(kind: EnemyKind, compact = false): string {
   return compact
     ? `<span class="enemy-waymark compact"><b>Waymark</b> ${copy}</span>`
     : `<div class="enemy-waymark"><b>Waymark</b><span>${copy}</span></div>`;
+}
+
+const BESTIARY_REGIONS = [
+  { name: "The South Road", range: "I–VI" },
+  { name: "The Winterreach", range: "VII–XII" },
+  { name: "Stormbreak Coast", range: "XIII–XVIII" },
+  ...LATE_ROAD_REGIONS.map((region) => ({ name: region.name, range: region.range })),
+];
+
+function enemyFirstStage(kind: EnemyKind): number {
+  return Math.max(0, STAGES.findIndex((stage) => stage.waves.some((wave) => wave.some((entry) => entry.kind === kind))));
+}
+
+function enemyRegionIndex(kind: EnemyKind): number {
+  return Math.min(BESTIARY_REGIONS.length - 1, Math.floor(enemyFirstStage(kind) / 6));
+}
+
+function enemyRoleLabel(kind: EnemyKind): string {
+  const role = ENEMIES[kind].role ?? "vanguard";
+  return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
 function buildIdentity(save: SaveData, index: number): string {
@@ -352,7 +389,7 @@ function drawBeastIcon(canvas: HTMLCanvasElement, kind: EnemyKind): void {
   };
   ctx.clearRect(0, 0, 64, 64);
   if (drawLateEnemyIcon(ctx, kind)) return;
-  if (kind === "wolf" || kind === "alpha" || kind === "frostwolf") {
+  if (kind === "wolf" || kind === "alpha" || kind === "frostwolf" || kind === "reefhound") {
     ctx.fillStyle = def.body;
     ctx.beginPath();
     ctx.ellipse(c, 38, 17, 13, 0, 0, Math.PI * 2);
@@ -375,6 +412,127 @@ function drawBeastIcon(canvas: HTMLCanvasElement, kind: EnemyKind): void {
     ctx.fillStyle = "#ffd76b";
     ctx.beginPath();
     ctx.arc(c + 6, 34, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  if (kind === "wyrm" || kind === "stormeel" || kind === "stormjaw") {
+    ctx.fillStyle = def.body;
+    ctx.beginPath();
+    ctx.moveTo(8, 46);
+    ctx.bezierCurveTo(17, 24, 31, 52, 43, 31);
+    ctx.bezierCurveTo(49, 20, 57, 25, 57, 35);
+    ctx.bezierCurveTo(49, 28, 47, 46, 34, 51);
+    ctx.bezierCurveTo(22, 56, 18, 43, 8, 46);
+    ctx.closePath();
+    ctx.fill();
+    stroke();
+    ctx.fillStyle = def.trim;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(21 + i * 7, 42 - i * 2);
+      ctx.lineTo(25 + i * 7, 31 - i * 2);
+      ctx.lineTo(29 + i * 7, 40 - i * 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillStyle = "#f6df76";
+    ctx.beginPath();
+    ctx.arc(51, 32, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  if (kind === "harrier" || kind === "galeharrier") {
+    ctx.fillStyle = def.trim;
+    ctx.beginPath();
+    ctx.moveTo(c, 35);
+    ctx.quadraticCurveTo(13, 12, 5, 23);
+    ctx.quadraticCurveTo(15, 23, 22, 45);
+    ctx.lineTo(c, 50);
+    ctx.lineTo(42, 45);
+    ctx.quadraticCurveTo(49, 23, 59, 23);
+    ctx.quadraticCurveTo(51, 12, c, 35);
+    ctx.closePath();
+    ctx.fill();
+    stroke();
+    ctx.fillStyle = def.body;
+    ctx.beginPath();
+    ctx.ellipse(c, 38, 9, 16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    stroke();
+    ctx.beginPath();
+    ctx.moveTo(c + 5, 27);
+    ctx.lineTo(c + 18, 31);
+    ctx.lineTo(c + 6, 35);
+    ctx.closePath();
+    ctx.fillStyle = "#d8c68f";
+    ctx.fill();
+    stroke();
+    ctx.fillStyle = "#f6df76";
+    ctx.beginPath();
+    ctx.arc(c + 4, 30, 2, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  if (kind === "brinecrawler") {
+    ctx.fillStyle = def.body;
+    ctx.beginPath();
+    ctx.ellipse(c, 38, 18, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    stroke();
+    ctx.fillStyle = def.trim;
+    ctx.beginPath();
+    ctx.arc(c, 37, 12, Math.PI, Math.PI * 2);
+    ctx.lineTo(c + 12, 41);
+    ctx.lineTo(c - 12, 41);
+    ctx.closePath();
+    ctx.fill();
+    stroke();
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 4;
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(c + side * (9 + i * 3), 40 + i * 3);
+        ctx.lineTo(c + side * (21 + i * 3), 50 + i * 2);
+        ctx.stroke();
+      }
+    }
+    ctx.fillStyle = "#f1de8d";
+    ctx.beginPath();
+    ctx.arc(c - 6, 33, 2, 0, Math.PI * 2);
+    ctx.arc(c + 6, 33, 2, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  if (kind === "bellwidow") {
+    ctx.fillStyle = def.trim;
+    ctx.beginPath();
+    ctx.moveTo(c, 7);
+    ctx.quadraticCurveTo(14, 18, 13, 54);
+    ctx.quadraticCurveTo(c, 61, 51, 54);
+    ctx.quadraticCurveTo(50, 18, c, 7);
+    ctx.closePath();
+    ctx.fill();
+    stroke();
+    ctx.fillStyle = def.body;
+    ctx.beginPath();
+    ctx.arc(c, 28, 10, 0, Math.PI * 2);
+    ctx.fill();
+    stroke();
+    ctx.strokeStyle = "#e5c06b";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(c, 8);
+    ctx.lineTo(c, 18);
+    ctx.stroke();
+    ctx.fillStyle = "#e5c06b";
+    ctx.beginPath();
+    ctx.arc(c, 8, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#f0dc8e";
+    ctx.beginPath();
+    ctx.arc(c - 4, 28, 2, 0, Math.PI * 2);
+    ctx.arc(c + 4, 28, 2, 0, Math.PI * 2);
     ctx.fill();
     return;
   }
@@ -492,6 +650,9 @@ export class Menus {
   private settingsTab: "audio" | "battle" | "access" | "campaign" = "battle";
   private settingsReturn: "title" | "map" | "party" | "shop" | "tavern" | "records" = "title";
   private handbookReturn: "title" | "map" | "settings" = "title";
+  private bestiaryRegion = 0;
+  private bestiaryKnownOnly = false;
+  private bestiarySearch = "";
 
   /** Animate the header gold chip counting from its last shown value. */
   private tickGold(page: HTMLElement): void {
@@ -2051,7 +2212,7 @@ export class Menus {
     if (knownKinds.length) {
       card.appendChild(
         el(`<div class="intent-strip">${knownKinds
-          .map((kind) => `<div><em>${ENEMIES[kind].name}</em>${enemyWaymark(kind, true)}<strong>${ENEMIES[kind].habit}</strong></div>`)
+          .map((kind) => `<div><em>${ENEMIES[kind].name}</em><span class="enemy-role-chip ${ENEMIES[kind].priority ? "priority" : ""}">${enemyRoleLabel(kind)} · ${elementById(ENEMIES[kind].affinity)?.name ?? "Neutral"}</span>${enemyWaymark(kind, true)}<strong>${ENEMIES[kind].habit}</strong></div>`)
           .join("")}</div>`),
       );
     }
@@ -2348,66 +2509,127 @@ export class Menus {
     this.show();
     const kinds = Object.keys(ENEMIES) as EnemyKind[];
     const discovered = kinds.filter((k) => (this.save.bestiary[k] ?? 0) > 0).length;
+    const mastered = kinds.filter((k) => (this.save.bestiary[k] ?? 0) >= 25).length;
+    const totalKills = kinds.reduce((sum, kind) => sum + (this.save.bestiary[kind] ?? 0), 0);
     const page = el(`
-      <div class="page">
+      <div class="page bestiary-page">
         <div class="map-header">
           <div>
-            <div class="map-title">Records</div>
-            <div class="map-level">${discovered}/${kinds.length} foes catalogued — defeat a creature to learn its ways</div>
+            <div class="map-title">Field Bestiary</div>
+            <div class="map-level">Every encounter leaves a clearer mark: record, study, then master each foe.</div>
           </div>
-          
         </div>
         <div class="shop-tabs"><button class="shop-tab" data-rec="chronicle">${ico("chart")} Chronicle</button><button class="shop-tab on" data-rec="bestiary">${ico("book")} Bestiary</button></div>
+        <div class="bestiary-summary" aria-label="Bestiary progress">
+          <div><span>Recorded</span><strong>${discovered}<small> / ${kinds.length}</small></strong></div>
+          <div><span>Mastered</span><strong>${mastered}<small> / ${kinds.length}</small></strong></div>
+          <div><span>Total slain</span><strong>${totalKills}</strong></div>
+        </div>
+        <div class="bestiary-tools">
+          <div class="bestiary-regions" role="tablist" aria-label="Bestiary region">
+            <button class="bestiary-region ${this.bestiaryRegion === -1 ? "on" : ""}" data-beast-region="-1" role="tab" aria-selected="${this.bestiaryRegion === -1}"><span>ALL</span><strong>Long Road</strong></button>
+            ${BESTIARY_REGIONS.map((region, index) => `<button class="bestiary-region ${this.bestiaryRegion === index ? "on" : ""}" data-beast-region="${index}" role="tab" aria-selected="${this.bestiaryRegion === index}"><span>${region.range}</span><strong>${region.name}</strong></button>`).join("")}
+          </div>
+          <div class="bestiary-query">
+            <label><span>Search recorded foes</span><input type="search" data-beast-search placeholder="Name or habit…" value="${this.bestiarySearch.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"></label>
+            <button class="toggle-btn ${this.bestiaryKnownOnly ? "on" : ""}" data-beast-known aria-pressed="${this.bestiaryKnownOnly}">${this.bestiaryKnownOnly ? "Showing recorded" : "Include rumors"}</button>
+          </div>
+        </div>
+        <div class="bestiary-section-head"><div><span data-beast-range></span><strong data-beast-heading></strong></div><em data-beast-count></em></div>
         <div class="beast-list"></div>
       </div>
     `);
     const list = page.querySelector(".beast-list")!;
-    for (const kind of kinds) {
-      const def = ENEMIES[kind];
-      const kills = this.save.bestiary[kind] ?? 0;
-      if (kills > 0) {
-        // knowledge is earned in tiers: lore at first blood, habits at 10, full measure at 25
-        const T2 = 10;
-        const T3 = 25;
-        const habitLine =
-          kills >= T2
+    const fillList = () => {
+      const region = this.bestiaryRegion >= 0 ? BESTIARY_REGIONS[this.bestiaryRegion] : null;
+      const query = this.bestiarySearch.trim().toLowerCase();
+      const filtered = kinds
+        .filter((kind) => this.bestiaryRegion < 0 || enemyRegionIndex(kind) === this.bestiaryRegion)
+        .filter((kind) => !this.bestiaryKnownOnly || (this.save.bestiary[kind] ?? 0) > 0)
+        .filter((kind) => {
+          if (!query) return true;
+          const kills = this.save.bestiary[kind] ?? 0;
+          return kills > 0 && `${ENEMIES[kind].name} ${ENEMIES[kind].habit}`.toLowerCase().includes(query);
+        })
+        .sort((a, b) => enemyFirstStage(a) - enemyFirstStage(b) || (this.save.bestiary[b] ?? 0) - (this.save.bestiary[a] ?? 0));
+      page.querySelector("[data-beast-range]")!.textContent = region?.range ?? "I–LX";
+      page.querySelector("[data-beast-heading]")!.textContent = region?.name ?? "The Long Road";
+      page.querySelector("[data-beast-count]")!.textContent = `${filtered.length} ${filtered.length === 1 ? "entry" : "entries"}`;
+      list.innerHTML = "";
+      for (const kind of filtered) {
+        const def = ENEMIES[kind];
+        const kills = this.save.bestiary[kind] ?? 0;
+        const firstStage = enemyFirstStage(kind);
+        const foeRegion = BESTIARY_REGIONS[enemyRegionIndex(kind)];
+        if (kills > 0) {
+          const T2 = 10;
+          const T3 = 25;
+          const boss = BOSS_STAGES.includes(firstStage);
+          const rankName = kills >= T3 ? "Mastered" : kills >= T2 ? "Studied" : "Recorded";
+          const habitLine = kills >= T2
             ? `<div class="beast-habit">${ico("sword")} ${def.habit}</div>`
-            : `<div class="beast-habit beast-locked">${ico("sword")} Its ways are unclear — slay ${T2 - kills} more</div>`;
-        const statLine =
-          kills >= T3
-            ? `<div class="beast-stats">${def.maxHp} hp · ${def.damage} dmg · ${def.range > 100 ? "ranged" : "melee"}${def.armor ? " · armored" : ""}</div>`
-            : `<div class="beast-stats beast-locked">Full measure at ${T3} slain (${kills}/${T3})</div>`;
-        const rank = kills >= T3 ? ' · <span class="beast-rank">mastered</span>' : "";
-        const card = el(`
-          <div class="beast-card" style="--beast:${def.body}">
-            <div class="beast-icon"><canvas width="64" height="64"></canvas></div>
-            <div class="beast-info">
-              <div class="beast-name">${def.name} <span class="beast-kills">×${kills} slain${rank}</span></div>
-              <div class="beast-lore">${def.lore}</div>
-              ${enemyWaymark(kind)}
-              ${habitLine}
-              ${statLine}
-              ${kills < T3 ? `<div class="beast-bar"><div style="width:${Math.min(100, (kills / T3) * 100)}%"></div></div>` : ""}
-            </div>
-          </div>
-        `);
-        drawBeastIcon(card.querySelector("canvas")!, kind);
-        list.appendChild(card);
-      } else {
-        list.appendChild(
-          el(`
-            <div class="beast-card unknown">
-              <div class="beast-icon"><div class="beast-mystery">?</div></div>
+            : `<div class="beast-habit beast-locked">${ico("sword")} Study ${T2 - kills} more to reveal its combat habit</div>`;
+          const statLine = kills >= T3
+            ? `<div class="beast-stats"><span>${def.maxHp} hp</span><span>${def.damage} damage</span><span>${def.range > 100 ? "ranged" : "melee"}</span>${def.armor ? "<span>armored</span>" : ""}</div>`
+            : `<div class="beast-stats beast-locked">Full measure at ${T3} slain · ${kills}/${T3}</div>`;
+          const card = el(`
+            <article class="beast-card ${boss ? "boss" : ""} ${kills >= T3 ? "mastered" : ""}" style="--beast:${def.body};--beast-trim:${def.trim}">
+              <div class="beast-icon"><canvas width="64" height="64"></canvas><span>${boss ? "GREAT FOE" : foeRegion.name}</span></div>
               <div class="beast-info">
-                <div class="beast-name">Unknown creature</div>
-                <div class="beast-lore">Rumors only. Defeat one to record it here.</div>
+                <div class="beast-heading"><div class="beast-name">${def.name}</div><span class="beast-rank">${rankName}</span></div>
+                <div class="beast-kills">×${kills} slain · first seen at waymark ${firstStage + 1}</div>
+                <div class="beast-taxonomy"><span class="role ${def.priority ? "priority" : ""}">${enemyRoleLabel(kind)}${def.priority ? " · priority" : ""}</span><span class="element">${elementById(def.affinity)?.name ?? "Neutral"}</span></div>
+                <div class="beast-lore">${def.lore}</div>
+                ${enemyWaymark(kind)}
+                ${habitLine}
+                ${statLine}
+                ${kills < T3 ? `<div class="beast-bar" aria-label="${kills} of ${T3} mastery"><div style="width:${Math.min(100, (kills / T3) * 100)}%"></div></div>` : ""}
               </div>
-            </div>
-          `),
-        );
+            </article>
+          `);
+          drawBeastIcon(card.querySelector("canvas")!, kind);
+          list.appendChild(card);
+        } else {
+          list.appendChild(el(`
+            <article class="beast-card unknown">
+              <div class="beast-icon"><div class="beast-mystery">?</div><span>${foeRegion.name}</span></div>
+              <div class="beast-info">
+                <div class="beast-heading"><div class="beast-name">Unknown creature</div><span class="beast-rank">Rumor</span></div>
+                <div class="beast-kills">Scouts place something near waymark ${firstStage + 1}</div>
+                <div class="beast-lore">Defeat this creature to enter its name and nature in the ledger.</div>
+              </div>
+            </article>
+          `));
+        }
       }
-    }
+      if (!filtered.length) list.appendChild(el(`<div class="bestiary-empty"><strong>No field notes match.</strong><span>Try another stretch of road or clear the search.</span></div>`));
+    };
+    fillList();
+    const search = page.querySelector("[data-beast-search]") as HTMLInputElement;
+    search.addEventListener("input", () => { this.bestiarySearch = search.value; fillList(); });
     page.addEventListener("click", (event) => {
+      const region = (event.target as HTMLElement).closest("[data-beast-region]")?.getAttribute("data-beast-region");
+      if (region !== undefined && region !== null) {
+        this.bestiaryRegion = Number(region);
+        page.querySelectorAll("[data-beast-region]").forEach((button) => {
+          const selected = button.getAttribute("data-beast-region") === region;
+          button.classList.toggle("on", selected);
+          button.setAttribute("aria-selected", String(selected));
+        });
+        audio.play("page");
+        fillList();
+        return;
+      }
+      const known = (event.target as HTMLElement).closest("[data-beast-known]") as HTMLButtonElement | null;
+      if (known) {
+        this.bestiaryKnownOnly = !this.bestiaryKnownOnly;
+        known.classList.toggle("on", this.bestiaryKnownOnly);
+        known.setAttribute("aria-pressed", String(this.bestiaryKnownOnly));
+        known.textContent = this.bestiaryKnownOnly ? "Showing recorded" : "Include rumors";
+        audio.play("click");
+        fillList();
+        return;
+      }
       const record = (event.target as HTMLElement).closest("[data-rec]")?.getAttribute("data-rec");
       if (record === "chronicle") {
         audio.play("page");
@@ -2784,7 +3006,9 @@ export class Menus {
         <div class="lesson-list handbook-lessons"></div>
         <div class="handbook-section-title"><span>Rules of the road</span><em>Keep the important math close</em></div>
         <section class="system-primer">
-          <article><i>✦</i><div><strong>Elemental Waymarks</strong><p>Normal foes take <b>+25%</b> from a weakness and <b>−20%</b> from a resistance. Boss values are +15% and −10%.</p></div></article>
+          <article><i>✦</i><div><strong>Elemental Waymarks</strong><p>Normal foes take <b>+25%</b> from a weakness and <b>−15%</b> from a resistance. Boss values are +15% and −10%; nothing is immune.</p></div></article>
+          <article><i>⌖</i><div><strong>Read the role</strong><p>Icons beside enemy health identify Vanguard, Tank, Hunter, Assassin, Artillery, Support, Controller, Disruptor, and Summoner roles. Gold icons mark the one or two priority foes.</p></div></article>
+          <article><i>ϟ</i><div><strong>Build and react</strong><p>Elemental hits fill the thin condition bar. Flame, Frost, Storm, Earth, Venom, Radiant, Blood, and Shadow trigger readable conditions; counter-hits consume them for a bonus.</p></div></article>
           <article><i>◇</i><div><strong>One Path, three techniques</strong><p>A Discipline and Attunement grant two normal techniques plus one charge-based ultimate. Armor is passive unless a future legendary says otherwise.</p></div></article>
           <article><i>▰</i><div><strong>Boss language</strong><p>Marked ground warns of impact. The amber bar is poise: break it to stagger. Diamonds mark phase changes.</p></div></article>
           <article><i>≋</i><div><strong>Terrain matters</strong><p>Tides slow, storms strike, furnace vents erupt, roots seize, mirages silence, verdicts divide, hunts mark, and voids unmake. Scout chips name the rule before you embark.</p></div></article>
@@ -2887,29 +3111,33 @@ export class Menus {
             <div class="hero-avatar portrait" style="background:${def.accent}"><canvas width="64" height="64"></canvas></div>
             <div>
               <div class="map-title">${def.name}'s Talents</div>
-              <div class="map-level">${free} point${free === 1 ? "" : "s"} to spend · earn 1 per 2 band levels (cap ${MAX_LEVEL})</div>
+              <div class="map-level">${free} point${free === 1 ? "" : "s"} to spend · one point each hero level after level 1</div>
             </div>
           </div>
         </div>
-        <div class="shop-note">◆ marks <strong>keystones</strong> — one point, one new way to fight. Deeper tiers open at ${TIER_UNLOCK[1]} and ${TIER_UNLOCK[2]} points in a tree.</div>
+        <div class="shop-note talent-primer"><strong>Forge a path.</strong> Five rows open at hero levels ${TALENT_TIER_LEVELS.join(", ")}. Follow connected prerequisites toward ◆ build-changing capstones.</div>
         <div class="talent-trees"></div>
         <div class="map-footer">
-          <button class="toggle-btn" data-act="reset-talents">Reset talents (free)</button>
+          <button class="toggle-btn" data-act="reset-talents">Reforge all points (free)</button>
         </div>
       </div>
     `);
     drawHeroPortrait(page.querySelector(".hero-avatar canvas") as HTMLCanvasElement, index, save);
     page.querySelector(".map-header")!.after(this.heroTabs(index, "talents"));
     const trees = page.querySelector(".talent-trees")!;
-    const treeKeys = Object.keys(TALENT_TREES) as TalentTree[];
-    if (!this.talentTreeSel) this.talentTreeSel = treeKeys[0];
+    const allTreeKeys = Object.keys(TALENT_TREES) as TalentTree[];
+    const discipline = hero.discipline ?? callingById(hero.calling)?.discipline ?? NATURAL_DISCIPLINE[bestAttr(index)];
+    const coreTreeKeys = [...DISCIPLINE_TALENT_TREES[discipline]];
+    const legacyTreeKeys = allTreeKeys.filter((key) => !coreTreeKeys.includes(key) && talentPointsInTree(hero.talents, key) > 0);
+    const treeKeys = [...coreTreeKeys, ...legacyTreeKeys];
+    if (!this.talentTreeSel || !treeKeys.includes(this.talentTreeSel)) this.talentTreeSel = treeKeys[0];
     const chips = el(`<div class="tree-chips"></div>`);
     for (const key of treeKeys) {
       const t = TALENT_TREES[key];
       const pts = talentPointsInTree(hero.talents, key);
       chips.appendChild(
         el(
-          `<button class="tree-chip ${key === this.talentTreeSel ? "sel" : ""}" style="--tree:${t.color}" data-tree="${key}">${t.icon} ${t.name}${pts > 0 ? ` <span class="tree-spent">${pts}</span>` : ""}</button>`,
+          `<button class="tree-chip ${key === this.talentTreeSel ? "sel" : ""} ${legacyTreeKeys.includes(key) ? "legacy" : ""}" style="--tree:${t.color}" data-tree="${key}">${t.icon} ${t.name}${legacyTreeKeys.includes(key) ? " · legacy" : ""}${pts > 0 ? ` <span class="tree-spent">${pts}</span>` : ""}</button>`,
         ),
       );
     }
@@ -2920,34 +3148,37 @@ export class Menus {
       const inTree = talentPointsInTree(hero.talents, treeKey);
       const column = el(`
         <div class="talent-col wide" style="--tree:${tree.color}">
-          <div class="talent-col-head">${tree.icon} ${tree.name} <span class="tree-spent">${inTree}p</span></div>
+          <div class="talent-col-head"><span>${tree.icon} ${tree.name}</span><small>${inTree} invested</small></div>
         </div>
       `);
-      for (const tier of [1, 2, 3] as const) {
-        const need = TIER_UNLOCK[tier - 1];
-        const open = inTree >= need;
-        if (tier > 1) {
-          column.appendChild(
-            el(`<div class="tier-rule ${open ? "open" : ""}">${open ? `— tier ${tier} —` : `🔒 ${need} points in ${tree.name}`}</div>`),
-          );
-        }
+      for (const tier of [1, 2, 3, 4, 5] as const) {
+        const needLevel = TALENT_TIER_LEVELS[tier - 1];
+        const levelOpen = hero.level >= needLevel;
+        const row = el(`<div class="talent-tier ${levelOpen ? "open" : "level-locked"}"><div class="tier-rule ${levelOpen ? "open" : ""}"><span>ROW ${tier}</span><b>${levelOpen ? `LEVEL ${needLevel}` : `LOCKED · LEVEL ${needLevel}`}</b></div><div class="talent-tier-nodes"></div></div>`);
+        const nodeLane = row.querySelector(".talent-tier-nodes")!;
         for (const talent of TALENTS.filter((t) => t.tree === treeKey && t.tier === tier)) {
           const rank = hero.talents[talent.id] ?? 0;
           const maxed = rank >= talent.maxRank;
+          const prerequisite = talent.requires ? TALENTS.find((entry) => entry.id === talent.requires) : null;
+          const prerequisiteMet = !talent.requires || (hero.talents[talent.requires] ?? 0) > 0;
+          const open = rank > 0 || (levelOpen && prerequisiteMet);
           const pips =
             talent.maxRank > 1
               ? `<div class="talent-pips">${Array.from({ length: talent.maxRank }, (_, r) => `<i class="${r < rank ? "on" : ""}"></i>`).join("")}</div>`
               : `<div class="talent-pips key ${rank > 0 ? "on" : ""}">${rank > 0 ? "◆ learned" : "◆ keystone"}</div>`;
-          column.appendChild(
+          nodeLane.appendChild(
             el(`
-              <button class="talent-node ${talent.keystone ? "keystone" : ""} ${maxed ? "maxed" : ""} ${open && free > 0 && !maxed ? "can" : ""} ${open ? "" : "tier-locked"}" data-talent="${talent.id}">
+              <button class="talent-node ${talent.keystone ? "keystone" : ""} ${maxed ? "maxed" : ""} ${open && free > 0 && !maxed ? "can" : ""} ${open ? "" : "tier-locked"}" data-talent="${talent.id}" aria-label="${talent.name}, rank ${rank} of ${talent.maxRank}">
+                <div class="talent-rank">${rank}/${talent.maxRank}</div>
                 <div class="talent-name">${talent.keystone ? "◆ " : ""}${talent.name}</div>
                 <div class="talent-blurb">${talent.blurb}${talent.maxRank > 1 ? " <em>/rank</em>" : ""}</div>
+                ${prerequisite && !prerequisiteMet && rank === 0 ? `<div class="talent-requires">Requires ${prerequisite.name}</div>` : ""}
                 ${pips}
               </button>
             `),
           );
         }
+        column.appendChild(row);
       }
       trees.appendChild(column);
     }
@@ -2965,9 +3196,14 @@ export class Menus {
         const id = node.getAttribute("data-talent")!;
         const talent = TALENTS.find((t) => t.id === id)!;
         const rank = hero.talents[id] ?? 0;
-        const inTree = talentPointsInTree(hero.talents, talent.tree);
-        if (inTree < TIER_UNLOCK[talent.tier - 1]) {
-          this.showToast(`Locked — spend ${TIER_UNLOCK[talent.tier - 1] - inTree} more point${TIER_UNLOCK[talent.tier - 1] - inTree === 1 ? "" : "s"} in ${TALENT_TREES[talent.tree].name} first`);
+        const needLevel = TALENT_TIER_LEVELS[talent.tier - 1];
+        if (rank === 0 && hero.level < needLevel) {
+          this.showToast(`Locked — ${talent.name} opens at hero level ${needLevel}`);
+          return;
+        }
+        if (rank === 0 && talent.requires && (hero.talents[talent.requires] ?? 0) === 0) {
+          const prerequisite = TALENTS.find((entry) => entry.id === talent.requires)!;
+          this.showToast(`Locked — learn ${prerequisite.name} first`);
           return;
         }
         if (rank >= talent.maxRank) {
@@ -4746,7 +4982,11 @@ export class Menus {
   }
 
   private refreshCard(card: HTMLElement, index: number): HTMLElement {
-    const fresh = this.heroCard(index);
+    // Spending an attribute on the full hero sheet must keep that same sheet
+    // open. Rebuilding the compact party card here made the rest of the
+    // character controls disappear and felt like an unexpected navigation.
+    const full = card.querySelector(".stat-grid") !== null;
+    const fresh = this.heroCard(index, full);
     card.replaceWith(fresh);
     return fresh;
   }
