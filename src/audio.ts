@@ -9,6 +9,9 @@
  */
 import type { DamageElement, DisciplineId } from "./types";
 
+type MenuTheme = "title" | "road" | "hearth";
+type AmbienceKind = `menu-${MenuTheme}` | number;
+
 type SfxName =
   | "click"
   | "slash"
@@ -103,7 +106,9 @@ const SAMPLE_SFX: Partial<Record<SfxName, string[]>> = {
 // Recorded scene music is loaded lazily; the synth bed begins immediately and
 // then yields through a short crossfade when the requested track is ready.
 const MUSIC_TRACKS = [
-  "music-menu",
+  "music-menu-title",
+  "music-menu-road",
+  "music-menu-hearth",
   "music-stage0",
   "music-stage1",
   "music-stage2",
@@ -117,7 +122,9 @@ const MUSIC_TRACKS = [
 ];
 
 const SAMPLE_FILES: Partial<Record<string, string>> = {
-  "music-menu": "audio/music-menu-town.mp3",
+  "music-menu-title": "audio/music-menu-town.mp3",
+  "music-menu-road": "audio/music-menu-road.mp3",
+  "music-menu-hearth": "audio/music-menu-hearth.mp3",
   "music-coast": "audio/music-coast.ogg",
 };
 
@@ -142,6 +149,7 @@ class AudioKit {
   private musicTimer: number | null = null;
   private musicStep = 0;
   private mood: "menu" | "battle" = "menu";
+  private menuTheme: MenuTheme = "title";
   private stageId = 0;
   private bossActive = false;
   soundOn = true;
@@ -156,7 +164,7 @@ class AudioKit {
   // ---- ambience + danger ducking
   private musicOut: BiquadFilterNode | null = null;
   private dangerOn = false;
-  private ambienceKind: "menu" | number | null = null;
+  private ambienceKind: AmbienceKind | null = null;
   private ambienceTimer: number | null = null;
   private ambienceBed: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
 
@@ -168,7 +176,17 @@ class AudioKit {
       this.setDanger(false);
     }
     this.syncMusic();
-    this.setAmbience(mood === "menu" ? "menu" : this.stageId);
+    this.setAmbience(mood === "menu" ? `menu-${this.menuTheme}` : this.stageId);
+  }
+
+  /** Keep menu music tied to a place, rather than restarting it for every tab. */
+  setMenuTheme(theme: MenuTheme): void {
+    if (this.menuTheme === theme) return;
+    this.menuTheme = theme;
+    if (this.mood === "menu") {
+      this.syncMusic();
+      this.setAmbience(`menu-${theme}`);
+    }
   }
 
   /** Muffle the music while a hero is at death's door. */
@@ -185,7 +203,7 @@ class AudioKit {
 
   // ---- ambience: quiet living beds under the music, per place
 
-  private setAmbience(kind: "menu" | number | null): void {
+  private setAmbience(kind: AmbienceKind | null): void {
     if (this.ambienceKind === kind) return;
     this.stopAmbience();
     const ctx = this.ctx;
@@ -197,7 +215,9 @@ class AudioKit {
     this.ambienceKind = kind;
     // continuous bed: filtered noise loop (wind, rain, ember hush)
     const bedSpec: Record<string, { freq: number; gain: number } | undefined> = {
-      menu: { freq: 420, gain: 0.02 },
+      "menu-title": { freq: 420, gain: 0.014 },
+      "menu-road": { freq: 900, gain: 0.012 },
+      "menu-hearth": { freq: 360, gain: 0.019 },
       "0": { freq: 900, gain: 0.012 },
       "1": { freq: 700, gain: 0.016 },
       "2": { freq: 2400, gain: 0.035 }, // the rain players can finally hear
@@ -267,12 +287,24 @@ class AudioKit {
     if (!this.soundOn || this.ambienceKind === null) return;
     const roll = Math.random();
     const kind = this.ambienceKind;
-    if (kind === "menu") {
-      // campfire crackle
-      if (roll < 0.85) {
-        for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) {
-          this.noise(0.02 + Math.random() * 0.03, 0.05 + Math.random() * 0.05, 1100 + Math.random() * 900, Math.random() * 0.9);
+    if (typeof kind === "string") {
+      if (kind === "menu-road" && roll < 0.24) {
+        // Open-road air with a rare distant bird; intentionally sparse beneath music.
+        const base = 1750 + Math.random() * 420;
+        this.noise(0.24, 0.022, 1250);
+        if (roll < 0.09) {
+          this.tone(base, 0.07, "sine", 0.025, 240, 0.08);
+          this.tone(base + 190, 0.08, "sine", 0.02, -120, 0.18);
         }
+      } else if (kind === "menu-hearth" && roll < 0.72) {
+        // Close fire, occasional ceramic/wood movement—no arcade-like clinks.
+        for (let i = 0; i < 1 + Math.floor(Math.random() * 2); i++) {
+          this.noise(0.018 + Math.random() * 0.025, 0.035, 850 + Math.random() * 650, Math.random() * 0.7);
+        }
+        if (roll < 0.08) this.tone(210, 0.055, "triangle", 0.025, -28, 0.2);
+      } else if (kind === "menu-title" && roll < 0.38) {
+        // Only a restrained ember hush on the opening screen.
+        this.noise(0.025, 0.028, 980 + Math.random() * 420, Math.random() * 0.6);
       }
       return;
     }
@@ -373,7 +405,7 @@ class AudioKit {
   }
 
   private desiredTrack(): string {
-    if (this.mood === "menu") return "music-menu";
+    if (this.mood === "menu") return `music-menu-${this.menuTheme}`;
     if (this.bossActive) {
       if (this.stageId >= 18) return `music-boss-region${Math.floor(this.stageId / 6)}`;
       return [5, 11, 17].includes(this.stageId) ? "music-mainboss" : "music-miniboss";
@@ -421,7 +453,7 @@ class AudioKit {
   unlock(): void {
     this.ensure();
     this.syncMusic();
-    this.setAmbience(this.mood === "menu" ? "menu" : this.stageId);
+    this.setAmbience(this.mood === "menu" ? `menu-${this.menuTheme}` : this.stageId);
     if (!this.trackNode) this.startMusic();
   }
 
@@ -504,7 +536,7 @@ class AudioKit {
     const gain = ctx.createGain();
     // Keep the relaxed title arrangement behind menu feedback and narration.
     // The user's music-volume setting still controls both music buses.
-    const level = want === "music-menu" ? 0.27 : 0.32;
+    const level = want.startsWith("music-menu-") ? 0.24 : 0.32;
     gain.gain.setValueAtTime(0.0001, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(level, ctx.currentTime + 0.8);
     src.connect(gain);
@@ -741,7 +773,9 @@ class AudioKit {
     }
     switch (name) {
       case "click":
-        this.tone(660, 0.06, "square", 0.12, 120);
+        // A muted wooden tap: clear under music without the old electronic chirp.
+        this.tone(360, 0.045, "triangle", 0.07, -70);
+        this.noise(0.025, 0.025, 850, 0.008);
         break;
       // ---- ultimate voices: each path's big moment sounds like itself
       case "ultReady":
@@ -800,8 +834,10 @@ class AudioKit {
         this.tone(1560, 0.09, "triangle", 0.08, -120, 0.03);
         break;
       case "page":
-        this.noise(0.1, 0.08, 3200);
-        this.noise(0.08, 0.06, 2200, 0.07);
+        // A single soft parchment brush and binding knock. The previous pair
+        // of bright noise bursts sounded like a glitch between screens.
+        this.noise(0.075, 0.026, 950);
+        this.tone(185, 0.055, "triangle", 0.045, -35, 0.035);
         break;
       case "tankard":
         this.tone(220, 0.08, "square", 0.1, -40);
@@ -1318,7 +1354,7 @@ class AudioKit {
       this.ambienceKind = null;
     } else {
       // re-arm the current place's ambience
-      const kind = this.mood === "menu" ? ("menu" as const) : this.stageId;
+      const kind: AmbienceKind = this.mood === "menu" ? `menu-${this.menuTheme}` : this.stageId;
       this.ambienceKind = null;
       this.setAmbience(kind);
     }

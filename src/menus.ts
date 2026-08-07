@@ -1032,6 +1032,8 @@ export class Menus {
   /** Append the page with the tab bar riding along. */
   private mount(page: HTMLElement, section: "battle" | "party" | "shop" | "tavern" | "records" | null): void {
     page.classList.add("menu-page-enter");
+    if (section === "battle") audio.setMenuTheme("road");
+    else if (section) audio.setMenuTheme("hearth");
     if (section) page.dataset.section = section;
     if (section) page.appendChild(this.sectionBar(section));
     this.root.appendChild(page);
@@ -1043,6 +1045,7 @@ export class Menus {
     this.pushNav("title");
     this.root.innerHTML = "";
     this.show();
+    audio.setMenuTheme("title");
     const campaignComplete = (this.save.stageStats[STAGES.length - 1]?.clears ?? 0) > 0;
     const page = el(`
       <div class="page title-page elemental-title">

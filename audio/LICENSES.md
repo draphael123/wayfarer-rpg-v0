@@ -12,6 +12,19 @@ here as part of the project's asset record.
 TAD, remains in the repository as an inactive CC0 alternative. Its source is
 [OpenGameArt](https://opengameart.org/content/once-upon-a-time-loop).
 
+## Journey and hearth music
+
+`music-menu-road.mp3` is **The Field of Dreams** by pauliuw, downloaded from
+[OpenGameArt](https://opengameart.org/content/the-field-of-dreams). It is
+released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+It plays on the Long Road and challenge-selection screens.
+
+`music-menu-hearth.mp3` is **Medieval: The Old Tower Inn** by RandomMind,
+downloaded from
+[OpenGameArt](https://opengameart.org/content/medieval-the-old-tower-inn). It
+is released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+It plays in the Tavern, Armory, Party, and record-keeping screens.
+
 ## Existing music and effects
 
 The remaining recorded music and effects came from the Superpowers
