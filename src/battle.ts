@@ -59,6 +59,20 @@ const PATH_SIGNATURE_CUES: Record<DisciplineId, Record<ElementId, string>> = {
   necromancer: { flame: "ASH SERVANT", frost: "PALE GUARD", storm: "SPIRIT CIRCUIT", earth: "BONE RAMPART", venom: "MORTAL BLOOM", radiant: "ANCESTOR'S HAND", blood: "RED THRALL", shadow: "OPEN GRAVES" },
 };
 
+const PROMOTION_CUES: Record<DisciplineId, readonly [string, string]> = {
+  knight: ["UNBROKEN FORMATION", "THE BLOW ANSWERED"],
+  warrior: ["PERFECTED STROKE", "NO RED LINE"],
+  rogue: ["NOTHING BUT A SHADOW", "THE TRAP CLOSES"],
+  archer: ["ONE QUARRY · ONE END", "THE ROAD FIRES BACK"],
+  priest: ["FATE REFUSES", "JUDGMENT RETURNS"],
+  mage: ["THE FIELD REWRITTEN", "THE LIMIT BROKEN"],
+  necromancer: ["THE DEAD STAND GUARD", "DEATH PAYS DIVIDENDS"],
+};
+
+function hasPromotion(unit: Unit, discipline: DisciplineId, branch: "ascendant" | "paragon"): boolean {
+  return unit.discipline === discipline && unit.advCalling?.endsWith(`-${branch}`) === true;
+}
+
 export interface FieldRect {
   left: number;
   right: number;
@@ -185,6 +199,7 @@ export class Battle {
   private elementResistShown = new Set<string>();
   private roleIntroduced = new Set<EnemyKind>();
   private lastLightSpent = new Set<number>();
+  private hierophantGraceSpent = new Set<number>();
   private graveWardSpent = new Set<number>();
   private holdFastSpent = new Set<number>();
   private priorityMarked = new Set<string>();
@@ -527,7 +542,7 @@ export class Battle {
         this.heal(hero, hero.stats.maxHp * 0.06, true, null);
       }
       const armorHook = this.armorHookOf(hero);
-      if (armorHook === "dodgeFirstHit" || hero.advCalling === "phantom") this.armorDodgeReady.add(hero.id);
+      if (armorHook === "dodgeFirstHit" || hero.advCalling === "phantom" || hasPromotion(hero, "rogue", "ascendant")) this.armorDodgeReady.add(hero.id);
       if (armorHook === "waveShield" || this.armorSetHookOf(hero) === "waveShield") {
         hero.effects = hero.effects.filter((e) => e.kind !== "shield");
         hero.effects.push(makeEffect("shield", 9999, 30, null));
@@ -902,7 +917,7 @@ export class Battle {
       interval /= 1.06;
     }
     // Berserker: the red mist quickens once blood is drawn
-    if (unit.advCalling === "berserker" && unit.hp < unit.stats.maxHp * 0.65) interval /= 1.25;
+    if ((unit.advCalling === "berserker" || hasPromotion(unit, "warrior", "paragon")) && unit.hp < unit.stats.maxHp * 0.65) interval /= 1.25;
     return interval;
   }
 
@@ -1073,7 +1088,7 @@ export class Battle {
     // Bulwark Saint: allies shelter in the living wall's shadow
     if (
       target.team === "hero" &&
-      this.livingHeroes().some((h) => h !== target && h.advCalling === "bulwarkSaint" && Math.hypot(h.x - target.x, h.y - target.y) < 90)
+      this.livingHeroes().some((h) => h !== target && (h.advCalling === "bulwarkSaint" || hasPromotion(h, "knight", "ascendant")) && Math.hypot(h.x - target.x, h.y - target.y) < 90)
     ) {
       amount *= 0.92;
     }
@@ -1102,7 +1117,7 @@ export class Battle {
     }
     // Warbreaker: melee blows are answered in kind
     if (
-      target.advCalling === "warbreaker" &&
+      (target.advCalling === "warbreaker" || hasPromotion(target, "warrior", "ascendant")) &&
       source &&
       source.team === "enemy" &&
       source.alive &&
@@ -1188,6 +1203,21 @@ export class Battle {
     }
     if (this.carry && target === this.carry.ogre) this.carry.hurt += amount;
     if (this.tutorialMode && target.team === "hero" && target.hp < 1) target.hp = 1;
+    if (target.team === "hero" && target.hp <= 0) {
+      const hierophant = this.livingHeroes().find((hero) =>
+        hasPromotion(hero, "priest", "ascendant") &&
+        !this.hierophantGraceSpent.has(hero.id) &&
+        (hero === target || target.effects.some((effect) => effect.source === hero && (effect.kind === "guard" || effect.kind === "shield"))),
+      );
+      if (hierophant) {
+        this.hierophantGraceSpent.add(hierophant.id);
+        target.hp = Math.max(1, Math.round(target.stats.maxHp * 0.2));
+        target.effects.push(makeEffect("shield", 6, Math.round(target.stats.maxHp * 0.18), hierophant));
+        this.fx.ring(target.x, target.y - 12, 58, ELEMENT_COLORS[hierophant.element ?? "radiant"], { width: 5, life: 0.85 });
+        this.fx.floatText(target.x, target.y - target.radius * 3, "FATE REFUSES", "#ffe9a3", 15);
+        audio.play("levelup");
+      }
+    }
     if (target.team === "hero" && target.hp <= 0 && this.trinketHookOf(target) === "graveWard" && !this.graveWardSpent.has(target.id)) {
       this.graveWardSpent.add(target.id);
       target.hp = Math.max(1, Math.round(target.stats.maxHp * 0.1));
@@ -1462,7 +1492,8 @@ export class Battle {
     }
     // kills surge the slayer's ultimate — Tricksters feast on them
     if (unit.team === "enemy" && killer?.team === "hero") {
-      this.gainUlt(killer, killer.advCalling === "spellthief" ? 25 : killer.calling === "trickster" || killer.calling === "nightblade" ? 18 : 6);
+      const saboteur = hasPromotion(killer, "rogue", "paragon");
+      this.gainUlt(killer, killer.advCalling === "spellthief" || saboteur ? 25 : killer.calling === "trickster" || killer.calling === "nightblade" ? 18 : 6);
       // Nightblade: every kill is a step into the dark — speed, and pursuers lose the scent
       if (killer.calling === "nightblade") {
         killer.effects.push(makeEffect("haste", 1.6, 1.5, killer));
@@ -1471,10 +1502,11 @@ export class Battle {
         }
       }
       // Spellthief: every kill shaves a second off the spell cooldowns
-      if (killer.advCalling === "spellthief") {
+      if (killer.advCalling === "spellthief" || saboteur) {
         for (const ab of killer.abilities) {
-          if (!ab.ult && ab.timer > 0) ab.timer = Math.max(0, ab.timer - 1);
+          if (!ab.ult && ab.timer > 0) ab.timer = Math.max(0, ab.timer - (saboteur ? 1.5 : 1));
         }
+        if (saboteur) this.fx.floatText(killer.x, killer.y - killer.radius * 3, "RUIN PREPARED", ELEMENT_COLORS[killer.element ?? "venom"], 10);
       }
       // quick kills climb a chime ladder
       const streak = this.killStreaks.get(killer.id);
@@ -2741,7 +2773,7 @@ export class Battle {
         for (const target of hitTargets) if (target.alive) this.refreshPathEffect(target, "slow", 3 + tierRank, 0.28 + tierRank * 0.07, hero);
         if (tier === "focus") for (const ability of hero.abilities) if (ability.def.pathSkill === "core") ability.timer = Math.max(0, ability.timer - 1.5);
       }
-      if (tier === "ultimate") this.fx.floatText(hero.x, hero.y - hero.radius * 4.2, "SPECIALIZATION · EXALTED", color, 11);
+      if (tier === "ultimate") this.fx.floatText(hero.x, hero.y - hero.radius * 4.2, PROMOTION_CUES[discipline][0], color, 12);
     } else if (paragon) {
       if (discipline === "knight") {
         for (const target of hitTargets) if (target.alive && this.effect(target, "taunt")) this.damage(target, damage * (0.18 + tierRank * 0.08), hero, { spell: true, color, element, secondary: true });
@@ -2762,7 +2794,7 @@ export class Battle {
         if (price > 0) hero.hp -= price;
         for (const target of hitTargets) if (target.alive) this.damage(target, damage * (0.16 + tierRank * 0.08), hero, { spell: true, color, element, secondary: true });
       }
-      if (tier === "ultimate") this.fx.floatText(hero.x, hero.y - hero.radius * 4.2, "SPECIALIZATION · UNBOUND", color, 11);
+      if (tier === "ultimate") this.fx.floatText(hero.x, hero.y - hero.radius * 4.2, PROMOTION_CUES[discipline][1], color, 12);
     }
 
     // Elemental techniques share an Attunement, but their intent stays
