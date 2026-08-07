@@ -46,7 +46,7 @@ const aggregates = DIFFICULTIES.map(() => ({
 
 console.log("# Wayband deterministic balance report\n");
 console.log(
-  `Reference parties now earn their levels from prior first clears, spend every attribute point in their Discipline stat, equip real two-technique + ultimate Paths, and buy gear at economy-backed milestones. Boon and talent optimization stays excluded, keeping this a conservative AUTO guardrail. ${seedCount} seeds per stage/difficulty.\n`,
+  `Reference parties now earn their levels from prior first clears, spend every attribute point in their Discipline stat, equip real two-technique + ultimate Paths, and buy gear at economy-backed milestones. Talent optimization stays excluded, keeping this a conservative AUTO guardrail. ${seedCount} seeds per stage/difficulty.\n`,
 );
 console.log("| Stage | Ref. party | Gear | Difficulty | Wins | Win median | Loss median | Timeouts | Avg deaths | Avg casts |");
 console.log("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |");

@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { BOSS_PHASES, DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, boonMods, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, resolvedPathAbilities, talentMods, trinketById, trinketMods, SET_BONUSES } from "./data";
+import { BOSS_PHASES, DIFFICULTIES, ENEMIES, HEROES, PRIORITY_ENEMIES, abilityById, armorById, armorSetOf, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, resolvedPathAbilities, talentMods, trinketById, trinketMods, SET_BONUSES } from "./data";
 import { isLateBossKind, isLateFoeKind, type LateBossKind, type LateEnemyKind } from "./late-content";
 
 // Battleheart pacing: cooldowns run 2.5× longer, so each cast must matter more.
@@ -203,7 +203,7 @@ export class Battle {
       const sworn = callingById(heroSave.calling);
       const oath = sworn && callingEligible(sworn, heroSave.attrs) ? sworn : null;
       const advanced = oath ? heroSave.advCalling : null;
-      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroGearOf(heroSave, save.forge), heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced, heroSave.boons, heroSave.masteredElements);
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroGearOf(heroSave, save.forge), heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced, heroSave.masteredElements);
       const normalDefs = oath ? [...resolvedPathAbilities(oath.discipline, oath.element, heroSave.equipped)] : [];
       const abilities: AbilityState[] = (normalDefs.length ? normalDefs : heroSave.equipped
         .map((id) => abilityById(id))
@@ -478,6 +478,10 @@ export class Battle {
       hero.lastBuildElement = null;
       if (this.heroTalentRank(hero, "windStep") > 0) this.windstepReady.add(hero.id);
       if (this.heroTalentRank(hero, "afterimage") > 0) this.armorDodgeReady.add(hero.id);
+      if (this.heroTalentRank(hero, "deepPockets") > 0) {
+        this.gainUlt(hero, 20);
+        this.fx.floatText(hero.x, hero.y - hero.radius * 3, "AMBUSH READY", "#e8b85a", 11);
+      }
       // Second Breath: a gulp of air between fights
       if (this.heroTalentRank(hero, "secondBreath") > 0 && hero.hp < hero.stats.maxHp) {
         this.heal(hero, hero.stats.maxHp * 0.06, true, null);
@@ -625,9 +629,6 @@ export class Battle {
   /** Feed a hero's ultimate meter; announces the moment it fills. */
   private gainUlt(hero: Unit, amount: number): void {
     if ((!hero.calling && !hero.discipline) || !hero.alive || amount <= 0) return;
-    // the Wolf's Heart boon quickens the meter
-    const boons = this.saveRef?.heroes[hero.heroIndex]?.boons;
-    if (boons) amount *= 1 + boonMods(boons).ultRate;
     const before = hero.ultCharge;
     hero.ultCharge = Math.min(100, hero.ultCharge + amount);
     if (before < 100 && hero.ultCharge >= 100) {
@@ -666,6 +667,16 @@ export class Battle {
   ): void {
     if (!target.alive) return;
     const damageElement: DamageElement = opts.element ?? source?.element ?? "physical";
+    if (
+      source?.team === "hero" &&
+      target.team === "enemy" &&
+      this.heroTalentRank(source, "kingsRansom") > 0 &&
+      (BOSS_KINDS.includes(target.enemyKind ?? "") || PRIORITY_ENEMIES.has(target.enemyKind!))
+    ) rawAmount *= 1.2;
+    if (target.team === "hero") {
+      const citadel = this.livingHeroes().find((ally) => ally !== target && this.heroTalentRank(ally, "livingCitadel") > 0 && Math.hypot(ally.x - target.x, ally.y - target.y) < 125);
+      if (citadel) rawAmount *= 0.9;
+    }
     // Wind Step: shrug off the first hit of the wave entirely
     if (target.team === "hero" && this.windstepReady.has(target.id)) {
       this.windstepReady.delete(target.id);
@@ -1232,10 +1243,16 @@ export class Battle {
         this.fx.floatText(killer.x, killer.y - killer.radius * 3, "spellstorm", "#c8a8f0", 11);
       }
     }
-    // Windfall: kills shake loose extra coin
+    // Marked Quarry: every solved role hastens the ultimate; priority enemies
+    // pay three times as much for being correctly identified and focused.
     if (unit.team === "enemy" && killer?.team === "hero" && this.heroTalentRank(killer, "windfall") > 0) {
-      this.goldEarned += 3;
-      this.fx.floatText(unit.x, unit.y - unit.radius - 6, "+3g", "#ffd76b", 11);
+      const priority = PRIORITY_ENEMIES.has(unit.enemyKind!);
+      this.gainUlt(killer, priority ? 12 : 4);
+      this.fx.floatText(unit.x, unit.y - unit.radius - 6, priority ? "+12 ultimate" : "+4 ultimate", "#e8b85a", 11);
+    }
+    if (unit.team === "enemy" && killer?.team === "hero" && this.heroTalentRank(killer, "avatarOfWar") > 0) {
+      const disciplineSkill = killer.abilities.find((ability) => ability.def.pathSkill === "core");
+      if (disciplineSkill) disciplineSkill.timer = Math.max(0, disciplineSkill.timer - 2);
     }
     // Warcrier: every kill is a drumbeat the whole band marches to
     if (unit.team === "enemy" && killer?.team === "hero" && killer.calling === "warcrier") {
@@ -2193,10 +2210,10 @@ export class Battle {
       this.fx.floatText(hero.x, hero.y - hero.radius * 2.6 - 36, "CONTROL", color, 10);
     } else if (variant === "utility") {
       this.refreshPathEffect(hero, "shield", 5, Math.max(8, damage * 0.42), hero);
-      this.refreshPathEffect(hero, "haste", 2.5, 1.14, hero);
+      this.refreshPathEffect(hero, "haste", 2.5, this.heroTalentRank(hero, "stormDancer") > 0 ? 1.25 : 1.14, hero);
       this.fx.floatText(hero.x, hero.y - hero.radius * 2.6 - 36, "WARD", color, 10);
     } else if (variant === "power" && hitTargets.some((target) => target === this.bossRef)) {
-      this.bossStagger += 5;
+      this.bossStagger += this.heroTalentRank(hero, "highArcanum") > 0 ? 15 : 5;
     }
 
     if (hitCount > 0) {
@@ -6143,6 +6160,10 @@ export class Battle {
       if (Math.random() < chance) {
         crit = true;
         dmg *= 1.6;
+        if (this.heroTalentRank(attacker, "eagleSoul") > 0) {
+          const elementalSkill = attacker.abilities.find((ability) => ability.def.pathSkill === "focus");
+          if (elementalSkill) elementalSkill.timer = Math.max(0, elementalSkill.timer - 0.75);
+        }
         this.hitstop = Math.max(this.hitstop, 0.05);
         this.zoomPunch = Math.max(this.zoomPunch, 0.4);
       }

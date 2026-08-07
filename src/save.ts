@@ -15,7 +15,6 @@ import {
   MAX_LEVEL,
   pathId,
   POINTS_PER_LEVEL,
-  rollBoonPair,
   resolvedPathAbilities,
   STAGES,
   trinketById,
@@ -99,7 +98,7 @@ function defaultHero(index: number): HeroSave {
     .filter((ability): ability is NonNullable<typeof ability> => !!ability)
     .slice(0, MAX_EQUIPPED)
     .map((ability) => ability.id);
-  return { attrs, level: 1, xp: 0, boons: [], equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null, discipline: null, element: null, callingLevels: {}, masteredCallings: [], advancedCallings: {}, elementLevels: {}, masteredElements: [] };
+  return { attrs, level: 1, xp: 0, equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null, discipline: null, element: null, callingLevels: {}, masteredCallings: [], advancedCallings: {}, elementLevels: {}, masteredElements: [] };
 }
 
 /** Out of the box: 1-4 picks a hero, Q/W cast chosen abilities, R casts the ultimate. */
@@ -163,7 +162,6 @@ export function defaultSave(): SaveData {
     formation: "line",
     journal: [],
     forge: {},
-    pendingBoons: [],
   };
 }
 
@@ -384,7 +382,7 @@ export function loadSave(): SaveData {
       // heroes level individually now — veterans inherit the old band level
       hero.level = finiteInteger(hero.level, parsed.level, 1, MAX_LEVEL);
       hero.xp = finiteInteger(hero.xp, 0, 0, 1_000_000_000);
-      hero.boons = cleanStrings(hero.boons, MAX_LEVEL, false);
+      delete (hero as unknown as { boons?: unknown }).boons;
       hero.talents = cleanNumberRecord(hero.talents, 10);
       if (!trinketById(hero.trinket)) hero.trinket = null;
       const rawCalling: unknown = hero.calling;
@@ -455,10 +453,7 @@ export function loadSave(): SaveData {
     if (!( ["standard", "long", "extra"] as const).includes(parsed.telegraphAssist)) parsed.telegraphAssist = "standard";
     parsed.bestiary = cleanNumberRecord(parsed.bestiary) as SaveData["bestiary"];
     parsed.forge = cleanNumberRecord(parsed.forge, 3);
-    if (!Array.isArray(parsed.pendingBoons)) parsed.pendingBoons = [];
-    parsed.pendingBoons = parsed.pendingBoons.slice(0, 128).filter((entry) =>
-      !!entry && Number.isInteger(entry.hero) && entry.hero >= 0 && entry.hero < HEROES.length && typeof entry.a === "string" && typeof entry.b === "string",
-    );
+    delete (parsed as unknown as { pendingBoons?: unknown }).pendingBoons;
     parsed.difficulty = finiteInteger(parsed.difficulty, 1, 0, 3);
     if (typeof parsed.seenIntro !== "boolean") parsed.seenIntro = parsed.unlockedStage > 0;
     parsed.soundVol = finiteNumber(parsed.soundVol, 1, 0, 1);
@@ -558,8 +553,7 @@ export function persist(save: SaveData): void {
   }
 }
 
-/** Grants personal XP to one hero, applying level-ups: each level yields
- *  attribute points AND a boon pair awaiting the player's pick. */
+/** Grants personal XP. Each level yields attributes and a talent point. */
 export function grantHeroXp(save: SaveData, index: number, amount: number): number {
   const hero = save.heroes[index];
   if (!hero || hero.level >= MAX_LEVEL) {
@@ -588,7 +582,6 @@ export function grantHeroXp(save: SaveData, index: number, amount: number): numb
       }
     }
     save.unspent[index] += POINTS_PER_LEVEL;
-    save.pendingBoons.push({ hero: index, ...rollBoonPair() });
   }
   // legacy mirror: the band wears its most seasoned member's number
   save.level = Math.max(save.level, hero.level);

@@ -269,7 +269,7 @@ if (STAGES.length >= 30) {
 }
 
 console.log("# Wayband deterministic economy & progression report\n");
-console.log("Normal first clears only. This is a conservative floor: scheduled enemies count, while random loot, summoned adds, repeat clears, contracts, arenas and Fortune talents do not. Recruits and due gear come first; Road Tutelage then spends only above the next region's goal plus one Path-change reserve.\n");
+console.log("Normal first clears only. This is a conservative floor: scheduled enemies count, while random loot, summoned adds, repeat clears, contracts, arenas and combat talents do not. Recruits and due gear come first; Road Tutelage then spends only above the next region's goal plus one Path-change reserve.\n");
 console.log("## Campaign checkpoints\n");
 console.log("| After stage | Gross gold | Planned spend | Purse | Lessons | Roster | Active levels | Bench levels |");
 console.log("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");

@@ -285,7 +285,6 @@ export interface HeroSave {
   attrs: Attributes;
   level: number; // personal level — heroes grow by fighting, not by decree
   xp: number; // progress toward the next personal level
-  boons: string[]; // chosen level-up boons (stack; picked one-of-two per level)
   equipped: string[]; // chosen normal ability ids, max 2 (Calling ultimate is added separately)
   recruited: boolean;
   active: boolean; // in the fighting party (max 4)
@@ -312,7 +311,6 @@ export interface SaveData {
   level: number; // legacy mirror: the highest personal level in the band (display/back-compat)
   xp: number; // legacy, unused since heroes level individually
   unspent: number[]; // per hero
-  pendingBoons: { hero: number; a: string; b: string }[]; // level-up picks awaiting a choice
   heroes: HeroSave[];
   sound: boolean;
   music: boolean;

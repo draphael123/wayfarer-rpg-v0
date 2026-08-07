@@ -4,7 +4,6 @@ import {
   ALL_GEAR,
   arenaPurse,
   ARMOR_ACTIVES,
-  BOONS,
   BOSS_PHASES,
   BOSS_STAGES,
   CALLING_MASTERY_LEVELS,
@@ -28,6 +27,7 @@ import {
   pathId,
   STAGES,
   TALENTS,
+  talentMods,
   TRINKETS,
 } from "../src/data";
 import { defaultSave, grantHeroXp, loadSave, persist, recoveryKey, rejectedSaveKey, slotKey } from "../src/save";
@@ -231,7 +231,6 @@ assert.ok(contractPurse(flawless, false, false) < contractPurse(flawless, false,
 
 unique(ALL_GEAR.map((piece) => piece.id), "gear ids");
 unique(TRINKETS.map((trinket) => trinket.id), "trinket ids");
-unique(BOONS.map((boon) => boon.id), "boon ids");
 unique(TALENTS.map((talent) => talent.id), "talent ids");
 for (const talent of TALENTS) {
   if (!talent.requires) continue;
@@ -245,6 +244,10 @@ for (const tree of new Set(TALENTS.map((talent) => talent.tree))) {
   assert.ok(branch.length >= 9, `${tree} needs an expansive set of at least nine talents`);
   assert.ok(branch.filter((talent) => talent.tier === 5 && talent.keystone).length >= 2, `${tree} needs two final-row capstones`);
 }
+const gambitBranch = TALENTS.filter((talent) => talent.tree === "fortune");
+assert.ok(gambitBranch.every((talent) => !/gold|coin/i.test(`${talent.name} ${talent.blurb}`)), "Gambit must remain a combat tree, not a passive economy tax");
+const fieldcraft = talentMods({ scavenger: 3 });
+assert.ok(fieldcraft.cdr >= 0.06 && fieldcraft.moveSpeed >= 0.06, "Fieldcraft must change both technique tempo and positioning");
 unique(CALLINGS.map((calling) => calling.id), "calling ids");
 assert.equal(DISCIPLINE_IDS.length, 5, "the path system needs five readable combat disciplines");
 assert.equal(ELEMENT_IDS.length, 8, "the path system needs eight elemental attunements");
@@ -391,7 +394,6 @@ saveRoundTrip.pinnedGoal = "Recruit Wren";
 saveRoundTrip.journal = [{ stage: 0, time: 42.5, difficulty: 1, deaths: 0, party: [0, 3], at: 1 }];
 saveRoundTrip.inventory = [TRINKETS[0].id, TRINKETS[0].id];
 saveRoundTrip.armory = [ALL_GEAR[0].id, ALL_GEAR[0].id];
-saveRoundTrip.heroes[0].boons = [BOONS[0].id, BOONS[0].id];
 persist(saveRoundTrip);
 assert.equal(loadSave().gold, 137, "saved progress must round-trip");
 assert.equal(loadSave().formation, "wedge", "formation must persist");
@@ -399,7 +401,6 @@ assert.equal(loadSave().pinnedGoal, "Recruit Wren", "pinned goals must persist")
 assert.equal(loadSave().journal[0]?.time, 42.5, "Chronicle entries must persist");
 assert.equal(loadSave().inventory.length, 2, "duplicate trinkets must remain available for tinkering");
 assert.equal(loadSave().armory.length, 2, "duplicate armor copies must remain independently equippable");
-assert.equal(loadSave().heroes[0].boons.length, 2, "stacked boon choices must remain stacked");
 const masterySave = defaultSave();
 const firstPath = pathId("knight", "earth");
 masterySave.heroes[0].calling = firstPath;
@@ -437,6 +438,8 @@ assert.deepEqual(
 );
 
 const legacy = defaultSave() as SaveData & { reducedMotion?: boolean; keybinds?: Record<string, string> };
+(legacy as unknown as { pendingBoons: unknown[] }).pendingBoons = [{ hero: 0, a: "oakheart", b: "keenEdge" }];
+(legacy.heroes[0] as unknown as { boons: string[] }).boons = ["oakheart", "keenEdge"];
 legacy.heroes = legacy.heroes.slice(0, 4);
 legacy.gold = 777;
 legacy.unlockedStage = 9;
@@ -464,7 +467,6 @@ delete (legacy as Partial<SaveData>).contractRecords;
 delete (legacy as Partial<SaveData>).arenaMarks;
 delete (legacy as Partial<SaveData>).contractRenown;
 delete (legacy as Partial<SaveData>).challengeMilestones;
-delete (legacy as Partial<SaveData>).pendingBoons;
 delete (legacy as Partial<SaveData>).formation;
 delete (legacy as Partial<SaveData>).journal;
 delete (legacy as Partial<SaveData>).pinnedGoal;
@@ -474,6 +476,8 @@ assert.equal(migrated.heroes.length, HEROES.length, "older rosters must gain new
 assert.equal(migrated.gold, 777, "legacy migration must preserve campaign wealth");
 assert.equal(migrated.unlockedStage, 9, "legacy migration must preserve campaign progress");
 assert.equal(migrated.reducedMotion, false, "older saves must gain comfort defaults");
+assert.ok(!("pendingBoons" in migrated), "legacy boon queues must be removed during migration");
+assert.ok(!("boons" in migrated.heroes[0]), "legacy hero boons must be removed during migration");
 assert.ok(migrated.keybinds.ability1, "older saves must gain default keybinds");
 assert.deepEqual(migrated.heroes[0].equipped, ["cleave", "bellow"], "older three-spell loadouts must trim safely to two choices");
 assert.ok(migrated.unlockedSpells.includes("mend"), "pre-shop saves must retain spells already equipped before loadout trimming");

@@ -362,11 +362,7 @@ function settleVictory(): void {
   });
   persist(save);
   for (const m of milestones) setTimeout(() => menus.showToast(m), 1200);
-  // Deep Pockets: someone in the band knows where coin hides
-  const deepPockets = save.heroes.some((h) => h.active && (h.talents?.deepPockets ?? 0) > 0);
-  const scavengerRanks = Math.max(0, ...save.heroes.filter((h) => h.active).map((h) => h.talents?.scavenger ?? 0));
-  const kingsRansom = save.heroes.some((h) => h.active && (h.talents?.kingsRansom ?? 0) > 0);
-  save.gold += Math.round(gold * (1 + (deepPockets ? 0.2 : 0) + scavengerRanks * 0.05 + (kingsRansom ? 0.25 : 0)));
+  save.gold += Math.round(gold);
   // stage record book: clears + fastest time feed the map's scout report
   const rec = save.stageStats[currentStage];
   const t = Math.round(battle.time * 10) / 10;

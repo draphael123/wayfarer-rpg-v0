@@ -84,6 +84,6 @@ patterns feel learned rather than random.
 
 At the Tavern after stage 18, verify that Road Tutelage appears only for
 inactive companions behind the active band, buys exactly one level, charges the
-displayed amount, queues the normal boon choice, and disappears when the pupil
+displayed amount, grants the expected talent and attribute progression, and disappears when the pupil
 catches the active party. It must never raise an active hero or create a new
 highest-level hero.

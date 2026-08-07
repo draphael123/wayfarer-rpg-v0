@@ -51,7 +51,6 @@ import {
   ATTR_KEYS,
   ATTR_NAMES,
   bandLevel,
-  boonById,
   DEEDS,
   ENEMIES,
   HEROES,
@@ -100,6 +99,16 @@ const DISCIPLINE_TALENT_TREES: Record<DisciplineId, readonly TalentTree[]> = {
   archer: ["precision", "sorcery", "fortune"],
   priest: ["faith", "bulwark", "sorcery"],
   mage: ["sorcery", "swiftness", "faith"],
+};
+
+const TALENT_TREE_PROMISES: Record<TalentTree, string> = {
+  might: "Turn kills into tempo, healing, and sweeping melee pressure.",
+  precision: "Open fights cleanly, finish wounded targets, and chain perfect shots.",
+  sorcery: "Accelerate elemental reactions and reshape technique recovery.",
+  faith: "Convert healing into wards, rescues, and second chances.",
+  bulwark: "Absorb the first crisis, punish attackers, and shelter nearby allies.",
+  swiftness: "Avoid opening blows and keep moving between dangerous lanes.",
+  fortune: "Read priority targets, begin prepared, and charge ultimates through correct focus.",
 };
 
 const NATURAL_DISCIPLINE: Record<AttrKey, DisciplineId> = {
@@ -1634,7 +1643,6 @@ export class Menus {
     });
     this.mount(page, "battle");
     this.tickGold(page);
-    this.maybeOfferBoons();
   }
 
   renderArena(): void {
@@ -1743,55 +1751,6 @@ export class Menus {
       this.callbacks.startChallenge("contract", contract.stage, contract.id);
     });
     this.mount(page, "tavern");
-  }
-
-  /** Level-up boon picks queue up here: one hero, two gifts, one choice. */
-  private maybeOfferBoons(): void {
-    const save = this.save;
-    const next = save.pendingBoons[0];
-    if (!next || document.querySelector(".boon-pop")) return;
-    const hero = save.heroes[next.hero];
-    const def = HEROES[next.hero];
-    if (!hero || !def) {
-      save.pendingBoons.shift();
-      return;
-    }
-    const a = boonById(next.a);
-    const b = boonById(next.b);
-    if (!a || !b) {
-      save.pendingBoons.shift();
-      return;
-    }
-    const card = (boon: NonNullable<typeof a>, key: string) => `
-      <button class="big-btn boon-card ${boon.rarity === "rare" ? "rare" : ""}" data-boon="${key}">
-        <strong>${boon.name}${boon.rarity === "rare" ? " ✦" : ""}</strong>
-        <em>${boon.blurb}</em>
-      </button>`;
-    const pop = el(`
-      <div class="levelup-pop boon-pop">
-        <div class="levelup-card">
-          <div class="levelup-burst">✦</div>
-          <div class="levelup-title">LEVEL ${hero.level}</div>
-          <div class="levelup-line"><strong>${def.name}</strong> grows — choose their boon${save.pendingBoons.length > 1 ? ` <span class="boon-queue">(${save.pendingBoons.length} waiting)</span>` : ""}</div>
-          <div class="boon-row">${card(a, "a")}${card(b, "b")}</div>
-        </div>
-      </div>
-    `);
-    navigator.vibrate?.([16, 40, 24]);
-    audio.play("ready");
-    pop.addEventListener("click", (event) => {
-      const pick = (event.target as HTMLElement).closest("[data-boon]")?.getAttribute("data-boon");
-      if (!pick) return;
-      const chosen = pick === "a" ? a : b;
-      hero.boons.push(chosen.id);
-      save.pendingBoons.shift();
-      persist(save);
-      audio.play(chosen.rarity === "rare" ? "relic" : "levelup");
-      this.showToast(`${def.name} takes ${chosen.name}`);
-      pop.remove();
-      this.maybeOfferBoons();
-    });
-    this.root.appendChild(pop);
   }
 
   /** Make painted SVG waymarks behave like real controls for keyboard and
@@ -3107,6 +3066,7 @@ export class Menus {
     const budget = talentPointBudget(hero.level);
     const spent = talentPointsSpent(hero.talents);
     const free = budget - spent;
+    const learnedKeystones = TALENTS.filter((talent) => talent.keystone && (hero.talents[talent.id] ?? 0) > 0);
     const page = el(`
       <div class="page">
         <div class="map-header">
@@ -3118,7 +3078,11 @@ export class Menus {
             </div>
           </div>
         </div>
-        <div class="shop-note talent-primer"><strong>Forge a path.</strong> Five rows open at hero levels ${TALENT_TIER_LEVELS.join(", ")}. Follow connected prerequisites toward ◆ build-changing capstones.</div>
+        <div class="shop-note talent-primer"><strong>Your build lives here.</strong> Random boons are gone. Every level now feeds a visible route toward triggers, reactions, and ◆ rule-changing capstones.</div>
+        <section class="talent-loadout-strip">
+          <div><span>Unspent</span><strong>${free}</strong><em>of ${budget} earned</em></div>
+          <div><span>Rules learned</span><strong>${learnedKeystones.length ? learnedKeystones.map((talent) => talent.name).join(" · ") : "None yet"}</strong><em>${learnedKeystones.length ? "These effects are active in combat." : "First keystones open at level 8."}</em></div>
+        </section>
         <div class="talent-trees"></div>
         <div class="map-footer">
           <button class="toggle-btn" data-act="reset-talents">Reforge all points (free)</button>
@@ -3151,7 +3115,7 @@ export class Menus {
       const inTree = talentPointsInTree(hero.talents, treeKey);
       const column = el(`
         <div class="talent-col wide" style="--tree:${tree.color}">
-          <div class="talent-col-head"><span>${tree.icon} ${tree.name}</span><small>${inTree} invested</small></div>
+          <div class="talent-col-head"><span>${tree.icon} ${tree.name}</span><small>${inTree} invested</small><em>${TALENT_TREE_PROMISES[treeKey]}</em></div>
         </div>
       `);
       for (const tier of [1, 2, 3, 4, 5] as const) {
@@ -3173,6 +3137,7 @@ export class Menus {
             el(`
               <button class="talent-node ${talent.keystone ? "keystone" : ""} ${maxed ? "maxed" : ""} ${open && free > 0 && !maxed ? "can" : ""} ${open ? "" : "tier-locked"}" data-talent="${talent.id}" aria-label="${talent.name}, rank ${rank} of ${talent.maxRank}">
                 <div class="talent-rank">${rank}/${talent.maxRank}</div>
+                <div class="talent-kind">${talent.keystone ? "Rule-changer" : talent.maxRank > 1 ? "Ranked craft" : "Combat trigger"}</div>
                 <div class="talent-name">${talent.keystone ? "◆ " : ""}${talent.name}</div>
                 <div class="talent-blurb">${talent.blurb}${talent.maxRank > 1 ? " <em>/rank</em>" : ""}</div>
                 ${prerequisite && !prerequisiteMet && rank === 0 ? `<div class="talent-requires">Requires ${prerequisite.name}</div>` : ""}
@@ -3477,7 +3442,6 @@ export class Menus {
         navigator.vibrate?.([14, 28, 20]);
         this.showToast(`${HEROES[index].name} studies the road and reaches level ${hero.level}`);
         this.renderShop("tavern");
-        this.maybeOfferBoons();
         return;
       }
       const btn = (event.target as HTMLElement).closest("[data-recruit]");
@@ -4044,7 +4008,6 @@ export class Menus {
       }
     });
     this.mount(page, "party");
-    this.maybeOfferBoons();
   }
 
   private heroCard(index: number, full = false): HTMLElement {
@@ -4062,7 +4025,6 @@ export class Menus {
       hero.trinket,
       oathHolds ? hero.calling : null,
       oathHolds ? hero.advCalling : null,
-      hero.boons,
       hero.masteredElements,
     );
     const weapon = dominantWeapon(hero.attrs, oathHolds ? hero.calling : null);
@@ -4194,7 +4156,7 @@ export class Menus {
         return c && callingEligible(c, hero.attrs) ? hero.calling : null;
       };
       const effAdv = () => (effCalling() ? hero.advCalling : null);
-      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.boons, hero.masteredElements);
+      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.masteredElements);
       hero.attrs[key] += 1;
       save.unspent[index] -= 1;
       const before = unlocked.length;
@@ -4215,7 +4177,7 @@ export class Menus {
         audio.play("click");
       }
       persist(save);
-      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.boons, hero.masteredElements);
+      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.masteredElements);
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, statsBefore, statsAfter);
     });
@@ -4235,7 +4197,7 @@ export class Menus {
         const c = callingById(hero.calling);
         return c && callingEligible(c, hero.attrs) ? hero.calling : null;
       };
-      const before = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.boons, hero.masteredElements);
+      const before = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.masteredElements);
       for (let p = 0; p < pts; p++) {
         let bestK = ATTR_KEYS[0];
         let bestScore = -1;
@@ -4258,7 +4220,7 @@ export class Menus {
       persist(save);
       audio.play("levelup");
       this.showToast(`${def.name}'s training follows their nature — ${pts} point${pts === 1 ? "" : "s"} spent`);
-      const after = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.boons, hero.masteredElements);
+      const after = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.masteredElements);
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, before, after);
     });
@@ -4471,7 +4433,7 @@ export class Menus {
     const oathHolds = sworn ? callingEligible(sworn, hero.attrs) : false;
     const weapon = dominantWeapon(hero.attrs, oathHolds ? hero.calling : null);
     const currentGear = () => heroGearOf(hero, save.forge);
-    const currentStats = () => deriveStats(hero.attrs, hero.weaponTier, currentGear(), hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.boons, hero.masteredElements);
+    const currentStats = () => deriveStats(hero.attrs, hero.weaponTier, currentGear(), hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.masteredElements);
     const wornSet = armorSetOf(currentGear());
     const slotInfo = [
       { key: "weapon", label: "Weapon", icon: "sword", value: `${WEAPON_TIERS[hero.weaponTier].name} ${WEAPON_LABEL[weapon]}` },
@@ -4545,7 +4507,7 @@ export class Menus {
       const choices: (typeof pool[number] | null)[] = [null, ...pool];
       list.innerHTML = choices.map((piece) => {
         const altGear = { ...currentGear(), [kind === "body" ? "body" : kind]: piece?.id ?? null };
-        const alt = deriveStats(hero.attrs, hero.weaponTier, altGear, hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.boons, hero.masteredElements);
+        const alt = deriveStats(hero.attrs, hero.weaponTier, altGear, hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.masteredElements);
         const deltas = [[alt.maxHp - cur.maxHp, "hp"], [Math.round((alt.armor - cur.armor) * 100), "% armor"], [Math.round(((alt.speed - cur.speed) / cur.speed) * 100), "% move"]] as const;
         const deltaHtml = deltas.filter(([n]) => n).map(([n, label]) => `<i class="${n > 0 ? "up" : "dn"}">${n > 0 ? "+" : ""}${n}${label}</i>`).join("");
         const active = wornId === (piece?.id ?? null);
@@ -4658,7 +4620,7 @@ export class Menus {
     const gearHolder = page.querySelector(".gear-slots")!;
     const gearNow = () => heroGearOf(hero, save.forge);
     const statsWith = (gear: ReturnType<typeof gearNow>) =>
-      deriveStats(hero.attrs, hero.weaponTier, gear, hero.talents, hero.trinket, sheetHolds ? hero.calling : null, sheetHolds ? hero.advCalling : null, hero.boons, hero.masteredElements);
+      deriveStats(hero.attrs, hero.weaponTier, gear, hero.talents, hero.trinket, sheetHolds ? hero.calling : null, sheetHolds ? hero.advCalling : null, hero.masteredElements);
     const buildSlot = (kind: "body" | "helm" | "boots") => {
       const catalog = kind === "body" ? ARMORS : kind === "helm" ? HELMS : BOOTS;
       const wornId = kind === "body" ? hero.armor : kind === "helm" ? hero.helm : hero.boots;

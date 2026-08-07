@@ -2185,7 +2185,7 @@ export function drawTitleDiorama(ctx: CanvasRenderingContext2D, save: SaveData, 
       x: ux,
       y: uy,
       radius: 13,
-      stats: deriveStats(hs.attrs, hs.weaponTier, heroGearOf(hs, save.forge), hs.talents, hs.trinket, active, active ? hs.advCalling : null, hs.boons, hs.masteredElements),
+      stats: deriveStats(hs.attrs, hs.weaponTier, heroGearOf(hs, save.forge), hs.talents, hs.trinket, active, active ? hs.advCalling : null, hs.masteredElements),
       hp: 1,
       attackTimer: 0,
       moveTarget: null,
@@ -2246,7 +2246,7 @@ export function drawHeroFigure(
   const hero = save.heroes[heroIndex];
   const oathDef = callingById(hero.calling);
   const activeOath = oathDef && callingEligible(oathDef, hero.attrs) ? hero.calling : null;
-  const stats = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null, hero.boons, hero.masteredElements);
+  const stats = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, activeOath, activeOath ? hero.advCalling : null, hero.masteredElements);
   const radius = 13;
   const scale = canvas.height / (radius * 3.7 * 1.55);
   const unit = {
@@ -2331,6 +2331,85 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   const BOOT_TINTS: Record<string, string> = { cloth: "#5d5378", leather: "#6e5236", mail: "#7e8794", plate: "#98a2b2" };
   const bootColor = bootsPiece ? (bootsPiece.tint ?? BOOT_TINTS[bootsPiece.family]) : null;
   const bodyForge = gear?.armor ? (save.forge?.[gear.armor] ?? 0) : 0;
+
+  // Path identity is carried by a physical silhouette first and magic second:
+  // quiver, shield, stole, scarf, or orbiting folio. The attunement stays low
+  // at the feet so combat remains readable when four heroes overlap.
+  if (unit.discipline && unit.element) {
+    const pathTime = save.reducedMotion ? 0 : time;
+    const pathColor = ELEMENT_MARK_COLORS[unit.element];
+    ctx.save();
+    ctx.globalAlpha = 0.2 + Math.sin(pathTime * 1.8 + unit.id) * 0.035;
+    ctx.strokeStyle = pathColor;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.ellipse(cx, gy + 1, H * 0.38, H * 0.11, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let mark = 0; mark < 3; mark++) {
+      const angle = pathTime * 0.55 + mark * (Math.PI * 2 / 3) + unit.id;
+      ctx.fillStyle = pathColor;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(angle) * H * 0.31, gy + Math.sin(angle) * H * 0.065, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    if (unit.discipline === "knight") {
+      const sx = cx - f * bodyW * 0.72;
+      const shield = new Path2D();
+      shield.moveTo(sx - bodyW * 0.28, shoulderY - 3);
+      shield.lineTo(sx + bodyW * 0.28, shoulderY - 3);
+      shield.lineTo(sx + bodyW * 0.22, hipY + H * 0.1);
+      shield.lineTo(sx, hipY + H * 0.18);
+      shield.lineTo(sx - bodyW * 0.22, hipY + H * 0.1);
+      shield.closePath();
+      shaded(ctx, shield, "#657078", f, sx, hipY, bodyW * 0.35, 2.2);
+      ctx.strokeStyle = pathColor;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(sx, shoulderY + 1);
+      ctx.lineTo(sx, hipY + H * 0.1);
+      ctx.stroke();
+    } else if (unit.discipline === "rogue") {
+      ctx.strokeStyle = pathColor;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(cx - f * bodyW * 0.2, shoulderY);
+      ctx.quadraticCurveTo(cx - f * bodyW * 1.1, shoulderY + H * 0.13, cx - f * bodyW * (1.35 + Math.sin(pathTime * 3) * 0.12), hipY + H * 0.08);
+      ctx.stroke();
+    } else if (unit.discipline === "archer") {
+      ctx.save();
+      ctx.translate(cx - f * bodyW * 0.58, shoulderY + H * 0.07);
+      ctx.rotate(-f * 0.28);
+      roundRect(ctx, -4, -H * 0.19, 8, H * 0.37, 3);
+      outlined(ctx, "#654b32", 2);
+      ctx.strokeStyle = pathColor;
+      ctx.lineWidth = 1.5;
+      for (const arrow of [-2, 1, 4]) {
+        ctx.beginPath();
+        ctx.moveTo(arrow, -H * 0.15);
+        ctx.lineTo(arrow + f, -H * 0.29);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (unit.discipline === "priest") {
+      ctx.globalAlpha = 0.72;
+      ctx.strokeStyle = pathColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, headY - headR * 1.15, headR * 0.95, headR * 0.26, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = pathColor;
+      ctx.font = `700 ${Math.max(7, H * 0.13)}px Georgia, serif`;
+      ctx.textAlign = "center";
+      for (let rune = 0; rune < 3; rune++) {
+        const angle = pathTime * 0.7 + rune * (Math.PI * 2 / 3);
+        ctx.globalAlpha = 0.55 + rune * 0.1;
+        ctx.fillText(["◇", "·", "△"][rune], cx + Math.cos(angle) * bodyW * 0.9, shoulderY + H * 0.18 + Math.sin(angle) * H * 0.16);
+      }
+    }
+    ctx.restore();
+  }
 
   // back leg, back arm behind body
   if (!robed) {
@@ -4862,6 +4941,56 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
   }
   torso.closePath();
   shaded(ctx, torso, colors.body, f, cx, (shoulderY + hipY) / 2, bodyW * (big ? 0.7 : 0.55), 3);
+  // Fixed combat roles alter the silhouette, not just the health-bar badge.
+  // These marks stay material and regional: shields, pennants, ammunition,
+  // hooked tools and pursuit ribbons instead of floating UI symbols.
+  const enemyRole = ENEMIES[unit.enemyKind!]?.role;
+  if (enemyRole === "tank") {
+    ctx.beginPath();
+    ctx.ellipse(cx - f * bodyW * 0.58, shoulderY + H * 0.14, bodyW * 0.34, H * 0.24, f * 0.08, 0, Math.PI * 2);
+    outlined(ctx, colors.trim, 2.4);
+    ctx.strokeStyle = "rgba(235,225,195,.45)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(cx - f * bodyW * 0.58, shoulderY + H * 0.02);
+    ctx.lineTo(cx - f * bodyW * 0.58, shoulderY + H * 0.26);
+    ctx.stroke();
+  } else if (enemyRole === "assassin" || enemyRole === "hunter") {
+    const trail = Math.sin(time * 5 + unit.id) * H * 0.04;
+    ctx.strokeStyle = colors.trim;
+    ctx.lineWidth = enemyRole === "assassin" ? 3.5 : 2.4;
+    ctx.beginPath();
+    ctx.moveTo(cx - f * bodyW * 0.25, shoulderY + 2);
+    ctx.quadraticCurveTo(cx - f * bodyW, shoulderY + H * 0.12, cx - f * bodyW * 1.35, hipY + trail);
+    ctx.stroke();
+  } else if (enemyRole === "support" || enemyRole === "summoner") {
+    const poleX = cx - f * bodyW * 0.7;
+    ctx.strokeStyle = "#4b3b2d";
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(poleX, hipY + H * 0.16);
+    ctx.lineTo(poleX, shoulderY - H * 0.18);
+    ctx.stroke();
+    ctx.fillStyle = colors.trim;
+    ctx.beginPath();
+    ctx.moveTo(poleX, shoulderY - H * 0.17);
+    ctx.lineTo(poleX + f * bodyW * 0.52, shoulderY - H * 0.09);
+    ctx.lineTo(poleX, shoulderY + H * 0.01);
+    ctx.closePath();
+    ctx.fill();
+  } else if (enemyRole === "artillery" || enemyRole === "controller" || enemyRole === "disruptor") {
+    ctx.strokeStyle = colors.trim;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(cx - f * bodyW * 0.5, shoulderY + H * 0.04);
+    ctx.lineTo(cx + f * bodyW * 0.45, hipY);
+    ctx.stroke();
+    for (let charge = 0; charge < 2; charge++) {
+      ctx.beginPath();
+      ctx.arc(cx - f * bodyW * (0.28 + charge * 0.2), shoulderY + H * (0.05 + charge * 0.11), 2.2, 0, Math.PI * 2);
+      outlined(ctx, colors.trim, 1.1);
+    }
+  }
   // archer's quiver rides the back
   if (kind === "archer") {
     ctx.save();

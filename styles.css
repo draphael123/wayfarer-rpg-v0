@@ -3642,28 +3642,6 @@ body.reduced-motion .forge-sparks i { animation: none; }
 
 .armor-rack .curio-card .buy-btn + .buy-btn { margin-left: 5px; }
 
-/* level-up boon picks: one hero, two gifts, one choice */
-.boon-row { display: flex; gap: 10px; justify-content: center; margin: 12px 0 2px; }
-
-.boon-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 150px;
-  padding: 14px 16px;
-  text-align: center;
-}
-
-.boon-card strong { font-size: 15px; }
-
-.boon-card em { font-style: normal; font-size: 12px; opacity: 0.85; }
-
-.boon-card.rare { border-color: #c9a0ff; box-shadow: 0 0 12px rgba(201, 160, 255, 0.25); }
-
-.boon-card.rare strong { color: #e2ccff; }
-
-.boon-queue { opacity: 0.65; font-size: 12px; }
-
 .hero-lv {
   font-weight: 800;
   color: #ffd76b;
@@ -3713,6 +3691,17 @@ button.hero-points { font: inherit; cursor: pointer; }
 .spell-section em { font-style: normal; color: #8d84a3; text-transform: none; letter-spacing: 0; }
 
 /* ---- discipline talent paths: a forged, connected skill tree ---- */
+.talent-loadout-strip {
+  max-width: 760px; margin: 10px auto 4px; display: grid; grid-template-columns: 150px minmax(0, 1fr);
+  color: #c9c0aa; background: #191b17; border: 1px solid #4a493e; border-left: 4px solid #b99a61;
+  box-shadow: 0 8px 22px rgba(0,0,0,.24);
+}
+.talent-loadout-strip > div { min-width: 0; display: grid; gap: 3px; padding: 11px 14px; }
+.talent-loadout-strip > div + div { border-left: 1px solid #3d3d34; }
+.talent-loadout-strip span { color: #8f8878; font: 800 8px/1 ui-monospace, Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; }
+.talent-loadout-strip strong { overflow: hidden; color: #e8ddc4; font: 800 12px/1.25 Cinzel, Palatino, Georgia, serif; text-overflow: ellipsis; }
+.talent-loadout-strip > div:first-child strong { color: #d8b968; font-size: 22px; }
+.talent-loadout-strip em { color: #8d8678; font-size: 9px; font-style: normal; }
 .tree-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 2px 2px; }
 .tree-chip {
   font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
@@ -3736,8 +3725,9 @@ button.hero-points { font: inherit; cursor: pointer; }
   padding: 0 16px 18px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--tree) 15%, transparent), transparent 38%),
-    linear-gradient(180deg, #282039 0%, #1f192d 100%);
+    repeating-linear-gradient(0deg, rgba(238,220,175,.018) 0 1px, transparent 1px 8px),
+    radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--tree) 13%, transparent), transparent 38%),
+    linear-gradient(180deg, #25251f 0%, #181a16 100%);
 }
 .talent-col.wide::before {
   content: "";
@@ -3753,12 +3743,14 @@ button.hero-points { font: inherit; cursor: pointer; }
   width: calc(100% + 32px);
   margin: 0 -16px 8px;
   padding: 13px 17px 11px;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
   align-items: baseline;
   text-align: left;
   background: linear-gradient(90deg, color-mix(in srgb, var(--tree) 17%, transparent), transparent 60%);
 }
+.talent-col.wide .talent-col-head > em { grid-column: 1 / -1; color: #9f9786; font: italic 10px/1.35 Georgia, serif; }
 .talent-col-head small {
   font: 700 10px/1.2 system-ui, sans-serif;
   letter-spacing: .1em;
@@ -3797,7 +3789,7 @@ button.hero-points { font: inherit; cursor: pointer; }
   gap: 8px;
   border: 1px solid color-mix(in srgb, var(--tree) 32%, #443853);
   border-radius: 3px;
-  background: #211a2e;
+  background: #1b1d18;
   color: #8e839f;
 }
 .tier-rule span { color: color-mix(in srgb, var(--tree) 72%, #fff); }
@@ -3825,7 +3817,7 @@ button.hero-points { font: inherit; cursor: pointer; }
   min-height: 112px;
   padding: 13px 12px 10px;
   border-radius: 5px 5px 10px 10px;
-  background: linear-gradient(180deg, #302640, #251e34);
+  background: linear-gradient(180deg, #292a24, #1e201b);
   box-shadow: 0 5px 13px rgba(0, 0, 0, .22);
 }
 .talent-col.wide .talent-node::before {
@@ -3852,8 +3844,9 @@ button.hero-points { font: inherit; cursor: pointer; }
   color: color-mix(in srgb, var(--tree) 74%, #fff);
   border: 1px solid color-mix(in srgb, var(--tree) 42%, #4a3f66);
   border-radius: 50%;
-  background: #181320;
+  background: #151713;
 }
+.talent-kind { margin-bottom: 5px; color: color-mix(in srgb, var(--tree) 70%, #a89f8a); font: 800 7px/1 ui-monospace, Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; }
 .talent-requires {
   margin-top: 6px;
   font-size: 9.5px;
@@ -3863,6 +3856,7 @@ button.hero-points { font: inherit; cursor: pointer; }
 }
 .talent-primer { border-left: 3px solid #9a7ad1; }
 @media (max-width: 560px) {
+  .talent-loadout-strip { grid-template-columns: 96px minmax(0, 1fr); }
   .talent-col.wide { padding-inline: 10px; }
   .talent-col.wide .talent-col-head { width: calc(100% + 20px); margin-inline: -10px; }
   .talent-tier-nodes { grid-template-columns: 1fr; gap: 8px; }

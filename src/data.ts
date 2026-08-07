@@ -974,70 +974,6 @@ export function pathId(discipline: DisciplineId, element: ElementId): string {
   return `${discipline}-${element}`;
 }
 
-// --- boons: level-up gifts, one chosen of two offered — a hero's personal story ---
-
-export interface BoonDef {
-  id: string;
-  name: string;
-  blurb: string;
-  rarity: "common" | "rare";
-  mods: Partial<{ hpFlat: number; armorFlat: number; moveSpeed: number; atkSpeed: number; spellPower: number; healPower: number; rangedDmg: number; meleeDmg: number; cdr: number; crit: number; ultRate: number }>;
-}
-
-export const BOONS: BoonDef[] = [
-  { id: "oakheart", name: "Oakheart", blurb: "+14 health", rarity: "common", mods: { hpFlat: 14 } },
-  { id: "keenEdge", name: "Keen Edge", blurb: "+4% melee damage", rarity: "common", mods: { meleeDmg: 0.04 } },
-  { id: "trueFlight", name: "True Flight", blurb: "+4% ranged damage", rarity: "common", mods: { rangedDmg: 0.04 } },
-  { id: "quickHands", name: "Quick Hands", blurb: "+3% attack speed", rarity: "common", mods: { atkSpeed: 0.03 } },
-  { id: "lightStep", name: "Light Step", blurb: "+3% move speed", rarity: "common", mods: { moveSpeed: 0.03 } },
-  { id: "ironSkin", name: "Iron Skin", blurb: "+2% armor", rarity: "common", mods: { armorFlat: 0.02 } },
-  { id: "clearMind", name: "Clear Mind", blurb: "+3% spell power", rarity: "common", mods: { spellPower: 0.03 } },
-  { id: "kindSoul", name: "Kind Soul", blurb: "+4% healing", rarity: "common", mods: { healPower: 0.04 } },
-  { id: "steadyBreath", name: "Steady Breath", blurb: "−2% cooldowns", rarity: "common", mods: { cdr: 0.02 } },
-  { id: "luckyCoin", name: "Lucky Coin", blurb: "+2% critical chance", rarity: "common", mods: { crit: 0.02 } },
-  { id: "giantsBlood", name: "Giant's Blood", blurb: "+30 health", rarity: "rare", mods: { hpFlat: 30 } },
-  { id: "secondSkin", name: "Second Skin", blurb: "+4% armor", rarity: "rare", mods: { armorFlat: 0.04 } },
-  { id: "huntersEye", name: "Hunter's Eye", blurb: "+5% critical chance", rarity: "rare", mods: { crit: 0.05 } },
-  { id: "wolfsHeart", name: "Wolf's Heart", blurb: "Ultimate charges 12% faster", rarity: "rare", mods: { ultRate: 0.12 } },
-];
-
-export function boonById(id: string): BoonDef | undefined {
-  return BOONS.find((b) => b.id === id);
-}
-
-/** Two distinct boons offered at a level-up; rares turn up now and then. */
-export function rollBoonPair(): { a: string; b: string } {
-  const commons = BOONS.filter((b) => b.rarity === "common");
-  const rares = BOONS.filter((b) => b.rarity === "rare");
-  const pick = () => (Math.random() < 0.16 ? rares[Math.floor(Math.random() * rares.length)] : commons[Math.floor(Math.random() * commons.length)]);
-  const a = pick();
-  let b = pick();
-  let guard = 0;
-  while (b.id === a.id && guard++ < 10) b = pick();
-  return { a: a.id, b: b.id };
-}
-
-export function boonMods(boons: string[] | undefined) {
-  const m = { meleeDmg: 0, rangedDmg: 0, hpFlat: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, ultRate: 0 };
-  if (!boons) return m;
-  for (const id of boons) {
-    const b = boonById(id);
-    if (!b) continue;
-    m.meleeDmg += b.mods.meleeDmg ?? 0;
-    m.rangedDmg += b.mods.rangedDmg ?? 0;
-    m.hpFlat += b.mods.hpFlat ?? 0;
-    m.armorFlat += b.mods.armorFlat ?? 0;
-    m.cdr += b.mods.cdr ?? 0;
-    m.atkSpeed += b.mods.atkSpeed ?? 0;
-    m.moveSpeed += b.mods.moveSpeed ?? 0;
-    m.crit += b.mods.crit ?? 0;
-    m.spellPower += b.mods.spellPower ?? 0;
-    m.healPower += b.mods.healPower ?? 0;
-    m.ultRate += b.mods.ultRate ?? 0;
-  }
-  return m;
-}
-
 /** The band's public face: its most seasoned member. */
 export function bandLevel(save: { heroes: { recruited: boolean; level: number }[] }): number {
   return Math.max(1, ...save.heroes.filter((h) => h.recruited).map((h) => h.level));
@@ -1530,11 +1466,11 @@ function callingStatMods(calling?: string | null, advCalling?: string | null, ma
   return m;
 }
 
-/** Total ability-cooldown reduction from talents, trinket, calling(s), and boons. */
+/** Total ability-cooldown reduction from authored progression systems. */
 export function cooldownReduction(hero: HeroSave): number {
   return Math.min(
     0.5,
-    talentMods(hero.talents).cdr + trinketMods(hero.trinket).cdr + callingStatMods(hero.calling, hero.advCalling, hero.masteredElements).cdr + boonMods(hero.boons).cdr,
+    talentMods(hero.talents).cdr + trinketMods(hero.trinket).cdr + callingStatMods(hero.calling, hero.advCalling, hero.masteredElements).cdr,
   );
 }
 
@@ -1546,29 +1482,27 @@ export function deriveStats(
   trinket?: string | null,
   calling?: string | null,
   advCalling?: string | null,
-  boons?: string[],
   masteries?: string[],
 ): DerivedStats {
   const t = talentMods(talents);
   const k = trinketMods(trinket);
   const c = callingStatMods(calling, advCalling, masteries);
   const v = gearMods(armor);
-  const bn = boonMods(boons);
   const mods = {
-    meleeDmg: t.meleeDmg + k.meleeDmg + c.meleeDmg + v.meleeDmg + bn.meleeDmg,
-    rangedDmg: t.rangedDmg + k.rangedDmg + c.rangedDmg + v.rangedDmg + bn.rangedDmg,
+    meleeDmg: t.meleeDmg + k.meleeDmg + c.meleeDmg + v.meleeDmg,
+    rangedDmg: t.rangedDmg + k.rangedDmg + c.rangedDmg + v.rangedDmg,
     hpPct: t.hpPct + k.hpPct + c.hpPct + v.hpPct,
-    armorFlat: t.armorFlat + k.armorFlat + c.armorFlat + v.armorFlat + bn.armorFlat,
-    cdr: Math.min(0.5, t.cdr + k.cdr + c.cdr + v.cdr + bn.cdr),
-    atkSpeed: t.atkSpeed + k.atkSpeed + c.atkSpeed + v.atkSpeed + bn.atkSpeed,
-    moveSpeed: t.moveSpeed + k.moveSpeed + c.moveSpeed + v.moveSpeed + bn.moveSpeed,
-    crit: t.crit + k.crit + c.crit + v.crit + bn.crit,
-    spellPower: t.spellPower + k.spellPower + c.spellPower + v.spellPower + bn.spellPower,
-    healPower: t.healPower + k.healPower + c.healPower + v.healPower + bn.healPower,
+    armorFlat: t.armorFlat + k.armorFlat + c.armorFlat + v.armorFlat,
+    cdr: Math.min(0.5, t.cdr + k.cdr + c.cdr + v.cdr),
+    atkSpeed: t.atkSpeed + k.atkSpeed + c.atkSpeed + v.atkSpeed,
+    moveSpeed: t.moveSpeed + k.moveSpeed + c.moveSpeed + v.moveSpeed,
+    crit: t.crit + k.crit + c.crit + v.crit,
+    spellPower: t.spellPower + k.spellPower + c.spellPower + v.spellPower,
+    healPower: t.healPower + k.healPower + c.healPower + v.healPower,
     startShield: t.startShield + k.startShield + c.startShield + v.startShield,
   };
   const weapon = dominantWeapon(attrs, calling);
-  const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + v.hpFlat + bn.hpFlat);
+  const maxHp = Math.round(60 + attrs.vit * 14 + attrs.str * 4 + v.hpFlat);
   const armorFrac = Math.min(0.65, attrs.vit * 0.02 + attrs.str * 0.01);
   const speed = 95 + Math.min(45, attrs.dex * 3);
   const healPower = 2 + attrs.spi * 1.6;
@@ -2953,7 +2887,7 @@ export const TALENT_TREES: Record<TalentTree, { name: string; color: string; ico
   faith: { name: "Faith", color: "#f2d16b", icon: "✚" },
   bulwark: { name: "Bulwark", color: "#8fd0a8", icon: "🛡" },
   swiftness: { name: "Swiftness", color: "#7bc8d8", icon: "»" },
-  fortune: { name: "Fortune", color: "#e8c25a", icon: "◈" },
+  fortune: { name: "Gambit", color: "#e8b85a", icon: "◈" },
 };
 
 /** Hero levels that open each row. Direct prerequisites still have to be learned. */
@@ -2968,7 +2902,7 @@ export const TALENTS: TalentDef[] = [
   { id: "cleavingBlows", tree: "might", tier: 3, name: "Cleaving Blows", blurb: "Melee strikes splash 30% damage to other nearby foes", maxRank: 1, keystone: true, requires: "battleRoar" },
   { id: "relentless", tree: "might", tier: 4, name: "Relentless", blurb: "+3% melee damage and +2% attack speed", maxRank: 5, requires: "cleavingBlows" },
   { id: "warFeast", tree: "might", tier: 4, name: "War Feast", blurb: "Kills restore 2% maximum health", maxRank: 3, requires: "lastStand" },
-  { id: "avatarOfWar", tree: "might", tier: 5, name: "Avatar of War", blurb: "+15% melee damage and +10% maximum health", maxRank: 1, keystone: true, requires: "relentless" },
+  { id: "avatarOfWar", tree: "might", tier: 5, name: "Avatar of War", blurb: "+15% melee damage, +10% health; kills recover 2s of your Discipline technique", maxRank: 1, keystone: true, requires: "relentless" },
   { id: "redHarvest", tree: "might", tier: 5, name: "Red Harvest", blurb: "Kills restore another 8% maximum health", maxRank: 1, keystone: true, requires: "warFeast" },
   // PRECISION — the perfect shot
   { id: "keenEye", tree: "precision", tier: 1, name: "Keen Eye", blurb: "+3% ranged damage", maxRank: 5 },
@@ -2980,7 +2914,7 @@ export const TALENTS: TalentDef[] = [
   { id: "puncture", tree: "precision", tier: 4, name: "Puncture", blurb: "+3% ranged damage", maxRank: 5, requires: "executioner" },
   { id: "patientKiller", tree: "precision", tier: 4, name: "Patient Killer", blurb: "+2% critical chance and +2% ranged damage", maxRank: 3, requires: "huntersRhythm" },
   { id: "perfectVolley", tree: "precision", tier: 5, name: "Perfect Volley", blurb: "Twin Arrows now fires on every third ranged attack", maxRank: 1, keystone: true, requires: "puncture" },
-  { id: "eagleSoul", tree: "precision", tier: 5, name: "Eagle Soul", blurb: "+12% ranged damage and +6% critical chance", maxRank: 1, keystone: true, requires: "patientKiller" },
+  { id: "eagleSoul", tree: "precision", tier: 5, name: "Eagle Soul", blurb: "+12% ranged damage, +6% crit; critical attacks recover 0.75s of your elemental technique", maxRank: 1, keystone: true, requires: "patientKiller" },
   // SORCERY — the burning mind
   { id: "focus", tree: "sorcery", tier: 1, name: "Focus", blurb: "+4% spell power", maxRank: 5 },
   { id: "runeMemory", tree: "sorcery", tier: 1, name: "Rune Memory", blurb: "+2% spell power, -1% cooldowns", maxRank: 5 },
@@ -2991,7 +2925,7 @@ export const TALENTS: TalentDef[] = [
   { id: "deepReservoir", tree: "sorcery", tier: 4, name: "Deep Reservoir", blurb: "+3% spell power and -1% cooldowns", maxRank: 5, requires: "archon" },
   { id: "arcanePulse", tree: "sorcery", tier: 4, name: "Arcane Pulse", blurb: "+4% spell power", maxRank: 3, requires: "kindledMind" },
   { id: "spellstorm", tree: "sorcery", tier: 5, name: "Spellstorm", blurb: "Kills reduce all technique cooldowns by 1 second", maxRank: 1, keystone: true, requires: "deepReservoir" },
-  { id: "highArcanum", tree: "sorcery", tier: 5, name: "High Arcanum", blurb: "+15% spell power and -5% cooldowns", maxRank: 1, keystone: true, requires: "arcanePulse" },
+  { id: "highArcanum", tree: "sorcery", tier: 5, name: "High Arcanum", blurb: "+15% spell power, −5% cooldowns; Power techniques crush triple boss poise", maxRank: 1, keystone: true, requires: "arcanePulse" },
   // FAITH — the mender's road
   { id: "springs", tree: "faith", tier: 1, name: "Vital Springs", blurb: "+4% healing power", maxRank: 5 },
   { id: "devotion", tree: "faith", tier: 1, name: "Devotion", blurb: "+2% healing, +1% armor", maxRank: 5 },
@@ -3013,7 +2947,7 @@ export const TALENTS: TalentDef[] = [
   { id: "ironHeart", tree: "bulwark", tier: 4, name: "Iron Heart", blurb: "+3% maximum health and +0.5% armor", maxRank: 5, requires: "juggernaut" },
   { id: "retaliation", tree: "bulwark", tier: 4, name: "Retaliation", blurb: "Return 5% of melee damage to the attacker", maxRank: 3, requires: "fortress" },
   { id: "undying", tree: "bulwark", tier: 5, name: "Undying", blurb: "Once per battle, survive a fatal blow at 15% health", maxRank: 1, keystone: true, requires: "ironHeart" },
-  { id: "livingCitadel", tree: "bulwark", tier: 5, name: "Living Citadel", blurb: "+12% maximum health and +5% armor", maxRank: 1, keystone: true, requires: "retaliation" },
+  { id: "livingCitadel", tree: "bulwark", tier: 5, name: "Living Citadel", blurb: "+12% health, +5% armor; nearby allies take 10% less damage", maxRank: 1, keystone: true, requires: "retaliation" },
   // SWIFTNESS — never where the blow lands
   { id: "fleetFoot", tree: "swiftness", tier: 1, name: "Fleet Foot", blurb: "+3% move speed", maxRank: 5 },
   { id: "quickHands", tree: "swiftness", tier: 1, name: "Quick Hands", blurb: "+3% attack speed", maxRank: 5 },
@@ -3024,17 +2958,17 @@ export const TALENTS: TalentDef[] = [
   { id: "tempo", tree: "swiftness", tier: 4, name: "Tempo", blurb: "+2% attack speed and +2% move speed", maxRank: 5, requires: "momentum" },
   { id: "evasiveFootwork", tree: "swiftness", tier: 4, name: "Evasive Footwork", blurb: "+3% move speed and +0.5% armor", maxRank: 3, requires: "windStep" },
   { id: "afterimage", tree: "swiftness", tier: 5, name: "Afterimage", blurb: "Wind Step avoids the first two hits of every wave", maxRank: 1, keystone: true, requires: "tempo" },
-  { id: "stormDancer", tree: "swiftness", tier: 5, name: "Storm Dancer", blurb: "+10% attack speed and +10% move speed", maxRank: 1, keystone: true, requires: "evasiveFootwork" },
-  // FORTUNE — the road provides
-  { id: "luckyCharm", tree: "fortune", tier: 1, name: "Lucky Charm", blurb: "+2% crit", maxRank: 5 },
-  { id: "providence", tree: "fortune", tier: 1, name: "Providence", blurb: "Start battles with a 10 hp ward", maxRank: 5 },
-  { id: "deepPockets", tree: "fortune", tier: 2, name: "Deep Pockets", blurb: "+20% gold from every battle", maxRank: 1, keystone: true, requires: "providence" },
-  { id: "windfall", tree: "fortune", tier: 2, name: "Windfall", blurb: "Your kills shake 3 extra gold loose", maxRank: 1, keystone: true, requires: "luckyCharm" },
-  { id: "gamblersEdge", tree: "fortune", tier: 3, name: "Gambler's Edge", blurb: "+3% crit", maxRank: 3, requires: "windfall" },
-  { id: "loadedDice", tree: "fortune", tier: 4, name: "Loaded Dice", blurb: "+2% critical chance", maxRank: 5, requires: "gamblersEdge" },
-  { id: "scavenger", tree: "fortune", tier: 4, name: "Scavenger's Instinct", blurb: "+5% battle gold", maxRank: 3, requires: "deepPockets" },
+  { id: "stormDancer", tree: "swiftness", tier: 5, name: "Storm Dancer", blurb: "+10% attack and move speed; Utility techniques grant a stronger haste", maxRank: 1, keystone: true, requires: "evasiveFootwork" },
+  // GAMBIT — read the field, seize the opening
+  { id: "luckyCharm", tree: "fortune", tier: 1, name: "Opening Gambit", blurb: "+2% critical chance", maxRank: 5 },
+  { id: "providence", tree: "fortune", tier: 1, name: "Road Guard", blurb: "Start battles behind a 10 hp ward", maxRank: 5 },
+  { id: "deepPockets", tree: "fortune", tier: 2, name: "Prepared Ambush", blurb: "Begin every wave with 20 ultimate charge", maxRank: 1, keystone: true, requires: "providence" },
+  { id: "windfall", tree: "fortune", tier: 2, name: "Marked Quarry", blurb: "Kills grant ultimate charge; priority enemies grant three times as much", maxRank: 1, keystone: true, requires: "luckyCharm" },
+  { id: "gamblersEdge", tree: "fortune", tier: 3, name: "Gambler's Edge", blurb: "+3% critical chance", maxRank: 3, requires: "windfall" },
+  { id: "loadedDice", tree: "fortune", tier: 4, name: "Exploit Opening", blurb: "+2% critical chance", maxRank: 5, requires: "gamblersEdge" },
+  { id: "scavenger", tree: "fortune", tier: 4, name: "Fieldcraft", blurb: "+2% move speed and −2% technique cooldowns", maxRank: 3, requires: "deepPockets" },
   { id: "fateweaver", tree: "fortune", tier: 5, name: "Fateweaver", blurb: "+5% critical chance and an opening 40 hp ward", maxRank: 1, keystone: true, requires: "loadedDice" },
-  { id: "kingsRansom", tree: "fortune", tier: 5, name: "King's Ransom", blurb: "+25% battle gold", maxRank: 1, keystone: true, requires: "scavenger" },
+  { id: "kingsRansom", tree: "fortune", tier: 5, name: "Against the Crown", blurb: "+20% damage against bosses and priority enemies", maxRank: 1, keystone: true, requires: "scavenger" },
 ];
 
 export interface TalentRanks {
@@ -3062,9 +2996,9 @@ export function talentMods(ranks: TalentRanks | undefined): TalentMods {
     rangedDmg: r("keenEye") * 0.03 + r("puncture") * 0.03 + r("patientKiller") * 0.02 + r("eagleSoul") * 0.12,
     hpPct: r("oxBlood") * 0.03 + r("fortress") * 0.02 + r("ironHeart") * 0.03 + r("avatarOfWar") * 0.1 + r("livingCitadel") * 0.12,
     armorFlat: r("stoneSkin") * 0.015 + r("thickHide") * 0.01 + r("devotion") * 0.01 + r("fortress") * 0.005 + r("graceUnderFire") * 0.005 + r("ironHeart") * 0.005 + r("evasiveFootwork") * 0.005 + r("livingCitadel") * 0.05,
-    cdr: Math.min(0.45, r("warEcho") * 0.03 + r("attune") * 0.03 + r("runeMemory") * 0.01 + r("surefoot") * 0.01 + r("deepReservoir") * 0.01 + r("highArcanum") * 0.05),
+    cdr: Math.min(0.45, r("warEcho") * 0.03 + r("attune") * 0.03 + r("runeMemory") * 0.01 + r("surefoot") * 0.01 + r("deepReservoir") * 0.01 + r("scavenger") * 0.02 + r("highArcanum") * 0.05),
     atkSpeed: r("quickHands") * 0.03 + r("huntersRhythm") * 0.02 + r("momentum") * 0.02 + r("relentless") * 0.02 + r("tempo") * 0.02 + r("stormDancer") * 0.1,
-    moveSpeed: r("fleetFoot") * 0.03 + r("huntersRhythm") * 0.02 + r("surefoot") * 0.02 + r("momentum") * 0.02 + r("tempo") * 0.02 + r("evasiveFootwork") * 0.03 + r("stormDancer") * 0.1,
+    moveSpeed: r("fleetFoot") * 0.03 + r("huntersRhythm") * 0.02 + r("surefoot") * 0.02 + r("momentum") * 0.02 + r("tempo") * 0.02 + r("evasiveFootwork") * 0.03 + r("scavenger") * 0.02 + r("stormDancer") * 0.1,
     crit: r("deadEye") * 0.03 + r("slayer") * 0.02 + r("luckyCharm") * 0.02 + r("gamblersEdge") * 0.03 + r("patientKiller") * 0.02 + r("eagleSoul") * 0.06 + r("loadedDice") * 0.02 + r("fateweaver") * 0.05,
     spellPower: r("focus") * 0.04 + r("archon") * 0.03 + r("runeMemory") * 0.02 + r("deepReservoir") * 0.03 + r("arcanePulse") * 0.04 + r("highArcanum") * 0.15,
     healPower: r("springs") * 0.04 + r("archon") * 0.03 + r("devotion") * 0.02 + r("sanctified") * 0.03 + r("graceUnderFire") * 0.04 + r("hierophant") * 0.15,
