@@ -50,6 +50,8 @@ import {
   talentPointsInTree,
   talentPointsSpent,
   BOSS_STAGES,
+  STAGED_BOSS_KINDS,
+  bestiaryThresholds,
   ATTR_BLURBS,
   ATTR_KEYS,
   ATTR_NAMES,
@@ -672,6 +674,7 @@ export class Menus {
   private handbookReturn: "title" | "map" | "settings" = "title";
   private bestiaryRegion = 0;
   private bestiaryKnownOnly = false;
+  private bestiaryBossesOnly = false;
   private bestiarySearch = "";
 
   /** Animate the header gold chip counting from its last shown value. */
@@ -2479,7 +2482,8 @@ export class Menus {
     this.show();
     const kinds = Object.keys(ENEMIES) as EnemyKind[];
     const discovered = kinds.filter((k) => (this.save.bestiary[k] ?? 0) > 0).length;
-    const mastered = kinds.filter((k) => (this.save.bestiary[k] ?? 0) >= 25).length;
+    const mastered = kinds.filter((k) => (this.save.bestiary[k] ?? 0) >= bestiaryThresholds(k).mastery).length;
+    const bossesRecorded = STAGED_BOSS_KINDS.filter((k) => (this.save.bestiary[k] ?? 0) > 0).length;
     const totalKills = kinds.reduce((sum, kind) => sum + (this.save.bestiary[kind] ?? 0), 0);
     const page = el(`
       <div class="page bestiary-page">
@@ -2493,6 +2497,7 @@ export class Menus {
         <div class="bestiary-summary" aria-label="Bestiary progress">
           <div><span>Recorded</span><strong>${discovered}<small> / ${kinds.length}</small></strong></div>
           <div><span>Mastered</span><strong>${mastered}<small> / ${kinds.length}</small></strong></div>
+          <div><span>Great foes</span><strong>${bossesRecorded}<small> / ${STAGED_BOSS_KINDS.length}</small></strong></div>
           <div><span>Total slain</span><strong>${totalKills}</strong></div>
         </div>
         <div class="bestiary-tools">
@@ -2502,6 +2507,7 @@ export class Menus {
           </div>
           <div class="bestiary-query">
             <label><span>Search recorded foes</span><input type="search" data-beast-search placeholder="Name or habit…" value="${this.bestiarySearch.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"></label>
+            <button class="toggle-btn great-foes ${this.bestiaryBossesOnly ? "on" : ""}" data-beast-bosses aria-pressed="${this.bestiaryBossesOnly}">${this.bestiaryBossesOnly ? "Great foes only" : "Show great foes"}</button>
             <button class="toggle-btn ${this.bestiaryKnownOnly ? "on" : ""}" data-beast-known aria-pressed="${this.bestiaryKnownOnly}">${this.bestiaryKnownOnly ? "Showing recorded" : "Include rumors"}</button>
           </div>
         </div>
@@ -2515,6 +2521,7 @@ export class Menus {
       const query = this.bestiarySearch.trim().toLowerCase();
       const filtered = kinds
         .filter((kind) => this.bestiaryRegion < 0 || enemyRegionIndex(kind) === this.bestiaryRegion)
+        .filter((kind) => !this.bestiaryBossesOnly || STAGED_BOSS_KINDS.includes(kind))
         .filter((kind) => !this.bestiaryKnownOnly || (this.save.bestiary[kind] ?? 0) > 0)
         .filter((kind) => {
           if (!query) return true;
@@ -2531,11 +2538,12 @@ export class Menus {
         const kills = this.save.bestiary[kind] ?? 0;
         const firstStage = enemyFirstStage(kind);
         const foeRegion = BESTIARY_REGIONS[enemyRegionIndex(kind)];
+        const boss = STAGED_BOSS_KINDS.includes(kind);
+        const mainBoss = boss && BOSS_STAGES.includes(firstStage);
+        const bossLabel = mainBoss ? "REGION BOSS" : "MINI-BOSS";
         if (kills > 0) {
-          const T2 = 10;
-          const T3 = 25;
-          const boss = BOSS_STAGES.includes(firstStage);
-          const rankName = kills >= T3 ? "Mastered" : kills >= T2 ? "Studied" : "Recorded";
+          const { study: T2, mastery: T3 } = bestiaryThresholds(kind);
+          const rankName = boss ? "Vanquished" : kills >= T3 ? "Mastered" : kills >= T2 ? "Studied" : "Recorded";
           const habitLine = kills >= T2
             ? `<div class="beast-habit">${ico("sword")} ${def.habit}</div>`
             : `<div class="beast-habit beast-locked">${ico("sword")} Study ${T2 - kills} more to reveal its combat habit</div>`;
@@ -2544,7 +2552,7 @@ export class Menus {
             : `<div class="beast-stats beast-locked">Full measure at ${T3} slain · ${kills}/${T3}</div>`;
           const card = el(`
             <article class="beast-card ${boss ? "boss" : ""} ${kills >= T3 ? "mastered" : ""}" style="--beast:${def.body};--beast-trim:${def.trim}">
-              <div class="beast-icon"><canvas width="64" height="64"></canvas><span>${boss ? "GREAT FOE" : foeRegion.name}</span></div>
+              <div class="beast-icon"><canvas width="64" height="64"></canvas><span>${boss ? bossLabel : foeRegion.name}</span></div>
               <div class="beast-info">
                 <div class="beast-heading"><div class="beast-name">${def.name}</div><span class="beast-rank">${rankName}</span></div>
                 <div class="beast-kills">×${kills} slain · first seen at waymark ${firstStage + 1}</div>
@@ -2561,8 +2569,8 @@ export class Menus {
           list.appendChild(card);
         } else {
           list.appendChild(el(`
-            <article class="beast-card unknown">
-              <div class="beast-icon"><div class="beast-mystery">?</div><span>${foeRegion.name}</span></div>
+            <article class="beast-card unknown ${boss ? "boss" : ""}">
+              <div class="beast-icon"><div class="beast-mystery">?</div><span>${boss ? bossLabel : foeRegion.name}</span></div>
               <div class="beast-info">
                 <div class="beast-heading"><div class="beast-name">Unknown creature</div><span class="beast-rank">Rumor</span></div>
                 <div class="beast-kills">Scouts place something near waymark ${firstStage + 1}</div>
@@ -2587,6 +2595,16 @@ export class Menus {
           button.setAttribute("aria-selected", String(selected));
         });
         audio.play("page");
+        fillList();
+        return;
+      }
+      const bosses = (event.target as HTMLElement).closest("[data-beast-bosses]") as HTMLButtonElement | null;
+      if (bosses) {
+        this.bestiaryBossesOnly = !this.bestiaryBossesOnly;
+        bosses.classList.toggle("on", this.bestiaryBossesOnly);
+        bosses.setAttribute("aria-pressed", String(this.bestiaryBossesOnly));
+        bosses.textContent = this.bestiaryBossesOnly ? "Great foes only" : "Show great foes";
+        audio.play("click");
         fillList();
         return;
       }

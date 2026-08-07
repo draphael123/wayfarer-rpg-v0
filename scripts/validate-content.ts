@@ -4,6 +4,7 @@ import {
   ALL_GEAR,
   arenaPurse,
   ARMOR_ACTIVES,
+  bestiaryThresholds,
   BOSS_PHASES,
   BOSS_STAGES,
   CALLING_MASTERY_LEVELS,
@@ -29,6 +30,7 @@ import {
   resolvedPathAbilities,
   roleElementTechniqueOptions,
   STAGES,
+  STAGED_BOSS_KINDS,
   SPECIALIZATION_MASTERY_LEVELS,
   SPECIALIZATION_PROFILES,
   SPECIALIZATION_TECHNIQUES,
@@ -179,19 +181,19 @@ const BOSS_AUDIT = [
   { kind: "bellwidow", stage: 15, main: true, renderer: "drawBellWidow", mechanic: "bell-toll+safe-lane+drowned-reinforcements" },
   { kind: "stormjaw", stage: 17, main: true, renderer: "drawStormjaw", mechanic: "conductive-lightning+breach+surfaced-heart" },
   { kind: "kilntyrant", stage: 21, main: true, renderer: "drawLateEnemy:kilntyrant", mechanic: "elite-eruption+iron-shell+ashen-attendant" },
-  { kind: "cindermaw", stage: 23, main: true, renderer: "drawLateEnemy:cindermaw", mechanic: "sequenced-eruptions+furnace-vent+plate-break" },
+  { kind: "cindermaw", stage: 23, main: true, renderer: "drawLateEnemy:cindermaw", mechanic: "sequenced-eruptions+channelled-furnace-heart+plate-break" },
   { kind: "rootboundmatriarch", stage: 27, main: true, renderer: "drawLateEnemy:rootboundmatriarch", mechanic: "elite-root-cage+heartroot+vine-attendant" },
-  { kind: "verdantcolossus", stage: 29, main: true, renderer: "drawLateEnemy:verdantcolossus", mechanic: "root-cages+heartwood-opening+briar-attendants" },
+  { kind: "verdantcolossus", stage: 29, main: true, renderer: "drawLateEnemy:verdantcolossus", mechanic: "root-cages+three-severable-anchors+heartwood-opening" },
   { kind: "dunerevenant", stage: 33, main: true, renderer: "drawLateEnemy:dunerevenant", mechanic: "elite-eclipse+mirage-break+jackal-attendant" },
-  { kind: "nightmother", stage: 35, main: true, renderer: "drawLateEnemy:nightmother", mechanic: "safe-center-eclipse+false-moon+silence" },
+  { kind: "nightmother", stage: 35, main: true, renderer: "drawLateEnemy:nightmother", mechanic: "counterturning-true-shadow+false-moon+silence" },
   { kind: "gildedinquisitor", stage: 39, main: true, renderer: "drawLateEnemy:gildedinquisitor", mechanic: "elite-verdict+judgment-reversal+censer-attendant" },
-  { kind: "reliquaryseraph", stage: 41, main: true, renderer: "drawLateEnemy:reliquaryseraph", mechanic: "crossing-verdict-beams+silence+seraphic-guard" },
+  { kind: "reliquaryseraph", stage: 41, main: true, renderer: "drawLateEnemy:reliquaryseraph", mechanic: "crossing-verdict-beams+three-saint-vessels+wing-renewal" },
   { kind: "tempestroc", stage: 45, main: true, renderer: "drawLateEnemy:tempestroc", mechanic: "elite-shatter+storm-overlap+roc-attendant" },
-  { kind: "skybreaker", stage: 47, main: true, renderer: "drawLateEnemy:skybreaker", mechanic: "cross-shaped-shatter+aftershock+crystal-stun" },
+  { kind: "skybreaker", stage: 47, main: true, renderer: "drawLateEnemy:skybreaker", mechanic: "cross-shaped-shatter+marked-lightning+three-summit-rods" },
   { kind: "redhuntsman", stage: 51, main: true, renderer: "drawLateEnemy:redhuntsman", mechanic: "elite-marked-hunt+starvation+moonfang-attendant" },
-  { kind: "bloodmoonstag", stage: 53, main: true, renderer: "drawLateEnemy:bloodmoonstag", mechanic: "marked-charge+miss-stagger+blood-drain" },
+  { kind: "bloodmoonstag", stage: 53, main: true, renderer: "drawLateEnemy:bloodmoonstag", mechanic: "marked-charge+ordered-heart-trail+blood-drain" },
   { kind: "lastpilgrim", stage: 57, main: true, renderer: "drawLateEnemy:lastpilgrim", mechanic: "elite-void+vulnerability+rift-attendant" },
-  { kind: "wayeater", stage: 59, main: true, renderer: "drawLateEnemy:wayeater", mechanic: "remembered-omens+four-phases+void-unmaking" },
+  { kind: "wayeater", stage: 59, main: true, renderer: "drawLateEnemy:wayeater", mechanic: "remembered-omens+three-anchored-waystones+void-shelter" },
   // Fully implemented legacy boss, currently absent from campaign waves.
   { kind: "rimeheart", stage: null, main: false, renderer: "drawRimeheartBoss", mechanic: "hail+cracking-ice+long-breath+armor-shatter" },
 ] as const;
@@ -209,6 +211,14 @@ assert.deepEqual(
   BOSS_AUDIT.filter((boss) => boss.main).map((boss) => boss.stage as number).sort((a, b) => a - b),
   "main boss stages must match the explicit encounter audit",
 );
+assert.deepEqual(
+  [...STAGED_BOSS_KINDS].sort(),
+  BOSS_AUDIT.filter((boss) => boss.stage !== null).map((boss) => boss.kind).sort(),
+  "every campaign boss must appear in the bestiary's Great Foes collection",
+);
+for (const kind of STAGED_BOSS_KINDS) {
+  assert.deepEqual(bestiaryThresholds(kind), { study: 1, mastery: 1 }, `${kind} should reveal its full bestiary record after one defeat`);
+}
 for (const boss of BOSS_AUDIT) {
   assert.ok(ENEMIES[boss.kind], `boss audit references missing enemy ${boss.kind}`);
   const appearances = STAGES.reduce(
@@ -228,6 +238,26 @@ for (const stageIndex of BOSS_STAGES) {
   const finalWave = STAGES[stageIndex].waves.at(-1)!;
   const bosses = finalWave.filter((entry) => entry.kind in BOSS_PHASES);
   assert.equal(bosses.length, 1, `main boss stage ${stageIndex} must end with exactly one phased boss kind`);
+}
+
+// The final seven bosses must own actual world-space interactions, not only a
+// different telegraph color. Blood-Moon Stag creates its trail after a miss;
+// the other six place their objectives as the encounter begins.
+const objectiveAudit = [
+  { kind: "cindermaw", objective: "furnaceHeart", count: 1 },
+  { kind: "verdantcolossus", objective: "rootAnchor", count: 3 },
+  { kind: "nightmother", objective: "trueShadow", count: 3 },
+  { kind: "reliquaryseraph", objective: "saintVessel", count: 3 },
+  { kind: "skybreaker", objective: "lightningRod", count: 3 },
+  { kind: "wayeater", objective: "waystone", count: 3 },
+] as const;
+for (const expected of objectiveAudit) {
+  const fixture = new Battle(STAGES[0], defaultSave(), { left: 26, right: 1798, top: 170, bottom: 470 }, new FxSystem());
+  fixture.spawnEnemy(expected.kind, { x: 900, y: 300, scale: 1 });
+  const boss = fixture.livingEnemies().find((unit) => unit.enemyKind === expected.kind)!;
+  fixture.bossRef = boss;
+  (fixture as unknown as { setupBossObjectives: (unit: typeof boss) => void }).setupBossObjectives(boss);
+  assert.equal(fixture.bossObjectives.filter((objective) => objective.kind === expected.objective).length, expected.count, `${expected.kind} must place ${expected.count} ${expected.objective} objectives`);
 }
 unique(CONTRACTS.map((contract) => contract.id), "contract ids");
 for (const contract of CONTRACTS) {

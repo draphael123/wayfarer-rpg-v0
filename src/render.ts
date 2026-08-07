@@ -1856,6 +1856,164 @@ export function drawZones(ctx: CanvasRenderingContext2D, battle: Battle): void {
     }
     ctx.globalAlpha = 1;
   }
+  drawBossObjectives(ctx, battle);
+}
+
+function drawBossObjectives(ctx: CanvasRenderingContext2D, battle: Battle): void {
+  const labels = {
+    furnaceHeart: "BREAK HEART",
+    rootAnchor: "SEVER",
+    trueShadow: "READ SHADOW",
+    saintVessel: "SHATTER",
+    lightningRod: "BAIT LIGHTNING",
+    heartTrail: "FOLLOW",
+    waystone: "ANCHOR",
+  } as const;
+  const colors = {
+    furnaceHeart: "#ff9b42",
+    rootAnchor: "#b9dc78",
+    trueShadow: "#c4a9ee",
+    saintVessel: "#ffe49a",
+    lightningRod: "#bdefff",
+    heartTrail: "#f06d68",
+    waystone: "#b9ace4",
+  } as const;
+
+  for (const objective of battle.bossObjectives) {
+    if (!objective.active) continue;
+    const color = colors[objective.kind];
+    const progress = Math.max(0, Math.min(1, objective.progress / Math.max(0.01, objective.required)));
+    const pulse = 0.78 + Math.sin(battle.time * 4.5 + objective.id) * 0.12;
+    ctx.save();
+    ctx.translate(objective.x, objective.y);
+    ctx.globalAlpha = objective.resolved ? 0.42 : 0.95;
+
+    // Interaction footprint: a solid inner line plus a moving outer dash makes
+    // it read as a destination rather than another incoming attack.
+    ctx.fillStyle = objective.resolved ? "rgba(255,246,218,.08)" : `${color}22`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, objective.radius, objective.radius * 0.56, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([5, 5]);
+    ctx.lineDashOffset = -battle.time * 15;
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.strokeStyle = "rgba(20,15,28,.82)";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(0, -17, 16, -Math.PI / 2, Math.PI * 1.5);
+    ctx.stroke();
+    ctx.strokeStyle = objective.resolved ? "#f7efd7" : color;
+    ctx.lineWidth = 3.4;
+    ctx.beginPath();
+    ctx.arc(0, -17, 16, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (objective.resolved ? 1 : progress));
+    ctx.stroke();
+
+    if (objective.kind === "furnaceHeart") {
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(0, -35);
+      ctx.bezierCurveTo(20, -48, 24, -18, 0, -6);
+      ctx.bezierCurveTo(-24, -18, -20, -48, 0, -35);
+      ctx.fill();
+    } else if (objective.kind === "rootAnchor") {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 6;
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(0, -32);
+        ctx.quadraticCurveTo(side * 21, -25, side * 24, 0);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#664b35";
+      ctx.fillRect(-7, -38, 14, 31);
+    } else if (objective.kind === "trueShadow") {
+      // The real reflection is recognizable, but not labeled: its inner moon
+      // turns against the outer orbit while false copies move together.
+      const reverse = objective.correct ? -1 : 1;
+      ctx.rotate(reverse * battle.time * 0.75);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(0, -20, 14 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#261d35";
+      ctx.beginPath();
+      ctx.arc(objective.correct ? -6 : 6, -22, 12, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (objective.kind === "saintVessel") {
+      ctx.fillStyle = "#7a7059";
+      ctx.fillRect(-9, -35, 18, 28);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(0, -40, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, -40, 19, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (objective.kind === "lightningRod") {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -48);
+      ctx.lineTo(-8, -36);
+      ctx.moveTo(0, -48);
+      ctx.lineTo(8, -36);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.fillRect(-12, -5, 24, 6);
+    } else if (objective.kind === "heartTrail") {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(0, -29);
+      ctx.bezierCurveTo(15, -40, 21, -18, 0, -5);
+      ctx.bezierCurveTo(-21, -18, -15, -40, 0, -29);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = "#393049";
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, -51);
+      ctx.lineTo(14, -15);
+      ctx.lineTo(8, 0);
+      ctx.lineTo(-8, 0);
+      ctx.lineTo(-14, -15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      if (objective.resolved) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 18;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(0, -24, 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.font = "800 10px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(19,14,25,.88)";
+    ctx.fillText(objective.resolved ? "SECURED" : labels[objective.kind], objective.x + 1, objective.y - objective.radius - 9 + 1);
+    ctx.fillStyle = objective.resolved ? "#f7efd7" : color;
+    ctx.fillText(objective.resolved ? "SECURED" : labels[objective.kind], objective.x, objective.y - objective.radius - 9);
+    if (objective.expires !== undefined && !objective.resolved) {
+      ctx.font = "700 9px system-ui, sans-serif";
+      ctx.fillText(`${Math.max(0, objective.expires).toFixed(1)}s`, objective.x, objective.y + objective.radius * 0.75);
+    }
+    ctx.restore();
+  }
 }
 
 // ------------------------------------------------------------------ shared unit bits

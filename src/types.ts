@@ -242,6 +242,35 @@ export interface Telegraph {
   /** Direction and reach for lane-shaped attacks such as beams and charges. */
   angle?: number;
   length?: number;
+  /** Warnings such as marked lightning remain attached to their chosen unit. */
+  follow?: Unit;
+}
+
+export type BossObjectiveKind =
+  | "furnaceHeart"
+  | "rootAnchor"
+  | "trueShadow"
+  | "saintVessel"
+  | "lightningRod"
+  | "heartTrail"
+  | "waystone";
+
+/** A visible, world-space boss interaction. These are deliberately separate
+ * from enemies: the player solves them through positioning and recognition,
+ * rather than finding tiny props in the normal target cycle. */
+export interface BossObjective {
+  id: number;
+  kind: BossObjectiveKind;
+  x: number;
+  y: number;
+  radius: number;
+  progress: number;
+  required: number;
+  active: boolean;
+  resolved: boolean;
+  order?: number;
+  correct?: boolean;
+  expires?: number;
 }
 
 export interface GroundZone {

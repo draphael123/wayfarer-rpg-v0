@@ -1114,7 +1114,7 @@ input:focus-visible {
 
 .bestiary-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 0 0 14px;
   border: 1px solid #4b3d5f;
   border-radius: 14px;
@@ -1203,6 +1203,8 @@ input:focus-visible {
 .bestiary-query input:focus { border-color: #d1a656; box-shadow: 0 0 0 2px rgba(209, 166, 86, 0.14); }
 .bestiary-query .toggle-btn { flex: 0 0 auto; min-width: 145px; padding: 9px 12px; }
 .bestiary-query .toggle-btn.on { color: #17131e; border-color: #d5b363; background: #d5b363; }
+.bestiary-query .toggle-btn.great-foes { color: #e6c67b; border-color: rgba(213, 179, 99, 0.42); }
+.bestiary-query .toggle-btn.great-foes.on { color: #1a1113; border-color: #d9a453; background: linear-gradient(135deg, #efcb70, #bd744b); }
 
 .bestiary-section-head {
   display: flex;
@@ -3211,6 +3213,7 @@ input:focus-visible {
 }
 
 @media (max-width: 520px) {
+  .bestiary-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .bestiary-summary > div { display: grid; gap: 5px; padding: 10px; }
   .bestiary-summary span { font-size: 8px; }
   .bestiary-summary strong { font-size: 18px; }

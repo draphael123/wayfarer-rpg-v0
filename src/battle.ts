@@ -10,6 +10,7 @@ const HEAL_POTENCY = 1.8;
 import type { FxSystem } from "./fx";
 import type {
   AbilityState,
+  BossObjective,
   DamageElement,
   DisciplineId,
   EnemyKind,
@@ -80,6 +81,7 @@ export class Battle {
   projectiles: Projectile[] = [];
   zones: GroundZone[] = [];
   telegraphs: Telegraph[] = [];
+  bossObjectives: BossObjective[] = [];
   state: BattleState = "wavebreak";
   waveIndex = -1;
   /** Enemies still crashing through the treeline — waves arrive gradually. */
@@ -129,6 +131,9 @@ export class Battle {
   /** Pattern cursor for late-road bosses; keyed by unit id so the Way-Eater can
    * recall earlier omens without adding hidden state to save data. */
   private lateBossCycles = new Map<number, number>();
+  private bossObjectiveTimer = 4;
+  private bossObjectivePhase = 0;
+  private nextObjectiveId = 1;
   castCounts: Record<string, number> = {};
   heroDeaths = 0;
   /** Per-hero battle ledger (keyed by heroIndex) — feeds the victory recap. */
@@ -454,6 +459,7 @@ export class Battle {
         this.fx.burst(this.bossRef.x, this.bossRef.y, entranceColor, 18, 150, { glow: true, gravity: -45, life: 0.9, size: 3.5 });
         this.addDecal(this.bossRef.x, this.bossRef.y + 2, "scorch", this.bossRef.radius * 1.7);
         this.playBossEntrance(this.bossRef.enemyKind);
+        this.setupBossObjectives(this.bossRef);
       }
     }
     this.seerGuard = this.livingHeroes().filter((h) => h.calling === "seer").length;
@@ -500,6 +506,213 @@ export class Battle {
       }
     }
     audio.play("wave");
+  }
+
+  private objectivePoint(boss: Unit, dx: number, dy: number): Vec {
+    return this.clampToField({ x: boss.x + dx, y: boss.y + dy }, 34);
+  }
+
+  /** Turn each late finale's written promise into something visible on the
+   * field. Objectives are solved by positioning, keeping normal targeting
+   * clean on both mouse and touch. */
+  private setupBossObjectives(boss: Unit): void {
+    this.bossObjectives = [];
+    this.bossObjectiveTimer = 4.5;
+    this.bossObjectivePhase = 0;
+    if (!isLateBossKind(boss.enemyKind)) return;
+    const add = (kind: BossObjective["kind"], dx: number, dy: number, required: number, extra: Partial<BossObjective> = {}) => {
+      const p = this.objectivePoint(boss, dx, dy);
+      this.bossObjectives.push({
+        id: this.nextObjectiveId++, kind, x: p.x, y: p.y, radius: kind === "lightningRod" ? 34 : 42,
+        progress: 0, required, active: true, resolved: false, ...extra,
+      });
+    };
+    if (boss.enemyKind === "cindermaw") add("furnaceHeart", -72, 0, 3.2, { active: false });
+    else if (boss.enemyKind === "verdantcolossus") {
+      add("rootAnchor", -155, -78, 2.2);
+      add("rootAnchor", -170, 82, 2.2);
+      add("rootAnchor", 100, 92, 2.2);
+    } else if (boss.enemyKind === "nightmother") {
+      const trueIndex = (boss.id + this.stage.id) % 3;
+      [[-145, -72], [-165, 82], [95, 88]].forEach(([dx, dy], index) => add("trueShadow", dx, dy, 1.65, { active: false, correct: index === trueIndex }));
+    } else if (boss.enemyKind === "reliquaryseraph") {
+      add("saintVessel", -170, -78, 2.35);
+      add("saintVessel", -190, 82, 2.35);
+      add("saintVessel", 105, 92, 2.35);
+    } else if (boss.enemyKind === "skybreaker") {
+      add("lightningRod", -175, -86, 1);
+      add("lightningRod", -185, 86, 1);
+      add("lightningRod", 105, 92, 1);
+    } else if (boss.enemyKind === "wayeater") {
+      add("waystone", -190, -82, 2.4);
+      add("waystone", -205, 82, 2.4);
+      add("waystone", 95, 92, 2.4);
+    }
+    const briefing: Partial<Record<LateBossKind, string>> = {
+      cindermaw: "When the furnace-heart opens, stand within its ring to break it.",
+      verdantcolossus: "Stand at each root-anchor to sever the grove from its armor.",
+      nightmother: "The true shadow's inner moon turns against the false reflections.",
+      reliquaryseraph: "Shatter the saint-vessels before they renew its borrowed wings.",
+      skybreaker: "Carry marked lightning into the summit rods to ground the titan.",
+      bloodmoonstag: "Dodge the marked hunt, then follow the heart-trail in order.",
+      wayeater: "Anchor the waystones; their light shelters the band from unmaking.",
+    };
+    const text = briefing[boss.enemyKind];
+    if (text) this.roleCallout = { title: "ARENA RULE", text, color: ENEMIES[boss.enemyKind].trim, time: 6.5 };
+  }
+
+  private remainingObjectives(kind: BossObjective["kind"]): number {
+    return this.bossObjectives.filter((objective) => objective.kind === kind && !objective.resolved).length;
+  }
+
+  private completeBossObjective(objective: BossObjective, boss: Unit): void {
+    objective.resolved = true;
+    objective.progress = objective.required;
+    const allDone = !this.bossObjectives.some((other) => other.kind === objective.kind && !other.resolved);
+    const names: Record<BossObjective["kind"], string> = {
+      furnaceHeart: "FURNACE-HEART BROKEN",
+      rootAnchor: allDone ? "HEARTWOOD UNBOUND" : "ROOT-ANCHOR SEVERED",
+      trueShadow: "TRUE SHADOW FOUND",
+      saintVessel: allDone ? "BORROWED WINGS FALL" : "SAINT-VESSEL SHATTERED",
+      lightningRod: allDone ? "SKYBREAKER GROUNDED" : "SUMMIT ROD CHARGED",
+      heartTrail: allDone ? "THE TRAIL RETURNS" : "HEART-TRAIL FOUND",
+      waystone: allDone ? "THE LAST ROAD HOLDS" : "WAYSTONE ANCHORED",
+    };
+    this.fx.floatText(objective.x, objective.y - objective.radius - 12, names[objective.kind], "#ffe9a3", allDone ? 18 : 14);
+    this.fx.ring(objective.x, objective.y, objective.radius * 1.5, "#ffe9a3", { width: 5, life: 0.65 });
+    this.fx.burst(objective.x, objective.y - 8, "#ffe9a3", 16, 135, { glow: true, gravity: 35 });
+    audio.play("staggerBreak");
+
+    if (objective.kind === "furnaceHeart") {
+      boss.stats.armor = Math.max(0.05, boss.stats.armor - 0.1);
+      boss.effects.push(makeEffect("stun", 1.4, 1, null));
+      boss.effects.push(makeEffect("vulnerable", 5, 0.38, null));
+      this.bossStagger += this.bossStaggerMax * 0.35;
+    } else if (objective.kind === "rootAnchor") {
+      boss.stats.armor = Math.max(0.05, boss.stats.armor - 0.035);
+      this.bossStagger += this.bossStaggerMax * 0.12;
+      if (allDone) boss.effects.push(makeEffect("vulnerable", 4.5, 0.36, null));
+    } else if (objective.kind === "trueShadow") {
+      for (const reflection of this.bossObjectives.filter((other) => other.kind === "trueShadow")) reflection.resolved = true;
+      boss.effects.push(makeEffect("stun", 1.3, 1, null));
+      boss.effects.push(makeEffect("vulnerable", 5, 0.42, null));
+      this.bossStagger += this.bossStaggerMax * 0.3;
+    } else if (objective.kind === "saintVessel") {
+      boss.stats.armor = Math.max(0.05, boss.stats.armor - 0.025);
+      if (allDone) boss.effects.push(makeEffect("vulnerable", 4.5, 0.34, null));
+    } else if (objective.kind === "lightningRod") {
+      boss.stats.armor = Math.max(0.05, boss.stats.armor - 0.025);
+      if (allDone) {
+        boss.effects.push(makeEffect("stun", 2.6, 1, null));
+        boss.effects.push(makeEffect("vulnerable", 4.5, 0.38, null));
+        this.bossStagger += this.bossStaggerMax * 0.4;
+      }
+    } else if (objective.kind === "heartTrail" && allDone) {
+      boss.effects.push(makeEffect("stun", 1.2, 1, null));
+      boss.effects.push(makeEffect("vulnerable", 5, 0.42, null));
+      this.bossStagger += this.bossStaggerMax * 0.3;
+    } else if (objective.kind === "waystone" && allDone) {
+      boss.stats.armor = Math.max(0.05, boss.stats.armor - 0.06);
+      boss.effects.push(makeEffect("vulnerable", 4, 0.28, null));
+    }
+    if (this.bossStagger >= this.bossStaggerMax) this.staggerBoss(boss);
+  }
+
+  private failFalseShadow(objective: BossObjective, boss: Unit): void {
+    objective.progress = 0;
+    for (const reflection of this.bossObjectives.filter((other) => other.kind === "trueShadow" && !other.resolved)) reflection.progress = 0;
+    for (const hero of this.livingHeroes()) {
+      if (Math.hypot(hero.x - objective.x, (hero.y - objective.y) / 0.65) <= objective.radius + 35) {
+        this.damage(hero, boss.stats.damage * 0.72, boss, { spell: true, color: "#c4a9ee", element: "shadow" });
+      }
+    }
+    this.fx.floatText(objective.x, objective.y - 48, "FALSE MOON", "#c4a9ee", 16);
+    this.fx.pool(objective.x, objective.y, 88, "78,56,118", 0.75);
+    audio.play("bossEclipse");
+  }
+
+  private spawnHeartTrail(boss: Unit, mark: Telegraph): void {
+    const angle = mark.angle ?? 0;
+    const length = mark.length ?? 360;
+    this.bossObjectives = [];
+    for (let i = 0; i < 3; i++) {
+      const distance = length * (0.16 + i * 0.2);
+      const point = this.clampToField({ x: mark.x - Math.cos(angle) * distance, y: mark.y - Math.sin(angle) * distance }, 28);
+      this.bossObjectives.push({
+        id: this.nextObjectiveId++, kind: "heartTrail", x: point.x, y: point.y, radius: 34,
+        progress: 0, required: 0.72, active: i === 0, resolved: false, order: i, expires: 11,
+      });
+    }
+    this.fx.floatText(boss.x, boss.y - boss.radius * 3.2, "FOLLOW THE HEART-TRAIL!", "#ffe9a3", 17);
+  }
+
+  private updateBossObjectives(dt: number): void {
+    const boss = this.bossRef;
+    if (!boss?.alive || !isLateBossKind(boss.enemyKind)) return;
+    if (!this.bossObjectives.length && boss.enemyKind !== "bloodmoonstag") return;
+
+    if (boss.phase !== this.bossObjectivePhase) {
+      this.bossObjectivePhase = boss.phase;
+      if (boss.enemyKind === "cindermaw" && boss.phase >= 2) {
+        const heart = this.bossObjectives.find((objective) => objective.kind === "furnaceHeart" && !objective.resolved);
+        if (heart) heart.active = true;
+      }
+      if (boss.enemyKind === "nightmother" && boss.phase >= 2) {
+        for (const reflection of this.bossObjectives.filter((objective) => objective.kind === "trueShadow" && !objective.resolved)) reflection.active = true;
+      }
+      if (boss.enemyKind === "reliquaryseraph" && boss.phase >= 2) {
+        const remaining = this.remainingObjectives("saintVessel");
+        if (remaining) {
+          // Each intact vessel performs a modest renewal. Breaking them stops
+          // later renewals instead of leaving an opaque permanent shield.
+          this.heal(boss, boss.stats.maxHp * 0.012 * remaining, true, boss);
+          this.fx.floatText(boss.x, boss.y - boss.radius * 3, "THE VESSELS RENEW ITS WINGS", "#ffe6a0", 15);
+        }
+      }
+    }
+
+    if (boss.enemyKind === "skybreaker" && this.remainingObjectives("lightningRod") > 0) {
+      this.bossObjectiveTimer -= dt;
+      if (this.bossObjectiveTimer <= 0 && !this.telegraphs.some((mark) => mark.owner === boss && mark.kind === "lightning")) {
+        const heroes = this.livingHeroes();
+        if (heroes.length) {
+          const marked = heroes[(boss.phase + Math.floor(this.time)) % heroes.length];
+          this.telegraphs.push({ x: marked.x, y: marked.y, radius: 64, time: 0, duration: 2.8 * this.warningScale, owner: boss, kind: "lightning", follow: marked, label: "FEED THE RODS" });
+          this.fx.floatText(marked.x, marked.y - marked.radius - 26, "MARKED — BAIT A SUMMIT ROD", "#bdefff", 13);
+          audio.play("bossShatter");
+        }
+        this.bossObjectiveTimer = boss.phase >= 3 ? 6.5 : 8.5;
+      }
+    }
+
+    const heroes = this.livingHeroes();
+    for (const objective of this.bossObjectives) {
+      if (!objective.active || objective.resolved) continue;
+      if (objective.expires !== undefined) {
+        objective.expires -= dt;
+        if (objective.expires <= 0) {
+          this.bossObjectives = [];
+          this.fx.floatText(boss.x, boss.y - boss.radius * 3, "THE TRAIL GOES COLD", "#f06d68", 15);
+          break;
+        }
+      }
+      if (objective.kind === "lightningRod") continue;
+      const channelers = heroes.filter((hero) => Math.hypot(hero.x - objective.x, (hero.y - objective.y) / 0.72) <= objective.radius + hero.radius + 10);
+      if (!channelers.length) {
+        objective.progress = Math.max(0, objective.progress - dt * 0.22);
+        continue;
+      }
+      objective.progress += dt * (1 + Math.min(2, channelers.length - 1) * 0.45);
+      if (objective.progress < objective.required) continue;
+      if (objective.kind === "trueShadow" && !objective.correct) this.failFalseShadow(objective, boss);
+      else {
+        this.completeBossObjective(objective, boss);
+        if (objective.kind === "heartTrail") {
+          const next = this.bossObjectives.find((other) => other.kind === "heartTrail" && !other.resolved && other.order === (objective.order ?? 0) + 1);
+          if (next) next.active = true;
+        }
+      }
+    }
   }
 
   private bossStaggerCapacity(kind: EnemyKind | null): number {
@@ -4068,6 +4281,7 @@ export class Battle {
       else this.updateEnemy(unit, dt);
     }
 
+    this.updateBossObjectives(dt);
     this.separateUnits(dt);
     // vengeful elites burst where they fell
     for (let i = this.detonations.length - 1; i >= 0; i--) {
@@ -4629,15 +4843,17 @@ export class Battle {
     };
 
     if (kind === "eruption") {
-      const count = boss ? Math.min(heroes.length, Math.max(2, owner.phase + 1)) : 1;
+      const heartBroken = owner.enemyKind === "cindermaw" && this.remainingObjectives("furnaceHeart") === 0;
+      const count = boss ? Math.min(heroes.length, Math.max(2, owner.phase + 1) - (heartBroken ? 1 : 0)) : 1;
       for (let i = 0; i < count; i++) addCircle(heroes[(i + owner.id) % heroes.length], boss ? 68 : 48, "ERUPT", i * 0.16);
       if (boss && (owner.phase >= 3 || (owner.enemyKind === "kilntyrant" && owner.phase >= 2))) {
         addCircle(owner, owner.enemyKind === "kilntyrant" ? 82 : 96, "VENT", 0.28);
       }
     } else if (kind === "roots") {
       const rootsClose = owner.enemyKind === "rootboundmatriarch" && owner.phase >= 2;
-      const targets = boss ? heroes.slice(0, owner.phase >= 3 || rootsClose ? heroes.length : 2) : [clustered];
-      targets.forEach((hero, index) => addCircle(hero, boss ? 72 : 50, "ROOTS", index * 0.12));
+      const anchors = owner.enemyKind === "verdantcolossus" ? this.remainingObjectives("rootAnchor") : 0;
+      const targets = boss ? heroes.slice(0, owner.phase >= 3 || rootsClose || anchors >= 2 ? heroes.length : 2) : [clustered];
+      targets.forEach((hero, index) => addCircle(hero, boss ? 66 + anchors * 3 : 50, anchors ? "ANCHOR ROOTS" : "ROOTS", index * 0.12));
     } else if (kind === "eclipse") {
       addCircle(clustered, boss ? 126 : 66, "ECLIPSE");
       if (boss && (owner.phase >= 3 || (owner.enemyKind === "dunerevenant" && owner.phase >= 2))) {
@@ -4815,7 +5031,7 @@ export class Battle {
           wayeater: "nullwalker",
         };
         const attendantScale = boss.enemyKind === "reliquaryseraph"
-          ? 0.68
+          ? 0.55
           : boss.enemyKind === "wayeater"
             ? 0.45
             : 0.82;
@@ -5625,7 +5841,7 @@ export class Battle {
         .sort((a, b) => unitDist(jaw, a) - unitDist(jaw, b))
         .slice(0, jaw.phase >= 3 ? Math.min(2, heroes.length) : 1);
       for (const hero of marked) {
-        this.telegraphs.push({ x: hero.x, y: hero.y, radius: 72, time: 0, duration: 2.55 * this.warningScale, owner: jaw, kind: "lightning" });
+        this.telegraphs.push({ x: hero.x, y: hero.y, radius: 72, time: 0, duration: 2.55 * this.warningScale, owner: jaw, kind: "lightning", follow: hero });
         this.fx.floatText(hero.x, hero.y - hero.radius - 27, "MARKED — BAIT THE SKY", "#b9f4ff", 12);
       }
       jaw.castGlow = 0.9;
@@ -6184,11 +6400,19 @@ export class Battle {
     let struck = 0;
     for (const hero of this.livingHeroes()) {
       if (!inside(hero)) continue;
+      if (
+        mark.kind === "void" &&
+        owner.enemyKind === "wayeater" &&
+        this.bossObjectives.some((objective) => objective.kind === "waystone" && objective.resolved && Math.hypot(hero.x - objective.x, (hero.y - objective.y) / 0.7) <= objective.radius + 30)
+      ) {
+        this.fx.floatText(hero.x, hero.y - hero.radius - 22, "ANCHORED", "#ffe9a3", 12);
+        continue;
+      }
       // The Seraph's crossed verdicts and the finale's recalled sequence layer
       // more hazards than single-pattern bosses, so each individual hit is a
       // little lighter while still punishing a missed warning.
       const patternScale = owner.enemyKind === "reliquaryseraph" && mark.kind === "beam"
-        ? 0.84
+        ? 0.72
         : owner.enemyKind === "wayeater"
           ? 0.56
           : 1;
@@ -6219,6 +6443,7 @@ export class Battle {
       owner.lungeDir = { x: Math.cos(angle), y: Math.sin(angle) };
       owner.lunge = 1;
       if (struck > 0 && owner.alive) this.heal(owner, owner.stats.maxHp * Math.min(0.09, struck * 0.025), true, owner);
+      else if (owner.enemyKind === "bloodmoonstag" && owner.alive) this.spawnHeartTrail(owner, mark);
     }
 
     if (boss && struck === 0 && this.bossStaggerMax > 0) {
@@ -6278,6 +6503,10 @@ export class Battle {
   private updateTelegraphs(dt: number): void {
     for (let i = this.telegraphs.length - 1; i >= 0; i--) {
       const mark = this.telegraphs[i];
+      if (mark.follow?.alive) {
+        mark.x = mark.follow.x;
+        mark.y = mark.follow.y;
+      }
       mark.time += dt;
       if (!mark.owner.alive && mark.kind !== "lightning") {
         this.telegraphs.splice(i, 1);
@@ -6287,6 +6516,14 @@ export class Battle {
         this.telegraphs.splice(i, 1);
         if (this.resolveLateTelegraph(mark)) continue;
         if (mark.kind === "lightning") {
+          const boss = mark.owner === this.bossRef ? this.bossRef : null;
+          if (boss?.enemyKind === "skybreaker") {
+            const rod = this.bossObjectives.find((objective) =>
+              objective.kind === "lightningRod" && !objective.resolved &&
+              Math.hypot(objective.x - mark.x, (objective.y - mark.y) / 0.7) < objective.radius + mark.radius * 0.65,
+            );
+            if (rod) this.completeBossObjective(rod, boss);
+          }
           for (const unit of this.units) {
             if (!unit.alive || Math.hypot(unit.x - mark.x, unit.y - mark.y) >= mark.radius + unit.radius) continue;
             this.damage(unit, 16 * this.stage.scale, null, { spell: true, color: "#b9f4ff" });

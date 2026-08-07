@@ -1968,11 +1968,11 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     body: "#735f79", trim: "#e0c79d", lore: "It listens to tomorrow through a shell grown around yesterday's dead.", habit: "Raises pearlescent wards around nearby allies. Break the seer before the shields bury the field.",
   },
   bellwidow: {
-    name: "The Bell Widow", maxHp: 2475, damage: 22, range: 180, attackCooldown: 2.45, speed: 48, armor: 0.22, radius: 32, xp: 190,
+    name: "The Bell Widow", maxHp: 2720, damage: 22, range: 180, attackCooldown: 2.45, speed: 48, armor: 0.22, radius: 32, xp: 190,
     body: "#526e75", trim: "#d2ae67", lore: "Abbess, lighthouse keeper, and last voice of a drowned abbey.", habit: "Each toll floods two lanes and silences stragglers. Gather the whole band in the named quiet lane to stop the clapper and expose her.",
   },
   stormjaw: {
-    name: "Stormjaw", maxHp: 3585, damage: 25, range: 62, attackCooldown: 2.7, speed: 55, armor: 0.26, radius: 40, xp: 260,
+    name: "Stormjaw", maxHp: 4120, damage: 25, range: 62, attackCooldown: 2.7, speed: 55, armor: 0.26, radius: 40, xp: 260,
     body: "#315f69", trim: "#9ed2c7", lore: "The coast was never land. It was only sleeping.", habit: "Bait marked lightning onto its reef plates, run against the undertow, then dodge the breach for a long exposed-heart window.",
   },
   ...LATE_ENEMIES,
@@ -3384,6 +3384,18 @@ export const BOSS_PHASES: Partial<Record<EnemyKind, number[]>> = {
   wyrm: [0.66, 0.33], bellwidow: [0.66, 0.33], stormjaw: [0.68, 0.34],
   ...LATE_BOSS_PHASES,
 };
+
+/** Phased bosses that can actually be encountered in the current campaign. */
+export const STAGED_BOSS_KINDS = (Object.keys(BOSS_PHASES) as EnemyKind[]).filter((kind) =>
+  STAGES.some((stage) => stage.waves.some((wave) => wave.some((entry) => entry.kind === kind))),
+);
+
+/** One-off bosses reveal a useful record after one victory; common foes reward repeated study. */
+export function bestiaryThresholds(kind: EnemyKind): { study: number; mastery: number } {
+  return STAGED_BOSS_KINDS.includes(kind)
+    ? { study: 1, mastery: 1 }
+    : { study: 10, mastery: 25 };
+}
 
 export interface ContractDef {
   id: string;
