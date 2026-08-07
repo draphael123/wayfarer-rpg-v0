@@ -460,7 +460,9 @@ export class Menus {
   root: HTMLElement;
   toast: HTMLElement | null = null;
   travelFrom: number | null = null; // cleared stage to animate the road-march from
-  private pendingSpell: string | null = null; // spell waiting for a slot in replace mode
+  private gearFocus: "weapon" | "body" | "helm" | "boots" | "trinket" = "body";
+  private spellFocus = 0;
+  private pendingSpell: string | null = null; // retained for the legacy spell sheet below
   private figureTimer: number | null = null; // idle animation for the hero-sheet figure
   private justDonned = false; // flash the figure preview on the next sheet render
   private selectedStage: number | null = null; // map node the scout report is showing
@@ -3293,8 +3295,128 @@ export class Menus {
 
   // ------------------------------------------------------------------ equipment
 
-  /** The Gear page: figure, weapon, the three armor slots, set meter, trinket. */
+  /** A slot-first loadout screen: choose a slot, then choose one item for it. */
   renderEquipment(index: number): void {
+    this.pushNav("equip", index);
+    this.root.innerHTML = "";
+    this.show();
+    const save = this.save;
+    const def = HEROES[index];
+    const hero = save.heroes[index];
+    const sworn = callingById(hero.calling);
+    const oathHolds = sworn ? callingEligible(sworn, hero.attrs) : false;
+    const weapon = dominantWeapon(hero.attrs, oathHolds ? hero.calling : null);
+    const currentGear = () => heroGearOf(hero, save.forge);
+    const currentStats = () => deriveStats(hero.attrs, hero.weaponTier, currentGear(), hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.boons);
+    const wornSet = armorSetOf(currentGear());
+    const slotInfo = [
+      { key: "weapon", label: "Weapon", icon: "sword", value: `${WEAPON_TIERS[hero.weaponTier].name} ${WEAPON_LABEL[weapon]}` },
+      { key: "body", label: "Armor", icon: "shield", value: armorById(hero.armor)?.name ?? "Traveler's Garb" },
+      { key: "helm", label: "Helm", icon: "moon", value: armorById(hero.helm)?.name ?? "Empty" },
+      { key: "boots", label: "Boots", icon: "arrow", value: armorById(hero.boots)?.name ?? "Empty" },
+      { key: "trinket", label: "Trinket", icon: "gem", value: trinketById(hero.trinket)?.name ?? "Empty" },
+    ] as const;
+    const page = el(`
+      <div class="page hero-sheet loadout-page">
+        <div class="map-header">
+          <div class="equip-title"><div><div class="map-title">${def.name} <em class="sheet-title">${def.title}</em></div>
+          <div class="map-level">Choose a slot, then choose what goes there · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div></div></div>
+        </div>
+        <div class="loadout-workbench">
+          <section class="loadout-hero" style="--accent:${def.accent}">
+            <div class="figure-frame"><canvas class="figure-canvas" width="360" height="440"></canvas></div>
+            <div class="loadout-stats"></div>
+            <div class="loadout-set ${wornSet?.tier === 3 ? "complete" : ""}">
+              ${ico("banner")} <strong>${wornSet ? `${wornSet.family} set · ${wornSet.tier}/3` : "No armor set"}</strong>
+              <span>${wornSet ? (wornSet.tier >= 3 ? SET_BONUSES[wornSet.family].three : `Next: ${SET_BONUSES[wornSet.family].three}`) : "Match two pieces for a set bonus"}</span>
+            </div>
+          </section>
+          <section class="loadout-console">
+            <div class="loadout-slots" aria-label="Equipment slots">
+              ${slotInfo.map((slot) => `<button class="loadout-slot ${this.gearFocus === slot.key ? "selected" : ""}" data-focus="${slot.key}"><span class="loadout-slot-icon">${ico(slot.icon)}</span><span><em>${slot.label}</em><strong>${slot.value}</strong></span><b>›</b></button>`).join("")}
+            </div>
+            <div class="loadout-picker"></div>
+          </section>
+        </div>
+      </div>`);
+    page.querySelector(".map-header")!.after(this.heroTabs(index, "gear"));
+
+    const stats = currentStats();
+    page.querySelector(".loadout-stats")!.innerHTML = `
+      <div><span>Health</span><strong>${stats.maxHp}</strong></div><div><span>Damage</span><strong>${Math.round(stats.damage)}</strong></div>
+      <div><span>Armor</span><strong>${Math.round(stats.armor * 100)}%</strong></div><div><span>Move</span><strong>${Math.round(stats.speed)}</strong></div>`;
+    const fig = page.querySelector(".figure-canvas") as HTMLCanvasElement;
+    if (this.justDonned) { this.justDonned = false; page.querySelector(".figure-frame")?.classList.add("donned"); }
+    drawHeroFigure(fig, index, save, 0);
+    if (this.figureTimer) clearInterval(this.figureTimer);
+    let figT = 0;
+    this.figureTimer = window.setInterval(() => {
+      if (!document.body.contains(fig)) { if (this.figureTimer) clearInterval(this.figureTimer); this.figureTimer = null; return; }
+      drawHeroFigure(fig, index, save, (figT += 0.09));
+    }, 90);
+
+    const picker = page.querySelector(".loadout-picker")!;
+    const focus = this.gearFocus;
+    const heading = slotInfo.find((s) => s.key === focus)!;
+    picker.innerHTML = `<div class="picker-head"><span>${ico(heading.icon)} ${heading.label}</span><small>Select an option below</small></div><div class="picker-list"></div>`;
+    const list = picker.querySelector(".picker-list")!;
+    if (focus === "weapon") {
+      const next = hero.weaponTier + 1 < WEAPON_TIERS.length ? WEAPON_TIERS[hero.weaponTier + 1] : null;
+      list.innerHTML = `<div class="item-choice equipped"><span class="choice-icon">${ico("sword")}</span><span><strong>${WEAPON_TIERS[hero.weaponTier].name}</strong><em>Equipped · +${WEAPON_DAMAGE_BONUS[hero.weaponTier]} damage</em></span><b>✓</b></div>${next ? `<button class="item-choice" data-gear="w"><span class="choice-icon">${ico("spark")}</span><span><strong>Upgrade to ${next.name}</strong><em>Permanent weapon improvement</em></span><b>${next.cost}g</b></button>` : `<div class="picker-empty">This weapon is fully upgraded.</div>`}`;
+    } else if (focus === "trinket") {
+      const taken = save.heroes.filter((_, hi) => hi !== index).map((h) => h.trinket);
+      const ids = [...new Set(save.inventory)].filter((id) => save.inventory.filter((x) => x === id).length > taken.filter((x) => x === id).length);
+      const choices = [null, ...ids];
+      list.innerHTML = choices.map((id) => {
+        const t = trinketById(id);
+        return `<button class="item-choice ${hero.trinket === id ? "equipped" : ""}" data-trinket="${id ?? "none"}"><span class="choice-icon">${t?.icon ?? "◇"}</span><span><strong>${t?.name ?? "No trinket"}</strong><em>${t?.blurb ?? "Leave this slot empty"}</em></span><b>${hero.trinket === id ? "✓" : "Equip"}</b></button>`;
+      }).join("");
+      if (choices.length === 1) list.insertAdjacentHTML("beforeend", `<button class="picker-shop" data-goto="armory">Find trinkets in the Armory →</button>`);
+    } else {
+      const kind = focus as "body" | "helm" | "boots";
+      const catalog = kind === "body" ? ARMORS : kind === "helm" ? HELMS : BOOTS;
+      const wornId = kind === "body" ? hero.armor : kind === "helm" ? hero.helm : hero.boots;
+      const pool = catalog.filter((p) => save.armory.filter((x) => x === p.id).length > save.heroes.filter((h, hi) => hi !== index && (kind === "body" ? h.armor : kind === "helm" ? h.helm : h.boots) === p.id).length);
+      const cur = currentStats();
+      const choices: (typeof pool[number] | null)[] = [null, ...pool];
+      list.innerHTML = choices.map((piece) => {
+        const altGear = { ...currentGear(), [kind === "body" ? "body" : kind]: piece?.id ?? null };
+        const alt = deriveStats(hero.attrs, hero.weaponTier, altGear, hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.boons);
+        const deltas = [[alt.maxHp - cur.maxHp, "hp"], [Math.round((alt.armor - cur.armor) * 100), "% armor"], [Math.round(((alt.speed - cur.speed) / cur.speed) * 100), "% move"]] as const;
+        const deltaHtml = deltas.filter(([n]) => n).map(([n, label]) => `<i class="${n > 0 ? "up" : "dn"}">${n > 0 ? "+" : ""}${n}${label}</i>`).join("");
+        const active = wornId === (piece?.id ?? null);
+        const dataKey = kind === "body" ? "armor" : kind;
+        const extra = piece && kind === "body" ? ARMOR_ACTIVES[piece.family] : null;
+        return `<button class="item-choice ${active ? "equipped" : ""}" data-${dataKey}="${piece?.id ?? "none"}"><span class="choice-icon">${piece ? ico(piece.icon) : "◇"}</span><span><strong>${piece ? pieceLabel(piece, save.forge) : kind === "body" ? "Traveler's Garb" : "Empty"}</strong><em>${piece?.blurb ?? "Leave this slot unequipped"}${extra ? ` · Grants ${extra.name}` : ""}</em><span class="choice-deltas">${deltaHtml || "No stat change"}</span></span><b>${active ? "✓" : "Equip"}</b></button>`;
+      }).join("");
+      if (wornId && save.heroes.some((h, hi) => hi !== index && h.recruited)) list.insertAdjacentHTML("beforeend", `<button class="picker-shop" data-handoff="${kind}">Hand this piece to another hero</button>`);
+      if (!pool.length) list.insertAdjacentHTML("beforeend", `<button class="picker-shop" data-goto="armory">Browse more gear in the Armory →</button>`);
+    }
+
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const focusBtn = target.closest("[data-focus]");
+      if (focusBtn) { this.gearFocus = focusBtn.getAttribute("data-focus") as typeof this.gearFocus; audio.play("click"); this.renderEquipment(index); return; }
+      const gear = target.closest("[data-gear]");
+      if (gear) { const tier = hero.weaponTier + 1; if (!this.spend(WEAPON_TIERS[tier].cost)) return; hero.weaponTier = tier; persist(save); audio.play("clink"); this.showToast(`${def.name}'s weapon is now ${WEAPON_TIERS[tier].name}`); this.renderEquipment(index); return; }
+      const don = (slot: "armor" | "helm" | "boots", id: string) => {
+        const before = armorSetOf(heroGearOf(hero))?.tier ?? 0; hero[slot] = id === "none" ? null : id; persist(save); const set = armorSetOf(heroGearOf(hero)); this.justDonned = id !== "none";
+        if ((set?.tier ?? 0) >= 3 && before < 3) { audio.play("setChime"); this.showToast(`${set!.family.toUpperCase()} SET COMPLETE — ${SET_BONUSES[set!.family].three}`); } else audio.play("clink");
+        this.renderEquipment(index);
+      };
+      const armor = target.closest("[data-armor]"); if (armor) { don("armor", armor.getAttribute("data-armor")!); return; }
+      const helm = target.closest("[data-helm]"); if (helm) { don("helm", helm.getAttribute("data-helm")!); return; }
+      const boots = target.closest("[data-boots]"); if (boots) { don("boots", boots.getAttribute("data-boots")!); return; }
+      const trinket = target.closest("[data-trinket]"); if (trinket) { hero.trinket = trinket.getAttribute("data-trinket") === "none" ? null : trinket.getAttribute("data-trinket"); persist(save); audio.play("click"); this.renderEquipment(index); return; }
+      const handoff = target.closest("[data-handoff]"); if (handoff) { this.askHandoff(index, handoff.getAttribute("data-handoff") as "body" | "helm" | "boots"); return; }
+      if (target.closest("[data-goto]")) { audio.play("page"); this.renderShop("armory"); return; }
+      if (target.closest('[data-act="back"]')) { audio.play("click"); this.renderParty(); }
+    });
+    this.mount(page, "party");
+  }
+
+  /** Previous expanded equipment sheet retained as a fallback reference. */
+  renderEquipmentLegacy(index: number): void {
     this.pushNav("equip", index);
     this.root.innerHTML = "";
     this.show();
@@ -3587,8 +3709,88 @@ export class Menus {
     this.root.appendChild(pop);
   }
 
-  /** The Spells page: loadout slots plus the full spellbook. */
+  /** A battle-bar-first spell screen: select a slot, then assign one known spell. */
   renderSpells(index: number): void {
+    this.pushNav("spells", index);
+    this.root.innerHTML = "";
+    this.show();
+    const save = this.save;
+    const hero = save.heroes[index];
+    const def = HEROES[index];
+    this.spellFocus = Math.max(0, Math.min(MAX_EQUIPPED - 1, this.spellFocus));
+    const trainable = new Set(unlockedAbilities(hero.attrs).map((a) => a.id));
+    const usable = ABILITIES.filter((a) => save.unlockedSpells.includes(a.id) && trainable.has(a.id));
+    const unavailable = ABILITIES.filter((a) => !save.unlockedSpells.includes(a.id) || !trainable.has(a.id));
+    const page = el(`
+      <div class="page hero-sheet loadout-page spell-loadout-page">
+        <div class="map-header"><div class="equip-title"><div><div class="map-title">${def.name} <em class="sheet-title">${def.title}</em></div>
+          <div class="map-level">Build the battle bar one slot at a time · <span class="gold-chip">${ico("coin")} ${save.gold}</span></div></div></div></div>
+        <div class="spell-workbench">
+          <section class="battlebar-panel">
+            <div class="picker-head"><span>${ico("spark")} Battle bar</span><small>Choose a slot to edit</small></div>
+            <div class="battlebar-slots"></div>
+            <div class="battlebar-note">Spells appear in this order during combat.</div>
+          </section>
+          <section class="spell-picker">
+            <div class="picker-head"><span>${ico("book")} Slot ${this.spellFocus + 1}</span><small>${hero.equipped[this.spellFocus] ? "Choose a replacement or clear it" : "Choose a spell"}</small></div>
+            <div class="spell-choice-list"></div>
+          </section>
+        </div>
+      </div>`);
+    page.querySelector(".map-header")!.after(this.heroTabs(index, "spells"));
+    const slots = page.querySelector(".battlebar-slots")!;
+    for (let s = 0; s < MAX_EQUIPPED; s++) {
+      const id = hero.equipped[s] ?? null;
+      const ability = id ? abilityById(id) : null;
+      const slot = el(`<button class="battlebar-slot ${s === this.spellFocus ? "selected" : ""} ${id ? "filled" : "empty"}" data-slot="${s}" style="--chip:${ability?.color ?? "#6b6478"}"><span class="slot-number">${s + 1}</span><span class="spell-ico"></span><span><strong>${ability?.name ?? "Empty slot"}</strong><em>${ability?.blurb ?? "Tap to choose a spell"}</em></span><b>›</b></button>`);
+      if (ability) {
+        const canvas = document.createElement("canvas"); canvas.width = canvas.height = 68; canvas.style.width = canvas.style.height = "34px";
+        const ctx = canvas.getContext("2d")!; ctx.scale(2, 2); drawAbilityGlyph(ctx, ability.icon, 17, 17, 10, ability.color); slot.querySelector(".spell-ico")!.appendChild(canvas);
+      }
+      slots.appendChild(slot);
+    }
+    const sworn = callingById(hero.calling);
+    if (sworn) {
+      const holds = callingEligible(sworn, hero.attrs);
+      slots.appendChild(el(`<div class="battlebar-slot signature ${holds ? "" : "dormant"}" style="--chip:${holds ? sworn.color : "#6b6478"}"><span class="slot-number">★</span><span class="spell-ico">${ico(sworn.crest)}</span><span><strong>${sworn.signature.name}</strong><em>${holds ? `${sworn.name} ultimate · always available` : "Calling requirements are not met"}</em></span><b>${holds ? "Bonus" : "Dormant"}</b></div>`));
+    }
+    const list = page.querySelector(".spell-choice-list")!;
+    if (hero.equipped[this.spellFocus]) list.appendChild(el(`<button class="spell-choice clear-choice" data-clear="1"><span class="choice-icon">×</span><span><strong>Clear this slot</strong><em>Leave slot ${this.spellFocus + 1} empty</em></span></button>`));
+    if (!usable.length) list.appendChild(el(`<div class="picker-empty">No usable spells yet. Unlock spells in the Village or train this hero's attributes.</div>`));
+    for (const ability of usable) {
+      const at = hero.equipped.indexOf(ability.id);
+      const choice = el(`<button class="spell-choice ${at === this.spellFocus ? "equipped" : ""}" data-ability="${ability.id}" style="--chip:${ability.color}"><span class="spell-ico"></span><span><strong>${ability.name}</strong><em>${ability.blurb}</em><small>${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}${at >= 0 ? ` · currently in slot ${at + 1}` : ""}</small></span><b>${at === this.spellFocus ? "✓" : at >= 0 && this.spellFocus < hero.equipped.length ? "Swap" : at >= 0 ? "Added" : "Equip"}</b></button>`);
+      const canvas = document.createElement("canvas"); canvas.width = canvas.height = 68; canvas.style.width = canvas.style.height = "34px";
+      const ctx = canvas.getContext("2d")!; ctx.scale(2, 2); drawAbilityGlyph(ctx, ability.icon, 17, 17, 10, ability.color); choice.querySelector(".spell-ico")!.appendChild(canvas); list.appendChild(choice);
+    }
+    if (unavailable.length) {
+      list.appendChild(el(`<details class="unavailable-spells"><summary>${unavailable.length} unavailable spell${unavailable.length === 1 ? "" : "s"}</summary><div>${unavailable.map((a) => `<button class="spell-choice locked" data-locked="${a.id}" style="--chip:${a.color}"><span class="choice-icon">${ico("lock")}</span><span><strong>${a.name}</strong><em>${!save.unlockedSpells.includes(a.id) ? "Unlock at the Village" : `Needs ${ATTR_NAMES[a.gate.attr]} ${a.gate.value}`}</em></span></button>`).join("")}</div></details>`));
+    }
+    page.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      const slot = target.closest("[data-slot]");
+      if (slot) { this.spellFocus = Number(slot.getAttribute("data-slot")); audio.play("click"); this.renderSpells(index); return; }
+      if (target.closest("[data-clear]")) { hero.equipped.splice(this.spellFocus, 1); persist(save); audio.play("click"); this.renderSpells(index); return; }
+      const pick = target.closest("[data-ability]");
+      if (pick) {
+        const id = pick.getAttribute("data-ability")!;
+        const next = [...hero.equipped];
+        const existing = next.indexOf(id);
+        if (existing === this.spellFocus) return;
+        if (existing >= 0 && this.spellFocus >= next.length) { this.showToast(`${abilityById(id).name} is already in slot ${existing + 1}`); return; }
+        if (existing >= 0 && this.spellFocus < next.length) [next[existing], next[this.spellFocus]] = [next[this.spellFocus], next[existing]];
+        else { if (existing >= 0) next.splice(existing, 1); if (this.spellFocus < next.length) next[this.spellFocus] = id; else next.push(id); }
+        hero.equipped = next.slice(0, MAX_EQUIPPED); persist(save); audio.play("levelup"); this.showToast(`${abilityById(id).name} assigned to slot ${this.spellFocus + 1}`); this.renderSpells(index); return;
+      }
+      const locked = target.closest("[data-locked]");
+      if (locked) { const a = abilityById(locked.getAttribute("data-locked")!); this.showToast(!save.unlockedSpells.includes(a.id) ? "Unlock this spell at the Village first" : `Needs ${ATTR_NAMES[a.gate.attr]} ${a.gate.value}`); return; }
+      if (target.closest('[data-act="back"]')) { audio.play("click"); this.renderParty(); }
+    });
+    this.mount(page, "party");
+  }
+
+  /** Previous expanded spellbook retained as a fallback reference. */
+  renderSpellsLegacy(index: number): void {
     this.pushNav("spells", index);
     this.root.innerHTML = "";
     this.show();
