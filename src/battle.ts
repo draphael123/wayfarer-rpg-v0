@@ -2149,6 +2149,8 @@ export class Battle {
     this.castingSpell = false;
     if (cast) {
       this.castCounts[id] = (this.castCounts[id] ?? 0) + 1;
+      // every cast wears its own mark — you can READ who cast what at a glance
+      this.fx.sigil(hero.x, hero.y - hero.radius * 2.6 - 14, state.def.icon, state.def.color);
       if (state.ult) {
         hero.ultCharge = 0;
         state.timer = 1;

@@ -1,3 +1,5 @@
+import { drawAbilityGlyph } from "./icons";
+
 export interface Particle {
   x: number;
   y: number;
@@ -76,6 +78,15 @@ export interface Tracer {
   width: number;
 }
 
+export interface Sigil {
+  x: number;
+  y: number;
+  icon: string;
+  color: string;
+  life: number;
+  maxLife: number;
+}
+
 export class FxSystem {
   particles: Particle[] = [];
   floaters: Floater[] = [];
@@ -84,7 +95,13 @@ export class FxSystem {
   pools: LightPool[] = [];
   beams: Beam[] = [];
   tracers: Tracer[] = [];
+  sigils: Sigil[] = [];
   shake = 0;
+
+  /** The spell's own mark, flashed over the caster — every cast wears its name. */
+  sigil(x: number, y: number, icon: string, color: string): void {
+    this.sigils.push({ x, y, icon, color, life: 0.65, maxLife: 0.65 });
+  }
 
   /** Vertical column of light standing on a ground point. */
   beam(x: number, y: number, height: number, width: number, color: string, life = 0.5): void {
@@ -235,6 +252,10 @@ export class FxSystem {
       this.tracers[i].life -= dt;
       if (this.tracers[i].life <= 0) this.tracers.splice(i, 1);
     }
+    for (let i = this.sigils.length - 1; i >= 0; i--) {
+      this.sigils[i].life -= dt;
+      if (this.sigils[i].life <= 0) this.sigils.splice(i, 1);
+    }
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
@@ -342,9 +363,21 @@ export class FxSystem {
       ctx.fillText(f.text, f.x, f.y);
     }
     ctx.globalAlpha = 1;
+    // cast sigils: the spell's own mark blooms over the caster and rises away
+    for (const s of this.sigils) {
+      const k = 1 - s.life / s.maxLife;
+      const scale = k < 0.2 ? 0.6 + (k / 0.2) * 0.6 : 1.2 + (k - 0.2) * 0.5;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, (s.life / s.maxLife) * 1.8);
+      ctx.shadowColor = s.color;
+      ctx.shadowBlur = 14;
+      drawAbilityGlyph(ctx, s.icon, s.x, s.y - k * 30, 13 * scale, s.color);
+      ctx.restore();
+    }
   }
 
   clear(): void {
+    this.sigils.length = 0;
     this.particles.length = 0;
     this.floaters.length = 0;
     this.rings.length = 0;

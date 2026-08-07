@@ -150,6 +150,7 @@ export class Hud {
   private prevHp: Record<number, number> = {};
   private lastChime = -10;
   overlayAge = 0;
+  private lootRevealed = false; // the reveal chime fires once per victory
   pendingLoot: { icon: string; name: string; rare: boolean } | null = null;
   cam: { x: number; y: number; zoom: number } = { x: 0, y: 0, zoom: 1 };
 
@@ -453,8 +454,15 @@ export class Hud {
     this.moveMarks = this.moveMarks.filter((m) => m.t < 0.9);
     if (this.overlayActive() && (this.battle.state === "victory" || this.battle.state === "defeat")) {
       this.overlayAge += dt;
+      // the loot card's reveal gets its moment: a chime as the face turns up
+      if (this.pendingLoot && !this.lootRevealed && this.overlayAge > 0.5 + 0.45 * 0.5) {
+        this.lootRevealed = true;
+        audio.play(this.pendingLoot.rare ? "relic" : "coin");
+        navigator.vibrate?.(this.pendingLoot.rare ? [15, 25, 45] : 15);
+      }
     } else if (this.battle.state === "fighting") {
       this.overlayAge = 0;
+      this.lootRevealed = false;
     }
     // ability-ready flourish detection
     for (const hero of this.battle.heroes()) {
