@@ -42,7 +42,7 @@ import {
   talentMods,
   TRINKETS,
 } from "../src/data";
-import { assignRecruitRoadKit, claimReward, CURRENT_SAVE_VERSION, defaultSave, grantHeroXp, loadSave, persist, personalBattleXp, recoveryKey, rejectedSaveKey, slotKey } from "../src/save";
+import { assignHeroPath, assignRecruitRoadKit, claimReward, CURRENT_SAVE_VERSION, defaultSave, grantHeroXp, loadSave, persist, personalBattleXp, recoveryKey, rejectedSaveKey, slotKey } from "../src/save";
 import { LATE_FOE_KINDS } from "../src/late-content";
 import { LATE_ROAD_BOSS_INTENTS, LATE_ROAD_ELITE_STAGES, LATE_ROAD_REGIONS, LATE_ROAD_STAGES } from "../src/late-road";
 import { Battle } from "../src/battle";
@@ -59,6 +59,11 @@ unique(HEROES.map((hero) => hero.name), "hero names");
 assert.equal(personalBattleXp(101, true, true), 101, "a surviving participant earns full personal XP");
 assert.equal(personalBattleXp(101, true, false), 51, "a participant still fallen at victory earns half personal XP");
 assert.equal(personalBattleXp(101, false, true), 0, "a benched hero earns no battle XP");
+const roleChangeSave = defaultSave();
+const oldRoadBar = [...roleChangeSave.heroes[0].equipped];
+const newPathBar = assignHeroPath(roleChangeSave.heroes[0], "priest", "frost");
+assert.deepEqual(newPathBar, pathAbilities("priest", "frost").map((ability) => ability.id), "changing role must equip only the new Path bar");
+assert.ok(oldRoadBar.every((id) => !newPathBar.includes(id)), "starter techniques must not leak into an unrelated new role");
 
 for (const [rawIndex, gate] of Object.entries(HERO_GATE_STAGE)) {
   const heroIndex = Number(rawIndex);

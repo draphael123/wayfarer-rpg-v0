@@ -15,6 +15,7 @@ import {
   MAX_EQUIPPED,
   MAX_LEVEL,
   pathId,
+  pathAbilities,
   POINTS_PER_LEVEL,
   resolvedPathAbilities,
   SPECIALIZATION_MASTERY_LEVELS,
@@ -115,6 +116,19 @@ export function assignRecruitRoadKit(hero: HeroSave, index: number): string[] {
   hero.element = null;
   hero.equipped = equipped;
   return equipped;
+}
+
+/** Swearing or changing a Path replaces the road bar outright. Only the new
+ * Discipline and Attunement define Q/W; mastered Legacy choices can be made
+ * afterward from the Battle Bar menu. */
+export function assignHeroPath(hero: HeroSave, discipline: DisciplineId, element: ElementId): string[] {
+  const nextPath = pathId(discipline, element);
+  hero.discipline = discipline;
+  hero.element = element;
+  hero.calling = nextPath;
+  hero.advCalling = hero.advancedCallings[nextPath] ?? null;
+  hero.equipped = pathAbilities(discipline, element).map((ability) => ability.id).slice(0, MAX_EQUIPPED);
+  return hero.equipped;
 }
 
 /** Out of the box: 1-4 picks a hero, Q/W cast chosen abilities, R casts the ultimate. */

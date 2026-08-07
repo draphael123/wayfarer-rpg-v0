@@ -89,7 +89,7 @@ import { drawAbilityGlyph, ico } from "./icons";
 import { lateRoadMapMarkup, LATE_ROAD_REGIONS, type LateRoadRegion } from "./late-road";
 import { drawLateEnemyIcon } from "./late-sprites";
 import { drawHeroFigure, setColorSafe } from "./render";
-import { activeSlot, assignRecruitRoadKit, CURRENT_SAVE_VERSION, defaultSave, DEFAULT_KEYBINDS, grantHeroXp, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
+import { activeSlot, assignHeroPath, assignRecruitRoadKit, CURRENT_SAVE_VERSION, defaultSave, DEFAULT_KEYBINDS, grantHeroXp, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
 import { exportTelemetry, telemetrySummary } from "./telemetry";
 import type { SaveData } from "./types";
 
@@ -689,6 +689,7 @@ export class Menus {
   private bestiaryBossesOnly = false;
   private bestiarySearch = "";
   private queuedProgress: ProgressReportEntry[] = [];
+  private spellSlotFocus = 0;
 
   /** Animate the header gold chip counting from its last shown value. */
   private tickGold(page: HTMLElement): void {
@@ -4160,10 +4161,16 @@ export class Menus {
         this.save.heroes.forEach((h, i) => {
           const p = preset.loadout[i];
           if (!p) return;
-          // A preset may reorder this Path's techniques, but never restores retired abilities.
+          // A preset may reorder a valid bar, but never restores retired or
+          // off-role techniques from an earlier Path.
           const pathIds = heroPathAbilities(h).map((ability) => ability.id);
-          const remembered = p.equipped.filter((id) => pathIds.includes(id));
-          h.equipped = [...remembered, ...pathIds.filter((id) => !remembered.includes(id))].slice(0, MAX_EQUIPPED);
+          if (pathIds.length) {
+            const remembered = p.equipped.filter((id) => pathIds.includes(id));
+            h.equipped = [...remembered, ...pathIds.filter((id) => !remembered.includes(id))].slice(0, MAX_EQUIPPED);
+          } else {
+            const eligible = ABILITIES.filter((ability) => !ability.pathSkill && this.save.unlockedSpells.includes(ability.id) && h.attrs[ability.gate.attr] >= ability.gate.value).map((ability) => ability.id);
+            h.equipped = [...new Set(p.equipped.filter((id) => eligible.includes(id)))].slice(0, 2);
+          }
           h.trinket = p.trinket && this.save.inventory.includes(p.trinket) ? p.trinket : null;
           if (h.recruited) h.active = p.active;
         });
@@ -4265,8 +4272,13 @@ export class Menus {
         </div>
         <div class="stat-hint">tap any stat to see what it does</div>` : ""}
         <button class="trinket-row equip-row loadout-row" data-act="equip">
+          <span class="choice-icon">${ico("shield")}</span>
+          <span class="loadout-text"><strong>Gear</strong><em>${WEAPON_TIERS[hero.weaponTier].name} · ${armorById(hero.armor)?.name ?? "Traveler's Garb"}${trinket ? ` · ${trinket.name}` : ""}</em></span>
+          <span class="loadout-go">${ico("arrow")}</span>
+        </button>
+        <button class="trinket-row equip-row loadout-row technique-row" data-act="spells">
           <span class="loadout-slots"></span>
-          <span class="loadout-text"><strong>Gear &amp; Techniques</strong><em>${WEAPON_TIERS[hero.weaponTier].name} · ${armorById(hero.armor)?.name ?? "Traveler's Garb"}${trinket ? ` · ${trinket.name}` : ""} — tap to change</em></span>
+          <span class="loadout-text"><strong>Battle Bar</strong><em>${sworn ? "Swap the elemental or mastered Legacy technique" : "Choose the two road skills assigned to Q and W"}</em></span>
           <span class="loadout-go">${ico("arrow")}</span>
         </button>
         ${full ? '<div class="attr-rows"></div>' : ""}
@@ -4301,7 +4313,8 @@ export class Menus {
       this.renderHeroOverview(index);
     });
     const slotStrip = card.querySelector(".loadout-slots")!;
-    for (let s = 0; s < MAX_EQUIPPED; s++) slotStrip.appendChild(spellSlotEl(hero.equipped[s] ?? null, 22));
+    const shownBar = sworn ? [...hero.equipped.slice(0, 2), sworn.signature.id] : hero.equipped.slice(0, 2);
+    for (const abilityId of shownBar) slotStrip.appendChild(spellSlotEl(abilityId ?? null, 22));
     card.querySelector(".stat-grid")?.addEventListener("click", (event) => {
       const cell = (event.target as HTMLElement).closest("[data-stat]");
       if (!cell) return;
@@ -4312,6 +4325,11 @@ export class Menus {
     card.querySelector('[data-act="equip"]')!.addEventListener("click", () => {
       audio.play("click");
       this.renderEquipment(index);
+    });
+    card.querySelector('[data-act="spells"]')!.addEventListener("click", () => {
+      audio.play("click");
+      this.spellSlotFocus = 0;
+      this.renderSpells(index);
     });
 
     card.querySelector('[data-act="toggle-party"]')!.addEventListener("click", () => {
@@ -4624,17 +4642,14 @@ export class Menus {
           return;
         }
         if (changing) save.gold -= CALLING_SWITCH_COST;
-        const techniques = [...pathAbilities(draftDiscipline, draftElement)];
-        hero.discipline = draftDiscipline;
-        hero.element = draftElement;
-        hero.calling = nextId;
-        hero.advCalling = hero.advancedCallings[nextId] ?? null;
-        hero.equipped = techniques.map((ability) => ability.id).slice(0, MAX_EQUIPPED);
-        for (const ability of techniques) if (!save.unlockedSpells.includes(ability.id)) save.unlockedSpells.push(ability.id);
+        // The new role owns its battle bar. Starter road skills and techniques
+        // from the previous Discipline are deliberately not carried forward.
+        const equipped = assignHeroPath(hero, draftDiscipline, draftElement);
+        for (const id of equipped) if (!save.unlockedSpells.includes(id)) save.unlockedSpells.push(id);
         persist(save);
         audio.play("levelup");
         navigator.vibrate?.([20, 30, 50]);
-        this.showToast(`${def.name} walks the ${nextPath.name} Path — two techniques and an ultimate are ready.`);
+        this.showToast(`${def.name} walks the ${nextPath.name} Path — the previous battle bar has been replaced.`);
         this.renderCalling(index);
         return;
       }
@@ -5076,6 +5091,11 @@ export class Menus {
       const ability = ABILITIES.find((candidate) => candidate.id === id);
       return ability ? [ability] : [];
     }).slice(0, MAX_EQUIPPED);
+    // Road techniques are retired from the global shop, not from unsworn
+    // heroes who already own them. Their attribute gates still apply.
+    const roadCandidates = path ? [] : ABILITIES
+      .filter((ability) => save.unlockedSpells.includes(ability.id) && !ability.pathSkill && hero.attrs[ability.gate.attr] >= ability.gate.value);
+    this.spellSlotFocus = Math.max(0, Math.min(1, this.spellSlotFocus));
     const granted = heroPathAbilities(hero);
     const remembered = hero.equipped.filter((id) => granted.some((ability) => ability.id === id));
     const techniques = [...remembered.flatMap((id) => granted.filter((ability) => ability.id === id)), ...granted.filter((ability) => !remembered.includes(ability.id))].slice(0, MAX_EQUIPPED);
@@ -5111,19 +5131,23 @@ export class Menus {
               ${elementChoices.map((ability) => `<button class="element-technique-option ${techniques[1]?.id === ability.id ? "selected" : ""}" data-element-technique="${ability.id}" style="--chip:${ability.color}"><small>${ability.pathVariant}</small><strong>${ability.name}</strong><em>${ability.blurb}</em><b>${techniques[1]?.id === ability.id ? "Equipped" : "Choose"}</b></button>`).join("")}
             </div>
           </section>
-          ${legacyChoices.length ? `<section class="element-technique-picker legacy-technique-picker" style="--path-color:${path.color}"><div class="element-technique-head"><span>Mastered specialization · W</span><strong>Carry a Legacy technique</strong><p>A mastered specialization technique keeps its original combat geometry but answers with ${elementById(hero.element)?.name ?? "your current element"}. Equipping one replaces the elemental W technique, never the Discipline skill or ultimate.</p></div><div class="element-technique-options">${legacyChoices.map((ability) => `<button class="element-technique-option legacy-option ${techniques[1]?.id === ability.id ? "selected" : ""}" data-legacy-technique="${ability.id}" style="--chip:${ability.color}"><small>portable Legacy</small><strong>${ability.name}</strong><em>${ability.blurb}</em><b>${techniques[1]?.id === ability.id ? "Equipped" : "Carry"}</b></button>`).join("")}</div></section>` : ""}` : roadSkills.length ? `
+          ${legacyChoices.length ? `<section class="element-technique-picker legacy-technique-picker" style="--path-color:${path.color}"><div class="element-technique-head"><span>Mastered specialization · W</span><strong>Carry a Legacy technique</strong><p>A mastered specialization technique keeps its original combat geometry but answers with ${elementById(hero.element)?.name ?? "your current element"}. Equipping one replaces the elemental W technique, never the Discipline skill or ultimate.</p></div><div class="element-technique-options">${legacyChoices.map((ability) => `<button class="element-technique-option legacy-option ${techniques[1]?.id === ability.id ? "selected" : ""}" data-legacy-technique="${ability.id}" style="--chip:${ability.color}"><small>portable Legacy</small><strong>${ability.name}</strong><em>${ability.blurb}</em><b>${techniques[1]?.id === ability.id ? "Equipped" : "Carry"}</b></button>`).join("")}</div></section>` : ""}` : !path ? `
           <div class="spell-workbench path-bar-workbench road-skill-workbench">
             <section class="battlebar-panel path-battlebar-panel">
-              <div class="picker-head"><span>${ico("spark")} Road skills</span><small>Q · W by default</small></div>
+              <div class="picker-head"><span>${ico("spark")} Road skills</span><small>Choose a slot, then choose a technique</small></div>
               <div class="battlebar-slots road-skill-slots"></div>
             </section>
             <aside class="path-bar-doctrine">
               <span class="path-bar-kicker">Before the Path</span>
               <strong>Founder's training</strong><em>Reliable skills for the first journey</em>
-              <p>These opening skills keep the hero battle-ready. At level ${CALLING_UNLOCK_LEVEL}, choose a Discipline and an Attunement to replace them with a complete elemental Path.</p>
-              <button class="big-btn primary" disabled>Paths unlock at level ${CALLING_UNLOCK_LEVEL}</button>
+              <p>These opening skills keep the hero battle-ready. At level ${CALLING_UNLOCK_LEVEL}, choosing a Discipline and Attunement replaces this bar with that role's techniques.</p>
+              <button class="big-btn primary" data-open-path ${hero.level < CALLING_UNLOCK_LEVEL ? "disabled" : ""}>${hero.level < CALLING_UNLOCK_LEVEL ? `Paths unlock at level ${CALLING_UNLOCK_LEVEL}` : "Choose a Path"}</button>
             </aside>
-          </div>` : `
+          </div>
+          <section class="element-technique-picker road-technique-picker">
+            <div class="element-technique-head"><span>Technique library</span><strong>Choose ${this.spellSlotFocus === 0 ? "Q" : "W"}</strong><p>Only unlocked techniques whose attribute requirement this hero meets are shown.</p></div>
+            <div class="element-technique-options">${roadCandidates.map((ability) => `<button class="element-technique-option ${hero.equipped[this.spellSlotFocus] === ability.id ? "selected" : ""}" data-road-technique="${ability.id}" style="--chip:${ability.color}"><small>${ability.gate.value ? `${ATTR_NAMES[ability.gate.attr]} ${ability.gate.value}` : "road-trained"}</small><strong>${ability.name}</strong><em>${ability.blurb}</em><b>${hero.equipped[this.spellSlotFocus] === ability.id ? "Equipped" : "Assign"}</b></button>`).join("") || '<div class="picker-empty">No other techniques are available yet.</div>'}</div>
+          </section>` : `
           <section class="path-bar-empty">
             <span>${ico("banner")}</span><strong>No Path charted</strong>
             <p>Choose a Discipline and an Attunement to set two techniques and an ultimate.</p>
@@ -5149,10 +5173,12 @@ export class Menus {
         slot.querySelector(".spell-ico")!.appendChild(canvas);
         slots.appendChild(slot);
       }
-    } else if (roadSkills.length) {
+    } else if (!path) {
       const slots = page.querySelector(".road-skill-slots")!;
-      for (const [at, ability] of roadSkills.entries()) {
-        const slot = el(`<article class="battlebar-slot filled path-fixed-slot" style="--chip:${ability.color}"><span class="slot-number">${at === 0 ? "Q" : "W"}</span><span class="spell-ico"></span><span><small>Road skill ${at + 1}</small><strong>${ability.name}</strong><em>${ability.blurb}</em></span><b>Ready</b></article>`);
+      for (let at = 0; at < 2; at++) {
+        const ability = roadSkills[at];
+        const slot = el(`<button class="battlebar-slot ${ability ? "filled" : "empty"} road-slot ${this.spellSlotFocus === at ? "selected" : ""}" data-road-slot="${at}" style="--chip:${ability?.color ?? "#827969"}"><span class="slot-number">${at === 0 ? "Q" : "W"}</span><span class="spell-ico"></span><span><small>Road skill ${at + 1}</small><strong>${ability?.name ?? "Empty slot"}</strong><em>${ability?.blurb ?? "Choose an unlocked technique below."}</em></span><b>${this.spellSlotFocus === at ? "Choosing" : "Change"}</b></button>`);
+        if (!ability) { slots.appendChild(slot); continue; }
         const canvas = document.createElement("canvas");
         canvas.width = canvas.height = 72;
         canvas.style.width = canvas.style.height = "36px";
@@ -5186,6 +5212,32 @@ export class Menus {
         persist(save);
         audio.play("levelup");
         this.showToast(`${ability.name} carried into the ${path.name} Path.`);
+        this.renderSpells(index);
+        return;
+      }
+      const roadSlot = target.closest("[data-road-slot]");
+      if (roadSlot && !path) {
+        this.spellSlotFocus = Number(roadSlot.getAttribute("data-road-slot")) === 1 ? 1 : 0;
+        audio.play("click");
+        this.renderSpells(index);
+        return;
+      }
+      const roadTechnique = target.closest("[data-road-technique]");
+      if (roadTechnique && !path) {
+        const selected = roadTechnique.getAttribute("data-road-technique");
+        const ability = roadCandidates.find((choice) => choice.id === selected);
+        if (!ability) return;
+        const next = [...hero.equipped].slice(0, 2);
+        const otherAt = next.indexOf(ability.id);
+        if (otherAt >= 0 && otherAt !== this.spellSlotFocus) {
+          const displaced = next[this.spellSlotFocus];
+          next[otherAt] = displaced;
+        }
+        next[this.spellSlotFocus] = ability.id;
+        hero.equipped = next.filter(Boolean).slice(0, 2);
+        persist(save);
+        audio.play("click");
+        this.showToast(`${ability.name} assigned to ${this.spellSlotFocus === 0 ? "Q" : "W"}.`);
         this.renderSpells(index);
         return;
       }
