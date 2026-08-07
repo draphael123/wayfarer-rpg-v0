@@ -77,6 +77,8 @@ export class Battle {
   tideLevel = 0;
   tideHigh = false;
   private lightningTimer = 7;
+  private widowToll = 4.5;
+  private jawStorm = 5.5;
   castCounts: Record<string, number> = {};
   heroDeaths = 0;
   /** Per-hero battle ledger (keyed by heroIndex) — feeds the victory recap. */
@@ -2762,10 +2764,11 @@ export class Battle {
       this.updateBanner(enemy, dt);
       return;
     }
-    if (enemy.enemyKind === "wyrm" || enemy.enemyKind === "stormjaw") {
+    if (enemy.enemyKind === "wyrm") {
       this.updateWyrm(enemy, dt);
       return;
     }
+    if (enemy.enemyKind === "stormjaw") this.updateStormjaw(enemy, dt);
     // Rimeclad ice casing: it cracks off at three-quarters strength
     if (enemy.enemyKind === "rimetroll" && enemy.phase === 0 && enemy.hp < enemy.stats.maxHp * 0.75) {
       enemy.phase = 1;
@@ -2775,7 +2778,8 @@ export class Battle {
       this.fx.addShake(5);
       audio.play("staggerBreak");
     }
-    if (enemy.enemyKind === "rimeheart" || enemy.enemyKind === "bellwidow") this.updateRimeheart(enemy, dt);
+    if (enemy.enemyKind === "rimeheart") this.updateRimeheart(enemy, dt);
+    if (enemy.enemyKind === "bellwidow") this.updateBellWidow(enemy, dt);
     if (enemy.enemyKind === "alpha") {
       this.updateAlpha(enemy, dt);
       return;
@@ -3277,6 +3281,87 @@ export class Battle {
     }
   }
 
+  /** The Bell Widow conducts the flooded field: dodge her tolls, then punish the silence. */
+  private updateBellWidow(widow: Unit, dt: number): void {
+    const frac = widow.hp / widow.stats.maxHp;
+    if (widow.phase === 0) {
+      widow.phase = 1;
+      this.widowToll = 3.8;
+      this.fx.floatText(widow.x, widow.y - widow.radius * 3, "THE BELL REMEMBERS", "#d5bd80", 18);
+    }
+    if (frac < 0.66 && widow.phase < 2) {
+      widow.phase = 2;
+      this.spawnEnemy("bellkeeper");
+      this.spawnEnemy("kelpbound");
+      this.fx.ring(widow.x, widow.y, 190, "#b9e4df", { width: 5, life: 0.8 });
+      this.fx.floatText(widow.x, widow.y - widow.radius * 3, "THE DROWNED ANSWER!", "#b9e4df", 19);
+      audio.play("warcry");
+    }
+    if (frac < 0.33 && widow.phase < 3) {
+      widow.phase = 3;
+      widow.stats.armor = Math.max(0.04, widow.stats.armor - 0.12);
+      widow.effects.push(makeEffect("haste", 999, 1.22, null));
+      this.bossStaggerMax = Math.round(this.bossStaggerMax * 0.78);
+      this.fx.floatText(widow.x, widow.y - widow.radius * 3, "THE LAST TOLL!", "#ffcf76", 21);
+      this.fx.addShake(9);
+      audio.play("staggerBreak");
+    }
+    this.widowToll -= dt;
+    if (this.widowToll > 0 || this.effect(widow, "stun")) return;
+    this.widowToll = widow.phase >= 3 ? 5.8 : widow.phase >= 2 ? 7 : 8.5;
+    const span = this.field.bottom - this.field.top;
+    const safeLane = Math.floor(Math.random() * 3);
+    for (let lane = 0; lane < 3; lane++) {
+      if (lane === safeLane) continue;
+      const y = this.field.top + span * (0.2 + lane * 0.3);
+      for (let x = this.field.left + 120; x < this.field.right; x += 210) {
+        this.telegraphs.push({ x, y, radius: 74, time: 0, duration: this.telegraphTime + lane * 0.24, owner: widow, kind: "sweep" });
+      }
+    }
+    // The untouched lane is the answer, not a hidden dice roll.
+    const safeY = this.field.top + span * (0.2 + safeLane * 0.3);
+    this.fx.floatText(this.field.left + 190, safeY - 28, "THE BELL CANNOT REACH HERE", "#b9e4df", 12);
+    this.fx.ring(widow.x, widow.y, 150, "#d5bd80", { width: 5, life: 0.7 });
+    audio.play("glacialGroan");
+  }
+
+  /** Stormjaw marks itself and the band for lightning: bait the sky onto its exposed plates. */
+  private updateStormjaw(jaw: Unit, dt: number): void {
+    const frac = jaw.hp / jaw.stats.maxHp;
+    if (jaw.phase === 0) {
+      jaw.phase = 1;
+      this.jawStorm = 4.5;
+      this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, "THE COAST WAKES", "#9edbd5", 20);
+    }
+    if (frac < 0.68 && jaw.phase < 2) {
+      jaw.phase = 2;
+      this.spawnEnemy("reefhound");
+      this.spawnEnemy("reefhound");
+      jaw.stats.damage *= 1.12;
+      this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, "BREAKERS, RISE!", "#9edbd5", 20);
+      this.fx.addShake(10);
+      audio.play("breach");
+    }
+    if (frac < 0.34 && jaw.phase < 3) {
+      jaw.phase = 3;
+      jaw.stats.armor = Math.max(0.05, jaw.stats.armor - 0.14);
+      jaw.effects.push(makeEffect("haste", 999, 1.3, null));
+      this.jawStorm = 0.4;
+      this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, "THE HEART SURFACES!", "#ffe9a3", 21);
+      audio.play("staggerBreak");
+    }
+    this.jawStorm -= dt;
+    if (this.jawStorm > 0 || this.effect(jaw, "stun") || this.telegraphs.some((mark) => mark.kind === "lightning" && mark.owner === jaw)) return;
+    this.jawStorm = jaw.phase >= 3 ? 5.5 : jaw.phase >= 2 ? 7 : 8.5;
+    const heroes = this.livingHeroes();
+    const targets = heroes.slice().sort(() => Math.random() - 0.5).slice(0, jaw.phase >= 2 ? 2 : 1);
+    // One conductor always follows the boss: players can turn its signature attack back on it.
+    this.telegraphs.push({ x: jaw.x, y: jaw.y, radius: 82, time: 0, duration: 2.3, owner: jaw, kind: "lightning" });
+    for (const hero of targets) this.telegraphs.push({ x: hero.x, y: hero.y, radius: 68, time: 0, duration: 2.3, owner: jaw, kind: "lightning" });
+    this.fx.floatText(jaw.x, jaw.y - jaw.radius * 3, "THE SKY FINDS CONDUCTORS!", "#b9f4ff", 15);
+    audio.play("glacialGroan");
+  }
+
   private updateRimeheart(king: Unit, dt: number): void {
     const frac = king.hp / king.stats.maxHp;
     if (king.phase === 0) {
@@ -3759,6 +3844,12 @@ export class Battle {
             if (!unit.alive || Math.hypot(unit.x - mark.x, unit.y - mark.y) >= mark.radius + unit.radius) continue;
             this.damage(unit, 16 * this.stage.scale, null, { spell: true, color: "#b9f4ff" });
             if (unit.alive && this.tideHigh) unit.effects.push(makeEffect("stun", 0.55, 1, null));
+            if (unit.alive && unit.enemyKind === "stormjaw") {
+              unit.effects.push(makeEffect("vulnerable", 2.8, 0.38, null));
+              this.bossStagger += this.bossStaggerMax * 0.24;
+              this.fx.floatText(unit.x, unit.y - unit.radius * 3, "PLATES SPLIT!", "#ffe9a3", 17);
+              if (this.bossStagger >= this.bossStaggerMax) this.staggerBoss(unit);
+            }
           }
           this.fx.burst(mark.x, mark.y - 12, "#d9fbff", 28, 240, { glow: true, gravity: 40 });
           this.fx.ring(mark.x, mark.y, mark.radius + 12, "#8de7f2", { width: 6, life: 0.55 });

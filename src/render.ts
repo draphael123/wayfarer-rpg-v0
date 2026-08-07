@@ -212,6 +212,51 @@ function groundLayer(stage: StageDef, w: number, h: number, horizon: number): HT
   return cv;
 }
 
+/** Act I gains one readable destination silhouette per road, beyond its close props. */
+function drawSouthRoadSkyline(ctx: CanvasRenderingContext2D, stage: StageDef, w: number, horizon: number, time: number, travel: number): void {
+  if (stage.id < 0 || stage.id > 5) return;
+  const x = w * 0.72 - (travel * 0.12) % 90;
+  ctx.save();
+  ctx.lineCap = "round";
+  if (stage.id === 0) {
+    // MILLBROOK: the mill that gives the first village its name.
+    ctx.fillStyle = "#6e6549"; ctx.fillRect(x - 42, horizon - 64, 68, 68);
+    ctx.fillStyle = "#584a39"; ctx.beginPath(); ctx.moveTo(x - 52, horizon - 64); ctx.lineTo(x - 8, horizon - 94); ctx.lineTo(x + 36, horizon - 64); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#514535"; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(x + 30, horizon - 22, 34, 0, Math.PI * 2); ctx.stroke();
+    ctx.save(); ctx.translate(x + 30, horizon - 22); ctx.rotate(time * 0.18); for (let i = 0; i < 8; i++) { ctx.rotate(Math.PI / 4); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(31, 0); ctx.stroke(); } ctx.restore();
+  } else if (stage.id === 1) {
+    // THORNWOOD: two ancient trunks have grown into a gate over the road.
+    ctx.strokeStyle = "#243b2d"; ctx.lineWidth = 18;
+    ctx.beginPath(); ctx.moveTo(x - 58, horizon + 4); ctx.quadraticCurveTo(x - 56, horizon - 82, x, horizon - 96); ctx.quadraticCurveTo(x + 58, horizon - 84, x + 62, horizon + 4); ctx.stroke();
+    ctx.strokeStyle = "#4d2830"; ctx.lineWidth = 3;
+    for (let i = 0; i < 12; i++) { const tx = x - 58 + i * 11; const ty = horizon - 55 - Math.sin(i * 0.7) * 28; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + (i % 2 ? 8 : -8), ty - 12); ctx.stroke(); }
+  } else if (stage.id === 2) {
+    // MIREBROOK: a chapel sinking by inches, its steeple still above the fog.
+    ctx.fillStyle = "#354d49"; ctx.fillRect(x - 48, horizon - 54, 92, 58);
+    ctx.beginPath(); ctx.moveTo(x - 58, horizon - 54); ctx.lineTo(x - 5, horizon - 82); ctx.lineTo(x + 54, horizon - 54); ctx.closePath(); ctx.fill();
+    ctx.fillRect(x + 4, horizon - 112, 26, 60); ctx.beginPath(); ctx.moveTo(x, horizon - 112); ctx.lineTo(x + 17, horizon - 137); ctx.lineTo(x + 34, horizon - 112); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "rgba(172, 205, 184, 0.3)"; ctx.beginPath(); ctx.arc(x + 17, horizon - 94, 7, 0, Math.PI * 2); ctx.fill();
+  } else if (stage.id === 3) {
+    // CHARWOOD: a burned watchtower leans over the ash line.
+    ctx.save(); ctx.translate(x, horizon + 4); ctx.rotate(-0.08);
+    ctx.strokeStyle = "#302724"; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(-34, 0); ctx.lineTo(-24, -108); ctx.moveTo(32, 0); ctx.lineTo(22, -108); ctx.stroke();
+    ctx.fillStyle = "#3b2925"; ctx.fillRect(-42, -116, 76, 18); ctx.fillRect(-47, -87, 86, 11);
+    ctx.fillStyle = `rgba(220, 92, 47, ${0.28 + Math.sin(time * 3) * 0.08})`; ctx.beginPath(); ctx.moveTo(-10, -114); ctx.quadraticCurveTo(2, -142, 13, -112); ctx.closePath(); ctx.fill(); ctx.restore();
+  } else if (stage.id === 4) {
+    // GLOAMING PASS: the moon gate frames the road to the Alpha.
+    ctx.strokeStyle = "#3d3850"; ctx.lineWidth = 18; ctx.beginPath(); ctx.arc(x, horizon + 3, 68, Math.PI, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = "rgba(200, 194, 232, 0.35)"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, horizon + 3, 57, Math.PI, Math.PI * 2); ctx.stroke();
+    for (const side of [-1, 1]) { ctx.fillStyle = "#332f45"; ctx.fillRect(x + side * 64 - 10, horizon - 53, 20, 58); }
+  } else {
+    // GOREHULK'S HOLLOW: a rough palisade and trophies announce the war camp.
+    ctx.fillStyle = "#3a3028";
+    for (let i = -5; i <= 5; i++) { const px = x + i * 19; const ph = 58 + Math.abs(i % 3) * 13; ctx.beginPath(); ctx.moveTo(px - 8, horizon + 4); ctx.lineTo(px - 8, horizon - ph); ctx.lineTo(px, horizon - ph - 13); ctx.lineTo(px + 8, horizon - ph); ctx.lineTo(px + 8, horizon + 4); ctx.closePath(); ctx.fill(); }
+    ctx.strokeStyle = "#7b302b"; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(x, horizon - 54); ctx.lineTo(x, horizon - 132); ctx.stroke();
+    ctx.fillStyle = "#8a342d"; ctx.beginPath(); ctx.moveTo(x, horizon - 130); ctx.lineTo(x + 48 + Math.sin(time * 2) * 5, horizon - 118); ctx.lineTo(x, horizon - 98); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
 /** Each Winterreach stage owns a skyline: drifts, glass pines, black ice,
  *  a crystal cave, avalanche country, and the throne of the Hollow Crown. */
 function drawWinterSkyline(ctx: CanvasRenderingContext2D, stage: StageDef, w: number, horizon: number, time: number, travel: number): void {
@@ -749,7 +794,8 @@ export function drawBackground(
   ctx.fill();
   }
 
-  // each Winterreach stage composes its own skyline over (or instead of) the hills
+  // Each act puts a readable destination above the shared terrain language.
+  drawSouthRoadSkyline(ctx, stage, w, horizon, time, px);
   drawWinterSkyline(ctx, stage, w, horizon, time, px);
   // Stormbreak is landmark-led: every battlefield has a recognizable horizon.
   drawCoastSkyline(ctx, stage, w, horizon, time, px);

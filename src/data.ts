@@ -1945,11 +1945,11 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     body: "#506a8b", trim: "#b7e5df", lore: "A living rod for a sky that wants the earth.", habit: "Charges lightning conductors. Break the channel—or use the strike against its allies.",
   },
   bellwidow: {
-    name: "The Bell Widow", maxHp: 1180, damage: 19, range: 180, attackCooldown: 2.55, speed: 48, armor: 0.2, radius: 32, xp: 190,
-    body: "#526e75", trim: "#d2ae67", lore: "Abbess, lighthouse keeper, and last voice of a drowned abbey.", habit: "Her shockwaves, undertow, and rising tide punish clumping. The lighthouse rod can break her ward.",
+    name: "The Bell Widow", maxHp: 1720, damage: 22, range: 180, attackCooldown: 2.45, speed: 48, armor: 0.22, radius: 32, xp: 190,
+    body: "#526e75", trim: "#d2ae67", lore: "Abbess, lighthouse keeper, and last voice of a drowned abbey.", habit: "Each toll floods two combat lanes. Read the warning and move the band into the named silence.",
   },
   stormjaw: {
-    name: "Stormjaw", maxHp: 1550, damage: 22, range: 62, attackCooldown: 2.8, speed: 55, armor: 0.24, radius: 40, xp: 260,
+    name: "Stormjaw", maxHp: 2025, damage: 25, range: 62, attackCooldown: 2.7, speed: 55, armor: 0.26, radius: 40, xp: 260,
     body: "#315f69", trim: "#9ed2c7", lore: "The coast was never land. It was only sleeping.", habit: "Force it to breach with lightning, survive the tide, then strike the exposed heart.",
   },
 };
@@ -2371,6 +2371,12 @@ export const TRINKETS: TrinketDef[] = [
   { id: "northstar", name: "Northstar Sliver", blurb: "+7% ranged damage, +3% crit", rarity: "common", icon: "⭐" },
   { id: "heartOfWinter", name: "Heart of Winter", blurb: "+12% health, +8% armor", rarity: "rare", icon: "💙" },
   { id: "aurorasTear", name: "Aurora's Tear", blurb: "-9% cooldowns, +8% healing", rarity: "rare", icon: "💧" },
+  { id: "saltglass", name: "Saltglass Lens", blurb: "+5% spell power, +3% armor", rarity: "common", icon: "🔹" },
+  { id: "tideknot", name: "Tide-Knot Cord", blurb: "+8% max health, +3% move speed", rarity: "common", icon: "🪢" },
+  { id: "stormcoil", name: "Stormcoil", blurb: "-6% cooldowns, +5% ranged damage", rarity: "common", icon: "⚡" },
+  { id: "reeftalon", name: "Reef Talon", blurb: "+7% melee damage, +3% critical chance", rarity: "common", icon: "🪸" },
+  { id: "widowsChime", name: "The Widow's Chime", blurb: "+12% healing, -8% cooldowns, battles start with a 20 hp ward", rarity: "rare", icon: "🔔" },
+  { id: "stormjawHeart", name: "Stormjaw's Heart", blurb: "+14% max health, +8% melee damage, +5% attack speed", rarity: "rare", icon: "🌊" },
 ];
 
 export function trinketById(id: string | null | undefined): TrinketDef | undefined {
@@ -2406,6 +2412,12 @@ export function trinketMods(id: string | null | undefined): TalentMods {
     case "northstar": return { ...none, rangedDmg: 0.07, crit: 0.03 };
     case "heartOfWinter": return { ...none, hpPct: 0.12, armorFlat: 0.08 };
     case "aurorasTear": return { ...none, cdr: 0.09, healPower: 0.08 };
+    case "saltglass": return { ...none, spellPower: 0.05, armorFlat: 0.03 };
+    case "tideknot": return { ...none, hpPct: 0.08, moveSpeed: 0.03 };
+    case "stormcoil": return { ...none, cdr: 0.06, rangedDmg: 0.05 };
+    case "reeftalon": return { ...none, meleeDmg: 0.07, crit: 0.03 };
+    case "widowsChime": return { ...none, healPower: 0.12, cdr: 0.08, startShield: 20 };
+    case "stormjawHeart": return { ...none, hpPct: 0.14, meleeDmg: 0.08, atkSpeed: 0.05 };
     default: return none;
   }
 }

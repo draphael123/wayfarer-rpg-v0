@@ -232,6 +232,7 @@ let rolledLoot: { id: string; icon: string; name: string; rare: boolean; kind: "
 function rollLoot(): void {
   if (rolledLoot) return;
   const rare = BOSS_STAGES.includes(currentStage);
+  const coastBossReward = currentStage === 15 ? "widowsChime" : currentStage === 17 ? "stormjawHeart" : null;
   const roll = Math.random();
   // real spoils: armor off the fallen, caches of coin — not only charms
   const unownedArmor = ALL_GEAR.filter((a) => a.cost > 0 && !save.armory.includes(a.id) && a.cost <= 220 + currentStage * 60);
@@ -242,7 +243,8 @@ function rollLoot(): void {
     const amount = 40 + Math.round(Math.random() * (30 + currentStage * 18));
     rolledLoot = { id: "gold", icon: "💰", name: `a cache of ${amount} gold`, rare: false, kind: "gold", amount };
   } else {
-    const pool = TRINKETS.filter((t) => t.rarity === (rare ? "rare" : "common"));
+    const coastCommons = new Set(["saltglass", "tideknot", "stormcoil", "reeftalon"]);
+    const pool = TRINKETS.filter((t) => coastBossReward ? t.id === coastBossReward : t.rarity === (rare ? "rare" : "common") && (currentStage < 12 || coastCommons.has(t.id)));
     const pick = pool[Math.floor(Math.random() * pool.length)];
     rolledLoot = { id: pick.id, icon: pick.icon, name: pick.name, rare, kind: "trinket" };
   }
