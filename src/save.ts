@@ -25,8 +25,15 @@ import type { Attributes, DisciplineId, ElementId, HeroSave, SaveData } from "./
 const KEY = "wayband-save-v1";
 const SLOT_POINTER = "wayband-active-slot";
 
-/** Three fully independent bands. Slot 0 keeps the legacy key so existing saves just work. */
-export const SLOT_NAMES = ["Band of the Oak", "Band of the River", "Band of the Ash"];
+/** Six fully independent bands. Slot 0 keeps the legacy key so existing saves just work. */
+export const SLOT_NAMES = [
+  "Band of the Oak",
+  "Band of the River",
+  "Band of the Ash",
+  "Band of the Lantern",
+  "Band of the Thorn",
+  "Band of the Star",
+];
 
 export function activeSlot(): number {
   try {

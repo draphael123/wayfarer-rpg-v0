@@ -5312,12 +5312,88 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
 
 // ------------------------------------------------------------------ death + assembly
 
+/** Wayband's contact language: a held arc before the blow, ink-speed strokes
+ *  through the swing, then short directional splinters at contact. These are
+ *  deliberately sparse so telegraphs and health bars remain the loudest cues. */
+function drawCombatMotion(ctx: CanvasRenderingContext2D, unit: Unit, calm: boolean): void {
+  const dir = unit.lungeDir.x || unit.lungeDir.y ? unit.lungeDir : { x: unit.facing, y: 0 };
+  const perp = { x: -dir.y, y: dir.x };
+  ctx.save();
+  ctx.lineCap = "round";
+
+  if (unit.windup > 0 && !calm) {
+    const pull = Math.min(1, unit.windup / (unit.team === "hero" ? 0.13 : 0.55));
+    ctx.globalAlpha = 0.2 + pull * 0.35;
+    ctx.strokeStyle = unit.team === "hero" ? "#ffe9a3" : "#ff9a85";
+    ctx.lineWidth = 1.5 + unit.radius * 0.035;
+    ctx.beginPath();
+    ctx.arc(unit.x - unit.facing * unit.radius * 0.25, unit.y - unit.radius * 0.75, unit.radius * 1.25, unit.facing > 0 ? 2.8 : 0.35, unit.facing > 0 ? 4.65 : 2.2);
+    ctx.stroke();
+  }
+
+  if (unit.lunge > 0.08 && !calm) {
+    const a = Math.min(0.6, unit.lunge * 0.75);
+    ctx.strokeStyle = unit.team === "hero" ? "#f1d99a" : "rgba(92,54,62,.9)";
+    for (let i = -1; i <= 1; i++) {
+      const spread = i * unit.radius * 0.42;
+      const tail = unit.radius * (1.35 + Math.abs(i) * 0.25);
+      ctx.globalAlpha = a * (i === 0 ? 1 : 0.55);
+      ctx.lineWidth = i === 0 ? 2.4 : 1.25;
+      ctx.beginPath();
+      ctx.moveTo(unit.x - dir.x * tail + perp.x * spread, unit.y - unit.radius * 0.8 - dir.y * tail + perp.y * spread);
+      ctx.lineTo(unit.x - dir.x * unit.radius * 0.25 + perp.x * spread, unit.y - unit.radius * 0.8 - dir.y * unit.radius * 0.25 + perp.y * spread);
+      ctx.stroke();
+    }
+  }
+
+  if (unit.hitFlash > 0) {
+    const a = Math.min(1, unit.hitFlash / 0.26);
+    const ix = unit.x - dir.x * unit.radius * 0.45;
+    const iy = unit.y - unit.radius * 0.72 - dir.y * unit.radius * 0.45;
+    ctx.strokeStyle = unit.team === "hero" ? "#ffb09a" : "#fff0c2";
+    ctx.globalAlpha = calm ? a * 0.45 : a * 0.8;
+    ctx.lineWidth = calm ? 1.8 : 2.3;
+    const rays = calm ? 2 : 4;
+    for (let i = 0; i < rays; i++) {
+      const fan = (i - (rays - 1) / 2) * 0.48;
+      const rx = -dir.x * Math.cos(fan) - dir.y * Math.sin(fan);
+      const ry = -dir.y * Math.cos(fan) + dir.x * Math.sin(fan);
+      const inner = unit.radius * 0.55;
+      const outer = unit.radius * (1.05 + (i % 2) * 0.35);
+      ctx.beginPath();
+      ctx.moveTo(ix + rx * inner, iy + ry * inner);
+      ctx.lineTo(ix + rx * outer, iy + ry * outer);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
 function drawFallen(ctx: CanvasRenderingContext2D, unit: Unit): void {
   const t = unit.deathTime;
   // fall with a little bounce, linger, then fade away
   const fallRaw = Math.min(1, t * 2.6);
   const fall = fallRaw >= 1 ? 1 : fallRaw + Math.sin(fallRaw * Math.PI) * 0.12;
   const fade = Math.max(0, 1 - Math.max(0, t - 1.1) / 1.2);
+  if (t < 0.22) {
+    const burst = 1 - t / 0.22;
+    const dir = unit.lungeDir.x || unit.lungeDir.y ? unit.lungeDir : { x: unit.facing, y: 0 };
+    ctx.save();
+    ctx.globalAlpha = burst * 0.72;
+    ctx.strokeStyle = unit.team === "hero" ? "#ffd0c2" : "#f6dfaa";
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = "round";
+    for (let i = -2; i <= 2; i++) {
+      const angle = i * 0.34;
+      const rx = dir.x * Math.cos(angle) - dir.y * Math.sin(angle);
+      const ry = dir.y * Math.cos(angle) + dir.x * Math.sin(angle);
+      ctx.beginPath();
+      ctx.moveTo(unit.x + rx * unit.radius * 0.5, unit.y - unit.radius + ry * unit.radius * 0.5);
+      ctx.lineTo(unit.x + rx * unit.radius * (1.5 + Math.abs(i) * 0.22), unit.y - unit.radius + ry * unit.radius * (1.5 + Math.abs(i) * 0.22));
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   // soul wisp drifting up from the body
   if (t > 0.25 && t < 1.6) {
     const wt = (t - 0.25) / 1.35;
@@ -5522,6 +5598,7 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
+    drawCombatMotion(ctx, unit, save.reducedMotion);
     const lean = (moving ? unit.facing * 0.055 : 0) - unit.facing * Math.min(0.1, unit.hitFlash * 0.7) + (lowHp ? unit.facing * 0.03 : 0);
     if (squash > 0.01 || stretch > 0.01 || Math.abs(lean) > 0.01) {
       ctx.save();

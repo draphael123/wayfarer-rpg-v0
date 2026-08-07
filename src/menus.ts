@@ -911,6 +911,7 @@ export class Menus {
         <div class="title-buttons">
           <button class="big-btn primary" data-act="start">${this.save.seenIntro ? "Continue the Journey" : "Begin Your Journey"}</button>
           <div class="title-utility-row">
+            <button class="big-btn" data-act="bands"><span aria-hidden="true">◆</span> Bands</button>
             <button class="big-btn" data-act="tutorial"><span aria-hidden="true">⌁</span> Field Handbook</button>
             <button class="big-btn" data-act="settings"><span aria-hidden="true">⚙</span> Settings</button>
           </div>
@@ -1134,7 +1135,7 @@ export class Menus {
 
           <section id="settings-panel-campaign" role="tabpanel" aria-labelledby="settings-tab-campaign" class="settings-panel ${this.settingsTab === "campaign" ? "on" : ""}" data-settings-panel="campaign" ${this.settingsTab === "campaign" ? "" : "hidden"}>
             <div class="panel-heading"><span>IV</span><div><strong>Campaign &amp; device</strong><em>Move, protect, or retire this band.</em></div></div>
-            <button class="setting-link ledger-link" data-act="bands"><span>Band saves</span><em>Three separate campaigns</em><b>›</b></button>
+            <button class="setting-link ledger-link" data-act="bands"><span>Band saves</span><em>Six separate campaigns</em><b>›</b></button>
             <div class="setting-pair compact-actions"><button class="toggle-btn" data-act="export-save">Copy save</button><button class="toggle-btn" data-act="import-save">Import save</button></div>
             <button class="setting-link quiet" data-act="export-data"><span>Copy playtest report</span><em>Battle results only — no save data</em><b>›</b></button>
             ${(window as unknown as { __installPrompt?: unknown }).__installPrompt ? `<button class="setting-link quiet" data-act="install"><span>Install Wayband</span><em>Play from your home screen</em><b>›</b></button>` : ""}
@@ -2519,7 +2520,7 @@ export class Menus {
 
   // ------------------------------------------------------------------ save slots
 
-  /** Three bands, three tales — pick which one takes the road. */
+  /** Six bands, six tales — pick which one takes the road. */
   renderProfiles(): void {
     this.pushNav("profiles");
     this.root.innerHTML = "";
@@ -2530,7 +2531,7 @@ export class Menus {
         <div class="map-header">
           <div>
             <div class="map-title">The Bands</div>
-            <div class="map-level">Three tales, kept apart — switching never loses a thing</div>
+            <div class="map-level">Six tales, kept apart — switching never loses a thing</div>
           </div>
           <button class="big-btn party-btn" data-act="back">Settings</button>
         </div>

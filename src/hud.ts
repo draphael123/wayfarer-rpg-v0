@@ -1,9 +1,9 @@
 import { audio } from "./audio";
 import { speedLabel } from "./save";
 import type { Battle } from "./battle";
-import { BOSS_PHASES, callingById, DIFFICULTIES, elementById, HEROES } from "./data";
+import { BOSS_PHASES, callingById, DIFFICULTIES, elementById, ENEMIES, HEROES } from "./data";
 import { drawAbilityGlyph } from "./icons";
-import type { AbilityState, SaveData, Unit } from "./types";
+import type { AbilityState, EnemyKind, SaveData, Unit } from "./types";
 
 export const HUD_H = 100;
 
@@ -50,6 +50,30 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 const ABILITY_REACH: Record<string, number> = { pierce: 430, frostwake: 360 };
+
+const BOSS_INTRO_TIPS: Partial<Record<EnemyKind, string>> = {
+  alpha: "Dodge the pounce. Punish the exhaustion.",
+  ogre: "Leave the slam, then break the exposed brute.",
+  warlord: "Spread for the sweep. Break his shieldwall.",
+  rimeheart: "Leave the hail. Strike when the heart is bare.",
+  wyrm: "Follow the ridge. Punish the breach.",
+  bellwidow: "Read the toll. Stand in the open lane.",
+  stormjaw: "Escape the jaws. The missed breach exposes its heart.",
+  kilntyrant: "Empty the eruption marks to crack its shell.",
+  cindermaw: "The caldera speaks before it burns.",
+  rootboundmatriarch: "Cut free of the roots before the brood closes.",
+  verdantcolossus: "Move between root lines. Strike the bared heartwood.",
+  dunerevenant: "Trust the warning edge, not the false moon.",
+  nightmother: "The eclipse silences. Leave its shadow early.",
+  gildedinquisitor: "Cross the verdict lines only after they pass.",
+  reliquaryseraph: "Gold lines cross twice. Keep an exit behind you.",
+  tempestroc: "Clear the crystal lanes before the wings descend.",
+  skybreaker: "Shards fall in sequence. Move with the storm.",
+  redhuntsman: "Make the marked charge miss to starve the hunt.",
+  bloodmoonstag: "Break the red trail. Deny the Stag its healing.",
+  lastpilgrim: "Keep moving toward ground the void has not named.",
+  wayeater: "Recall every road. Each old warning still tells the truth.",
+};
 
 /** Key labels on ability buttons only make sense where a keyboard likely exists. */
 const FINE_POINTER = typeof matchMedia !== "undefined" && matchMedia("(pointer: fine)").matches;
@@ -838,17 +862,21 @@ export class Hud {
     ctx.fillRect(0, this.height - bar, this.width, bar);
     if (c < 2.1 && c > 0.4) {
       const boss = this.battle.bossRef;
+      const bossKind = boss.enemyKind;
+      const accent = bossKind ? ENEMIES[bossKind].trim : "#ff8a70";
+      const bossName = boss.name.toUpperCase();
       ctx.textAlign = "center";
-      ctx.font = "700 34px Cinzel, Palatino, 'Palatino Linotype', Georgia, serif";
+      ctx.font = `700 ${bossName.length > 24 ? 27 : bossName.length > 18 ? 30 : 34}px Cinzel, Palatino, 'Palatino Linotype', Georgia, serif`;
       ctx.lineWidth = 6;
       ctx.strokeStyle = "rgba(12, 9, 20, 0.9)";
       const y = this.height * 0.26;
-      ctx.strokeText(boss.name.toUpperCase(), this.width / 2, y);
-      ctx.fillStyle = "#ff8a70";
-      ctx.fillText(boss.name.toUpperCase(), this.width / 2, y);
+      ctx.strokeText(bossName, this.width / 2, y);
+      ctx.fillStyle = accent;
+      ctx.fillText(bossName, this.width / 2, y);
       // flanking dashes give the name card some ceremony
-      const nameW = ctx.measureText(boss.name.toUpperCase()).width;
-      ctx.strokeStyle = "rgba(255, 138, 112, 0.55)";
+      const nameW = ctx.measureText(bossName).width;
+      ctx.strokeStyle = accent;
+      ctx.globalAlpha = 0.62;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(this.width / 2 - nameW / 2 - 48, y - 10);
@@ -856,16 +884,13 @@ export class Hud {
       ctx.moveTo(this.width / 2 + nameW / 2 + 14, y - 10);
       ctx.lineTo(this.width / 2 + nameW / 2 + 48, y - 10);
       ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.font = "800 9px 'Trebuchet MS', Verdana, sans-serif";
+      ctx.fillStyle = "rgba(255,240,205,.78)";
+      ctx.fillText(`GREAT FOE · WAYMARK ${this.battle.stage.id + 1}`, this.width / 2, y - 34);
       ctx.font = "600 italic 13px Georgia, serif";
       ctx.fillStyle = "#e6dcc2";
-      const tip =
-        boss.enemyKind === "alpha"
-          ? "Dodge the pounce. Punish the exhaustion."
-          : boss.enemyKind === "ogre"
-            ? "Never stand still for the slam."
-            : boss.enemyKind === "rimeheart"
-              ? "Step out of the hail. When the heart shatters, strike."
-              : "His slam wounds everyone near it. Spread out.";
+      const tip = (bossKind && BOSS_INTRO_TIPS[bossKind]) ?? "Read the warning. Move first, then answer.";
       ctx.fillText(tip, this.width / 2, y + 22);
     }
   }

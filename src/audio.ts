@@ -575,6 +575,26 @@ class AudioKit {
     if (streak >= 3) this.tone(freq * 1.5, 0.1, "sine", 0.05, 0, 0.06);
   }
 
+  /** One authored contact sound replaces stacked generic hit/thud calls. The
+   *  edge arrives first, the body follows, and lethal blows land on the floor
+   *  a breath later. Amount controls weight without changing gameplay. */
+  impact(amount: number, lethal = false, spell = false): void {
+    if (!this.soundOn) return;
+    const weight = Math.max(0, Math.min(1, (amount - 6) / 34));
+    if (spell) {
+      this.noise(0.07 + weight * 0.05, 0.08 + weight * 0.08, 1700 + weight * 1700);
+      this.tone(230 + weight * 150, 0.09 + weight * 0.05, "triangle", 0.08 + weight * 0.08, -80);
+    } else {
+      this.noise(0.06 + weight * 0.07, 0.1 + weight * 0.1, 1150 - weight * 500);
+      this.tone(125 - weight * 52, 0.08 + weight * 0.09, "sine", 0.12 + weight * 0.14, -18);
+    }
+    if (weight > 0.5) this.tone(72, 0.13, "sine", 0.12 * weight, -18, 0.015);
+    if (lethal) {
+      this.noise(0.13, 0.16 + weight * 0.08, 430, 0.08);
+      this.tone(76 - weight * 18, 0.22, "sine", 0.25 + weight * 0.12, -28, 0.075);
+    }
+  }
+
   play(name: SfxName): void {
     if (!this.soundOn) return;
     // prefer a recorded variant when it has arrived

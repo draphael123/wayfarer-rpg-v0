@@ -70,7 +70,7 @@ campaign settings. Combat pace, aim slowdown, warning time, AUTO defaults, healt
 bars, contextual hints, color-independent danger boundaries, motion, and text size
 can all be tuned without changing rewards. A Field Handbook combines a quick
 reference with four replayable, action-checked lessons and records completion.
-Progress saves to localStorage, with multiple save slots plus export/import.
+Progress saves to localStorage, with six independent campaign slots plus export/import.
 
 Before each stage, a preparation table summarizes the active band, lets you
 choose an opening formation, and surfaces tactical notes for creatures already

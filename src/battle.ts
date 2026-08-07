@@ -438,6 +438,11 @@ export class Battle {
         this.bossStaggerMax = this.bossStaggerCapacity(this.bossRef.enemyKind);
         this.cinematic = 2.6;
         this.waveBanner = 0;
+        const entranceColor = this.bossRef.enemyKind ? ENEMIES[this.bossRef.enemyKind].trim : "#ffe9a3";
+        this.bossRef.castGlow = 1.35;
+        this.fx.ring(this.bossRef.x, this.bossRef.y, this.bossRef.radius * 4.2, entranceColor, { width: 6, life: 1.15 });
+        this.fx.burst(this.bossRef.x, this.bossRef.y, entranceColor, 18, 150, { glow: true, gravity: -45, life: 0.9, size: 3.5 });
+        this.addDecal(this.bossRef.x, this.bossRef.y + 2, "scorch", this.bossRef.radius * 1.7);
         this.playBossEntrance(this.bossRef.enemyKind);
       }
     }
@@ -496,7 +501,10 @@ export class Battle {
   private playBossEntrance(kind: EnemyKind | null): void {
     if (kind === "warlord") audio.play("warhorn");
     else if (kind === "alpha") audio.play("howl");
+    else if (kind === "ogre") audio.play("roar");
     else if (kind === "rimeheart" || kind === "wyrm") audio.play("glacialGroan");
+    else if (kind === "bellwidow") audio.play("drumbeat");
+    else if (kind === "stormjaw") audio.play("breach");
     else if (isLateBossKind(kind)) this.playLatePatternSound(this.latePatternOf(kind));
     else audio.play("roar");
   }
@@ -780,6 +788,7 @@ export class Battle {
     target.hp -= amount;
     if (this.carry && target === this.carry.ogre) this.carry.hurt += amount;
     if (this.tutorialMode && target.team === "hero" && target.hp < 1) target.hp = 1;
+    const lethal = target.hp <= 0;
     if (source && source.team === "hero" && source.heroIndex >= 0 && target.team === "enemy") {
       this.tally(source.heroIndex).dealt += amount;
       if (BOSS_KINDS.includes(target.enemyKind ?? "")) {
@@ -837,7 +846,11 @@ export class Battle {
       this.kickX += (kdx / klen) * Math.min(4, amount * 0.12);
       this.kickY += (kdy / klen) * Math.min(3, amount * 0.08);
     }
-    target.hitFlash = 0.18;
+    if (source) {
+      const recoil = this.normalize({ x: target.x - source.x, y: target.y - source.y });
+      target.lungeDir = recoil;
+    }
+    target.hitFlash = amount > 22 ? 0.26 : 0.2;
     if (this.saveRef?.damageNumbers !== false) {
       this.fx.floatText(
         target.x + (Math.random() * 16 - 8),
@@ -855,7 +868,7 @@ export class Battle {
     } else {
       this.fx.burst(target.x, target.y - target.radius * 0.6, opts.color ?? "#e8564a", 5, 70);
     }
-    if (target.hp - amount <= 0 && target.hp > 0) {
+    if (lethal) {
       // killing blow: bigger, golder, longer
       if (this.saveRef?.damageNumbers !== false) this.fx.floatText(target.x, target.y - target.radius - 26, `${amount}`, "#ffd76b", 20);
       this.hitstop = Math.max(this.hitstop, 0.09);
@@ -901,9 +914,8 @@ export class Battle {
     if (source && source.team === "enemy" && (source.enemyKind === "frostwolf" || source.enemyKind === "icewisp") && target.alive && target.team === "hero") {
       target.effects.push(makeEffect("slow", 1.6, 0.3, source));
     }
-    if (amount > 22) audio.play("hitHeavy");
-    if (target.hp <= 0) this.kill(target, source);
-    else audio.play(opts.spell ? "hit" : "hit");
+    audio.impact(amount, lethal, !!opts.spell);
+    if (lethal) this.kill(target, source, true);
   }
 
   private tally(heroIndex: number): { dealt: number; taken: number; healed: number } {
@@ -969,7 +981,7 @@ export class Battle {
     }
   }
 
-  private kill(unit: Unit, killer: Unit | null = null): void {
+  private kill(unit: Unit, killer: Unit | null = null, impactPlayed = false): void {
     if (unit.team === "hero") this.heroDeaths++;
     // a VENGEFUL elite doesn't go quietly — back away from the body
     if (unit.team === "enemy" && unit.affix === "vengeful") {
@@ -1005,15 +1017,16 @@ export class Battle {
       this.fx.ring(unit.x, unit.y, 220, "#b8e0f0", { width: 7, life: 0.9 });
       audio.play("staggerBreak");
     }
-    if (unit.team === "enemy" && ["alpha", "warlord", "ogre", "rimeheart"].includes(unit.enemyKind ?? "")) {
+    if (unit.team === "enemy" && BOSS_KINDS.includes(unit.enemyKind ?? "")) {
       this.slowmo = Math.max(this.slowmo, 1.6);
       this.zoomPunch = Math.max(this.zoomPunch, 1.2);
-      this.fx.beam(unit.x, unit.y, 200, 22, "rgba(215, 240, 230, 0.85)", 1.4);
-      this.fx.burst(unit.x, unit.y - 20, "#d8efe8", 26, 200, { glow: true, gravity: -120, life: 1 });
+      const bossColor = unit.enemyKind ? ENEMIES[unit.enemyKind].trim : "#d8efe8";
+      this.fx.beam(unit.x, unit.y, 200, 22, bossColor, 1.4);
+      this.fx.burst(unit.x, unit.y - 20, bossColor, 30, 220, { glow: true, gravity: -120, life: 1.1 });
       this.fx.burst(unit.x, unit.y - 10, "#ffd76b", 18, 160, { glow: true, gravity: 60 });
-      this.fx.ring(unit.x, unit.y, 180, "#d8efe8", { width: 6, life: 0.9 });
+      this.fx.ring(unit.x, unit.y, 190, bossColor, { width: 7, life: 1 });
       this.fx.addShake(13);
-      audio.play("roar");
+      audio.play(isLateBossKind(unit.enemyKind) ? "staggerBreak" : "roar");
     }
     // kills surge the slayer's ultimate — Tricksters feast on them
     if (unit.team === "enemy" && killer?.team === "hero") {
@@ -1060,7 +1073,7 @@ export class Battle {
     for (const necro of this.livingHeroes()) {
       if (necro.calling === "necromancer" && Math.hypot(necro.x - unit.x, necro.y - unit.y) < 340) this.gainUlt(necro, 6);
     }
-    audio.play("thud");
+    if (!impactPlayed) audio.play("thud");
     if (
       unit.team === "enemy" &&
       this.waveIndex >= this.stage.waves.length - 1 &&
