@@ -212,6 +212,303 @@ function groundLayer(stage: StageDef, w: number, h: number, horizon: number): HT
   return cv;
 }
 
+/** Each Winterreach stage owns a skyline: drifts, glass pines, black ice,
+ *  a crystal cave, avalanche country, and the throne of the Hollow Crown. */
+function drawWinterSkyline(ctx: CanvasRenderingContext2D, stage: StageDef, w: number, horizon: number, time: number, travel: number): void {
+  const M = OVERSCAN;
+  if (stage.id === 6) {
+    // THE WHITE ROAD: open drift country and a fence line marching to nowhere
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = "#eef4f8";
+    ctx.beginPath();
+    ctx.moveTo(-M, horizon + 2);
+    for (let x = -M; x <= w + M; x += 12) {
+      ctx.lineTo(x, horizon - 8 - Math.abs(Math.sin((x + travel * 0.4) * 0.006 + 2)) * 14);
+    }
+    ctx.lineTo(w + M, horizon + 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // half-buried fence posts along the ridge
+    ctx.strokeStyle = "#7d90a0";
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 8; i++) {
+      const fx2 = ((i * (w / 7) - travel * 0.32) % (w + 60) + (w + 60)) % (w + 60) - 30;
+      const fy = horizon - 4 - Math.sin(fx2 * 0.008 + 1.7) * 10;
+      const lean = (hash01(i * 17) - 0.5) * 0.35;
+      ctx.beginPath();
+      ctx.moveTo(fx2, fy);
+      ctx.lineTo(fx2 + lean * 20, fy - 16 - hash01(i * 3) * 8);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(125, 144, 160, 0.5)";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(-M, horizon - 14);
+    for (let x = -M; x <= w + M; x += 30) ctx.lineTo(x, horizon - 14 - Math.sin(x * 0.01) * 4);
+    ctx.stroke();
+  } else if (stage.id === 7) {
+    // HOARFROST FOREST: ranks of glass pines, deep and close, glittering
+    for (const [depth, alpha, hgt] of [[0.6, 0.5, 30], [1, 0.85, 44]] as [number, number, number][]) {
+      ctx.globalAlpha = alpha;
+      for (let i = 0; i < 16; i++) {
+        const tx = ((i * (w / 15) + hash01(i * 7) * 30 - travel * 0.25 * depth) % (w + 80) + (w + 80)) % (w + 80) - 40;
+        const ty = horizon - 6 + (1 - depth) * 10;
+        const th = hgt + hash01(i * 3) * 18;
+        ctx.fillStyle = depth < 1 ? "#8aa8bc" : "#5a7a8c";
+        for (const [wf, hf] of [[0.4, 1], [0.5, 0.66]] as [number, number][]) {
+          ctx.beginPath();
+          ctx.moveTo(tx, ty - th * hf);
+          ctx.lineTo(tx - th * wf * 0.5, ty + 2);
+          ctx.lineTo(tx + th * wf * 0.5, ty + 2);
+          ctx.closePath();
+          ctx.fill();
+        }
+        // rime glitter on the near rank
+        if (depth === 1 && Math.sin(time * 3 + i * 2.7) > 0.86) {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(tx + (hash01(i * 13) - 0.5) * th * 0.5, ty - th * (0.3 + hash01(i * 5) * 0.5), 2, 2);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+    // frost mist lying between the ranks
+    const mist = ctx.createLinearGradient(0, horizon - 26, 0, horizon + 4);
+    mist.addColorStop(0, "rgba(232, 240, 245, 0)");
+    mist.addColorStop(1, "rgba(232, 240, 245, 0.5)");
+    ctx.fillStyle = mist;
+    ctx.fillRect(-M, horizon - 26, w + M * 2, 30);
+  } else if (stage.id === 8) {
+    // THE FROZEN LAKE: a black-ice shore beyond — thin as promises
+    ctx.fillStyle = "rgba(30, 48, 66, 0.5)";
+    ctx.fillRect(-M, horizon - 10, w + M * 2, 12);
+    ctx.strokeStyle = "rgba(220, 237, 245, 0.55)";
+    ctx.lineWidth = 1.4;
+    for (let i = 0; i < 5; i++) {
+      // pressure ridges: jagged bright seams across the far ice
+      let lx = ((hash01(i * 9) * w - travel * 0.2) % (w + 100) + (w + 100)) % (w + 100) - 50;
+      let ly = horizon - 8;
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      for (let s = 0; s < 5; s++) {
+        lx += 22 + hash01(i * 7 + s) * 26;
+        ly += (hash01(i * 3 + s) - 0.5) * 5;
+        ctx.lineTo(lx, ly);
+      }
+      ctx.stroke();
+    }
+  } else if (stage.id === 9) {
+    // GLIMMERDEEP: the mountain's cold blue heart — ceiling, stalactites, crystals
+    const rock = ctx.createLinearGradient(0, 0, 0, horizon);
+    rock.addColorStop(0, "#141c2e");
+    rock.addColorStop(1, "#1c2438");
+    ctx.fillStyle = rock;
+    ctx.fillRect(-M, -M, w + M * 2, horizon * 0.5 + M);
+    // hanging teeth of stone and ice
+    for (let i = 0; i < 14; i++) {
+      const sx = ((i * (w / 13) + hash01(i * 11) * 40 - travel * 0.15) % (w + 80) + (w + 80)) % (w + 80) - 40;
+      const len = 26 + hash01(i * 3) * 60;
+      const wid = 8 + hash01(i * 7) * 12;
+      ctx.beginPath();
+      ctx.moveTo(sx - wid / 2, horizon * 0.28);
+      ctx.lineTo(sx, horizon * 0.28 + len);
+      ctx.lineTo(sx + wid / 2, horizon * 0.28);
+      ctx.closePath();
+      ctx.fillStyle = i % 3 === 0 ? "#2c3a54" : "#22304a";
+      ctx.fill();
+      // an icicle tip catching what light there is
+      if (i % 3 === 0) {
+        ctx.fillStyle = "rgba(159, 214, 232, 0.6)";
+        ctx.beginPath();
+        ctx.moveTo(sx - 2, horizon * 0.28 + len - 10);
+        ctx.lineTo(sx, horizon * 0.28 + len + 6);
+        ctx.lineTo(sx + 2, horizon * 0.28 + len - 10);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    // crystal clusters glowing along the far wall
+    for (let i = 0; i < 6; i++) {
+      const cx = ((hash01(i * 23) * w - travel * 0.22) % (w + 60) + (w + 60)) % (w + 60) - 30;
+      const cy = horizon - 12 - hash01(i * 5) * 30;
+      const glow = 0.45 + Math.abs(Math.sin(time * 1.3 + i * 2)) * 0.4;
+      const hue = i % 2 === 0 ? "159, 214, 232" : "180, 138, 232";
+      ctx.save();
+      ctx.shadowColor = `rgba(${hue}, ${glow})`;
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = `rgba(${hue}, ${glow * 0.9})`;
+      for (let cSpike = 0; cSpike < 3; cSpike++) {
+        const a = -Math.PI / 2 + (cSpike - 1) * 0.5 + (hash01(i * 7 + cSpike) - 0.5) * 0.3;
+        const len = 12 + hash01(i * 3 + cSpike) * 14;
+        ctx.beginPath();
+        ctx.moveTo(cx - 4, cy);
+        ctx.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len);
+        ctx.lineTo(cx + 4, cy);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    // pale shafts where the mountain lets a little day through
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = 0; i < 2; i++) {
+      const sx = w * (0.3 + i * 0.42) + Math.sin(time * 0.3 + i) * 10;
+      const g = ctx.createLinearGradient(sx, 0, sx + 40, horizon);
+      g.addColorStop(0, "rgba(200, 230, 245, 0.10)");
+      g.addColorStop(1, "rgba(200, 230, 245, 0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(sx - 12, 0);
+      ctx.lineTo(sx + 26, 0);
+      ctx.lineTo(sx + 90, horizon);
+      ctx.lineTo(sx + 20, horizon);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  } else if (stage.id === 10) {
+    // AVALANCHE PASS: hard-angled peaks with wind-torn cornices
+    ctx.fillStyle = "rgba(160, 176, 188, 0.9)";
+    for (let i = 0; i < 4; i++) {
+      const px = ((i * (w / 3.2) + hash01(i * 5) * 60 - travel * 0.12) % (w + 240) + (w + 240)) % (w + 240) - 120;
+      const ph = 60 + hash01(i * 3) * 60;
+      ctx.beginPath();
+      ctx.moveTo(px - 90, horizon + 2);
+      ctx.lineTo(px, horizon - ph);
+      ctx.lineTo(px + 24, horizon - ph + 16);
+      ctx.lineTo(px + 44, horizon - ph * 0.55);
+      ctx.lineTo(px + 110, horizon + 2);
+      ctx.closePath();
+      ctx.fill();
+      // snowcap + a cornice curling off the summit in the gale
+      ctx.fillStyle = "#e8eef2";
+      ctx.beginPath();
+      ctx.moveTo(px - 18, horizon - ph + 22);
+      ctx.lineTo(px, horizon - ph);
+      ctx.lineTo(px + 20, horizon - ph + 18);
+      ctx.quadraticCurveTo(px + 4, horizon - ph + 12, px - 18, horizon - ph + 22);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(240, 248, 252, 0.6)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(px, horizon - ph);
+      ctx.quadraticCurveTo(px + 26 + Math.sin(time * 3 + i) * 6, horizon - ph - 8, px + 48 + Math.sin(time * 2 + i) * 10, horizon - ph - 2);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(160, 176, 188, 0.9)";
+    }
+    // a distant slide, always mid-fall somewhere in the range
+    const slide = (time * 0.08) % 1;
+    const sx = w * 0.6;
+    ctx.fillStyle = `rgba(238, 244, 248, ${0.35 * (1 - slide)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx, horizon - 60 + slide * 52, 16 + slide * 30, 7 + slide * 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (stage.id === 11) {
+    // THE HOLLOW CROWN: a colonnade of broken ice-pillars around the old throne
+    ctx.fillStyle = "#243450";
+    for (let i = 0; i < 7; i++) {
+      const px = w * (0.08 + i * 0.14) + (hash01(i * 9) - 0.5) * 24;
+      const ph = 34 + hash01(i * 3) * 40 * (i === 3 ? 0 : 1);
+      const broken = hash01(i * 13) > 0.5;
+      ctx.beginPath();
+      ctx.rect(px - 7, horizon - ph, 14, ph + 4);
+      ctx.fill();
+      if (broken) {
+        ctx.beginPath();
+        ctx.moveTo(px - 7, horizon - ph);
+        ctx.lineTo(px, horizon - ph - 10 - hash01(i) * 8);
+        ctx.lineTo(px + 7, horizon - ph);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.strokeStyle = "rgba(159, 214, 232, 0.25)";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(px - 4, horizon - ph + 6);
+      ctx.lineTo(px - 4, horizon);
+      ctx.stroke();
+    }
+    // the crown itself: a great cracked arch dead center, moonlit
+    const ax = w * 0.5;
+    ctx.strokeStyle = "#2c3a54";
+    ctx.lineWidth = 16;
+    ctx.beginPath();
+    ctx.arc(ax, horizon + 10, 74, Math.PI * 1.08, Math.PI * 1.6);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(ax, horizon + 10, 74, Math.PI * 1.72, Math.PI * 1.97);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(159, 214, 232, 0.3)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(ax, horizon + 10, 66, Math.PI * 1.1, Math.PI * 1.58);
+    ctx.stroke();
+  }
+}
+
+/** The winter grounds answer too: black ice, crystal light, wind-scoured drifts. */
+function drawWinterGround(ctx: CanvasRenderingContext2D, stage: StageDef, w: number, h: number, horizon: number, time: number, travel: number): void {
+  const M = OVERSCAN;
+  if (stage.id === 8 || stage.id === 11) {
+    // black ice underfoot: a cold sheen and pale pressure-cracks wandering the lake
+    const sheen = ctx.createLinearGradient(0, horizon, 0, h);
+    sheen.addColorStop(0, "rgba(120, 170, 200, 0.10)");
+    sheen.addColorStop(0.5, "rgba(40, 70, 100, 0.14)");
+    sheen.addColorStop(1, "rgba(120, 170, 200, 0.08)");
+    ctx.fillStyle = sheen;
+    ctx.fillRect(-M, horizon, w + M * 2, h - horizon + M);
+    ctx.strokeStyle = "rgba(220, 237, 245, 0.28)";
+    ctx.lineWidth = 1.6;
+    for (let i = 0; i < 6; i++) {
+      let cx = ((hash01(i * 31) * w - travel * 0.9) % (w + 120) + (w + 120)) % (w + 120) - 60;
+      let cy = horizon + 20 + hash01(i * 7) * (h - horizon - 50);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      for (let s = 0; s < 6; s++) {
+        cx += 16 + hash01(i * 5 + s) * 30;
+        cy += (hash01(i * 11 + s) - 0.5) * 26;
+        ctx.lineTo(cx, cy);
+        if (s === 3 && hash01(i * 3) > 0.5) {
+          // a fork in the crack
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + 18, cy + (hash01(i) - 0.5) * 30);
+          ctx.moveTo(cx, cy);
+        }
+      }
+      ctx.stroke();
+    }
+  } else if (stage.id === 9) {
+    // crystal light pooling on the cave floor
+    for (let i = 0; i < 4; i++) {
+      const cx = ((hash01(i * 23) * w - travel * 0.9) % (w + 80) + (w + 80)) % (w + 80) - 40;
+      const cy = horizon + 30 + hash01(i * 7) * (h - horizon - 60);
+      const glow = 0.14 + Math.abs(Math.sin(time * 1.3 + i * 2)) * 0.12;
+      const hue = i % 2 === 0 ? "159, 214, 232" : "180, 138, 232";
+      const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 46);
+      g.addColorStop(0, `rgba(${hue}, ${glow})`);
+      g.addColorStop(1, `rgba(${hue}, 0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 46, 20, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (stage.id === 10) {
+    // wind-scoured sastrugi: long white streaks combed by the gale
+    ctx.strokeStyle = "rgba(240, 248, 252, 0.30)";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 9; i++) {
+      const gx = ((hash01(i * 41) * w - travel * 0.9 - time * 26) % (w + 100) + (w + 100)) % (w + 100) - 50;
+      const gy = horizon + 16 + hash01(i * 13) * (h - horizon - 34);
+      ctx.beginPath();
+      ctx.moveTo(gx, gy);
+      ctx.quadraticCurveTo(gx + 26, gy - 2, gx + 54 + hash01(i) * 26, gy + 1);
+      ctx.stroke();
+    }
+  }
+}
+
 export function drawBackground(
   ctx: CanvasRenderingContext2D,
   stage: StageDef,
@@ -246,45 +543,63 @@ export function drawBackground(
     ctx.fillRect(-M, -M, w + M * 2, horizon + M);
   }
 
+  // Glimmerdeep is UNDER the mountain — no sky, no sun, no clouds down here
+  const cave = stage.id === 9;
   // sun / moon with soft halo
   const orbX = w * 0.78;
   const orbY = horizon * (0.38 + dusk * 0.42);
-  const halo = ctx.createRadialGradient(orbX, orbY, 4, orbX, orbY, 90);
-  halo.addColorStop(0, night ? "rgba(235,235,255,0.55)" : "rgba(255,245,200,0.75)");
-  halo.addColorStop(1, "rgba(255,245,200,0)");
-  ctx.fillStyle = halo;
-  ctx.fillRect(orbX - 90, orbY - 90, 180, 180);
-  ctx.fillStyle = night ? "#e8e6f5" : "#fff3c8";
-  ctx.beginPath();
-  ctx.arc(orbX, orbY, night ? 16 : 20, 0, Math.PI * 2);
-  ctx.fill();
-  if (night) {
-    ctx.fillStyle = p.skyTop;
+  if (!cave) {
+    const halo = ctx.createRadialGradient(orbX, orbY, 4, orbX, orbY, 90);
+    halo.addColorStop(0, night ? "rgba(235,235,255,0.55)" : "rgba(255,245,200,0.75)");
+    halo.addColorStop(1, "rgba(255,245,200,0)");
+    ctx.fillStyle = halo;
+    ctx.fillRect(orbX - 90, orbY - 90, 180, 180);
+    ctx.fillStyle = night ? "#e8e6f5" : "#fff3c8";
     ctx.beginPath();
-    ctx.arc(orbX - 7, orbY - 5, 13, 0, Math.PI * 2);
+    ctx.arc(orbX, orbY, night ? 16 : 20, 0, Math.PI * 2);
     ctx.fill();
-    // stars
-    ctx.fillStyle = "rgba(255,255,255,0.8)";
-    for (let i = 0; i < 24; i++) {
-      const sx = hash01(i * 3 + stage.id) * w;
-      const sy = hash01(i * 7 + 2) * horizon * 0.85;
-      const tw = 0.5 + Math.sin(time * 2 + i) * 0.5;
-      ctx.globalAlpha = 0.25 + tw * 0.55;
-      ctx.fillRect(sx, sy, 1.6, 1.6);
+    if (night) {
+      ctx.fillStyle = p.skyTop;
+      ctx.beginPath();
+      ctx.arc(orbX - 7, orbY - 5, 13, 0, Math.PI * 2);
+      ctx.fill();
+      // stars
+      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      for (let i = 0; i < 24; i++) {
+        const sx = hash01(i * 3 + stage.id) * w;
+        const sy = hash01(i * 7 + 2) * horizon * 0.85;
+        const tw = 0.5 + Math.sin(time * 2 + i) * 0.5;
+        ctx.globalAlpha = 0.25 + tw * 0.55;
+        ctx.fillRect(sx, sy, 1.6, 1.6);
+      }
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
-  }
-
-  // clouds
-  ctx.fillStyle = night ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.4)";
-  for (let i = 0; i < 4; i++) {
-    const cx = ((time * (5 + i * 2.2) + i * 270) % (w + 240)) - 120;
-    const cy = 26 + i * 24;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 60 + i * 9, 13 + i * 2, 0, 0, Math.PI * 2);
-    ctx.ellipse(cx + 38, cy + 6, 38, 10, 0, 0, Math.PI * 2);
-    ctx.ellipse(cx - 34, cy + 5, 30, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // the White Road's low sun stands between two sun-dogs
+    if (stage.id === 6) {
+      for (const side of [-1, 1]) {
+        const dg = ctx.createRadialGradient(orbX + side * 120, orbY, 2, orbX + side * 120, orbY, 34);
+        dg.addColorStop(0, "rgba(255, 250, 225, 0.5)");
+        dg.addColorStop(1, "rgba(255, 250, 225, 0)");
+        ctx.fillStyle = dg;
+        ctx.fillRect(orbX + side * 120 - 34, orbY - 34, 68, 68);
+      }
+      ctx.strokeStyle = "rgba(255, 250, 225, 0.18)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(orbX, orbY, 120, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // clouds
+    ctx.fillStyle = night ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.4)";
+    for (let i = 0; i < 4; i++) {
+      const cx = ((time * (5 + i * 2.2) + i * 270) % (w + 240)) - 120;
+      const cy = 26 + i * 24;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 60 + i * 9, 13 + i * 2, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + 38, cy + 6, 38, 10, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx - 34, cy + 5, 30, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // birds crossing the day sky
@@ -306,7 +621,8 @@ export function drawBackground(
     ctx.lineCap = "butt";
   }
 
-  // far hill layer (lighter) then near hills
+  // far hill layer (lighter) then near hills — the cave has walls instead
+  if (!cave) {
   ctx.globalAlpha = 0.55;
   ctx.fillStyle = p.hills;
   ctx.beginPath();
@@ -327,9 +643,13 @@ export function drawBackground(
   ctx.lineTo(w + M, horizon + 2);
   ctx.closePath();
   ctx.fill();
+  }
+
+  // each Winterreach stage composes its own skyline over (or instead of) the hills
+  drawWinterSkyline(ctx, stage, w, horizon, time, travel);
 
   // tree / rock silhouettes on the ridge
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < (cave ? 0 : 9); i++) {
     const tx = hash01(i * 13 + stage.id * 7) * w;
     const ridgeY = horizon - 22 - Math.sin(tx * 0.008 + 1.7) * 18 - Math.sin(tx * 0.021) * 9;
     const th = 16 + hash01(i * 5 + 1) * 22;
@@ -373,6 +693,8 @@ export function drawBackground(
     ctx.fillStyle = `rgba(30, 18, 50, ${dusk * 0.14})`;
     ctx.fillRect(-M, horizon, w + M * 2, h - horizon + M);
   }
+  // winter grounds get their own dressing over the cached terrain
+  if (stage.id >= 6) drawWinterGround(ctx, stage, w, h, horizon, time, travel);
 
   // texture: swaying tufts + stones
   for (let i = 0; i < 22; i++) {
