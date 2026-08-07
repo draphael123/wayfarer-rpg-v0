@@ -611,6 +611,50 @@ class AudioKit {
   }
 
   /** Elemental reactions share a cadence but retain a distinct material voice. */
+  elementCast(element: Exclude<DamageElement, "physical">, intent: "core" | "focus" | "ultimate"): void {
+    if (!this.soundOn) return;
+    const weight = intent === "ultimate" ? 1 : intent === "focus" ? 0.72 : 0.48;
+    switch (element) {
+      case "flame":
+        this.noise(0.12 + weight * 0.16, 0.07 + weight * 0.08, 1900 + weight * 900);
+        this.tone(190, 0.16 + weight * 0.18, "sawtooth", 0.08 + weight * 0.09, 230);
+        break;
+      case "frost":
+        this.tone(1120, 0.2 + weight * 0.14, "triangle", 0.07 + weight * 0.08, -520);
+        this.tone(1760, 0.11, "sine", 0.06 + weight * 0.05, -180, 0.04);
+        this.noise(0.08, 0.04 + weight * 0.04, 4300, 0.025);
+        break;
+      case "storm":
+        this.noise(0.045, 0.15 + weight * 0.12, 5200);
+        this.tone(720, 0.07, "square", 0.09 + weight * 0.1, -360);
+        this.tone(1080, 0.09, "square", 0.05 + weight * 0.06, -540, 0.055);
+        break;
+      case "earth":
+        this.tone(68, 0.22 + weight * 0.22, "sine", 0.16 + weight * 0.18, -16);
+        this.noise(0.13 + weight * 0.12, 0.12 + weight * 0.12, 620);
+        break;
+      case "venom":
+        this.noise(0.2 + weight * 0.16, 0.07 + weight * 0.06, 3600);
+        this.tone(310, 0.2 + weight * 0.16, "triangle", 0.06 + weight * 0.07, -125);
+        break;
+      case "radiant":
+        this.tone(523, 0.28 + weight * 0.2, "sine", 0.06 + weight * 0.07, 12);
+        this.tone(659, 0.28 + weight * 0.2, "sine", 0.05 + weight * 0.06, 10, 0.035);
+        this.tone(784, 0.32 + weight * 0.2, "triangle", 0.05 + weight * 0.06, 8, 0.07);
+        break;
+      case "blood":
+        this.tone(82, 0.11, "sine", 0.18 + weight * 0.13, -8);
+        this.tone(82, 0.13, "sine", 0.14 + weight * 0.11, -7, 0.16);
+        this.tone(196, 0.24 + weight * 0.16, "sawtooth", 0.05 + weight * 0.06, 35, 0.04);
+        break;
+      case "shadow":
+        this.tone(248, 0.26 + weight * 0.2, "sine", 0.05 + weight * 0.07, -132);
+        this.tone(124, 0.34 + weight * 0.2, "triangle", 0.06 + weight * 0.06, 70, 0.05);
+        this.noise(0.18, 0.03 + weight * 0.04, 900, 0.02);
+        break;
+    }
+  }
+
   reaction(element: DamageElement): void {
     if (!this.soundOn || element === "physical") return;
     const roots: Record<Exclude<DamageElement, "physical">, number> = {

@@ -3008,12 +3008,12 @@ export function roleElementTechniqueOptions(
   const elementName = elementById(element)?.name ?? element;
   const disciplineName = DISCIPLINES.find((entry) => entry.id === discipline)?.name ?? discipline;
   const utilityPromises: Record<DisciplineId, string> = {
-    knight: `Plant a ${elementName} guard that draws pressure away from the band and shares protection with nearby allies.`,
+    knight: `Plant ${elementName} guard that draws pressure away from the band and shares protection with nearby allies.`,
     warrior: `Temper the greatsword with ${elementName}, converting momentum into Fury, guard, and a faster next commitment.`,
     rogue: `Use ${elementName} to break pursuit, change angles, and prepare the next execution without becoming a stationary caster.`,
-    archer: `Claim a ${elementName} firing lane, sharpening focus while repositioning beyond the enemy front.`,
+    archer: `Claim the ${elementName} firing lane, sharpening focus while repositioning beyond the enemy front.`,
     priest: `Invoke ${elementName} as battlefield support: reshape danger and empower the ally best suited to answer it.`,
-    mage: `Stabilize a ${elementName} field that changes spacing, tempo, and the shape of the next spell.`,
+    mage: `Stabilize the ${elementName} field that changes spacing, tempo, and the shape of the next spell.`,
     necromancer: `Bind ${elementName} into stored Remains, strengthening the next servant or death rite instead of casting a simple heal.`,
   };
   return [
@@ -3082,6 +3082,85 @@ export const CALLINGS: CallingDef[] = DISCIPLINES.flatMap((discipline) =>
     } satisfies CallingDef;
   }),
 );
+
+export interface PathDoctrineNode {
+  id: string;
+  name: string;
+  kind: "technique" | "ultimate" | "passive" | "craft" | "capstone";
+  blurb: string;
+  icon: string;
+  pathLevel: number;
+  attr: AttrKey | null;
+  attrValue: number;
+}
+
+const DISCIPLINE_DOCTRINE_ATTR: Record<DisciplineId, AttrKey> = {
+  knight: "vit",
+  warrior: "str",
+  rogue: "dex",
+  archer: "dex",
+  priest: "spi",
+  mage: "int",
+  necromancer: "int",
+};
+
+const ELEMENT_DOCTRINE_PROMISE: Record<ElementId, string> = {
+  flame: "Burns deepen and feed harder finishers instead of merely adding red damage.",
+  frost: "Chill grows into stronger control and more rewarding shatters.",
+  storm: "Conductive hits carry farther while haste shortens the answer between casts.",
+  earth: "Every impact adds guard, interruption, and extra pressure against boss poise.",
+  venom: "Corrosion lasts longer and exposes the prey to the whole band.",
+  radiant: "Offense returns as healing light, wards, and judgment against exposed foes.",
+  blood: "The health price buys stronger execution, recovery, and wounded-target pressure.",
+  shadow: "Gloom breaks pursuit, displaces prey, and sharpens vulnerability from safety.",
+};
+
+const DISCIPLINE_DOCTRINE_PROMISE: Record<DisciplineId, string> = {
+  knight: "Guarded contact improves interception, taunts, and formation protection.",
+  warrior: "Fury commits more force to cleaves, stagger, and the next finishing arc.",
+  rogue: "Changing angles increases execution pressure and clears hostile attention.",
+  archer: "A clean lane turns distance into focus, control, and boss pressure.",
+  priest: "Every invocation carries its Attunement into protection as well as judgment.",
+  mage: "Overlapping fields intensify conditions and make elemental reactions deliberate.",
+  necromancer: "Remains strengthen servants, curses, and the death rite that follows.",
+};
+
+/** Ten authored milestones form a Path's compact Diablo-like road without
+ * expanding the battle bar beyond two normal techniques and one ultimate. */
+export function pathDoctrineNodes(path: CallingDef): readonly PathDoctrineNode[] {
+  const discipline = disciplineById(path.discipline)!;
+  const element = elementById(path.element)!;
+  const choices = roleElementTechniqueOptions(path.discipline, path.element);
+  const attr = DISCIPLINE_DOCTRINE_ATTR[path.discipline];
+  return [
+    { id: `${path.id}-core`, name: disciplineTechnique(path.discipline).name, kind: "technique", blurb: `Discipline: ${disciplineTechnique(path.discipline).blurb}`, icon: disciplineTechnique(path.discipline).icon, pathLevel: 0, attr: null, attrValue: 0 },
+    { id: `${path.id}-power`, name: choices[0].name, kind: "technique", blurb: choices[0].blurb, icon: choices[0].icon, pathLevel: 0, attr: null, attrValue: 0 },
+    { id: `${path.id}-control`, name: choices[1].name, kind: "technique", blurb: choices[1].blurb, icon: choices[1].icon, pathLevel: 0, attr: null, attrValue: 0 },
+    { id: `${path.id}-utility`, name: choices[2].name, kind: "technique", blurb: choices[2].blurb, icon: choices[2].icon, pathLevel: 0, attr: null, attrValue: 0 },
+    { id: `${path.id}-ultimate`, name: path.signature.name, kind: "ultimate", blurb: path.signature.blurb, icon: path.signature.icon, pathLevel: 0, attr: null, attrValue: 0 },
+    { id: `${path.id}-oath`, name: `${path.name} Oath`, kind: "passive", blurb: path.passive, icon: path.crest, pathLevel: 1, attr: null, attrValue: 0 },
+    { id: `${path.id}-temper`, name: `${element.adjective} Temper`, kind: "craft", blurb: ELEMENT_DOCTRINE_PROMISE[path.element], icon: element.icon, pathLevel: 3, attr, attrValue: 8 },
+    { id: `${path.id}-cadence`, name: `${discipline.name} Cadence`, kind: "craft", blurb: DISCIPLINE_DOCTRINE_PROMISE[path.discipline], icon: discipline.crest, pathLevel: 5, attr, attrValue: 12 },
+    { id: `${path.id}-echo`, name: `${path.signature.name} Echo`, kind: "craft", blurb: `The ${element.name} consequence of every Path technique gains force, duration, or reach.`, icon: path.signature.icon, pathLevel: 7, attr, attrValue: 16 },
+    { id: `${path.id}-confluence`, name: `${path.name} Confluence`, kind: "capstone", blurb: `Discipline and ${element.name} answer as one: Path damage and support deepen by 12.5%.`, icon: element.icon, pathLevel: 10, attr, attrValue: 20 },
+  ];
+}
+
+/** Number of earned doctrine passives (0-5). The five ability nodes are
+ * available on swearing the Path; the remaining road is earned by practice
+ * plus investment in the Discipline's defining attribute. */
+export function pathDoctrineRank(hero: HeroSave): number {
+  const path = callingById(hero.calling);
+  if (!path) return 0;
+  const practice = Math.min(CALLING_MASTERY_LEVELS, hero.callingLevels[path.id] ?? 0);
+  const attr = DISCIPLINE_DOCTRINE_ATTR[path.discipline];
+  const value = hero.attrs[attr];
+  return Number(practice >= 1)
+    + Number(practice >= 3 && value >= 8)
+    + Number(practice >= 5 && value >= 12)
+    + Number(practice >= 7 && value >= 16)
+    + Number(practice >= 10 && value >= 20);
+}
 
 /** Compatibility alias used by the older calling picker; every path is foundational now. */
 export const FOUNDATIONAL_CALLING_IDS: readonly string[] = CALLINGS.map((calling) => calling.id);

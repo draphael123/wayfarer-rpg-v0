@@ -28,6 +28,7 @@ import {
   PARTY_CAP,
   PRIORITY_ENEMIES,
   pathAbilities,
+  pathDoctrineNodes,
   pathId,
   resolvedPathAbilities,
   roleElementTechniqueOptions,
@@ -374,6 +375,13 @@ for (const discipline of DISCIPLINE_IDS) {
     assert.equal(path.signature.pathSkill, "ultimate", `${id} needs a path ultimate`);
     assert.equal(path.signature.element, element, `${id} ultimate needs its element`);
     assert.ok(path.signature.blurb.length >= 70, `${id} ultimate needs an authored combat description`);
+    const doctrine = pathDoctrineNodes(path);
+    assert.equal(doctrine.length, 10, `${id} needs exactly ten doctrine milestones`);
+    unique(doctrine.map((node) => node.id), `${id} doctrine milestone ids`);
+    assert.equal(doctrine.filter((node) => node.kind === "technique").length, 4, `${id} needs four technique milestones`);
+    assert.equal(doctrine.filter((node) => node.kind === "ultimate").length, 1, `${id} needs one ultimate milestone`);
+    assert.equal(doctrine.filter((node) => node.kind === "capstone").length, 1, `${id} needs one capstone`);
+    assert.ok(doctrine.every((node) => node.name.trim() && node.blurb.length >= 24), `${id} doctrine needs complete player-facing copy`);
     const roleOptions = roleElementTechniqueOptions(discipline, element);
     assert.equal(roleOptions.length, 3, `${id} needs power, control, and utility choices`);
     roleTechniqueNames.push(...roleOptions.map((ability) => ability.name));

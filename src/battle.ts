@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { BOSS_PHASES, DIFFICULTIES, ENEMIES, HEROES, PRIORITY_ENEMIES, abilityById, armorById, armorSetOf, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, resolvedPathAbilities, talentMods, trinketById, trinketMods, SET_BONUSES } from "./data";
+import { BOSS_PHASES, DIFFICULTIES, ENEMIES, HEROES, PRIORITY_ENEMIES, abilityById, armorById, armorSetOf, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, pathDoctrineRank, resolvedPathAbilities, talentMods, trinketById, trinketMods, SET_BONUSES } from "./data";
 import { isLateBossKind, isLateFoeKind, type LateBossKind, type LateEnemyKind } from "./late-content";
 
 // Battleheart pacing: cooldowns run 2.5× longer, so each cast must matter more.
@@ -560,9 +560,9 @@ export class Battle {
     };
     if (boss.enemyKind === "cindermaw") add("furnaceHeart", -72, 0, 3.2, { active: false });
     else if (boss.enemyKind === "verdantcolossus") {
-      add("rootAnchor", -155, -78, 2.2);
-      add("rootAnchor", -170, 82, 2.2);
-      add("rootAnchor", 100, 92, 2.2);
+      add("rootAnchor", -155, -78, 1.8);
+      add("rootAnchor", -170, 82, 1.8);
+      add("rootAnchor", 100, 92, 1.8);
     } else if (boss.enemyKind === "nightmother") {
       const trueIndex = (boss.id + this.stage.id) % 3;
       [[-145, -72], [-165, 82], [95, 88]].forEach(([dx, dy], index) => add("trueShadow", dx, dy, 1.65, { active: false, correct: index === trueIndex }));
@@ -1639,29 +1639,43 @@ export class Battle {
     tier: "core" | "focus" | "ultimate",
     baseDamage: number,
     allowPulse: boolean,
+    doctrine = 0,
   ): void {
     if (!target.alive) return;
     const rank = tier === "core" ? 0 : tier === "focus" ? 1 : 2;
     const boss = BOSS_KINDS.includes(target.enemyKind ?? "");
     const color = ELEMENT_COLORS[element];
+    const deepen = 1 + doctrine * 0.04;
     switch (element) {
       case "flame": {
+        const alreadyBurning = !!this.effect(target, "burn");
         const duration = [3, 4.2, 5.8][rank];
-        const dps = Math.max(2, baseDamage * [0.08, 0.11, 0.14][rank]);
+        const dps = Math.max(2, baseDamage * [0.08, 0.11, 0.14][rank] * deepen);
         this.refreshPathEffect(target, "burn", duration, dps, source);
+        if (alreadyBurning && allowPulse && doctrine >= 2) {
+          const sparks = this.livingEnemies()
+            .filter((enemy) => enemy !== target && unitDist(enemy, target) < 105 + doctrine * 9)
+            .sort((a, b) => unitDist(a, target) - unitDist(b, target))
+            .slice(0, Math.min(3, 1 + Math.floor(doctrine / 2)));
+          for (const enemy of sparks) {
+            this.damage(enemy, baseDamage * (0.14 + doctrine * 0.025), source, { spell: true, color, element, secondary: true });
+            this.refreshPathEffect(enemy, "burn", duration * 0.72, dps * 0.7, source);
+            this.fx.tracer(target.x, target.y - 10, enemy.x, enemy.y - 10, color, 0.24, 2.2);
+          }
+        }
         this.addDecal(target.x, target.y, "scorch", 16 + rank * 5);
         break;
       }
       case "frost": {
         const duration = [2.2, 3.2, 4.4][rank] * (boss ? 0.65 : 1);
-        const slow = [0.18, 0.28, 0.38][rank] * (boss ? 0.7 : 1);
+        const slow = Math.min(0.62, [0.18, 0.28, 0.38][rank] * (boss ? 0.7 : 1) * deepen);
         this.refreshPathEffect(target, "slow", duration, slow, source);
         break;
       }
       case "storm": {
-        this.refreshPathEffect(source, "haste", [1.8, 2.8, 4][rank], [1.12, 1.2, 1.3][rank], source);
+        this.refreshPathEffect(source, "haste", [1.8, 2.8, 4][rank] * deepen, [1.12, 1.2, 1.3][rank] + doctrine * 0.012, source);
         if (allowPulse) {
-          const arcs = [1, 2, 3][rank];
+          const arcs = [1, 2, 3][rank] + Math.floor(doctrine / 2);
           const range = [115, 140, 170][rank];
           const others = this.livingEnemies()
             .filter((enemy) => enemy !== target && unitDist(enemy, target) < range)
@@ -1676,7 +1690,7 @@ export class Battle {
         break;
       }
       case "earth": {
-        this.refreshPathEffect(source, "guard", [2.2, 3.4, 5][rank], [0.12, 0.2, 0.3][rank], source);
+        this.refreshPathEffect(source, "guard", [2.2, 3.4, 5][rank] * deepen, [0.12, 0.2, 0.3][rank] + doctrine * 0.012, source);
         if (boss) {
           if (target === this.bossRef && this.bossStaggerMax > 0) this.bossStagger += [5, 10, 18][rank];
           this.refreshPathEffect(target, "slow", [0.8, 1.2, 1.8][rank], 0.16, source);
@@ -1689,8 +1703,17 @@ export class Battle {
         // Poison deliberately shares the existing damage-over-time vessel; the
         // green cast language and corrosion make it distinct without a second
         // hidden timer system.
-        this.refreshPathEffect(target, "burn", [4, 5.2, 7][rank], Math.max(1.8, baseDamage * [0.08, 0.1, 0.13][rank]), source);
-        this.refreshPathEffect(target, "vulnerable", [2.5, 3.8, 5][rank], [0.06, 0.1, 0.16][rank], source);
+        this.refreshPathEffect(target, "burn", [4, 5.2, 7][rank] * deepen, Math.max(1.8, baseDamage * [0.08, 0.1, 0.13][rank] * deepen), source);
+        this.refreshPathEffect(target, "vulnerable", [2.5, 3.8, 5][rank] * deepen, [0.06, 0.1, 0.16][rank] + doctrine * 0.012, source);
+        if (allowPulse && doctrine >= 3 && (this.effect(target, "poisoned") || this.effect(target, "vulnerable"))) {
+          for (const enemy of this.livingEnemies()
+            .filter((candidate) => candidate !== target && unitDist(candidate, target) < 120 + doctrine * 8)
+            .sort((a, b) => unitDist(a, target) - unitDist(b, target))
+            .slice(0, 1 + Math.floor(doctrine / 2))) {
+            this.refreshPathEffect(enemy, "vulnerable", 2.5 + doctrine * 0.35, 0.04 + doctrine * 0.01, source);
+            this.fx.tracer(target.x, target.y - 8, enemy.x, enemy.y - 8, color, 0.34, 1.7);
+          }
+        }
         break;
       }
       case "radiant": {
@@ -1698,22 +1721,22 @@ export class Battle {
         if (allowPulse) {
           const ally = this.mostWoundedAlly();
           if (ally) {
-            this.heal(ally, Math.max(3, baseDamage * [0.14, 0.2, 0.28][rank]), true, source);
-            if (rank > 0) this.refreshPathEffect(ally, "shield", [0, 4, 6][rank], [0, 8, 15][rank] + source.stats.healPower * 0.35, source);
+            this.heal(ally, Math.max(3, baseDamage * [0.14, 0.2, 0.28][rank] * deepen), true, source);
+            if (rank > 0) this.refreshPathEffect(ally, "shield", [0, 4, 6][rank] * deepen, [0, 8, 15][rank] + source.stats.healPower * 0.35 + doctrine * 1.5, source);
           }
         }
         break;
       }
       case "blood": {
         if (allowPulse && source.hp < source.stats.maxHp) {
-          this.heal(source, Math.max(2, baseDamage * [0.1, 0.16, 0.24][rank]), true, source);
+          this.heal(source, Math.max(2, baseDamage * [0.1, 0.16, 0.24][rank] * deepen), true, source);
         }
         if (target.hp < target.stats.maxHp * 0.4) this.refreshPathEffect(target, "vulnerable", 2.2 + rank, 0.08 + rank * 0.04, source);
         break;
       }
       case "shadow": {
-        this.refreshPathEffect(target, "vulnerable", [2, 3.2, 4.8][rank], [0.07, 0.12, 0.18][rank], source);
-        this.refreshPathEffect(source, "guard", [1.3, 2.2, 3.4][rank], [0.12, 0.2, 0.28][rank], source);
+        this.refreshPathEffect(target, "vulnerable", [2, 3.2, 4.8][rank] * deepen, [0.07, 0.12, 0.18][rank] + doctrine * 0.01, source);
+        this.refreshPathEffect(source, "guard", [1.3, 2.2, 3.4][rank] * deepen, [0.12, 0.2, 0.28][rank] + doctrine * 0.01, source);
         if (!boss) {
           const away = this.normalize({ x: target.x - source.x, y: target.y - source.y });
           const moved = this.clampToField({ x: target.x + away.x * [10, 19, 30][rank], y: target.y + away.y * [10, 19, 30][rank] }, target.radius);
@@ -2324,7 +2347,8 @@ export class Battle {
     const tierRank = tier === "core" ? 0 : tier === "focus" ? 1 : 2;
     const variant = state.def.pathVariant;
     const variantScale = variant === "power" ? 1.18 : variant === "control" ? 0.9 : variant === "utility" ? 0.76 : 1;
-    const damage = (5 + roleStat * 1.25 + hero.stats.damage * 0.55) * [0.72, 1, 1.45][tierRank] * variantScale;
+    const doctrine = pathDoctrineRank(save.heroes[hero.heroIndex]);
+    const damage = (5 + roleStat * 1.25 + hero.stats.damage * 0.55) * [0.72, 1, 1.45][tierRank] * variantScale * (1 + doctrine * 0.025);
     const color = ELEMENT_COLORS[element];
     const enemies = this.livingEnemies();
     const castOrigin = { x: hero.x, y: hero.y };
@@ -2340,7 +2364,7 @@ export class Battle {
       const amount = damage * multiplier;
       hitTargets.push(target);
       this.damage(target, amount, hero, { spell: true, color, element });
-      this.applyPathElement(hero, target, element, tier, amount, pulseReady);
+      this.applyPathElement(hero, target, element, tier, amount, pulseReady, doctrine);
       pulseReady = false;
       hitCount++;
     };
@@ -2352,6 +2376,7 @@ export class Battle {
       const price = Math.min(hero.hp - 1, Math.max(1, hero.stats.maxHp * [0.025, 0.045, 0.075][tierRank]));
       if (price <= 0) return;
       hero.hp -= price;
+      if (doctrine >= 3) this.refreshPathEffect(hero, "shield", 4.2, price * (0.28 + doctrine * 0.06), hero);
       this.fx.floatText(hero.x, hero.y - hero.radius - 18, `-${Math.round(price)} blood`, color, 11);
     };
 
@@ -2762,13 +2787,44 @@ export class Battle {
       this.hitstop = Math.max(this.hitstop, tier === "ultimate" ? 0.08 : 0.035);
       this.fx.addShake(tier === "ultimate" ? 7 : tier === "focus" ? 4 : 2);
     }
+    // Attunements need a silhouette at a glance, not only a different tint.
+    // One restrained signature gesture per element keeps crowded fights legible.
+    const flourish = [42, 66, 104][tierRank];
+    switch (element) {
+      case "flame":
+        this.fx.burst(signatureCenter.x, signatureCenter.y - 8, color, 7 + tierRank * 5, flourish, { glow: true, gravity: -35, life: 0.48 });
+        this.addDecal(signatureCenter.x, signatureCenter.y, "scorch", 20 + tierRank * 9);
+        break;
+      case "frost":
+        this.fx.ring(signatureCenter.x, signatureCenter.y, flourish, color, { width: 2 + tierRank, life: 0.58 });
+        this.fx.ring(signatureCenter.x, signatureCenter.y, flourish * 0.55, "rgba(235,250,255,.82)", { width: 1.5, life: 0.38 });
+        break;
+      case "storm":
+        for (const target of hitTargets.slice(0, 3 + tierRank)) this.fx.tracer(hero.x, hero.y - 18, target.x, target.y - 14, color, 0.2, 1.8 + tierRank);
+        break;
+      case "earth":
+        this.fx.ring(signatureCenter.x, signatureCenter.y, flourish, color, { width: 6 + tierRank * 2, life: 0.42 });
+        this.fx.burst(signatureCenter.x, signatureCenter.y, "#d8c291", 5 + tierRank * 4, flourish * 0.7, { gravity: 120, life: 0.5 });
+        break;
+      case "venom":
+        this.fx.pool(signatureCenter.x, signatureCenter.y, flourish, ELEMENT_POOL_COLORS.venom, 0.65 + tierRank * 0.2);
+        this.fx.burst(signatureCenter.x, signatureCenter.y - 5, color, 6 + tierRank * 3, flourish * 0.7, { glow: true, gravity: -18, life: 0.62 });
+        break;
+      case "radiant":
+        this.fx.ring(signatureCenter.x, signatureCenter.y, flourish, "rgba(255,245,190,.92)", { width: 3 + tierRank, life: 0.62 });
+        this.fx.burst(signatureCenter.x, signatureCenter.y - 18, color, 8 + tierRank * 4, flourish, { glow: true, gravity: -55, life: 0.62 });
+        break;
+      case "blood":
+        this.fx.ring(signatureCenter.x, signatureCenter.y, flourish * 0.72, color, { width: 3 + tierRank * 2, life: 0.48 });
+        this.addDecal(signatureCenter.x, signatureCenter.y, "stain", 15 + tierRank * 8);
+        break;
+      case "shadow":
+        this.fx.pool(signatureCenter.x, signatureCenter.y, flourish, ELEMENT_POOL_COLORS.shadow, 0.7 + tierRank * 0.2);
+        this.fx.ring(signatureCenter.x, signatureCenter.y, flourish * 0.62, color, { width: 2 + tierRank, life: 0.72 });
+        break;
+    }
     hero.castGlow = 0.55;
-    if (element === "flame") audio.play("fireball");
-    else if (element === "frost") audio.play("frost");
-    else if (element === "earth") audio.play("thud");
-    else if (element === "radiant") audio.play("heal");
-    else if (discipline === "knight" || discipline === "rogue") audio.play("slash");
-    else audio.play("bolt");
+    audio.elementCast(element, tier);
     return true;
   }
 
@@ -5066,7 +5122,7 @@ export class Battle {
     } else if (kind === "roots") {
       const rootsClose = owner.enemyKind === "rootboundmatriarch" && owner.phase >= 2;
       const anchors = owner.enemyKind === "verdantcolossus" ? this.remainingObjectives("rootAnchor") : 0;
-      const targets = boss ? heroes.slice(0, owner.phase >= 3 || rootsClose || anchors >= 2 ? heroes.length : 2) : [clustered];
+      const targets = boss ? heroes.slice(0, owner.phase >= 3 || rootsClose ? heroes.length : 2) : [clustered];
       targets.forEach((hero, index) => addCircle(hero, boss ? 66 + anchors * 3 : 50, anchors ? "ANCHOR ROOTS" : "ROOTS", index * 0.12));
     } else if (kind === "eclipse") {
       addCircle(clustered, boss ? 126 : 66, "ECLIPSE");

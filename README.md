@@ -51,6 +51,10 @@ from two readable choices:
   Elemental techniques are authored for their role: Radiant Warriors protect
   through heavy impacts, Radiant Necromancers call ancestors, and Radiant
   Priests redirect danger and support allies rather than sharing a generic heal.
+  Each Path is charted as a ten-milestone doctrine: four selectable technique
+  lessons, its ultimate, its oath, three stat-and-practice crafts, and a final
+  Confluence capstone. The later milestones deepen the element's actual combat
+  consequence while the battle bar remains two normal techniques plus one ultimate.
 
 Founders and Tavern recruits begin unsworn. Every companion has two personal
 road techniques that fit their history, but nobody receives an ultimate until

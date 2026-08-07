@@ -27,6 +27,8 @@ import {
   HERO_STARTER_ABILITIES,
   pathId,
   pathAbilities,
+  pathDoctrineNodes,
+  pathDoctrineRank,
   resolvedPathAbilities,
   SPECIALIZATION_MASTERY_LEVELS,
   SPECIALIZATION_TECHNIQUES,
@@ -4387,6 +4389,8 @@ export class Menus {
       const legacyMastered = (hero.masteredElements ?? []).includes(draftElement);
       const advancement = isCurrent ? hero.advCalling : hero.advancedCallings[path.id] ?? null;
       const promotionReady = isCurrent && hero.level >= ADV_CALLING_LEVEL && pathMastered;
+      const doctrineNodes = pathDoctrineNodes(path);
+      const doctrineRank = isCurrent ? pathDoctrineRank(hero) : 0;
       reveal.style.setProperty("--path-color", path.color);
       reveal.innerHTML = `
         <div class="path-reveal-heading">
@@ -4406,6 +4410,22 @@ export class Menus {
           ${techniques.map((ability, at) => `<article class="path-technique"><span class="path-glyph" data-path-glyph="${at}"></span><div><small>Technique ${at + 1}</small><strong>${ability.name}</strong><em>${ability.blurb}</em></div></article>`).join("")}
           <article class="path-technique ultimate"><span class="path-glyph" data-path-glyph="2"></span><div><small>Ultimate</small><strong>${path.signature.name}</strong><em>${path.signature.blurb}</em><b>${path.chargeHint}</b></div></article>
         </div>
+        <section class="path-roadmap" aria-label="${path.name} ten-milestone doctrine">
+          <div class="path-roadmap-head"><span>Ten-milestone doctrine</span><strong>The road changes the technique</strong><em>${isCurrent ? `${doctrineRank}/5 deeper rules active` : "Preview this Path's complete road"}</em></div>
+          <div class="path-roadline">
+            ${doctrineNodes.map((node, nodeIndex) => {
+              const practice = hero.callingLevels[path.id] ?? 0;
+              const statMet = !node.attr || hero.attrs[node.attr] >= node.attrValue;
+              const open = node.pathLevel === 0 || (practice >= node.pathLevel && statMet);
+              const requirement = node.pathLevel === 0
+                ? "Swear this Path"
+                : `${node.pathLevel} Path level${node.pathLevel === 1 ? "" : "s"}${node.attr ? ` · ${ATTR_NAMES[node.attr]} ${node.attrValue}` : ""}`;
+              return `<article class="path-road-node ${open ? "open" : "locked"} ${node.kind}" style="--road-step:${nodeIndex}">
+                <span class="road-seal">${ico(node.icon)}</span><div><small>${String(nodeIndex + 1).padStart(2, "0")} · ${node.kind}</small><strong>${node.name}</strong><em>${node.blurb}</em><b>${open ? "LEARNED" : requirement}</b></div>
+              </article>`;
+            }).join("")}
+          </div>
+        </section>
         <div class="path-progress-grid">
           <div class="path-progress ${legacyMastered ? "complete" : ""}"><span><b>Elemental Legacy</b><em>${legacyMastered ? `${element.name} remains with you on every future Path.` : `Practice ${element.name} for ${CALLING_MASTERY_LEVELS} levels to keep its lesson.`}</em></span><strong>${legacyMastered ? "MASTERED" : `${legacyPractice}/${CALLING_MASTERY_LEVELS}`}</strong><i><b style="width:${(legacyPractice / CALLING_MASTERY_LEVELS) * 100}%"></b></i></div>
           <div class="path-progress ${pathMastered ? "complete" : ""}"><span><b>Path Mastery</b><em>${pathMastered ? "This Path is ready for its level-20 Promotion." : "Earn levels while this complete Path is active."}</em></span><strong>${pathMastered ? "MASTERED" : `${pathPractice}/${CALLING_MASTERY_LEVELS}`}</strong><i><b style="width:${(pathPractice / CALLING_MASTERY_LEVELS) * 100}%"></b></i></div>
@@ -4452,7 +4472,7 @@ export class Menus {
       const element = target.closest<HTMLElement>("[data-element]");
       if (element) {
         draftElement = element.dataset.element as ElementId;
-        audio.play("click");
+        audio.elementCast(draftElement, "core");
         refreshReveal();
         return;
       }
