@@ -97,8 +97,14 @@ export class FxSystem {
   tracers: Tracer[] = [];
   sigils: Sigil[] = [];
   shake = 0;
+  private lean = false;
+
+  setDetail(detail: "full" | "lean"): void {
+    this.lean = detail === "lean";
+  }
 
   private cap<T>(items: T[], max: number): void {
+    if (this.lean) max = Math.ceil(max * 0.58);
     if (items.length > max) items.splice(0, items.length - max);
   }
 
@@ -127,6 +133,7 @@ export class FxSystem {
 
   /** Directional cone burst — debris flies away from the attacker. */
   spray(x: number, y: number, dirX: number, dirY: number, color: string, count: number, speed = 120): void {
+    if (this.lean) count = Math.max(2, Math.ceil(count * 0.55));
     const base = Math.atan2(dirY, dirX);
     for (let i = 0; i < count; i++) {
       const angle = base + (Math.random() - 0.5) * 1.1;
@@ -172,6 +179,7 @@ export class FxSystem {
     speed = 90,
     opts: { gravity?: number; size?: number; glow?: boolean; life?: number } = {},
   ): void {
+    if (this.lean) count = Math.max(2, Math.ceil(count * 0.55));
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const mag = speed * (0.35 + Math.random() * 0.65);

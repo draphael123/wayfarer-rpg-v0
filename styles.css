@@ -5120,6 +5120,8 @@ button.hero-points { font: inherit; cursor: pointer; }
 .ledger-link { min-height: 48px; padding: 10px 12px; background: rgba(12, 10, 17, 0.24); }
 .field-note { display: grid; grid-template-columns: auto 1fr; gap: 11px; padding: 11px 13px; color: #afa5b7; font-size: 11px; line-height: 1.45; border-left: 3px solid #7695ae; background: rgba(78, 111, 134, 0.08); }
 .field-note b { color: #c8dce9; white-space: nowrap; }
+.field-note.compact { grid-template-columns: 1fr; gap: 2px; align-content: center; padding: 8px 11px; }
+.field-note.compact b { color: #e1c98f; }
 .danger-rule { height: 1px; margin-top: 6px; background: linear-gradient(90deg, rgba(211, 100, 78, 0.48), transparent); }
 
 /* The first-run card is a compact field doctrine, not another settings grid. */

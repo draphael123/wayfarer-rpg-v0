@@ -5925,6 +5925,35 @@ function drawCombatMotion(ctx: CanvasRenderingContext2D, unit: Unit, calm: boole
 
 function drawFallen(ctx: CanvasRenderingContext2D, unit: Unit): void {
   const t = unit.deathTime;
+  const bossFallen = unit.team === "enemy" && !!unit.enemyKind && (BOSS_PHASES[unit.enemyKind]?.length ?? 0) > 0;
+  if (bossFallen && unit.enemyKind && t < 2.15) {
+    const accent = ENEMIES[unit.enemyKind].trim;
+    const bloom = Math.min(1, t / 0.42);
+    const vanish = Math.min(1, (2.15 - t) / 0.55);
+    ctx.save();
+    ctx.translate(unit.x, unit.y + 2);
+    ctx.scale(1, 0.46);
+    ctx.globalAlpha = bloom * vanish * 0.72;
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 2.4;
+    ctx.setLineDash([8, 7]);
+    ctx.lineDashOffset = t * 36;
+    ctx.beginPath();
+    ctx.arc(0, 0, unit.radius * (2.1 + bloom * 1.25), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha *= 0.62;
+    ctx.beginPath();
+    for (let spoke = 0; spoke < 8; spoke++) {
+      const angle = spoke * Math.PI / 4 + t * 0.2;
+      const inner = unit.radius * 1.25;
+      const outer = unit.radius * (1.6 + bloom * 0.42);
+      ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+      ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
   // fall with a little bounce, linger, then fade away
   const fallRaw = Math.min(1, t * 2.6);
   const fall = fallRaw >= 1 ? 1 : fallRaw + Math.sin(fallRaw * Math.PI) * 0.12;

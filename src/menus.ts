@@ -1317,6 +1317,7 @@ export class Menus {
             <div class="panel-heading"><span>III</span><div><strong>Read the field</strong><em>Steady motion, larger words, clearer danger.</em></div></div>
             <div class="setting-pair"><button class="setting-switch" data-act="motion"></button><button class="setting-switch" data-act="colorsafe"></button></div>
             <div class="setting-pair"><button class="setting-switch" data-act="bigtext"></button><button class="setting-switch" data-act="coach"></button></div>
+            <div class="setting-pair"><button class="setting-switch" data-act="detail"></button><div class="field-note compact"><b>Lean effects</b><span>Uses fewer particles while preserving every warning, hit cue, and boss mechanic.</span></div></div>
             <div class="field-note"><b>Color-independent cues</b><span>Adds blue ally health and a bright double boundary to danger marks, so color is never the only warning.</span></div>
             <button class="setting-link ledger-link" data-act="fullscreen"><span>Full screen</span><em>Use the whole display when your browser allows it</em><b>›</b></button>
             <button class="setting-link ledger-link" data-act="handbook"><span>Open the Field Handbook</span><em>Controls, systems, and replayable practice</em><b>›</b></button>
@@ -1327,6 +1328,7 @@ export class Menus {
             <div class="panel-heading"><span>IV</span><div><strong>Campaign &amp; device</strong><em>Move, protect, or retire this band.</em></div></div>
             <button class="setting-link ledger-link" data-act="bands"><span>Band saves</span><em>Six separate campaigns</em><b>›</b></button>
             <div class="setting-pair compact-actions"><button class="toggle-btn" data-act="export-save">Copy save</button><button class="toggle-btn" data-act="import-save">Import save</button></div>
+            <button class="setting-link ledger-link" data-act="backup-save"><span>Download backup</span><em>A dated save code you can keep offline</em><b>↓</b></button>
             <button class="setting-link quiet" data-act="export-data"><span>Copy playtest report</span><em>Battle results only — no save data</em><b>›</b></button>
             ${(window as unknown as { __installPrompt?: unknown }).__installPrompt ? `<button class="setting-link quiet" data-act="install"><span>Install Wayband</span><em>Play from your home screen</em><b>›</b></button>` : ""}
             <div class="danger-rule"></div>
@@ -1355,6 +1357,11 @@ export class Menus {
       setSwitch("bigtext", "Larger type", this.save.bigText);
       setSwitch("coach", "Opening battle hints", this.save.tutorialHints);
       setSwitch("autobattle", "Begin in Auto", this.save.autoBattle);
+      const detail = page.querySelector('[data-act="detail"]') as HTMLButtonElement;
+      const fullDetail = this.save.effectDensity === "full";
+      detail.classList.toggle("on", fullDetail);
+      detail.innerHTML = `<span>Effect detail</span><b>${fullDetail ? "Full" : "Lean"}</b>`;
+      detail.setAttribute("aria-pressed", String(fullDetail));
       const shake = page.querySelector('[data-act="shake"]') as HTMLButtonElement;
       shake.disabled = this.save.reducedMotion;
       shake.setAttribute("aria-disabled", String(this.save.reducedMotion));
@@ -1408,6 +1415,7 @@ export class Menus {
       this.save.pauseOnBlur = fresh.pauseOnBlur;
       this.save.colorSafe = fresh.colorSafe;
       this.save.bigText = fresh.bigText;
+      this.save.effectDensity = fresh.effectDensity;
       this.save.enemyHealthBars = fresh.enemyHealthBars;
       this.save.autoBattle = fresh.autoBattle;
       this.save.tutorialHints = fresh.tutorialHints;
@@ -1486,6 +1494,7 @@ export class Menus {
       else if (act === "motion") { this.save.reducedMotion = !this.save.reducedMotion; document.body.classList.toggle("reduced-motion", this.save.reducedMotion); persist(this.save); sync(); }
       else if (act === "colorsafe") { this.save.colorSafe = !this.save.colorSafe; setColorSafe(this.save.colorSafe); persist(this.save); sync(); }
       else if (act === "bigtext") { this.save.bigText = !this.save.bigText; document.body.classList.toggle("big-text", this.save.bigText); persist(this.save); sync(); }
+      else if (act === "detail") { this.save.effectDensity = this.save.effectDensity === "full" ? "lean" : "full"; persist(this.save); sync(); }
       else if (act === "coach") { this.save.tutorialHints = !this.save.tutorialHints; persist(this.save); sync(); }
       else if (act === "hotkeys") this.renderHotkeys();
       else if (act === "handbook") { this.handbookReturn = "settings"; this.renderTutorials(); }
@@ -1496,6 +1505,16 @@ export class Menus {
         if (navigator.clipboard?.writeText) navigator.clipboard.writeText(code).then(finish, () => this.showCopyPanel("YOUR BAND'S SAVE CODE", "Keep this code somewhere safe, or move the band to another device.", code));
         else this.showCopyPanel("YOUR BAND'S SAVE CODE", "Keep this code somewhere safe, or move the band to another device.", code);
       } else if (act === "import-save") this.showImportPanel();
+      else if (act === "backup-save") {
+        const code = btoa(unescape(encodeURIComponent(JSON.stringify(this.save))));
+        const blob = new Blob([code], { type: "text/plain;charset=utf-8" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `wayband-${SLOT_NAMES[activeSlot()].toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${new Date().toISOString().slice(0, 10)}.txt`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 0);
+        this.showToast("Backup downloaded — keep it with your other saves");
+      }
       else if (act === "export-data") {
         const json = exportTelemetry();
         const finish = () => this.showToast(`Playtest data copied (${telemetrySummary()})`);

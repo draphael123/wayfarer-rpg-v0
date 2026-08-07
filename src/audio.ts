@@ -447,6 +447,30 @@ class AudioKit {
       });
   }
 
+  /** Phase changes are musical punctuation, not another impact sound. The
+   * falling interval warns first; the final phase resolves upward into danger. */
+  bossPhase(phase: number, final: boolean): void {
+    if (!this.soundOn) return;
+    const root = 110 * Math.pow(1.05946, Math.min(phase, 4) * 2);
+    this.noise(0.18, 0.13, final ? 820 : 1250);
+    this.tone(root * 2, 0.32, "triangle", 0.14, -root * 0.55);
+    this.tone(root, 0.46, "sawtooth", 0.16, final ? root * 0.5 : -18, 0.11);
+    if (final) {
+      this.tone(root * 1.5, 0.52, "triangle", 0.13, 16, 0.22);
+      this.tone(55, 0.6, "sine", 0.2, -8, 0.05);
+    }
+  }
+
+  /** The last blow leaves space before the victory fanfare: weight, fracture,
+   * then one warm overtone as the battlefield exhales. */
+  bossDefeated(): void {
+    if (!this.soundOn) return;
+    this.noise(0.28, 0.24, 460);
+    this.tone(62, 0.7, "sine", 0.28, -20);
+    this.tone(124, 0.52, "triangle", 0.16, -34, 0.08);
+    this.tone(392, 0.8, "sine", 0.1, -8, 0.34);
+  }
+
   /** Crossfade the looped sample music to whatever the state wants. */
   private syncMusic(): void {
     const ctx = this.ctx;

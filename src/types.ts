@@ -378,6 +378,7 @@ export interface SaveData {
   pauseOnBlur: boolean; // pause an active fight when the tab loses focus
   colorSafe: boolean; // colorblind-friendly health bars (hero bars go blue)
   bigText: boolean; // larger menu + hint text
+  effectDensity: "full" | "lean"; // full spectacle or a lower-particle mode for weaker devices
   enemyHealthBars: boolean; // health bars above ordinary enemies
   autoBattle: boolean; // begin real battles with AUTO tactics enabled
   tutorialHints: boolean; // contextual coaching during the opening battles

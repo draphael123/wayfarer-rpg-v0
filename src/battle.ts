@@ -181,6 +181,7 @@ export class Battle {
   kickX = 0;
   kickY = 0;
   cinematic = 0; // boss-intro seconds remaining
+  bossMoment: { eyebrow: string; title: string; accent: string; time: number; maxTime: number; final: boolean } | null = null;
   bossRef: Unit | null = null;
   slowmo = 0; // kill-cam seconds remaining
   ultFlash: { color: string; time: number } | null = null; // ult-cast screen tint
@@ -204,6 +205,7 @@ export class Battle {
   private holdFastSpent = new Set<number>();
   private priorityMarked = new Set<string>();
   private warningScale = 1;
+  private presentedBossPhase = 0;
 
   constructor(
     public stage: StageDef,
@@ -215,6 +217,7 @@ export class Battle {
     const diff = DIFFICULTIES[save.difficulty ?? 1];
     this.introBanner = stage.fieldNote ? 4 : 2.6;
     this.warningScale = save.telegraphAssist === "extra" ? 1.5 : save.telegraphAssist === "long" ? 1.25 : 1;
+    this.fx.setDetail(save.effectDensity);
     this.difficultyMult = this.tutorialMode ? 1 : diff.enemyMult;
     this.telegraphTime = (this.tutorialMode ? 1.5 : diff.telegraph) * this.warningScale;
     this.enemyHaste = this.tutorialMode ? 1 : diff.haste;
@@ -1488,7 +1491,9 @@ export class Battle {
       this.fx.burst(unit.x, unit.y - 10, "#ffd76b", 18, 160, { glow: true, gravity: 60 });
       this.fx.ring(unit.x, unit.y, 190, bossColor, { width: 7, life: 1 });
       this.fx.addShake(13);
-      audio.play(isLateBossKind(unit.enemyKind) ? "staggerBreak" : "roar");
+      const accent = unit.enemyKind ? ENEMIES[unit.enemyKind].trim : "#ffe9a3";
+      this.bossMoment = { eyebrow: "GREAT FOE FELLED", title: unit.name.toUpperCase(), accent, time: 2.35, maxTime: 2.35, final: true };
+      audio.bossDefeated();
     }
     // kills surge the slayer's ultimate — Tricksters feast on them
     if (unit.team === "enemy" && killer?.team === "hero") {
@@ -5304,6 +5309,18 @@ export class Battle {
       this.hitstop = Math.max(this.hitstop, nextPhase === 1 ? 0.04 : 0.1);
       this.zoomPunch = Math.max(this.zoomPunch, nextPhase === 1 ? 0.45 : 1.05);
       if (nextPhase > 1) {
+        const finalPhase = nextPhase >= phaseWords[boss.enemyKind].length;
+        this.bossMoment = {
+          eyebrow: finalPhase ? `FINAL PHASE · ${(ENEMIES[boss.enemyKind].role ?? "great foe").toUpperCase()}` : `PHASE ${nextPhase} · PATTERN CHANGED`,
+          title: words,
+          accent: ENEMIES[boss.enemyKind].trim,
+          time: 1.65,
+          maxTime: 1.65,
+          final: finalPhase,
+        };
+        audio.bossPhase(nextPhase, finalPhase);
+      }
+      if (nextPhase > 1) {
         this.fx.burst(boss.x, boss.y - boss.radius, ENEMIES[boss.enemyKind].trim, 22, 180, { glow: true, gravity: 30 });
         audio.play("staggerBreak");
       }
@@ -7351,6 +7368,38 @@ export class Battle {
   }
 
   private updatePresentation(dt: number): void {
+    if (this.bossMoment) {
+      this.bossMoment.time -= dt;
+      if (this.bossMoment.time <= 0) this.bossMoment = null;
+    }
+    const boss = this.bossRef;
+    if (boss?.alive && boss.enemyKind && this.cinematic <= 0 && boss.phase > this.presentedBossPhase) {
+      const phase = boss.phase;
+      this.presentedBossPhase = phase;
+      if (phase > 1 && !this.bossMoment) {
+        const earlyTurns: Partial<Record<EnemyKind, string[]>> = {
+          ogre: ["THE CART BREAKS", "NO WEIGHT HELD BACK"],
+          alpha: ["THE PACK CLOSES", "THE LAST HUNT"],
+          warlord: ["THE BANNER RISES", "NO GROUND GIVEN"],
+          rimeheart: ["THE ICE CRACKS", "WINTER HAS TEETH"],
+          wyrm: ["THE COURT DESCENDS", "THE LONG BREATH"],
+          bellwidow: ["THE SECOND TOLL", "THE DROWNED CHOIR"],
+          stormjaw: ["THE TIDE TURNS", "THE DEEP BREACH"],
+        };
+        const turns = earlyTurns[boss.enemyKind] ?? [];
+        const title = turns[Math.min(turns.length - 1, phase - 2)] ?? `PHASE ${phase}`;
+        const finalPhase = phase >= (BOSS_PHASES[boss.enemyKind]?.length ?? 2) + 1;
+        this.bossMoment = {
+          eyebrow: finalPhase ? "FINAL PHASE · GREAT FOE" : `PHASE ${phase} · PATTERN CHANGED`,
+          title,
+          accent: ENEMIES[boss.enemyKind].trim,
+          time: 1.65,
+          maxTime: 1.65,
+          final: finalPhase,
+        };
+        audio.bossPhase(phase, finalPhase);
+      }
+    }
     for (const unit of this.units) {
       unit.lunge = Math.max(0, unit.lunge - dt * 5);
       unit.hitFlash = Math.max(0, unit.hitFlash - dt);

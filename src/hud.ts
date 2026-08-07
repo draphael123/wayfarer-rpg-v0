@@ -693,6 +693,7 @@ export class Hud {
     this.drawCinematic(ctx);
     this.drawTopBar(ctx);
     this.drawBossBar(ctx);
+    this.drawBossMoment(ctx);
     this.drawBar(ctx);
     this.drawAbilityTooltip(ctx);
     this.drawBanner(ctx);
@@ -1048,7 +1049,9 @@ export class Hud {
   }
 
   private drawIntroBanner(ctx: CanvasRenderingContext2D): void {
-    if (this.battle.introBanner <= 0 || this.tutorial) return;
+    // Bosses already receive a dedicated cinematic name card. Holding the
+    // stage card until that finishes keeps both moments legible.
+    if (this.battle.introBanner <= 0 || this.tutorial || this.battle.cinematic > 0) return;
     const duration = this.battle.stage.fieldNote ? 4 : 2.6;
     const t = duration - this.battle.introBanner;
     const alpha = Math.min(1, this.battle.introBanner / 0.6, t / 0.35);
@@ -1078,6 +1081,61 @@ export class Hud {
       ctx.fillText(`FIELD ORDER · ${this.battle.stage.objective.toUpperCase()}`, this.width / 2, y + 70);
     }
     ctx.globalAlpha = 1;
+  }
+
+  /** A phase turn briefly becomes the visual headline. It is intentionally
+   * centered and short-lived: players can read the changed pattern without
+   * losing the battlefield beneath a modal. */
+  private drawBossMoment(ctx: CanvasRenderingContext2D): void {
+    const moment = this.battle.bossMoment;
+    if (!moment || this.battle.cinematic > 0 || (this.battle.resultDelay <= 0 && this.battle.state !== "fighting")) return;
+    const age = 1 - moment.time / moment.maxTime;
+    const enter = Math.min(1, age / 0.16);
+    const leave = Math.min(1, moment.time / 0.28);
+    const alpha = Math.min(enter, leave);
+    const y = this.height * (moment.final ? 0.38 : 0.24);
+    const width = Math.min(this.width - 32, moment.final ? 620 : 520);
+    const x = this.width / 2 - width / 2;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const shade = ctx.createLinearGradient(x, 0, x + width, 0);
+    shade.addColorStop(0, "rgba(10,8,16,0)");
+    shade.addColorStop(0.18, "rgba(10,8,16,0.78)");
+    shade.addColorStop(0.82, "rgba(10,8,16,0.78)");
+    shade.addColorStop(1, "rgba(10,8,16,0)");
+    ctx.fillStyle = shade;
+    ctx.fillRect(x, y - 38, width, 78);
+    ctx.strokeStyle = moment.accent;
+    ctx.globalAlpha = alpha * 0.68;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x + width * 0.12, y - 31);
+    ctx.lineTo(x + width * 0.88, y - 31);
+    ctx.moveTo(x + width * 0.2, y + 31);
+    ctx.lineTo(x + width * 0.8, y + 31);
+    ctx.stroke();
+    if (moment.final) {
+      const sealR = 31 + Math.min(1, age * 2.4) * 14;
+      ctx.setLineDash([5, 7]);
+      ctx.lineDashOffset = -this.battle.time * 20;
+      ctx.beginPath();
+      ctx.arc(this.width / 2, y, sealR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.globalAlpha = alpha;
+    ctx.textAlign = "center";
+    ctx.fillStyle = moment.accent;
+    ctx.font = "800 9px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.fillText(moment.eyebrow, this.width / 2, y - 15);
+    const titleSize = Math.max(17, Math.min(moment.final ? 30 : 24, (width - 50) / Math.max(10, moment.title.length) * 1.55));
+    ctx.font = `700 ${titleSize}px Cinzel, Palatino, Georgia, serif`;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(10,8,16,.92)";
+    ctx.strokeText(moment.title, this.width / 2, y + 13);
+    ctx.fillStyle = "#fff0cf";
+    ctx.fillText(moment.title, this.width / 2, y + 13);
+    ctx.restore();
   }
 
   private drawRoleCallout(ctx: CanvasRenderingContext2D): void {

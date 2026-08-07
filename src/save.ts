@@ -169,6 +169,7 @@ export function defaultSave(): SaveData {
     pauseOnBlur: true,
     colorSafe: false,
     bigText: false,
+    effectDensity: "full",
     enemyHealthBars: true,
     autoBattle: false,
     tutorialHints: true,
@@ -536,6 +537,7 @@ export function loadSave(): SaveData {
     if (typeof parsed.pauseOnBlur !== "boolean") parsed.pauseOnBlur = true;
     if (typeof parsed.colorSafe !== "boolean") parsed.colorSafe = false;
     if (typeof parsed.bigText !== "boolean") parsed.bigText = false;
+    if (parsed.effectDensity !== "lean" && parsed.effectDensity !== "full") parsed.effectDensity = "full";
     if (typeof parsed.enemyHealthBars !== "boolean") parsed.enemyHealthBars = true;
     if (typeof parsed.autoBattle !== "boolean") parsed.autoBattle = false;
     if (typeof parsed.tutorialHints !== "boolean") parsed.tutorialHints = true;
