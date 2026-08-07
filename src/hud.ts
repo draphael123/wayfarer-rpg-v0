@@ -747,8 +747,10 @@ export class Hud {
   }
 
   private drawBossBar(ctx: CanvasRenderingContext2D): void {
-    const boss = this.battle.units.find((u) => u.alive && ["alpha", "warlord", "rimeheart"].includes(u.enemyKind ?? ""));
-    if (!boss) return;
+    // Battle owns the authoritative boss classification. Using its reference here
+    // keeps the HUD in sync when new bosses are added (wyrm, Bell Widow, Stormjaw).
+    const boss = this.battle.bossRef;
+    if (!boss?.alive) return;
     const w = Math.min(360, this.width * 0.5);
     const x = this.width / 2 - w / 2;
     const y = 14;
