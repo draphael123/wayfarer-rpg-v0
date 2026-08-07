@@ -448,6 +448,104 @@ function drawWinterSkyline(ctx: CanvasRenderingContext2D, stage: StageDef, w: nu
   }
 }
 
+/** Six coastal silhouettes, each built around the landmark named by its stage. */
+function drawCoastSkyline(ctx: CanvasRenderingContext2D, stage: StageDef, w: number, horizon: number, time: number, travel: number): void {
+  if (stage.id < 12 || stage.id > 17) return;
+  const M = OVERSCAN;
+  const drift = travel * 0.2;
+  ctx.save();
+  ctx.lineCap = "round";
+
+  // A common strip of distant water ties the act together without making its locations identical.
+  const water = ctx.createLinearGradient(0, horizon - 20, 0, horizon + 5);
+  water.addColorStop(0, "rgba(118, 174, 174, 0.08)");
+  water.addColorStop(1, "rgba(23, 72, 79, 0.42)");
+  ctx.fillStyle = water;
+  ctx.fillRect(-M, horizon - 20, w + M * 2, 24);
+
+  if (stage.id === 12) {
+    // SALTROAD CAUSEWAY: broken arches and tide-swallowed milestones.
+    ctx.strokeStyle = "#566d67";
+    ctx.lineWidth = 9;
+    for (let i = -1; i < 7; i++) {
+      const x = ((i * 150 - drift) % (w + 300) + (w + 300)) % (w + 300) - 150;
+      ctx.beginPath();
+      ctx.moveTo(x - 42, horizon + 3);
+      ctx.lineTo(x - 38, horizon - 35);
+      ctx.quadraticCurveTo(x, horizon - 67, x + 38, horizon - 35);
+      ctx.lineTo(x + 42, horizon + 3);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(205, 215, 184, 0.32)";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - 30, horizon - 45); ctx.lineTo(x + 6, horizon - 58); ctx.stroke();
+      ctx.strokeStyle = "#566d67"; ctx.lineWidth = 9;
+    }
+  } else if (stage.id === 13) {
+    // WEEPING REEDS: a drowned willow surrounded by a forest of breathing reeds.
+    ctx.strokeStyle = "#304f48";
+    for (let i = 0; i < 34; i++) {
+      const x = ((i * 37 - drift * 1.3) % (w + 80) + (w + 80)) % (w + 80) - 40;
+      const sway = Math.sin(time * 1.2 + i) * 4;
+      ctx.lineWidth = 2 + hash01(i * 9) * 2;
+      ctx.beginPath(); ctx.moveTo(x, horizon + 3); ctx.quadraticCurveTo(x + sway, horizon - 25, x + sway * 1.4, horizon - 42 - hash01(i * 7) * 28); ctx.stroke();
+    }
+    const wx = w * 0.7;
+    ctx.strokeStyle = "#243f3c"; ctx.lineWidth = 14;
+    ctx.beginPath(); ctx.moveTo(wx, horizon + 4); ctx.quadraticCurveTo(wx - 8, horizon - 62, wx + 12, horizon - 102); ctx.stroke();
+    ctx.lineWidth = 6;
+    for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(wx + 4, horizon - 76); ctx.quadraticCurveTo(wx + side * 55, horizon - 104, wx + side * 74, horizon - 42); ctx.stroke(); }
+    ctx.strokeStyle = "rgba(82, 111, 88, 0.75)"; ctx.lineWidth = 2;
+    for (let i = -3; i <= 3; i++) { ctx.beginPath(); ctx.moveTo(wx + i * 15, horizon - 88 + Math.abs(i) * 5); ctx.quadraticCurveTo(wx + i * 20, horizon - 42, wx + i * 17 + Math.sin(time + i) * 3, horizon - 10); ctx.stroke(); }
+  } else if (stage.id === 14) {
+    // LANTERNWRECK BAY: a wrecked three-master makes the storm feel enormous.
+    const sx = w * 0.58 - (drift % 80);
+    ctx.fillStyle = "#263f48";
+    ctx.beginPath(); ctx.moveTo(sx - 145, horizon - 5); ctx.lineTo(sx + 112, horizon - 8); ctx.lineTo(sx + 78, horizon + 4); ctx.lineTo(sx - 112, horizon + 4); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#263f48"; ctx.lineWidth = 8;
+    for (const [ox, lean, tall] of [[-82, -12, 105], [0, 6, 132], [75, 15, 92]] as number[][]) {
+      ctx.beginPath(); ctx.moveTo(sx + ox, horizon - 4); ctx.lineTo(sx + ox + lean, horizon - tall); ctx.stroke();
+      ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sx + ox + lean - 40, horizon - tall + 28); ctx.lineTo(sx + ox + lean + 44, horizon - tall + 20); ctx.stroke(); ctx.lineWidth = 8;
+    }
+    ctx.fillStyle = "rgba(177, 191, 172, 0.18)";
+    ctx.beginPath(); ctx.moveTo(sx - 75, horizon - 95); ctx.lineTo(sx - 10, horizon - 106); ctx.lineTo(sx - 2, horizon - 42); ctx.closePath(); ctx.fill();
+  } else if (stage.id === 15) {
+    // DROWNED BELFRY: one leaning tower and a bell that rocks before lightning.
+    const bx = w * 0.52;
+    ctx.fillStyle = "#2b464c";
+    ctx.save(); ctx.translate(bx, horizon + 5); ctx.rotate(-0.055);
+    ctx.fillRect(-44, -132, 88, 136);
+    ctx.fillStyle = "#1b343b";
+    ctx.beginPath(); ctx.arc(0, -92, 24, Math.PI, Math.PI * 2); ctx.lineTo(24, -69); ctx.lineTo(-24, -69); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#b19055"; ctx.lineWidth = 5;
+    const bellSwing = Math.sin(time * 0.8) * 0.1;
+    ctx.save(); ctx.translate(0, -78); ctx.rotate(bellSwing); ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(0, 4); ctx.stroke(); ctx.fillStyle = "#a68148"; ctx.beginPath(); ctx.moveTo(-13, 2); ctx.quadraticCurveTo(-11, -15, 0, -17); ctx.quadraticCurveTo(11, -15, 13, 2); ctx.closePath(); ctx.fill(); ctx.restore();
+    ctx.fillStyle = "#2b464c"; ctx.beginPath(); ctx.moveTo(-54, -132); ctx.lineTo(0, -164); ctx.lineTo(52, -132); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = "rgba(185, 214, 206, 0.26)"; ctx.lineWidth = 3;
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(bx - 135 + i * 87, horizon + 2); ctx.lineTo(bx - 120 + i * 82, horizon - 35 - i * 5); ctx.stroke(); }
+  } else if (stage.id === 16) {
+    // EYE ROAD: sheer headlands form a narrow corridor beneath the storm's iris.
+    ctx.fillStyle = "#253f49";
+    ctx.beginPath(); ctx.moveTo(-M, horizon + 4); ctx.lineTo(-M, horizon - 120); ctx.lineTo(w * 0.28, horizon - 72); ctx.lineTo(w * 0.38, horizon + 4); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(w + M, horizon + 4); ctx.lineTo(w + M, horizon - 138); ctx.lineTo(w * 0.75, horizon - 78); ctx.lineTo(w * 0.64, horizon + 4); ctx.closePath(); ctx.fill();
+    const ex = w * 0.52, ey = horizon * 0.34;
+    ctx.strokeStyle = "rgba(174, 221, 222, 0.32)"; ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.ellipse(ex, ey, 72 + Math.sin(time * 0.6) * 4, 22, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = "rgba(213, 238, 224, 0.38)"; ctx.beginPath(); ctx.ellipse(ex, ey, 10, 18, 0, 0, Math.PI * 2); ctx.fill();
+  } else {
+    // SLEEPING COAST: the beach is the plated back of something beginning to wake.
+    ctx.fillStyle = "#1e3d48";
+    ctx.beginPath(); ctx.moveTo(-M, horizon + 4);
+    for (let x = -M; x <= w + M; x += 36) ctx.lineTo(x, horizon - 15 - Math.abs(Math.sin(x * 0.011)) * 35);
+    ctx.lineTo(w + M, horizon + 4); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#315c62"; ctx.lineWidth = 10;
+    for (let i = 0; i < 7; i++) { const x = w * (0.12 + i * 0.13); const rise = 34 + Math.sin(i * 1.8) * 14; ctx.beginPath(); ctx.moveTo(x - 23, horizon); ctx.quadraticCurveTo(x, horizon - rise, x + 24, horizon); ctx.stroke(); }
+    const blink = (time % 5.5) < 4.8 ? 1 : 0.15;
+    ctx.fillStyle = `rgba(151, 224, 211, ${0.42 * blink})`; ctx.beginPath(); ctx.ellipse(w * 0.78, horizon - 34, 22, 7 * blink, -0.12, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
 /** The winter grounds answer too: black ice, crystal light, wind-scoured drifts. */
 function drawWinterGround(ctx: CanvasRenderingContext2D, stage: StageDef, w: number, h: number, horizon: number, time: number, travel: number, camX = 0): void {
   const M = OVERSCAN;
@@ -653,9 +751,11 @@ export function drawBackground(
 
   // each Winterreach stage composes its own skyline over (or instead of) the hills
   drawWinterSkyline(ctx, stage, w, horizon, time, px);
+  // Stormbreak is landmark-led: every battlefield has a recognizable horizon.
+  drawCoastSkyline(ctx, stage, w, horizon, time, px);
 
   // tree / rock silhouettes on the ridge — they stream past at the near-hill rate
-  for (let i = 0; i < (cave ? 0 : 9); i++) {
+  for (let i = 0; i < (cave ? 0 : stage.id >= 12 ? 3 : 9); i++) {
     const span9 = w + 60;
     const tx = ((hash01(i * 13 + stage.id * 7) * w - px * 0.32) % span9 + span9) % span9 - 30;
     const ridgeY = horizon - 22 - Math.sin((tx + px * 0.32) * 0.008 + 1.7) * 18 - Math.sin((tx + px * 0.32) * 0.021) * 9;
