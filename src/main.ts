@@ -20,6 +20,7 @@ import {
   setColorSafe,
 } from "./render";
 import { defaultSave, grantHeroXp, loadSave, nextSpeed, persist } from "./save";
+import { autopilotTick, runBattleSimulation } from "./simulation";
 import { logEvent } from "./telemetry";
 import { Tutorial } from "./tutorial";
 import type { SaveData, StageDef } from "./types";
@@ -274,6 +275,15 @@ function settleVictory(): void {
   const rec = save.stageStats[currentStage];
   const t = Math.round(battle.time * 10) / 10;
   save.stageStats[currentStage] = { clears: (rec?.clears ?? 0) + 1, bestTime: rec ? Math.min(rec.bestTime, t) : t };
+  save.journal.unshift({
+    stage: currentStage,
+    time: t,
+    difficulty: save.difficulty,
+    deaths: battle.heroDeaths,
+    party: save.heroes.map((hero, index) => ({ hero, index })).filter(({ hero }) => hero.recruited && hero.active).map(({ index }) => index),
+    at: Date.now(),
+  });
+  save.journal = save.journal.slice(0, 24);
   save.lifetime.victories += 1;
   save.lifetime.gold += gold;
   if (battle.heroDeaths === 0) save.lifetime.flawless += 1;
@@ -715,43 +725,6 @@ function frame(now: number): void {
 menus.renderTitle();
 rafId = requestAnimationFrame(frame);
 
-/** One tick of the band's own judgment: healers triage, fighters take the
- *  nearest foe, spells fire the moment they're ready. Shared by the headless
- *  sim and the in-battle AUTO toggle. */
-function autopilotTick(b: Battle, simSave: SaveData): number {
-  let casts = 0;
-  const enemies = b.units.filter((u) => u.team === "enemy" && u.alive);
-  for (const heroU of b.units) {
-    if (heroU.team !== "hero" || !heroU.alive) continue;
-    if (heroU.stats.healPower >= 8) {
-      const wounded = b.units
-        .filter((u) => u.team === "hero" && u.alive && u !== heroU && u.hp < u.stats.maxHp * 0.7)
-        .sort((a, c) => a.hp / a.stats.maxHp - c.hp / c.stats.maxHp)[0];
-      heroU.healTarget = wounded ?? null;
-      if (wounded) heroU.attackTarget = null;
-    }
-    if (!heroU.healTarget && (!heroU.attackTarget || !heroU.attackTarget.alive) && enemies.length) {
-      let best = enemies[0];
-      let bd = Infinity;
-      for (const e of enemies) {
-        const d = Math.hypot(e.x - heroU.x, e.y - heroU.y);
-        if (d < bd) {
-          bd = d;
-          best = e;
-        }
-      }
-      heroU.attackTarget = best;
-    }
-    for (const ab of heroU.abilities) {
-      if (ab.timer > 0) continue;
-      const target = heroU.attackTarget && heroU.attackTarget.alive ? heroU.attackTarget : enemies[0];
-      const aim = target ? { x: target.x, y: target.y } : null;
-      if (b.castAbility(heroU, ab, simSave, aim, null)) casts++;
-    }
-  }
-  return casts;
-}
-
 /**
  * Headless battle for balance work: auto-orders every hero (nearest-enemy
  * aggro, healers channel the wounded, abilities fire on cooldown) and runs the
@@ -760,27 +733,10 @@ function autopilotTick(b: Battle, simSave: SaveData): number {
  */
 function runSim(
   stageIndex: number,
-  opts: { maxSeconds?: number; saveOverride?: SaveData } = {},
+  opts: { maxSeconds?: number; saveOverride?: SaveData; seed?: number } = {},
 ): { result: string; time: number; deaths: number; casts: number } {
   const simSave: SaveData = opts.saveOverride ?? (JSON.parse(JSON.stringify(save)) as SaveData);
-  const fxSys = new FxSystem();
-  const b = new Battle(STAGES[stageIndex], simSave, fieldRect(), fxSys);
-  const maxT = opts.maxSeconds ?? 240;
-  let casts = 0;
-  const dt = 1 / 30;
-  while (b.state !== "victory" && b.state !== "defeat" && b.time < maxT) {
-    casts += autopilotTick(b, simSave);
-    b.update(dt, simSave);
-    fxSys.update(dt);
-    if (fxSys.particles.length > 300) fxSys.particles.length = 0;
-    if (fxSys.floaters.length > 150) fxSys.floaters.length = 0;
-  }
-  return {
-    result: b.state === "victory" ? "victory" : b.state === "defeat" ? "defeat" : "timeout",
-    time: Math.round(b.time * 10) / 10,
-    deaths: b.heroDeaths,
-    casts,
-  };
+  return runBattleSimulation(STAGES[stageIndex], simSave, fieldRect(), opts);
 }
 
 // debug/testing hook

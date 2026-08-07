@@ -1,8 +1,10 @@
 # Node
 node_modules/
+.test-build/
 
 # OS files and local deployment state
 .DS_Store
 Thumbs.db
 .vercel/
 .vercel
+.env*.local

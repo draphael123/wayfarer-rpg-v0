@@ -45,13 +45,25 @@ are no classes:
 - Anyone can be molded into a tank-mage, a healing archer, or whatever the band
   needs.
 
-You set out with just Bram (sword) and Sol (healer) — Wren joins after clearing
-Thornwood Deep's gate stage, and Ezri after the one beyond. The band shares XP
-across a six-stage campaign chosen from an illustrated world map; a bestiary
-catalogues every foe you've slain with lore and tactical notes. Combat speed is
-adjustable (×0.35–×2, default ×0.5) from the title settings or pause menu, and a
-guided tutorial teaches every mechanic with animated pointers. Progress saves to
-localStorage.
+You set out with Bram and Sol, then recruit and shape a larger company as the
+road opens. Heroes earn personal XP, levels, boon choices, talents, equipment,
+and eventually advanced callings. The eighteen-stage campaign crosses three acts —
+the woodlands, the Winterreach, and Stormbreak Coast — with five set-piece bosses and an illustrated
+world map. A bestiary catalogues every foe you've slain with lore and tactical
+notes. Combat speed is adjustable (×0.35–×2) from the title settings or pause
+menu, and a guided tutorial teaches every mechanic with animated pointers.
+Progress saves to localStorage, with multiple save slots plus export/import.
+
+Before each stage, a preparation table summarizes the active band, lets you
+choose an opening formation, and surfaces tactical notes for creatures already
+recorded in the bestiary. The map can hold a pinned expedition goal, restored
+locations change after victories, and recent clears become dated pages in the
+Chronicle.
+
+Stormbreak Coast adds nine coastal foes and two battlefield rules: a tide that
+periodically slows units caught in the flooded lower field, and telegraphed
+lightning strikes that become more dangerous at high tide. Its bosses, the Bell
+Widow and Stormjaw, turn those rules into position-focused encounters.
 
 ## Architecture
 
@@ -66,5 +78,18 @@ localStorage.
 - `src/audio.ts` — fully synthesized WebAudio sound and music (no audio assets).
 - `src/save.ts` — localStorage persistence, XP/levels, respec.
 - `src/main.ts` — game loop, canvas scaling, pointer wiring, screen flow.
+
+## Quality checks
+
+```sh
+npm run validate
+npm run balance
+```
+
+This typechecks the game, validates campaign content and cross-references, and
+produces the same minified bundle used by the static deployment. GitHub Pages
+runs the full validation before publishing `main`. The separate balance command
+runs seeded reference parties across every stage and difficulty and prints a
+repeatable comparison table.
 
 A `window.__wayband` debug hook exposes the live battle for automated testing.

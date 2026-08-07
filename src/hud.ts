@@ -495,7 +495,7 @@ export class Hud {
     if (this.freshPlayer && !this.tutorial && this.battle.state === "fighting" && !this.paused) {
       const b = this.battle;
       if (this.coachStage === 0 && b.time > 4 && b.ordersIssued === 0 && this.hintTime <= 0) {
-        this.showHint("Drag a hero toward the enemies to fight!");
+        this.showHint("Drag a hero onto open ground to move — or onto a foe to attack");
       }
       if (b.ordersIssued > 0 && this.coachStage === 0) this.coachStage = 1;
       if (
@@ -505,7 +505,7 @@ export class Hud {
         this.hintTime <= 0 &&
         this.battle.heroes().some((h) => h.alive && h.abilities.some((a) => a.timer <= 0))
       ) {
-        this.showHint("The glowing buttons below are abilities — tap one!");
+        this.showHint("Glowing buttons are ready abilities — tap one, or drag it if it shows a dot");
         this.coachStage = 2;
       }
       const living = this.battle.livingHeroes().length;
@@ -881,6 +881,25 @@ export class Hud {
         ctx.fillText("the band marches on…", 258, 49);
         ctx.globalAlpha = 1;
       }
+    }
+    if (this.battle.stage.terrain && !this.tutorial) {
+      const tide = this.battle.stage.terrain === "tide" || this.battle.stage.terrain === "tide-storm";
+      const storm = this.battle.stage.terrain === "storm" || this.battle.stage.terrain === "tide-storm";
+      const label = tide ? (this.battle.tideHigh ? "TIDE HIGH" : "TIDE TURNING") : "STORM ACTIVE";
+      const chipW = storm && tide ? 176 : 118;
+      const chipX = this.width / 2 - chipW / 2;
+      ctx.fillStyle = "rgba(18, 42, 50, 0.78)";
+      roundRect(ctx, chipX, 10, chipW, 30, 8);
+      ctx.fill();
+      ctx.strokeStyle = this.battle.tideHigh ? "#9ee9ed" : "rgba(145, 194, 196, 0.55)";
+      ctx.lineWidth = 1.2;
+      roundRect(ctx, chipX, 10, chipW, 30, 8);
+      ctx.stroke();
+      ctx.fillStyle = "#c9eef0";
+      ctx.font = "800 10px 'Trebuchet MS', Verdana, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(`${label}${storm && tide ? " · LIGHTNING" : ""}`, this.width / 2, 29);
+      ctx.textAlign = "left";
     }
     // pause button
     ctx.fillStyle = "rgba(20, 16, 28, 0.55)";
@@ -1838,15 +1857,19 @@ export class Hud {
         }
       }
     } else {
-      const TIPS = [
-        "Tip: drag your healer onto wounded allies",
-        "Tip: kill shamans first — they heal the pack",
-        "Tip: drag heroes out of red pounce circles",
-        "Tip: spend gold at the Village between tries",
-        "Tip: attribute points make heroes stronger — see Party",
-        "Tip: lower the difficulty on the map, no shame in it",
-      ];
-      const tip = TIPS[Math.floor(this.battle.time) % TIPS.length];
+      const enemies = this.battle.units.filter((unit) => unit.team === "enemy");
+      const casts = Object.values(this.battle.castCounts).reduce((sum, count) => sum + count, 0);
+      const tip = enemies.some((unit) => unit.enemyKind === "shaman" || unit.enemyKind === "snowhag")
+        ? "Next try: focus the enemy healer before the front line"
+        : enemies.some((unit) => ["alpha", "warlord", "rimeheart", "wyrm"].includes(unit.enemyKind ?? ""))
+          ? "Next try: preserve movement for marked ground and boss windups"
+          : casts < 2
+            ? "Next try: use ready abilities early instead of saving every cooldown"
+            : this.battle.ordersIssued < 3
+              ? "Next try: reposition often and pull wounded heroes out of focus fire"
+              : this.save.heroes.some((hero, index) => hero.recruited && this.save.unspent[index] > 0)
+                ? "Next try: spend the waiting attribute points in Party"
+                : "Next try: inspect the scout report or lower difficulty for this road";
       ctx.fillText(
         `The road claimed them · ${mins}:${secs}`,
         this.width / 2,

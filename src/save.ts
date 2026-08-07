@@ -116,6 +116,9 @@ export function defaultSave(): SaveData {
     colorSafe: false,
     bigText: false,
     keybinds: { ...DEFAULT_KEYBINDS },
+    pinnedGoal: null,
+    formation: "line",
+    journal: [],
     forge: {},
     pendingBoons: [],
   };
@@ -231,6 +234,10 @@ export function loadSave(): SaveData {
     for (const k of Object.keys(DEFAULT_KEYBINDS)) {
       if (typeof parsed.keybinds[k] !== "string") parsed.keybinds[k] = DEFAULT_KEYBINDS[k];
     }
+    if (typeof parsed.pinnedGoal !== "string") parsed.pinnedGoal = null;
+    if (!(["line", "wedge", "guard"] as const).includes(parsed.formation)) parsed.formation = "line";
+    if (!Array.isArray(parsed.journal)) parsed.journal = [];
+    parsed.journal = parsed.journal.slice(0, 24);
     return parsed;
   } catch {
     return defaultSave();

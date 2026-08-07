@@ -703,7 +703,7 @@ export function drawBackground(
     ctx.fillRect(camX - M, horizon, w + M * 2, h - horizon + M);
   }
   // winter grounds get their own dressing over the cached terrain
-  if (stage.id >= 6) drawWinterGround(ctx, stage, w, h, horizon, time, travel, camX);
+  if (stage.id >= 6 && stage.id < 12) drawWinterGround(ctx, stage, w, h, horizon, time, travel, camX);
 
   // texture: swaying tufts + stones — world-anchored, windowed to the camera
   const wrapG = (v: number, span: number) => camX - M + ((((v - (camX - M)) % span) + span) % span);
@@ -793,7 +793,7 @@ export function drawBackground(
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
-  } else if (stage.id >= 6) {
+  } else if (stage.id >= 6 && stage.id < 12) {
     // the Winterreach: snow, always snow (a flaying gale at the Pass)
     const gale = stage.id === 10;
     ctx.fillStyle = "rgba(240, 248, 252, 0.75)";
@@ -1307,7 +1307,7 @@ function drawSetDressing(
     ctx.lineTo(px + 3, py - 30);
     ctx.closePath();
     outlined(ctx, "#8a2f2a", 2);
-  } else if (stage.id >= 6) {
+  } else if (stage.id >= 6 && stage.id < 12) {
     // the Winterreach's furniture: snow-caked pines, drifts, ice and old stone
     for (let i = 0; i < 4; i++) {
       const px = hash01(seed * 137.3 + i * 23 + stage.id * 13) * w;
@@ -1401,6 +1401,32 @@ export function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number
 export function drawTelegraphs(ctx: CanvasRenderingContext2D, battle: Battle): void {
   for (const mark of battle.telegraphs) {
     const t = mark.time / mark.duration;
+    if (mark.kind === "lightning") {
+      const pulse = 0.45 + Math.sin(battle.time * 18) * 0.18;
+      ctx.globalAlpha = pulse + t * 0.3;
+      ctx.strokeStyle = "#a9f2ff";
+      ctx.lineWidth = 2.5 + t * 3;
+      ctx.setLineDash([3, 7]);
+      ctx.lineDashOffset = battle.time * 38;
+      ctx.beginPath();
+      ctx.ellipse(mark.x, mark.y, mark.radius, mark.radius * 0.52, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(117, 220, 235, 0.13)";
+      ctx.beginPath();
+      ctx.ellipse(mark.x, mark.y, mark.radius * (1 - t * 0.35), mark.radius * 0.52 * (1 - t * 0.35), 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(205, 250, 255, 0.8)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(mark.x, mark.y - 18);
+      ctx.lineTo(mark.x - 7, mark.y - 4);
+      ctx.lineTo(mark.x + 4, mark.y - 7);
+      ctx.lineTo(mark.x, mark.y + 10);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      continue;
+    }
     if (mark.kind === "meteor") {
       // a friendly omen: the impact ring plus the star streaking in
       const a = 0.4 + t * 0.5;
@@ -1478,6 +1504,25 @@ export function drawTelegraphs(ctx: CanvasRenderingContext2D, battle: Battle): v
 }
 
 export function drawZones(ctx: CanvasRenderingContext2D, battle: Battle): void {
+  if ((battle.stage.terrain === "tide" || battle.stage.terrain === "tide-storm") && battle.tideLevel > 0.08) {
+    const waterline = battle.field.top + (battle.field.bottom - battle.field.top) * (0.82 - battle.tideLevel * 0.24);
+    ctx.globalAlpha = 0.16 + battle.tideLevel * 0.18;
+    const tide = ctx.createLinearGradient(0, waterline, 0, battle.field.bottom);
+    tide.addColorStop(0, "rgba(125, 220, 215, 0.12)");
+    tide.addColorStop(1, "rgba(35, 112, 135, 0.72)");
+    ctx.fillStyle = tide;
+    ctx.fillRect(battle.field.left, waterline, battle.field.right - battle.field.left, battle.field.bottom - waterline + 30);
+    ctx.strokeStyle = "rgba(205, 246, 232, 0.65)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = battle.field.left; x <= battle.field.right; x += 18) {
+      const y = waterline + Math.sin(x * 0.035 + battle.time * 2.2) * 3;
+      if (x === battle.field.left) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
   for (const zone of battle.zones) {
     const fade = Math.min(1, (zone.duration - zone.time) / 0.8, zone.time / 0.25 + 0.4);
     if (zone.kind === "sanctuary") {
@@ -3996,8 +4041,8 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
     const prevStride = stepPhases.get(unit) ?? stride;
     stepPhases.set(unit, stride);
     if (moving && (prevStride >= 0) !== (stride >= 0)) {
-      battle.fx.burst(unit.x - unit.facing * 3, unit.y + 1, battle.stage.id >= 6 ? "rgba(238,246,250,0.7)" : "rgba(185,170,145,0.6)", 2, 24, { gravity: -26, size: 2.4, life: 0.3 });
-      if (battle.stage.id >= 6 && unit.alive) {
+      battle.fx.burst(unit.x - unit.facing * 3, unit.y + 1, battle.stage.id >= 6 && battle.stage.id < 12 ? "rgba(238,246,250,0.7)" : "rgba(185,170,145,0.6)", 2, 24, { gravity: -26, size: 2.4, life: 0.3 });
+      if (battle.stage.id >= 6 && battle.stage.id < 12 && unit.alive) {
         battle.decals.push({ x: unit.x - unit.facing * 4, y: unit.y + 2, kind: "print", age: 0, size: unit.radius * 0.34, angle: unit.facing * 0.3 });
         if (battle.decals.length > 90) battle.decals.shift();
       }
@@ -4233,7 +4278,7 @@ export function drawDecals(ctx: CanvasRenderingContext2D, battle: Battle): void 
   }
   for (const lm of battle.landmarks) {
     ctx.globalAlpha = lm.alpha;
-    drawLandmark(ctx, lm.type, lm.x, lm.y, battle.time, battle.stage.id >= 6);
+    drawLandmark(ctx, lm.type, lm.x, lm.y, battle.time, battle.stage.id >= 6 && battle.stage.id < 12);
     ctx.globalAlpha = 1;
   }
   drawBossDressing(ctx, battle);

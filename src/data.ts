@@ -1916,6 +1916,42 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     lore: "The Winterreach has one king, older than the snow that crowns it.",
     habit: "Hail from above, breath that freezes the ground, and a heart that SHATTERS its own armor when cornered.",
   },
+  brinecrawler: {
+    name: "Brinecrawler", maxHp: 150, damage: 15, range: 34, attackCooldown: 2.1, speed: 48, armor: 0.48, radius: 21, xp: 35,
+    body: "#587f78", trim: "#a9c6ac", lore: "A reef given legs and a temper.", habit: "Its shell turns frontal blows. Circle behind it or answer with spells.",
+  },
+  kelpbound: {
+    name: "Kelpbound", maxHp: 92, damage: 12, range: 48, attackCooldown: 1.7, speed: 70, armor: 0.12, radius: 16, xp: 29,
+    body: "#496e59", trim: "#8ea36f", lore: "Drowned mail held upright by roots that never learned to die.", habit: "Its kelp tether drags isolated heroes toward deep water. Stay within rescuing distance.",
+  },
+  saltwitch: {
+    name: "Salt Witch", maxHp: 72, damage: 9, range: 200, attackCooldown: 2, speed: 60, armor: 0.04, radius: 15, xp: 34,
+    body: "#7ca1a0", trim: "#e2d6a5", lore: "She reads tomorrow in the salt left by yesterday's tide.", habit: "Heals allies standing in water and curses the ground. Silence her first.",
+  },
+  galeharrier: {
+    name: "Gale Harrier", maxHp: 68, damage: 14, range: 34, attackCooldown: 1.55, speed: 122, armor: 0, radius: 14, xp: 31,
+    body: "#70899a", trim: "#d6e4df", lore: "A knife-wing that rides the storm front.", habit: "Only arrows and spells reach it aloft. Its dive leaves it grounded briefly.",
+  },
+  bellkeeper: {
+    name: "Drowned Bellkeeper", maxHp: 105, damage: 8, range: 120, attackCooldown: 2.4, speed: 54, armor: 0.18, radius: 18, xp: 38,
+    body: "#526b70", trim: "#b59458", lore: "The bell stopped calling the faithful. It calls the drowned instead.", habit: "Each toll hastens nearby foes. Interrupt it or kill the keeper before the second toll.",
+  },
+  reefhound: {
+    name: "Reef Hound", maxHp: 76, damage: 15, range: 32, attackCooldown: 1.15, speed: 132, armor: 0.06, radius: 14, xp: 28,
+    body: "#467b82", trim: "#b2d2c7", lore: "It hunts by blood-scent through water too shallow for boats.", habit: "Fastest in the flooded half of the field. Pull it onto dry ground.",
+  },
+  stormcaller: {
+    name: "Stormcaller", maxHp: 84, damage: 12, range: 220, attackCooldown: 2.2, speed: 58, armor: 0.05, radius: 15, xp: 41,
+    body: "#506a8b", trim: "#b7e5df", lore: "A living rod for a sky that wants the earth.", habit: "Charges lightning conductors. Break the channel—or use the strike against its allies.",
+  },
+  bellwidow: {
+    name: "The Bell Widow", maxHp: 1180, damage: 19, range: 180, attackCooldown: 2.55, speed: 48, armor: 0.2, radius: 32, xp: 190,
+    body: "#526e75", trim: "#d2ae67", lore: "Abbess, lighthouse keeper, and last voice of a drowned abbey.", habit: "Her shockwaves, undertow, and rising tide punish clumping. The lighthouse rod can break her ward.",
+  },
+  stormjaw: {
+    name: "Stormjaw", maxHp: 1550, damage: 22, range: 62, attackCooldown: 2.8, speed: 55, armor: 0.24, radius: 40, xp: 260,
+    body: "#315f69", trim: "#9ed2c7", lore: "The coast was never land. It was only sleeping.", habit: "Force it to breach with lightning, survive the tide, then strike the exposed heart.",
+  },
 };
 
 export const STAGES: StageDef[] = [
@@ -2112,6 +2148,41 @@ export const STAGES: StageDef[] = [
     scale: 3.4,
     xpReward: 170,
     waves: [[{ kind: "wyrm", count: 1 }]],
+  },
+  // ---- ACT III: THE STORMBREAK COAST (band levels ~22-32) ----
+  {
+    id: 12, name: "Saltroad Causeway", subtitle: "The sea has crossed the road", terrain: "tide",
+    palette: { skyTop: "#5f8492", skyBottom: "#c5c6a5", hills: "#55756d", ground: "#748b70", groundDark: "#47666a", prop: "#b6905a" },
+    scale: 3.15, xpReward: 185,
+    waves: [[{ kind: "brinecrawler", count: 2 }, { kind: "reefhound", count: 2 }], [{ kind: "kelpbound", count: 2 }, { kind: "saltwitch", count: 1 }], [{ kind: "brinecrawler", count: 2 }, { kind: "galeharrier", count: 2 }]],
+  },
+  {
+    id: 13, name: "The Weeping Reeds", subtitle: "Something pulls beneath", terrain: "tide",
+    palette: { skyTop: "#526f76", skyBottom: "#aebd9e", hills: "#45645b", ground: "#61775f", groundDark: "#3c5960", prop: "#8a784f" },
+    scale: 3.3, xpReward: 200,
+    waves: [[{ kind: "kelpbound", count: 3 }, { kind: "reefhound", count: 2 }], [{ kind: "saltwitch", count: 2 }, { kind: "brinecrawler", count: 1 }], [{ kind: "bellkeeper", count: 1 }, { kind: "kelpbound", count: 3 }]],
+  },
+  {
+    id: 14, name: "Lanternwreck Bay", subtitle: "Masts call down the sky", terrain: "storm",
+    palette: { skyTop: "#324b63", skyBottom: "#9aaea9", hills: "#3f5d61", ground: "#65776e", groundDark: "#38515b", prop: "#c39b5b" },
+    scale: 3.35, xpReward: 220,
+    waves: [[{ kind: "galeharrier", count: 3 }, { kind: "stormcaller", count: 1 }], [{ kind: "bellkeeper", count: 1 }, { kind: "reefhound", count: 3 }], [{ kind: "stormcaller", count: 2 }, { kind: "brinecrawler", count: 2 }]],
+  },
+  {
+    id: 15, name: "The Drowned Belfry", subtitle: "One bell still answers", terrain: "tide-storm",
+    palette: { skyTop: "#273b53", skyBottom: "#859b98", hills: "#344f56", ground: "#586d69", groundDark: "#304a56", prop: "#c3a05f" },
+    scale: 3.3, xpReward: 265, waves: [[{ kind: "bellwidow", count: 1 }]],
+  },
+  {
+    id: 16, name: "The Eye Road", subtitle: "Walk where the storm looks away", terrain: "tide-storm",
+    palette: { skyTop: "#23364f", skyBottom: "#78969a", hills: "#31525b", ground: "#506d69", groundDark: "#294754", prop: "#a88452" },
+    scale: 3.55, xpReward: 250,
+    waves: [[{ kind: "stormcaller", count: 2 }, { kind: "galeharrier", count: 2 }], [{ kind: "brinecrawler", count: 2 }, { kind: "saltwitch", count: 1 }, { kind: "bellkeeper", count: 1 }], [{ kind: "kelpbound", count: 3 }, { kind: "reefhound", count: 3 }, { kind: "stormcaller", count: 1 }]],
+  },
+  {
+    id: 17, name: "The Sleeping Coast", subtitle: "The shoreline opens its eye", terrain: "tide-storm",
+    palette: { skyTop: "#142a43", skyBottom: "#668b91", hills: "#244955", ground: "#42676a", groundDark: "#203f4e", prop: "#d1aa64" },
+    scale: 3.45, xpReward: 330, waves: [[{ kind: "stormjaw", count: 1 }]],
   },
 ];
 
@@ -2348,7 +2419,7 @@ export function trinketFlatHp(id: string | null | undefined): number {
 }
 
 /** Stages whose final wave is a boss — these drop rare trinkets. */
-export const BOSS_STAGES = [4, 5, 11];
+export const BOSS_STAGES = [4, 5, 11, 15, 17];
 
 // ------------------------------------------------------------------ deeds
 

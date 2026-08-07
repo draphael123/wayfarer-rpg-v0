@@ -21,7 +21,16 @@ export type EnemyKind =
   | "harrier"
   | "drummer"
   | "warbanner"
-  | "wyrm";
+  | "wyrm"
+  | "brinecrawler"
+  | "kelpbound"
+  | "saltwitch"
+  | "galeharrier"
+  | "bellkeeper"
+  | "reefhound"
+  | "stormcaller"
+  | "bellwidow"
+  | "stormjaw";
 
 export interface Vec {
   x: number;
@@ -149,7 +158,7 @@ export interface Telegraph {
   time: number;
   duration: number;
   owner: Unit;
-  kind: "pounce" | "sweep" | "meteor";
+  kind: "pounce" | "sweep" | "meteor" | "lightning";
 }
 
 export interface GroundZone {
@@ -184,6 +193,7 @@ export interface StageDef {
   waves: WaveEntry[][];
   scale: number; // enemy stat multiplier
   xpReward: number;
+  terrain?: "tide" | "storm" | "tide-storm";
 }
 
 export interface HeroSave {
@@ -232,6 +242,18 @@ export interface SaveData {
   colorSafe: boolean; // colorblind-friendly health bars (hero bars go blue)
   bigText: boolean; // larger menu + hint text
   keybinds: Record<string, string>; // action id -> key (hero1-4, ability1-4)
+  pinnedGoal: string | null; // optional player-chosen expedition note
+  formation: "line" | "wedge" | "guard"; // opening party arrangement
+  journal: JournalEntry[]; // recent victories for the Chronicle
+}
+
+export interface JournalEntry {
+  stage: number;
+  time: number;
+  difficulty: number;
+  deaths: number;
+  party: number[];
+  at: number;
 }
 
 export interface LifetimeStats {

@@ -87,6 +87,23 @@ function abilityById(id: string) {
   return ABILITIES.find((a) => a.id === id)!;
 }
 
+function buildIdentity(save: SaveData, index: number): string {
+  const hero = save.heroes[index];
+  const calling = callingById(hero.calling);
+  if (calling && callingEligible(calling, hero.attrs)) return calling.name;
+  const ranked = ATTR_KEYS.slice().sort((a, b) => hero.attrs[b] - hero.attrs[a]);
+  const pair = `${ranked[0]}-${ranked[1]}`;
+  const named: Record<string, string> = {
+    "str-int": "Spellblade", "int-str": "Spellblade",
+    "str-vit": "Iron Vanguard", "vit-str": "Iron Vanguard",
+    "dex-spi": "Wayfinder", "spi-dex": "Wayfinder",
+    "int-spi": "Lantern Sage", "spi-int": "Lantern Sage",
+    "dex-int": "Arcane Ranger", "int-dex": "Arcane Ranger",
+    "vit-spi": "Oath Warden", "spi-vit": "Oath Warden",
+  };
+  return named[pair] ?? ({ str: "Bladebearer", dex: "Pathfinder", int: "Spellwright", vit: "Bulwark", spi: "Lightkeeper" } as Record<AttrKey, string>)[ranked[0]];
+}
+
 type Derived = ReturnType<typeof deriveStats>;
 
 /** After spending a point, flash the stat cells that actually moved (green up,
@@ -447,7 +464,7 @@ export class Menus {
   private figureTimer: number | null = null; // idle animation for the hero-sheet figure
   private justDonned = false; // flash the figure preview on the next sheet render
   private selectedStage: number | null = null; // map node the scout report is showing
-  private mapAct: 0 | 1 = 0; // which panel of the world we're looking at
+  private mapAct: 0 | 1 | 2 = 0; // which panel of the world we're looking at
   pendingFinale = false; // set when the Winterreach's king falls
   private shopAttr: AttrKey | "all" = "all"; // spell-shop filter
   private shopHideOwned = false;
@@ -621,11 +638,12 @@ export class Menus {
           </svg>
         </div>
         <div class="title-buttons">
-          <button class="big-btn primary" data-act="start">Set Out</button>
+          <button class="big-btn primary" data-act="start">${this.save.seenIntro ? "Continue the Journey" : "Begin Your Journey"}</button>
           <button class="big-btn" data-act="tutorial">How to Play</button>
         </div>
-        <div class="settings-card">
-          <div class="settings-title">Settings</div>
+        <details class="settings-card travel-kit">
+          <summary class="settings-title"><span>Travel kit</span><em>Sound · comfort · saves</em></summary>
+          <div class="settings-body">
           <div class="settings-row">
             <button class="toggle-btn" data-act="sound"></button>
             <button class="toggle-btn" data-act="music"></button>
@@ -647,7 +665,8 @@ export class Menus {
           <button class="toggle-btn" data-act="export-data">${ico("chart")} Export playtest data</button>
           ${(window as unknown as { __installPrompt?: unknown }).__installPrompt ? `<button class="toggle-btn" data-act="install">${ico("download")} Install app</button>` : ""}
           <button class="toggle-btn danger" data-act="reset">Reset all progress</button>
-        </div>
+          </div>
+        </details>
         <div class="credit">drag your heroes · draw your spells · shape your band</div>
         <div class="version-tag">WAYBAND · woodland build</div>
       </div>
@@ -808,14 +827,29 @@ export class Menus {
     this.show();
     const save = this.save;
     const seasoned = bandLevel(save);
+    const pendingPoints = save.heroes.reduce((sum, hero, index) => sum + (hero.recruited ? save.unspent[index] : 0), 0);
+    const recruitReady = save.heroes.some((hero, index) => !hero.recruited && heroArrived(save, index) && (RECRUIT_COST[index] ?? Infinity) <= save.gold);
+    const suggestedJourneyNote = pendingPoints > 0
+      ? `${pendingPoints} attribute point${pendingPoints === 1 ? "" : "s"} waiting in Party`
+      : recruitReady
+        ? "A new companion can be hired in the Tavern"
+        : `Scout ${STAGES[Math.min(save.unlockedStage, STAGES.length - 1)].name} and set out`;
+    const journeyNote = save.pinnedGoal ?? suggestedJourneyNote;
     const page = el(`
-      <div class="page">
+      <div class="page journey-page ${save.unlockedStage >= 12 ? "coast-journey" : save.unlockedStage >= 6 ? "winter-journey" : "woodland-journey"}">
         <div class="map-header">
           <div>
             <div class="map-title">The Long Road</div>
             <div class="map-level">A band of ${save.heroes.filter((h) => h.recruited).length} · finest at level ${seasoned} · <span class="gold-chip">${ico("coin")} <span class="gold-num">${save.gold}</span></span></div>
           </div>
         </div>
+        <aside class="journey-ribbon" aria-label="Journey progress">
+          <div class="journey-chapter">${save.unlockedStage < 6 ? "Act I · The South Road" : save.unlockedStage < 12 ? "Act II · The Winterreach" : "Act III · Stormbreak Coast"}</div>
+          <div class="journey-track" aria-hidden="true">
+            ${STAGES.map((_, index) => `<i class="${index < save.unlockedStage ? "done" : index === save.unlockedStage ? "current" : ""}"></i>`).join("")}
+          </div>
+          <div class="journey-next"><span>Next move</span><strong>${journeyNote}</strong><button class="journey-pin" data-act="goal">${save.pinnedGoal ? "Change" : "Pin a goal"}</button></div>
+        </aside>
         <div class="world-map"></div>
         <div class="stage-caption"></div>
         <div class="map-footer">
@@ -826,12 +860,13 @@ export class Menus {
     `);
     const maxIdx = Math.min(save.unlockedStage, STAGES.length - 1);
     this.selectedStage = Math.min(this.selectedStage ?? maxIdx, maxIdx);
-    this.mapAct = (this.selectedStage ?? 0) >= 6 ? 1 : 0;
+    this.mapAct = (this.selectedStage ?? 0) >= 12 ? 2 : (this.selectedStage ?? 0) >= 6 ? 1 : 0;
     if (save.unlockedStage >= 6) {
       page.querySelector(".world-map")!.appendChild(
         el(`<div class="act-tabs">
           <button class="shop-tab ${this.mapAct === 0 ? "on" : ""}" data-mapact="0">⛰ The South Road</button>
           <button class="shop-tab ${this.mapAct === 1 ? "on" : ""}" data-mapact="1">❄ The Winterreach</button>
+          ${save.unlockedStage >= 12 ? `<button class="shop-tab ${this.mapAct === 2 ? "on" : ""}" data-mapact="2">≋ Stormbreak Coast</button>` : ""}
         </div>`),
       );
     }
@@ -843,8 +878,9 @@ export class Menus {
       if (act === "embark") {
         audio.unlock();
         audio.play("click");
-        this.callbacks.startStage(this.selectedStage ?? maxIdx);
+        this.showEmbarkBriefing(this.selectedStage ?? maxIdx);
       }
+      if (act === "goal") this.showGoalPicker(suggestedJourneyNote);
       if (act === "party") {
         audio.play("click");
         this.renderParty();
@@ -852,8 +888,12 @@ export class Menus {
       const mapActBtn = (event.target as HTMLElement).closest("[data-mapact]");
       if (mapActBtn) {
         audio.play("click");
-        this.mapAct = Number(mapActBtn.getAttribute("data-mapact")) as 0 | 1;
-        this.selectedStage = this.mapAct === 1 ? Math.max(6, Math.min(this.save.unlockedStage, 11)) : Math.min(this.save.unlockedStage, 5);
+        this.mapAct = Number(mapActBtn.getAttribute("data-mapact")) as 0 | 1 | 2;
+        this.selectedStage = this.mapAct === 2
+          ? Math.max(12, Math.min(this.save.unlockedStage, 17))
+          : this.mapAct === 1
+            ? Math.max(6, Math.min(this.save.unlockedStage, 11))
+            : Math.min(this.save.unlockedStage, 5);
         this.renderMap();
         return;
       }
@@ -936,6 +976,73 @@ export class Menus {
     this.root.appendChild(pop);
   }
 
+  /** Stormbreak Coast: a flooded road beneath a living storm. */
+  private buildCoastMap(): HTMLElement {
+    const save = this.save;
+    const nodes = [
+      { x: 64, y: 236 }, { x: 170, y: 180 }, { x: 280, y: 236 },
+      { x: 384, y: 146 }, { x: 494, y: 206 }, { x: 582, y: 92 },
+    ];
+    const road = nodes.map((n, i) => i === 0 ? `M ${n.x} ${n.y}` : `Q ${(nodes[i - 1].x + n.x) / 2} ${(nodes[i - 1].y + n.y) / 2 + (i % 2 ? 22 : -18)} ${n.x} ${n.y}`).join(" ");
+    let travel = "";
+    if (this.travelFrom !== null && this.travelFrom >= 12 && this.travelFrom < 17) {
+      const a = nodes[this.travelFrom - 12];
+      const b = nodes[this.travelFrom - 11];
+      travel = `<circle r="7" fill="#ffe9a3" stroke="#112d36" stroke-width="2"><animateMotion dur="1.6s" fill="freeze" path="M ${a.x} ${a.y} L ${b.x} ${b.y}"/></circle>`;
+      this.travelFrom = null;
+    }
+    let markers = "";
+    for (let i = 0; i < nodes.length; i++) {
+      const sid = 12 + i;
+      const stage = STAGES[sid];
+      const n = nodes[i];
+      const done = sid < save.unlockedStage;
+      const current = sid === save.unlockedStage;
+      const unlocked = sid <= save.unlockedStage;
+      const labelWidth = stage.name.length * 6.4 + 16;
+      markers += `<g class="map-node ${current ? "current" : ""} ${unlocked ? "open" : "locked"} ${sid === this.selectedStage ? "sel" : ""}" data-stage="${sid}">
+        <circle cx="${n.x}" cy="${n.y}" r="31" fill="transparent"/>
+        <circle class="sel-ring" cx="${n.x}" cy="${n.y}" r="24" fill="none" stroke="#ffe9a3" stroke-width="2" stroke-dasharray="5 6"/>
+        ${current ? `<circle class="node-pulse" cx="${n.x}" cy="${n.y}" r="21" fill="none" stroke="#8ce6ef" stroke-width="2.5"/>` : ""}
+        <circle cx="${n.x}" cy="${n.y}" r="17" fill="${done ? "url(#coastDone)" : current ? "url(#coastNow)" : "#29434d"}" stroke="#102831" stroke-width="4"/>
+        <circle cx="${n.x}" cy="${n.y}" r="17" fill="none" stroke="${done ? "#92e3b0" : current ? "#ffe9a3" : "#53737c"}" stroke-width="2.5"/>
+        ${unlocked ? `<text x="${n.x}" y="${n.y + 5.5}" text-anchor="middle" font-size="16" font-weight="900" fill="#fff8dc">${done ? "✓" : sid + 1}</text>` : `<text x="${n.x}" y="${n.y + 5}" text-anchor="middle" font-size="15" fill="#78919a">◆</text>`}
+        ${unlocked ? `<rect x="${n.x - labelWidth / 2}" y="${n.y + 24}" width="${labelWidth}" height="15" rx="7" fill="rgba(8,28,35,.84)" stroke="${current ? "#8ce6ef" : "rgba(255,255,255,.14)"}"/><text x="${n.x}" y="${n.y + 35}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#eef7e8">${stage.name}</text>` : `<text x="${n.x}" y="${n.y + 35}" text-anchor="middle" font-size="10" fill="#66818a">UNCHARTED</text>`}
+        ${done ? `<path d="M ${n.x + 19} ${n.y + 8} l 5 -10 l 5 10 z M ${n.x + 24} ${n.y - 2} v -8" fill="#f2c96f" stroke="#14323a" stroke-width="1.5"/>` : ""}
+      </g>`;
+    }
+    const svg = el(`<div class="map-frame coast-map"><svg viewBox="0 0 640 320" role="img" aria-label="Stormbreak Coast">
+      <defs>
+        <linearGradient id="coastSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#172b3b"/><stop offset=".6" stop-color="#527b82"/><stop offset="1" stop-color="#a0bab0"/></linearGradient>
+        <linearGradient id="coastSea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#477e83"/><stop offset="1" stop-color="#173f4a"/></linearGradient>
+        <radialGradient id="coastNow"><stop offset="0" stop-color="#ffe6a0"/><stop offset="1" stop-color="#c77f32"/></radialGradient>
+        <radialGradient id="coastDone"><stop offset="0" stop-color="#68ae7d"/><stop offset="1" stop-color="#2e6c57"/></radialGradient>
+      </defs>
+      <rect width="640" height="320" rx="18" fill="url(#coastSky)"/>
+      <path d="M0 86 Q95 46 190 77 T375 70 T640 58 L640 0 L0 0Z" fill="#101d2b" opacity=".78"/>
+      <path d="M390 42 l10 20 -12 5 20 33" fill="none" stroke="#d7f5ff" stroke-width="2.5" opacity=".75"/>
+      <path d="M0 135 Q100 110 205 132 T418 120 T640 126 L640 320 L0 320Z" fill="url(#coastSea)"/>
+      <path d="M0 210 Q88 176 164 211 T320 195 T470 188 T640 169 L640 320 L0 320Z" fill="#607762"/>
+      <path d="M0 238 Q115 205 220 238 T425 218 T640 202" fill="none" stroke="#a9d1c5" stroke-width="3" opacity=".7"/>
+      <g transform="translate(548 34)"><path d="M-22 92 L18 92 L11 25 L-12 25Z" fill="#d8d3bd" stroke="#1b3035" stroke-width="3"/><path d="M-17 25 L-9 8 L8 8 L15 25Z" fill="#8c493c" stroke="#1b3035" stroke-width="3"/><path d="M-5 8 V-3" stroke="#ffe9a3" stroke-width="5"/><path d="M-5 -3 L-46 12 M-5 -3 L34 14" stroke="#ffe9a3" stroke-width="4" opacity=".35"/></g>
+      <path d="${road}" fill="none" stroke="#203c42" stroke-width="13" stroke-linecap="round"/><path d="${road}" fill="none" stroke="#c6b98a" stroke-width="7" stroke-linecap="round"/><path d="${road}" fill="none" stroke="#e9ddb0" stroke-width="2" stroke-dasharray="2 9"/>
+      ${markers}${travel}
+    </svg></div>`);
+    svg.addEventListener("click", (event) => {
+      const node = (event.target as Element).closest(".map-node.open") as Element | null;
+      if (!node) return;
+      const idx = Number(node.getAttribute("data-stage"));
+      audio.unlock(); audio.play("click");
+      if (this.selectedStage === idx) return void this.showEmbarkBriefing(idx);
+      this.selectedStage = idx;
+      svg.querySelectorAll(".map-node.sel").forEach((item) => item.classList.remove("sel"));
+      node.classList.add("sel");
+      const caption = this.root.querySelector(".stage-caption");
+      if (caption) { caption.innerHTML = ""; caption.appendChild(this.buildScoutCard(idx)); }
+    });
+    return svg;
+  }
+
   /** The Winterreach: act two's frost-painted panel. */
   private buildWinterMap(): HTMLElement {
     const save = this.save;
@@ -1005,6 +1112,7 @@ export class Menus {
               ? `<g><rect x="${n.x - nameW / 2}" y="${n.y + 24}" width="${nameW}" height="15" rx="7" fill="rgba(14,22,32,0.78)" stroke="${isCurrent ? "#ffe9a3" : "rgba(255,255,255,0.15)"}" stroke-width="1"/><text x="${n.x}" y="${n.y + 35}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#f2ecd8">${stage.name}</text></g>`
               : `<text x="${n.x}" y="${n.y + 35}" text-anchor="middle" font-size="10" font-weight="700" fill="#7d8a9c">???</text>`
           }
+          ${done ? `<g class="restored-site" transform="translate(${n.x + 22},${n.y + 7})"><path d="M 0 6 C -5 1 -2 -4 0 -8 C 1 -4 6 0 0 6 Z" fill="#f0a458"/><path d="M -7 8 L 7 3 M -7 3 L 7 8" stroke="#65442f" stroke-width="2.4"/><circle cx="0" cy="4" r="10" fill="none" stroke="#d8eef5" stroke-width="1" opacity="0.5"/></g>` : ""}
           ${
             unlocked
               ? `<g transform="translate(${n.x - 15},${n.y - 24})" opacity="0.9">${
@@ -1066,7 +1174,7 @@ export class Menus {
       audio.unlock();
       audio.play("click");
       if (this.selectedStage === idx) {
-        this.callbacks.startStage(idx);
+        this.showEmbarkBriefing(idx);
         return;
       }
       this.selectedStage = idx;
@@ -1079,6 +1187,97 @@ export class Menus {
       }
     });
     return svg;
+  }
+
+  private showGoalPicker(suggested: string): void {
+    const goals = [
+      suggested,
+      "Save gold for the next recruit",
+      "Complete a matching armor set",
+      "Raise a hero to their Calling",
+    ];
+    const pop = el(`
+      <div class="levelup-pop goal-pop">
+        <div class="levelup-card journal-sheet">
+          <div class="levelup-title">PIN AN EXPEDITION NOTE</div>
+          <div class="levelup-line">Choose the reminder shown on your journey ribbon.</div>
+          <div class="goal-options">
+            ${goals.map((goal, index) => `<button class="toggle-btn" data-goal="${index}">${goal}</button>`).join("")}
+            ${this.save.pinnedGoal ? '<button class="toggle-btn" data-goal="clear">Use the game\'s suggestion</button>' : ""}
+          </div>
+          <button class="big-btn" data-goal="cancel">Cancel</button>
+        </div>
+      </div>
+    `);
+    pop.addEventListener("click", (event) => {
+      const pick = (event.target as HTMLElement).closest("[data-goal]")?.getAttribute("data-goal");
+      if (!pick) return;
+      if (pick === "cancel") return void pop.remove();
+      this.save.pinnedGoal = pick === "clear" ? null : goals[Number(pick)];
+      persist(this.save);
+      audio.play("page");
+      pop.remove();
+      this.renderMap();
+    });
+    this.root.appendChild(pop);
+  }
+
+  /** The preparation table: party, formation, and the one enemy lesson that matters most. */
+  private showEmbarkBriefing(stageIndex: number): void {
+    const stage = STAGES[stageIndex];
+    const party = partyRoster(this.save);
+    const kinds: EnemyKind[] = [];
+    for (const wave of stage.waves) for (const entry of wave) if (!kinds.includes(entry.kind)) kinds.push(entry.kind);
+    const known = kinds.filter((kind) => (this.save.bestiary[kind] ?? 0) > 0);
+    const warning = known.length
+      ? { name: ENEMIES[known[0]].name, habit: ENEMIES[known[0]].habit }
+      : { name: "Unknown opposition", habit: "The bestiary will record what survives your first encounter." };
+    const formationCopy = {
+      line: "A broad, even opening",
+      wedge: "One hero leads the advance",
+      guard: "A front pair shelters the backline",
+    } as const;
+    const pop = el(`
+      <div class="levelup-pop briefing-pop">
+        <div class="levelup-card preparation-sheet">
+          <div class="briefing-kicker">PREPARATION TABLE · ${DIFFICULTIES[this.save.difficulty].name.toUpperCase()}</div>
+          <div class="levelup-title">${stage.name}</div>
+          <div class="levelup-line">${stage.subtitle}</div>
+          <div class="brief-party">
+            ${party.map((index) => `<span style="--accent:${HEROES[index].accent}"><b>${HEROES[index].name}</b><em>${buildIdentity(this.save, index)}</em></span>`).join("")}
+          </div>
+          <div class="brief-section"><strong>Opening formation</strong><em id="formation-copy">${formationCopy[this.save.formation]}</em></div>
+          <div class="formation-row">
+            ${(["line", "wedge", "guard"] as const).map((formation) => `<button class="formation-btn ${this.save.formation === formation ? "on" : ""}" data-formation="${formation}"><i class="formation-glyph ${formation}"></i>${formation}</button>`).join("")}
+          </div>
+          <div class="intent-card"><span>${ico("skull")}</span><div><em>SCOUT'S WARNING · ${warning.name}</em><strong>${warning.habit}</strong></div></div>
+          <div class="levelup-actions">
+            <button class="big-btn primary" data-brief="embark">Embark now</button>
+            <button class="big-btn" data-brief="party">Adjust the band</button>
+            <button class="big-btn" data-brief="cancel">Not yet</button>
+          </div>
+        </div>
+      </div>
+    `);
+    pop.addEventListener("click", (event) => {
+      const formation = (event.target as HTMLElement).closest("[data-formation]")?.getAttribute("data-formation") as SaveData["formation"] | null;
+      if (formation) {
+        this.save.formation = formation;
+        persist(this.save);
+        pop.querySelectorAll(".formation-btn").forEach((button) => button.classList.toggle("on", button.getAttribute("data-formation") === formation));
+        const copy = pop.querySelector("#formation-copy");
+        if (copy) copy.textContent = formationCopy[formation];
+        audio.play("click");
+        return;
+      }
+      const action = (event.target as HTMLElement).closest("[data-brief]")?.getAttribute("data-brief");
+      if (action === "embark") this.callbacks.startStage(stageIndex);
+      else if (action === "party") {
+        pop.remove();
+        this.renderParty();
+      } else if (action === "cancel" || event.target === pop) pop.remove();
+    });
+    this.root.appendChild(pop);
   }
 
   /** Scout report for a stage: what awaits, what it pays, and the band's record there. */
@@ -1104,6 +1303,7 @@ export class Menus {
           <span class="scout-chip">${ico("sword")} ${stage.waves.length <= 1 ? "a single great trial" : stage.waves.length <= 3 ? "a short road" : "a long road"}</span>
           <span class="scout-chip">${ico("star")} ≈${Math.round(stage.xpReward * mult)} xp</span>
           <span class="scout-chip">${ico("gem")} ${rare ? "RARE trinket" : "trinket drop"}</span>
+          ${stage.terrain ? `<span class="scout-chip">${stage.terrain.includes("tide") ? "≋ shifting tide" : ""}${stage.terrain === "tide-storm" ? " · " : ""}${stage.terrain.includes("storm") ? "ϟ lightning" : ""}</span>` : ""}
           ${
             rec
               ? `<span class="scout-chip best">✓ best ${fmt(rec.bestTime)} · ×${rec.clears}</span>`
@@ -1124,11 +1324,20 @@ export class Menus {
         foes.appendChild(el(`<span class="scout-foe unknown" title="an unknown creature">?</span>`));
       }
     }
+    const knownKinds = kinds.filter((kind) => (save.bestiary[kind] ?? 0) > 0).slice(0, 2);
+    if (knownKinds.length) {
+      card.appendChild(
+        el(`<div class="intent-strip">${knownKinds
+          .map((kind) => `<div><em>${ENEMIES[kind].name}</em><strong>${ENEMIES[kind].habit}</strong></div>`)
+          .join("")}</div>`),
+      );
+    }
     return card;
   }
 
   /** Painted SVG overworld: dawn sky, layered ridges, a river, themed regions, and tappable stage nodes. */
   private buildWorldMap(): HTMLElement {
+    if (this.mapAct === 2) return this.buildCoastMap();
     if (this.mapAct === 1) return this.buildWinterMap();
     const save = this.save;
     const nodes = [
@@ -1210,6 +1419,7 @@ export class Menus {
               : `<g transform="translate(${n.x},${n.y})"><rect x="-5" y="-3" width="10" height="9" rx="2" fill="#8d84a3"/><path d="M -3 -3 v -2.5 a 3 3 0 0 1 6 0 V -3" fill="none" stroke="#8d84a3" stroke-width="2"/></g>`
           }
           ${done ? `<g transform="translate(${n.x + 12},${n.y - 26})"><line x1="0" y1="0" x2="0" y2="14" stroke="#6b4a2a" stroke-width="2"/><path d="M 0 0 L 11 3.5 L 0 7 Z" fill="#8ee88b"/></g>` : ""}
+          ${done ? `<g class="restored-site" transform="translate(${n.x - 31},${n.y + 10})"><rect x="0" y="-7" width="13" height="10" rx="1.5" fill="#c89b63"/><path d="M -2 -7 L 6.5 -14 L 15 -7 Z" fill="#744b32"/><rect x="5" y="-3" width="3" height="6" fill="#ffe9a3"/><path d="M 11 -13 C 15 -18 8 -20 13 -25" fill="none" stroke="#ddd4bd" stroke-width="1.2" opacity="0.65"/></g>` : ""}
           ${
             unlocked
               ? `<g transform="translate(${n.x - 15},${n.y - 24})" opacity="0.9">${
@@ -1575,7 +1785,7 @@ export class Menus {
     this.root.appendChild(page);
   }
 
-  /** The campaign's last page: the king is down, the dawn comes, the road goes on. */
+  /** The campaign's last page: the storm breaks and the road goes on. */
   renderFinale(): void {
     this.pendingFinale = false;
     this.root.innerHTML = "";
@@ -1586,7 +1796,7 @@ export class Menus {
       <div class="page title-page finale-page">
         <div class="title-block">
           <div class="game-logo" style="font-size:40px">THE ROAD'S END</div>
-          <div class="game-sub">Rimeheart is fallen. The Winterreach is quiet. Dawn finds the band still standing.</div>
+          <div class="game-sub">Stormjaw is fallen. The black tide retreats. Dawn reaches the coast at last.</div>
         </div>
         <div class="campfire-scene" aria-hidden="true">
           <svg viewBox="0 0 360 120">
@@ -1594,8 +1804,8 @@ export class Menus {
             <rect width="360" height="120" rx="12" fill="url(#dawnsky)"/>
             <circle cx="286" cy="86" r="22" fill="#ffe9a3"/>
             <circle cx="286" cy="86" r="34" fill="#ffe9a3" opacity="0.25"/>
-            <path d="M 0 96 Q 90 78 180 92 T 360 88 L 360 120 L 0 120 Z" fill="#e8f0f5"/>
-            <path d="M 0 104 Q 120 92 240 102 T 360 100 L 360 120 L 0 120 Z" fill="#c8dce8"/>
+            <path d="M 0 96 Q 90 78 180 92 T 360 88 L 360 120 L 0 120 Z" fill="#527b82"/>
+            <path d="M 0 104 Q 120 92 240 102 T 360 100 L 360 120 L 0 120 Z" fill="#c4b47d"/>
             ${this.save.heroes
               .map((h, i) => ({ h, i }))
               .filter(({ h }) => h.recruited)
@@ -1659,9 +1869,23 @@ export class Menus {
             <div class="map-level">Deeds done: ${done}/${DEEDS.length} — the road remembers everything</div>
           </div>
         </div>
+        <div class="place-banner place-records">
+          <span class="place-mark">${ico("book")}</span>
+          <span><em>The leather chronicle</em><strong>Every victory leaves a line; every discovery earns a page</strong></span>
+        </div>
         <div class="shop-tabs"><button class="shop-tab on" data-rec="chronicle">${ico("chart")} Chronicle</button><button class="shop-tab" data-rec="bestiary">${ico("book")} Bestiary</button></div>
         <div class="chron-grid">
           ${stats.map(([k, v]) => `<div class="chron-cell"><span>${k}</span><strong>${v}</strong></div>`).join("")}
+        </div>
+        <div class="journal-entries">
+          <div class="ability-row-title">Recent pages <span>the last ${Math.min(save.journal.length, 6)} victories</span></div>
+          ${save.journal.length
+            ? save.journal.slice(0, 6).map((entry) => `<article class="journal-entry">
+                <span class="journal-date">${new Date(entry.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                <div><strong>${STAGES[entry.stage]?.name ?? "Unknown road"}</strong><em>${DIFFICULTIES[entry.difficulty]?.name ?? "Normal"} · ${Math.floor(entry.time / 60)}:${String(Math.floor(entry.time % 60)).padStart(2, "0")} · ${entry.deaths ? `${entry.deaths} fell` : "flawless"}</em></div>
+                <span class="journal-party">${entry.party.map((index) => HEROES[index]?.name?.[0] ?? "?").join(" · ")}</span>
+              </article>`).join("")
+            : '<div class="empty-journal">The first victory will begin the band\'s written chronicle.</div>'}
         </div>
         <div class="deed-list">
           ${DEEDS.map((d) => {
@@ -1701,13 +1925,18 @@ export class Menus {
       <div class="page title-page">
         <div class="title-block">
           <div class="game-logo" style="font-size:34px">FIRST STEPS</div>
-          <div class="game-sub">Wayband is played entirely by dragging. Two minutes of practice makes all the difference.</div>
+          <div class="game-sub">Lead a small company in real time. Two minutes of practice makes the first battle much clearer.</div>
+        </div>
+        <div class="guide-list first-steps-list">
+          <div class="shop-note"><strong>1 · Command</strong> — drag a hero onto open ground to move, or onto a foe to attack.</div>
+          <div class="shop-note"><strong>2 · Cast</strong> — tap an ability for an instant spell; drag an aimed ability onto the battlefield.</div>
+          <div class="shop-note"><strong>3 · Grow</strong> — after battle, spend each hero's points however you like. There are no fixed classes.</div>
         </div>
         <div class="title-buttons">
-          <button class="big-btn primary" data-act="learn">🎓 Learn the ropes (recommended)</button>
-          <button class="big-btn" data-act="skip">${ico("play")} Jump straight in</button>
+          <button class="big-btn primary" data-act="learn">Practice for two minutes (recommended)</button>
+          <button class="big-btn" data-act="skip">${ico("play")} Skip practice and see the map</button>
         </div>
-        <div class="credit">the lessons stay on the title screen if you change your mind</div>
+        <div class="credit">practice is always available from How to Play</div>
       </div>
     `);
     page.addEventListener("click", (event) => {
@@ -1957,6 +2186,10 @@ export class Menus {
             <div class="map-title">${tavern ? "The Tavern" : "The Village"}</div>
             <div class="map-level"><span class="gold-chip">${ico("coin")} <span class="gold-num">${save.gold}</span> gold</span></div>
           </div>
+        </div>
+        <div class="place-banner ${tavern ? "place-tavern" : "place-village"}">
+          <span class="place-mark">${tavern ? "🍺" : ico("sword")}</span>
+          <span><em>${tavern ? "Lanterns in the window" : "Hammers beyond the green"}</em><strong>${tavern ? "New hands, old stories, and a place by the fire" : "Outfit the band for the road ahead"}</strong></span>
         </div>
         ${
           tavern
@@ -2548,6 +2781,10 @@ export class Menus {
             <div class="map-level">Tap a portrait to manage a hero · four take the field</div>
           </div>
         </div>
+        <div class="place-banner place-camp">
+          <span class="place-mark">${ico("flame")}</span>
+          <span><em>Tonight's camp</em><strong>${this.save.heroes.filter((hero) => hero.recruited && hero.active).length}/${PARTY_CAP} ready to take the field</strong></span>
+        </div>
         <div class="preset-row">
           <span class="preset-label">${ico("banner")} Band presets</span>
           ${[0, 1]
@@ -2571,7 +2808,7 @@ export class Menus {
     for (const i of recruited) {
       const h = this.save.heroes[i];
       const chip = el(`
-        <button class="p-chip ${i === this.partySel ? "sel" : ""} ${h.active ? "in" : ""}" data-psel="${i}" style="--accent:${HEROES[i].accent}">
+        <button class="p-chip ${i === this.partySel ? "sel" : ""} ${h.active ? "in" : ""}" data-psel="${i}" style="--accent:${HEROES[i].accent}" title="${HEROES[i].name} · ${buildIdentity(this.save, i)}">
           <canvas width="64" height="64"></canvas>
           <span class="p-name">${HEROES[i].name}</span>
           ${h.active ? `<span class="p-flag">${ico("banner")}</span>` : ""}
@@ -2594,7 +2831,9 @@ export class Menus {
       if (arrived) drawHeroPortrait(chip.querySelector("canvas") as HTMLCanvasElement, i, this.save);
       strip.appendChild(chip);
     }
-    page.querySelector(".preset-row")!.before(strip);
+    const rollcall = el(`<div class="camp-rollcall"><div class="camp-ember" aria-hidden="true">✦</div></div>`);
+    rollcall.appendChild(strip);
+    page.querySelector(".preset-row")!.before(rollcall);
     list.appendChild(this.heroCard(this.partySel, true));
     page.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
@@ -2704,7 +2943,7 @@ export class Menus {
                   ? `<span class="calling-tag" style="color:${sworn.color}">${advInfo ? advInfo.adv.name : sworn.name}</span> · `
                   : `<span class="calling-tag dormant">${sworn.name} — dormant</span> · `
                 : ""
-            }<span class="hero-lv">Lv ${hero.level}</span> · ${WEAPON_LABEL[weapon]} · ${WEAPON_TIERS[hero.weaponTier].name} / ${armorById(hero.armor)?.name ?? "Traveler's Garb"}</div>
+            }<span class="build-identity">${buildIdentity(save, index)}</span> · <span class="hero-lv">Lv ${hero.level}</span> · ${WEAPON_LABEL[weapon]} · ${WEAPON_TIERS[hero.weaponTier].name} / ${armorById(hero.armor)?.name ?? "Traveler's Garb"}</div>
             <div class="xp-bar hero-xp"><div class="xp-fill" style="width:${Math.min(100, Math.round((hero.xp / xpForLevel(hero.level)) * 100))}%"></div></div>
           </div>
           <button class="toggle-btn party-toggle ${inParty ? "in" : ""}" data-act="toggle-party">

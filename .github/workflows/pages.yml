@@ -18,5 +18,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate game
+        run: npm run validate
       - name: Mirror main to gh-pages
         run: git push origin HEAD:gh-pages --force

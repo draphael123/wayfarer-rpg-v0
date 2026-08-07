@@ -36,7 +36,7 @@ function makeEffect(kind: StatusEffect["kind"], time: number, power: number, sou
 }
 
 /** The great foes — they hunt by threat, not by proximity or frailty. */
-const BOSS_KINDS = ["alpha", "warlord", "ogre", "rimeheart", "wyrm"];
+const BOSS_KINDS = ["alpha", "warlord", "ogre", "rimeheart", "wyrm", "bellwidow", "stormjaw"];
 
 export class Battle {
   units: Unit[] = [];
@@ -74,6 +74,9 @@ export class Battle {
   telegraphTime = 1.5;
   enemyHaste = 1;
   extraSpawn = 0;
+  tideLevel = 0;
+  tideHigh = false;
+  private lightningTimer = 7;
   castCounts: Record<string, number> = {};
   heroDeaths = 0;
   /** Per-hero battle ledger (keyed by heroIndex) — feeds the victory recap. */
@@ -118,8 +121,20 @@ export class Battle {
     for (let slot = 0; slot < roster.length; slot++) {
       const i = roster[slot];
       const t = roster.length === 1 ? 0.5 : slot / (roster.length - 1);
+      const formationX =
+        save.formation === "wedge"
+          ? slot === 0
+            ? 92
+            : slot === roster.length - 1
+              ? 42
+              : 64
+          : save.formation === "guard"
+            ? slot < Math.ceil(roster.length / 2)
+              ? 78
+              : 38
+            : 60 + Math.abs(t - 0.5) * 60;
       const pos: Vec = {
-        x: field.left + 60 + Math.abs(t - 0.5) * 60,
+        x: field.left + formationX,
         y: midY - spread + t * spread * 2,
       };
       const heroSave = save.heroes[i];
@@ -265,7 +280,7 @@ export class Battle {
       leap: null,
     });
     // harriers arrive on the wing
-    if (kind === "harrier") {
+    if (kind === "harrier" || kind === "galeharrier") {
       const bird = this.units[this.units.length - 1];
       bird.aloft = true;
       bird.supportTimer = 4 + Math.random() * 3;
@@ -523,14 +538,14 @@ export class Battle {
     if (vulnerable) amount *= 1 + vulnerable.power;
     // the pavise: blows from the front glance off, and friends crouch in its shadow
     if (target.team === "enemy" && source && source.team === "hero" && !opts.spell) {
-      if (target.enemyKind === "shieldbearer" && source.x < target.x) {
+      if ((target.enemyKind === "shieldbearer" || target.enemyKind === "brinecrawler") && source.x < target.x) {
         amount *= 0.45;
         if (Math.random() < 0.35) this.fx.floatText(target.x - target.radius, target.y - target.radius * 2.6, "blocked", "#c9d2dd", 10);
       } else if (
         target.enemyKind !== "shieldbearer" &&
         source.stats.range > 90 &&
         this.livingEnemies().some(
-          (p) => p.enemyKind === "shieldbearer" && p !== target && target.x > p.x && target.x - p.x < 110 && Math.abs(target.y - p.y) < 48,
+          (p) => (p.enemyKind === "shieldbearer" || p.enemyKind === "brinecrawler") && p !== target && target.x > p.x && target.x - p.x < 110 && Math.abs(target.y - p.y) < 48,
         )
       ) {
         amount *= 0.65;
@@ -2207,6 +2222,7 @@ export class Battle {
   update(dt: number, save: SaveData): void {
     this.saveRef = save;
     this.time += dt;
+    this.updateTerrain(dt);
     this.waveBanner = Math.max(0, this.waveBanner - dt);
     this.introBanner = Math.max(0, this.introBanner - dt);
     if (this.ultFlash) {
@@ -2399,6 +2415,47 @@ export class Battle {
     this.updateZones(dt);
     this.updateProjectiles(dt);
     this.updatePresentation(dt);
+  }
+
+  /** Stormbreak terrain affects both teams and can be turned against the enemy. */
+  private updateTerrain(dt: number): void {
+    const tide = this.stage.terrain === "tide" || this.stage.terrain === "tide-storm";
+    const storm = this.stage.terrain === "storm" || this.stage.terrain === "tide-storm";
+    if (tide) {
+      this.tideLevel = 0.5 - Math.cos((this.time / 18) * Math.PI * 2) * 0.5;
+      this.tideHigh = this.tideLevel > 0.58;
+      if (this.tideHigh) {
+        const waterline = this.field.top + (this.field.bottom - this.field.top) * 0.58;
+        for (const unit of this.units) {
+          if (!unit.alive || unit.y < waterline || unit.enemyKind === "reefhound") continue;
+          const slow = this.effect(unit, "slow");
+          if (slow) {
+            slow.time = Math.max(slow.time, 0.22);
+            slow.power = Math.max(slow.power, 0.22);
+          } else unit.effects.push(makeEffect("slow", 0.22, 0.22, null));
+        }
+      }
+    }
+    if (storm && this.state === "fighting" && !this.tutorialMode) {
+      this.lightningTimer -= dt;
+      if (this.lightningTimer <= 0 && !this.telegraphs.some((mark) => mark.kind === "lightning")) {
+        const owner = this.livingEnemies()[0] ?? this.livingHeroes()[0];
+        if (owner) {
+          const lanes = [0.25, 0.5, 0.75];
+          const lane = lanes[Math.floor(Math.random() * lanes.length)];
+          this.telegraphs.push({
+            x: this.field.left + (this.field.right - this.field.left) * lane,
+            y: this.field.top + (this.field.bottom - this.field.top) * (0.35 + Math.random() * 0.5),
+            radius: 68,
+            time: 0,
+            duration: 2.25,
+            owner,
+            kind: "lightning",
+          });
+        }
+        this.lightningTimer = 9 + Math.random() * 4;
+      }
+    }
   }
 
   private updateEffects(unit: Unit, dt: number): void {
@@ -2685,7 +2742,7 @@ export class Battle {
       this.updateBonecaller(enemy, dt);
       return;
     }
-    if (enemy.enemyKind === "shaman" || enemy.enemyKind === "snowhag") {
+    if (enemy.enemyKind === "shaman" || enemy.enemyKind === "snowhag" || enemy.enemyKind === "saltwitch" || enemy.enemyKind === "stormcaller") {
       this.updateShaman(enemy, dt);
       return;
     }
@@ -2693,11 +2750,11 @@ export class Battle {
       this.updateStalker(enemy, dt);
       return;
     }
-    if (enemy.enemyKind === "harrier") {
+    if (enemy.enemyKind === "harrier" || enemy.enemyKind === "galeharrier") {
       this.updateHarrier(enemy, dt);
       return;
     }
-    if (enemy.enemyKind === "drummer") {
+    if (enemy.enemyKind === "drummer" || enemy.enemyKind === "bellkeeper") {
       this.updateDrummer(enemy, dt);
       return;
     }
@@ -2705,7 +2762,7 @@ export class Battle {
       this.updateBanner(enemy, dt);
       return;
     }
-    if (enemy.enemyKind === "wyrm") {
+    if (enemy.enemyKind === "wyrm" || enemy.enemyKind === "stormjaw") {
       this.updateWyrm(enemy, dt);
       return;
     }
@@ -2718,7 +2775,7 @@ export class Battle {
       this.fx.addShake(5);
       audio.play("staggerBreak");
     }
-    if (enemy.enemyKind === "rimeheart") this.updateRimeheart(enemy, dt);
+    if (enemy.enemyKind === "rimeheart" || enemy.enemyKind === "bellwidow") this.updateRimeheart(enemy, dt);
     if (enemy.enemyKind === "alpha") {
       this.updateAlpha(enemy, dt);
       return;
@@ -3691,12 +3748,25 @@ export class Battle {
     for (let i = this.telegraphs.length - 1; i >= 0; i--) {
       const mark = this.telegraphs[i];
       mark.time += dt;
-      if (!mark.owner.alive) {
+      if (!mark.owner.alive && mark.kind !== "lightning") {
         this.telegraphs.splice(i, 1);
         continue;
       }
       if (mark.time >= mark.duration) {
         this.telegraphs.splice(i, 1);
+        if (mark.kind === "lightning") {
+          for (const unit of this.units) {
+            if (!unit.alive || Math.hypot(unit.x - mark.x, unit.y - mark.y) >= mark.radius + unit.radius) continue;
+            this.damage(unit, 16 * this.stage.scale, null, { spell: true, color: "#b9f4ff" });
+            if (unit.alive && this.tideHigh) unit.effects.push(makeEffect("stun", 0.55, 1, null));
+          }
+          this.fx.burst(mark.x, mark.y - 12, "#d9fbff", 28, 240, { glow: true, gravity: 40 });
+          this.fx.ring(mark.x, mark.y, mark.radius + 12, "#8de7f2", { width: 6, life: 0.55 });
+          this.addDecal(mark.x, mark.y, "scorch", 46);
+          this.fx.addShake(10);
+          audio.play("glacialGroan");
+          continue;
+        }
         if (mark.kind === "meteor") {
           // the star lands
           const casterAttrs = this.saveRef && mark.owner.heroIndex >= 0 ? this.saveRef.heroes[mark.owner.heroIndex].attrs : null;
