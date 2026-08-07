@@ -91,7 +91,7 @@ export type EnemyRole = "vanguard" | "tank" | "hunter" | "assassin" | "artillery
 
 export type EffectKind =
   | "stun" | "slow" | "silence" | "taunt" | "shield" | "haste" | "guard" | "burn" | "vulnerable"
-  | "frozen" | "conductive" | "brittle" | "poisoned" | "exposed" | "bleeding" | "shrouded";
+  | "frozen" | "conductive" | "brittle" | "poisoned" | "exposed" | "bleeding" | "shrouded" | "cursed";
 
 export interface StatusEffect {
   kind: EffectKind;
@@ -311,6 +311,8 @@ export interface StageDef {
   scale: number; // enemy stat multiplier
   xpReward: number;
   terrain?: "tide" | "storm" | "tide-storm" | "cinder" | "overgrowth" | "mirage" | "sanctified" | "hunt" | "void";
+  /** Most roads cross the field eastward; selected routes descend into the scene. */
+  travelDirection?: "east" | "south";
 }
 
 export interface HeroSave {
@@ -363,6 +365,7 @@ export interface SaveData {
   seenIntro: boolean; // first-run tutorial prompt shown
   stageStats: Record<number, { bestTime: number; clears: number }>; // per-stage clear records
   arenaRecords: Record<number, { clears: number; bestTime: number }>;
+  arenaTrialRecords: Record<string, { clears: number; bestTime: number }>;
   contractRecords: Record<string, { clears: number; bestTime: number }>;
   arenaMarks: number;
   contractRenown: number;

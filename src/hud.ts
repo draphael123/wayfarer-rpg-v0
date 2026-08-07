@@ -515,7 +515,7 @@ export class Hud {
     // teach the new game, once each, at the moment it matters
     if (!this.marchHintShown && this.battle.marching) {
       this.marchHintShown = true;
-      this.showHint("The road goes on — the band marches to the next fight");
+      this.showHint(this.battle.descending ? "The path drops lower — the band descends to the next room" : "The road goes on — the band marches to the next fight");
     }
     if (!this.threatHintShown && this.battle.bossRef?.alive && this.battle.cinematic <= 0 && this.battle.state === "fighting") {
       this.threatHintShown = true;
@@ -828,7 +828,7 @@ export class Hud {
     const x = this.width / 2 - w / 2;
     const y = 14;
     ctx.fillStyle = "rgba(20, 14, 30, 0.7)";
-    roundRect(ctx, x - 8, y - 4, w + 16, 30, 10);
+    roundRect(ctx, x - 8, y - 4, w + 16, 34, 10);
     ctx.fill();
     ctx.font = "800 11px 'Trebuchet MS', Verdana, sans-serif";
     ctx.textAlign = "center";
@@ -858,6 +858,20 @@ export class Hud {
       roundRect(ctx, x, y + 11, w * frac, 3, 1.5);
       ctx.fill();
     }
+    const currentHp = Math.max(0, Math.ceil(boss.hp));
+    const maxHp = Math.max(1, Math.round(boss.stats.maxHp));
+    const percent = boss.alive && frac > 0 ? Math.max(1, Math.ceil(frac * 100)) : 0;
+    const hpLabel = `${currentHp.toLocaleString("en-US")} / ${maxHp.toLocaleString("en-US")} · ${percent}%`;
+    ctx.save();
+    ctx.font = "800 8.5px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = "rgba(20, 10, 20, 0.92)";
+    ctx.strokeText(hpLabel, this.width / 2, y + 15.5);
+    ctx.fillStyle = "#fff4df";
+    ctx.fillText(hpLabel, this.width / 2, y + 15.5);
+    ctx.restore();
     // poise: the amber bar that promises a window
     if (this.battle.bossStaggerMax > 0) {
       const sfrac = Math.min(1, this.battle.bossStagger / this.battle.bossStaggerMax);
@@ -963,7 +977,7 @@ export class Hud {
         ctx.fillStyle = "#e0c896";
         ctx.font = "700 10.5px 'Trebuchet MS', Verdana, sans-serif";
         ctx.textAlign = "left";
-        ctx.fillText("the band marches on…", 258, 49);
+        ctx.fillText(this.battle.descending ? "the band descends…" : "the band marches on…", 258, 49);
         ctx.globalAlpha = 1;
       }
     }
@@ -1095,8 +1109,8 @@ export class Hud {
     ctx.strokeStyle = "rgba(20, 16, 28, 0.8)";
     const text =
       this.battle.waveIndex >= this.battle.stage.waves.length - 1
-        ? "Final Wave!"
-        : `Wave ${this.battle.waveIndex + 1}`;
+        ? "Final Room!"
+        : `Room ${this.battle.waveIndex + 1}`;
     ctx.strokeText(text, this.width / 2, 120);
     ctx.fillStyle = "#ffe9a3";
     ctx.fillText(text, this.width / 2, 120);

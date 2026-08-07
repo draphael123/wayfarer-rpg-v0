@@ -689,10 +689,12 @@ export function drawBackground(
   const camY = opts.camY ?? 0;
   const dusk = opts.dusk ?? 0;
   const travel = opts.travel ?? 0;
+  const descending = stage.travelDirection === "south";
+  const horizontalTravel = descending ? 0 : travel;
   // the far layer rides WITH the camera (so it always fills the view) and lags
   // behind the world inside its patterns — march-scroll and camera pan share
   // one parallax clock
-  const px = travel + camX;
+  const px = horizontalTravel + camX;
   ctx.save();
   ctx.translate(camX, camY * 0.72);
   const M = OVERSCAN;
@@ -859,7 +861,7 @@ export function drawBackground(
   // ground: cached static layer, tiled across wherever the camera looks
   const gl = groundLayer(stage, w, h, horizon);
   const gspan = w + M * 2;
-  const goff = ((travel * 0.9) % gspan + gspan) % gspan;
+  const goff = ((horizontalTravel * 0.9) % gspan + gspan) % gspan;
   const k0 = Math.floor((camX - M + goff) / gspan);
   for (let k = k0; k * gspan - goff - M < camX + w + M; k++) {
     ctx.drawImage(gl, k * gspan - goff - M, horizon - 12, gspan, h - (horizon - 12) + M);
@@ -869,13 +871,44 @@ export function drawBackground(
     ctx.fillRect(camX - M, horizon, w + M * 2, h - horizon + M);
   }
   // winter grounds get their own dressing over the cached terrain
-  if (stage.id >= 6 && stage.id < 12) drawWinterGround(ctx, stage, w, h, horizon, time, travel, camX);
+  if (stage.id >= 6 && stage.id < 12) drawWinterGround(ctx, stage, w, h, horizon, time, horizontalTravel, camX);
+
+  if (descending) {
+    // A descending route is read from the ground itself: the trail narrows
+    // toward the ridge while cross-steps and ledges stream upward underfoot.
+    const span = Math.max(80, h - horizon + 64);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255, 238, 198, 0.16)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([13, 10]);
+    ctx.beginPath();
+    ctx.moveTo(w * 0.43, horizon - 4);
+    ctx.quadraticCurveTo(w * 0.34, horizon + (h - horizon) * 0.52, w * 0.28, h + 26);
+    ctx.moveTo(w * 0.57, horizon - 4);
+    ctx.quadraticCurveTo(w * 0.66, horizon + (h - horizon) * 0.52, w * 0.72, h + 26);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    for (let i = 0; i < 7; i++) {
+      const y = horizon + ((((i * 62 - travel * 0.92) % span) + span) % span) - 18;
+      const depth = Math.max(0, Math.min(1, (y - horizon) / Math.max(1, h - horizon)));
+      const half = 42 + depth * w * 0.18;
+      ctx.globalAlpha = 0.12 + depth * 0.12;
+      ctx.beginPath();
+      ctx.moveTo(w / 2 - half, y);
+      ctx.quadraticCurveTo(w / 2, y + 6, w / 2 + half, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   // texture: swaying tufts + stones — world-anchored, windowed to the camera
   const wrapG = (v: number, span: number) => camX - M + ((((v - (camX - M)) % span) + span) % span);
   for (let i = 0; i < 22; i++) {
-    const gx = wrapG(hash01(i * 127 + stage.id * 3) * w - travel * 0.9, w + M * 2);
-    const gy = horizon + 10 + hash01(i * 311 + stage.id) * (h - horizon - 26);
+    const gx = wrapG(hash01(i * 127 + stage.id * 3) * w - horizontalTravel * 0.9, w + M * 2);
+    const groundSpan = Math.max(40, h - horizon - 26);
+    const gy = descending
+      ? horizon + 10 + ((((hash01(i * 311 + stage.id) * groundSpan - travel * 0.9) % groundSpan) + groundSpan) % groundSpan)
+      : horizon + 10 + hash01(i * 311 + stage.id) * groundSpan;
     let sway = Math.sin(time * 1.6 + i) * 1.4;
     if (opts.units) {
       for (const u of opts.units) {
@@ -895,7 +928,10 @@ export function drawBackground(
   }
   for (let i = 0; i < 6; i++) {
     const gx = wrapG(hash01(i * 71 + stage.id * 19) * w, w + M * 2);
-    const gy = horizon + 20 + hash01(i * 37 + 9) * (h - horizon - 40);
+    const stoneSpan = Math.max(36, h - horizon - 40);
+    const gy = descending
+      ? horizon + 20 + ((((hash01(i * 37 + 9) * stoneSpan - travel * 0.9) % stoneSpan) + stoneSpan) % stoneSpan)
+      : horizon + 20 + hash01(i * 37 + 9) * stoneSpan;
     ctx.beginPath();
     ctx.ellipse(gx, gy, 6 + hash01(i * 2) * 5, 4 + hash01(i * 5) * 3, 0, 0, Math.PI);
     outlined(ctx, "rgba(255,255,255,0.18)", 1.6);
@@ -2103,6 +2139,7 @@ function drawEffectPips(ctx: CanvasRenderingContext2D, unit: Unit, x: number, y:
     if (effect.kind === "exposed") marks.push({ color: "#ffe9a3", label: "☼" });
     if (effect.kind === "bleeding") marks.push({ color: "#d95763", label: "♦" });
     if (effect.kind === "shrouded") marks.push({ color: "#a89bd8", label: "◐" });
+    if (effect.kind === "cursed") marks.push({ color: "#b7a5d6", label: "☠" });
   }
   if (!marks.length) return;
   ctx.font = "10px sans-serif";
@@ -5922,6 +5959,50 @@ export function drawUnits(ctx: CanvasRenderingContext2D, battle: Battle, save: S
     battle.tutorialMode || battle.stage.id >= 4 || battle.stage.waves.length <= 1
       ? 0
       : (Math.max(0, battle.waveIndex) / (battle.stage.waves.length - 1)) * 0.8;
+  // Raised servants occupy real space and travel toward their quarry. Their
+  // small, translucent silhouette keeps them readable without competing with
+  // heroes for selection, health bars, or HUD space.
+  for (const servant of [...battle.necroServants].sort((a, b) => a.y - b.y)) {
+    const color = ELEMENT_MARK_COLORS[servant.element];
+    const fade = Math.min(1, servant.life / 1.2, (servant.maxLife - servant.life + 0.35) / 0.7);
+    const bob = Math.sin(servant.bob) * 2.4;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, fade) * 0.82;
+    ctx.fillStyle = "rgba(10,8,16,.42)";
+    ctx.beginPath();
+    ctx.ellipse(servant.x, servant.y + 2, 14, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.translate(servant.x, servant.y - 14 + bob);
+    ctx.strokeStyle = "#241d2c";
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(-9, 14);
+    ctx.quadraticCurveTo(-13, 2, -7, -5);
+    ctx.quadraticCurveTo(0, -12, 7, -5);
+    ctx.quadraticCurveTo(13, 2, 9, 14);
+    ctx.quadraticCurveTo(4, 9, 0, 15);
+    ctx.quadraticCurveTo(-4, 9, -9, 14);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#ded8c4";
+    ctx.beginPath();
+    ctx.arc(0, -9, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#241d2c";
+    ctx.beginPath();
+    ctx.arc(-2.5, -10, 1.3, 0, Math.PI * 2);
+    ctx.arc(2.5, -10, 1.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(0, -3, 15, Math.PI * 0.15, Math.PI * 0.85);
+    ctx.stroke();
+    ctx.restore();
+  }
   const sorted = [...battle.units].sort((a, b) => a.y - b.y);
   for (const unit of sorted) {
     if (!unit.alive) drawFallen(ctx, unit);

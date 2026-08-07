@@ -552,9 +552,9 @@ export const HERO_STARTER_ABILITIES: readonly (readonly [string, string])[] = [
   ["hailknives", "frostwake"],
 ];
 
-/** Each companion has a believable road behind them. Founders still wait for
- * the player's level-five choice; anyone hired in the Tavern arrives sworn to
- * this Path, with a coherent Q/W/R kit that can be changed later. */
+/** Each companion has a believable direction they may grow toward. These are
+ * Path recommendations, not starting classes: every recruit remains unsworn
+ * and has no ultimate until the player chooses a Discipline and Attunement. */
 export const HERO_STARTER_PATHS: readonly HeroStarterPath[] = [
   { discipline: "knight", element: "earth", reason: "Bram's oath was forged by holding ground others had abandoned." },
   { discipline: "archer", element: "storm", reason: "Wren reads crosswinds and changes lanes before the enemy can close." },
@@ -2062,7 +2062,7 @@ for (const kind of Object.keys(ENEMY_AFFINITIES) as EnemyKind[]) {
   });
 }
 
-export const STAGES: StageDef[] = [
+const CAMPAIGN_STAGES: StageDef[] = [
   {
     id: 0,
     name: "Millbrook Fields",
@@ -2306,6 +2306,65 @@ export const STAGES: StageDef[] = [
   },
   ...LATE_ROAD_STAGES,
 ];
+
+// Room counts are an authored rhythm, not a universal three-beat template.
+// Reflowing expands entries into individuals and packs them back in order, so
+// the enemy roster, XP economy and regional ecology stay exactly the same.
+const SHORT_ROUTE_STAGES = new Set([6, 12, 18, 24, 30, 36, 42, 48, 54]);
+const LONG_ROUTE_STAGES = new Set([2, 8, 14, 20, 26, 32, 38, 44, 50, 56]);
+const DESCENT_STAGES = new Set([2, 9, 13, 19, 25, 32, 38, 43, 50, 55]);
+
+function reflowRooms(stage: StageDef, roomCount: number): StageDef["waves"] {
+  const foes = stage.waves.flatMap((wave) => wave.flatMap((entry) => Array.from({ length: entry.count }, () => entry.kind)));
+  const rooms: StageDef["waves"] = [];
+  let cursor = 0;
+  for (let room = 0; room < roomCount; room++) {
+    const remainingRooms = roomCount - room;
+    const take = Math.ceil((foes.length - cursor) / remainingRooms);
+    const kinds = foes.slice(cursor, cursor + take);
+    cursor += take;
+    const packed: StageDef["waves"][number] = [];
+    for (const kind of kinds) {
+      const prior = packed[packed.length - 1];
+      if (prior?.kind === kind) prior.count++;
+      else packed.push({ kind, count: 1 });
+    }
+    rooms.push(packed);
+  }
+  return rooms;
+}
+
+function splitLargestRoom(stage: StageDef): StageDef["waves"] {
+  let splitAt = 0;
+  let largest = 0;
+  stage.waves.forEach((wave, index) => {
+    const size = wave.reduce((total, entry) => total + entry.count, 0);
+    if (size > largest) { largest = size; splitAt = index; }
+  });
+  const source = stage.waves[splitAt].flatMap((entry) => Array.from({ length: entry.count }, () => entry.kind));
+  const halves = [source.slice(0, Math.ceil(source.length / 2)), source.slice(Math.ceil(source.length / 2))];
+  const split = halves.map((kinds) => {
+    const packed: StageDef["waves"][number] = [];
+    for (const kind of kinds) {
+      const prior = packed[packed.length - 1];
+      if (prior?.kind === kind) prior.count++;
+      else packed.push({ kind, count: 1 });
+    }
+    return packed;
+  });
+  return [...stage.waves.slice(0, splitAt), ...split, ...stage.waves.slice(splitAt + 1)];
+}
+
+export const STAGES: StageDef[] = CAMPAIGN_STAGES.map((stage) => {
+  const roomCount = SHORT_ROUTE_STAGES.has(stage.id) ? 2 : LONG_ROUTE_STAGES.has(stage.id) ? 4 : stage.waves.length;
+  return {
+    ...stage,
+    travelDirection: DESCENT_STAGES.has(stage.id) ? "south" : "east",
+    waves: LONG_ROUTE_STAGES.has(stage.id)
+      ? splitLargestRoom(stage)
+      : roomCount === stage.waves.length ? stage.waves : reflowRooms(stage, roomCount),
+  };
+});
 
 interface PathLore {
   name: string;
@@ -2775,7 +2834,7 @@ const DISCIPLINE_TECHNIQUE_COPY: Record<DisciplineId, { name: string; blurb: str
   archer: { name: "Pinning Shot", blurb: "Drive a precise shot downrange and punish the first enemy caught in its path." },
   priest: { name: "Guiding Light", blurb: "Mend one ally while judging the nearest threat beneath the same light." },
   mage: { name: "Arcane Pulse", blurb: "Collapse raw force at a chosen point and slow everything caught inside." },
-  necromancer: { name: "Raise Servant", blurb: "Call a short-lived spectral servant; enemy deaths leave Remains that strengthen the rite." },
+  necromancer: { name: "Gravebind", blurb: "Curse one foe to rise as a servant when slain. A nearby corpse rises immediately; enemy deaths leave Remains for greater rites." },
 };
 
 const DISCIPLINE_TECHNIQUES = new Map<DisciplineId, AbilityDef>();
@@ -3433,6 +3492,34 @@ export function contractFulfilled(contract: ContractDef, result: ContractResult)
 
 export function arenaPurse(stage: number, firstClear: boolean): number {
   return 70 + stage * 9 + (firstClear ? 120 : 0);
+}
+
+export interface ArenaTrialDef {
+  id: string;
+  name: string;
+  subtitle: string;
+  bossStages: readonly [number, number, number];
+  marks: number;
+  purse: number;
+  scale: number;
+}
+
+/** Curated boss gauntlets. The party carries health and cooldowns from one
+ * contender to the next; the later foe sets the arena's baseline strength. */
+export const ARENA_TRIALS: readonly ArenaTrialDef[] = [
+  { id: "fang-horn-crown", name: "Trial of Fang, Horn & Crown", subtitle: "The first three names cut into the Ring.", bossStages: [4, 5, 11], marks: 5, purse: 420, scale: 0.92 },
+  { id: "bell-jaw-maw", name: "Trial of Bell, Jaw & Maw", subtitle: "Tidewater gives way to the furnace mouth.", bossStages: [15, 17, 23], marks: 6, purse: 620, scale: 0.96 },
+  { id: "root-grove-night", name: "Trial of Root, Grove & Night", subtitle: "The living wood walks beneath a false moon.", bossStages: [27, 29, 35], marks: 7, purse: 840, scale: 1 },
+  { id: "gold-wing-storm", name: "Trial of Gold, Wing & Storm", subtitle: "Judgment climbs until the sky breaks.", bossStages: [39, 41, 47], marks: 8, purse: 1080, scale: 1.04 },
+  { id: "horn-stag-road", name: "Trial of Horn, Stag & Road", subtitle: "The last hunt ends where every journey opens.", bossStages: [51, 53, 59], marks: 10, purse: 1400, scale: 1.08 },
+] as const;
+
+export function arenaTrialById(id: string | null | undefined): ArenaTrialDef | null {
+  return ARENA_TRIALS.find((trial) => trial.id === id) ?? null;
+}
+
+export function arenaTrialPurse(trial: ArenaTrialDef, firstClear: boolean): number {
+  return trial.purse + (firstClear ? Math.round(trial.purse * 0.5) : 0);
 }
 
 export function contractPurse(contract: ContractDef, firstClear: boolean, fulfilled: boolean): number {

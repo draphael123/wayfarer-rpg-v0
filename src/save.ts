@@ -5,17 +5,16 @@ import {
   ATTR_KEYS,
   callingById,
   CALLING_MASTERY_LEVELS,
+  CALLING_UNLOCK_LEVEL,
   disciplineById,
   elementById,
   HERO_STARTER_ABILITIES,
-  HERO_STARTER_PATHS,
   HEROES,
   LEGACY_ADVANCED_BRANCH,
   LEGACY_CALLING_PATHS,
   MAX_EQUIPPED,
   MAX_LEVEL,
   pathId,
-  pathAbilities,
   POINTS_PER_LEVEL,
   resolvedPathAbilities,
   SPECIALIZATION_MASTERY_LEVELS,
@@ -105,21 +104,16 @@ function defaultHero(index: number): HeroSave {
   return { attrs, level: 1, xp: 0, equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null, discipline: null, element: null, callingLevels: {}, masteredCallings: [], advancedCallings: {}, specializationLevels: {}, masteredSpecializations: [], elementLevels: {}, masteredElements: [] };
 }
 
-/** Tavern hires arrive with a complete authored Path. Existing or imported
- * choices always win, so this never overwrites a player's build. */
-export function assignRecruitStarterPath(hero: HeroSave, index: number): ReturnType<typeof callingById> {
-  if (hero.calling) return callingById(hero.calling);
-  const starter = HERO_STARTER_PATHS[index];
-  if (!starter) return null;
-  const calling = callingById(pathId(starter.discipline, starter.element));
-  if (!calling) return null;
-  hero.calling = calling.id;
-  hero.discipline = starter.discipline;
-  hero.element = starter.element;
-  hero.equipped = pathAbilities(starter.discipline, starter.element).map((ability) => ability.id);
-  hero.callingLevels[calling.id] ??= 0;
-  hero.elementLevels[starter.element] ??= 0;
-  return calling;
+/** A new hire is road-trained but unsworn. Their two personal techniques make
+ * them useful immediately; choosing a Path later is what grants an ultimate. */
+export function assignRecruitRoadKit(hero: HeroSave, index: number): string[] {
+  const equipped = [...(HERO_STARTER_ABILITIES[index] ?? [])].slice(0, MAX_EQUIPPED);
+  hero.calling = null;
+  hero.advCalling = null;
+  hero.discipline = null;
+  hero.element = null;
+  hero.equipped = equipped;
+  return equipped;
 }
 
 /** Out of the box: 1-4 picks a hero, Q/W cast chosen abilities, R casts the ultimate. */
@@ -162,6 +156,7 @@ export function defaultSave(): SaveData {
     seenIntro: false,
     stageStats: {},
     arenaRecords: {},
+    arenaTrialRecords: {},
     contractRecords: {},
     arenaMarks: 0,
     contractRenown: 0,
@@ -453,6 +448,13 @@ export function loadSave(): SaveData {
       for (const [id, progress] of Object.entries(hero.specializationLevels)) {
         if (progress >= SPECIALIZATION_MASTERY_LEVELS && !hero.masteredSpecializations.includes(id)) hero.masteredSpecializations.push(id);
       }
+      // Earlier builds auto-swore Tavern hires. A sub-level-five recruit could
+      // never have chosen that Path legitimately, so safely return those fresh
+      // companions to their personal road kit. Seasoned and player-built Paths
+      // remain untouched.
+      if (i !== 0 && i !== 3 && hero.recruited && hero.level < CALLING_UNLOCK_LEVEL && hero.calling) {
+        assignRecruitRoadKit(hero, i);
+      }
       if (hero.calling) {
         const directChoice = migrateAdvancedId(hero.calling, rawAdvanced);
         if (directChoice) migratedChoices[hero.calling] = directChoice;
@@ -495,6 +497,7 @@ export function loadSave(): SaveData {
       parsed.unlockedStage = 18;
     }
     parsed.arenaRecords = cleanBattleRecords(parsed.arenaRecords) as SaveData["arenaRecords"];
+    parsed.arenaTrialRecords = cleanBattleRecords(parsed.arenaTrialRecords) as SaveData["arenaTrialRecords"];
     parsed.contractRecords = cleanBattleRecords(parsed.contractRecords) as SaveData["contractRecords"];
     parsed.arenaMarks = finiteInteger(parsed.arenaMarks, 0, 0, 1_000_000);
     parsed.contractRenown = finiteInteger(parsed.contractRenown, 0, 0, 1_000_000);

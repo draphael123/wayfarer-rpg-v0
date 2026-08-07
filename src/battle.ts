@@ -68,6 +68,23 @@ export interface FieldRect {
 
 export type BattleState = "fighting" | "wavebreak" | "victory" | "defeat";
 
+/** Raised dead are battlefield actors rather than recolored projectiles. They
+ * persist, pursue priority enemies, and express their master's Attunement with
+ * a different on-hit answer. They are deliberately not party Units: enemies
+ * cannot mistake a disposable shade for a hero and the HUD stays readable. */
+export interface NecroServant {
+  id: number;
+  owner: Unit;
+  element: ElementId;
+  x: number;
+  y: number;
+  life: number;
+  maxLife: number;
+  attackTimer: number;
+  strength: number;
+  bob: number;
+}
+
 function makeEffect(kind: StatusEffect["kind"], time: number, power: number, source: Unit | null = null): StatusEffect {
   return { kind, time, power, source };
 }
@@ -82,6 +99,7 @@ export class Battle {
   zones: GroundZone[] = [];
   telegraphs: Telegraph[] = [];
   bossObjectives: BossObjective[] = [];
+  necroServants: NecroServant[] = [];
   state: BattleState = "wavebreak";
   waveIndex = -1;
   /** Enemies still crashing through the treeline — waves arrive gradually. */
@@ -93,6 +111,9 @@ export class Battle {
   /** True while the band is walking to the next encounter (the old wavebreak). */
   get marching(): boolean {
     return this.state === "wavebreak" && this.waveIndex >= 0;
+  }
+  get descending(): boolean {
+    return this.stage.travelDirection === "south";
   }
   /** Recent damage each hero (by id) has dealt to bosses; decays in seconds.
    *  Pour damage in and the boss turns on YOU — that's how you peel it off the healer. */
@@ -201,10 +222,15 @@ export class Battle {
               ? 78
               : 38
             : 60 + Math.abs(t - 0.5) * 60;
-      const pos: Vec = {
-        x: field.left + formationX,
-        y: midY - spread + t * spread * 2,
-      };
+      const pos: Vec = this.descending
+        ? {
+            x: (field.left + field.right) / 2 - spread + t * spread * 2,
+            y: field.top + 48 + formationX * 0.22,
+          }
+        : {
+            x: field.left + formationX,
+            y: midY - spread + t * spread * 2,
+          };
       const heroSave = save.heroes[i];
       // an oath only holds while its stat requirements are still met
       const sworn = callingById(heroSave.calling);
@@ -234,13 +260,13 @@ export class Battle {
         ultCharge: 0,
         pathResource: oath?.discipline === "warrior" || oath?.discipline === "necromancer" ? 0 : undefined,
         entered: true,
-        x: pos.x,
-        y: pos.y,
+        x: this.descending ? pos.x : field.left - 72 - slot * 24,
+        y: this.descending ? field.top - 72 - slot * 24 : pos.y,
         radius: 15,
         stats,
         hp: stats.maxHp,
         attackTimer: 0,
-        moveTarget: null,
+        moveTarget: pos,
         attackTarget: null,
         healTarget: null,
         stance: (oath?.discipline ?? heroSave.discipline) === "priest" || heroSave.attrs.spi >= 6 ? "heal" : "attack",
@@ -268,6 +294,7 @@ export class Battle {
         idleTimer: 3 + Math.random() * 4,
         idleAnim: 0,
         leap: null,
+        marching: true,
       });
       const ward = talentMods(heroSave.talents).startShield + trinketMods(heroSave.trinket).startShield;
       if (ward > 0) {
@@ -295,12 +322,16 @@ export class Battle {
   spawnEnemy(kind: EnemyKind, overrides: { x?: number; y?: number; scale?: number } = {}): void {
     const def = ENEMIES[kind];
     const scale = (overrides.scale ?? this.stage.scale) * this.difficultyMult;
-    const y = overrides.y ?? this.field.top + 20 + Math.random() * (this.field.bottom - this.field.top - 40);
+    const living = this.livingHeroes();
+    const y = overrides.y ?? (this.descending
+      ? Math.min(this.field.bottom + 30, (living.length ? Math.max(...living.map((h) => h.y)) : this.field.top + 100) + 360 + Math.random() * 70)
+      : this.field.top + 20 + Math.random() * (this.field.bottom - this.field.top - 40));
     // foes are MET on the road, about a screen ahead of wherever the band has
     // pushed to — the wide field means the fight travels, not the walking
-    const living = this.livingHeroes();
     const frontier = living.length ? Math.max(...living.map((h) => h.x)) : this.field.left + 200;
-    const x = overrides.x ?? Math.min(this.field.right + 30, frontier + 620 + Math.random() * 90);
+    const x = overrides.x ?? (this.descending
+      ? this.field.left + 32 + Math.random() * (this.field.right - this.field.left - 64)
+      : Math.min(this.field.right + 30, frontier + 620 + Math.random() * 90));
     this.units.push({
       id: this.nextUnitId++,
       name: def.name,
@@ -338,7 +369,7 @@ export class Battle {
       effects: [],
       elementBuildup: {},
       lastBuildElement: null,
-      facing: -1,
+        facing: this.descending ? (x > (this.field.left + this.field.right) / 2 ? -1 : 1) : -1,
       bobPhase: Math.random() * Math.PI * 2,
       lunge: 0,
       lungeDir: { x: -1, y: 0 },
@@ -468,8 +499,8 @@ export class Battle {
     for (const t of this.livingHeroes()) {
       if (t.calling === "trapper") {
         this.zones.push({
-          x: this.field.right - 150,
-          y: (this.field.top + this.field.bottom) / 2,
+          x: this.descending ? (this.field.left + this.field.right) / 2 : this.field.right - 150,
+          y: this.descending ? this.field.bottom - 70 : (this.field.top + this.field.bottom) / 2,
           radius: 75,
           time: 0,
           duration: 6,
@@ -953,6 +984,15 @@ export class Battle {
       target.effects = target.effects.filter((effect) => effect !== brittle);
       this.fx.floatText(target.x, target.y - target.radius * 3 - 22, "FRACTURED +20%", ELEMENT_COLORS.earth, 11);
     }
+    if (triggeredReaction) {
+      const reactionColor = damageElement === "physical" ? ELEMENT_COLORS.earth : ELEMENT_COLORS[damageElement];
+      this.fx.ring(target.x, target.y, target.radius * 3.1, reactionColor, { width: 5, life: 0.48 });
+      this.fx.ring(target.x, target.y, target.radius * 2.1, "rgba(255,255,255,.88)", { width: 2, life: 0.3 });
+      this.fx.burst(target.x, target.y - target.radius * 0.5, reactionColor, 11, 115, { glow: true, gravity: 45, life: 0.42 });
+      this.hitstop = Math.max(this.hitstop, 0.065);
+      this.zoomPunch = Math.max(this.zoomPunch, 0.34);
+      audio.reaction(damageElement === "physical" ? "earth" : damageElement);
+    }
     if (
       triggeredReaction &&
       source?.team === "hero" &&
@@ -991,6 +1031,8 @@ export class Battle {
         if (!this.elementWeakShown.has(key)) {
           this.elementWeakShown.add(key);
           this.fx.floatText(target.x, target.y - target.radius * 3 - 12, `WEAK +${Math.round(bonus * 100)}%`, ELEMENT_COLORS[element], 12);
+          this.fx.ring(target.x, target.y, target.radius * 2.5, ELEMENT_COLORS[element], { width: 3.5, life: 0.46 });
+          this.fx.burst(target.x, target.y - 8, ELEMENT_COLORS[element], 7, 80, { glow: true, gravity: 30, life: 0.36 });
         }
       } else if (phaseResistance === element) {
         const reduction = boss ? 0.1 : 0.15;
@@ -998,6 +1040,7 @@ export class Battle {
         if (!this.elementResistShown.has(key)) {
           this.elementResistShown.add(key);
           this.fx.floatText(target.x, target.y - target.radius * 3 - 12, `RESISTS -${Math.round(reduction * 100)}%`, "#c9c2b8", 11);
+          this.fx.ring(target.x, target.y, target.radius * 2.3, "#c9c2b8", { width: 2, life: 0.4 });
         }
       }
     }
@@ -1238,7 +1281,7 @@ export class Battle {
       target.lungeDir = recoil;
     }
     target.hitFlash = amount > 22 ? 0.26 : 0.2;
-    if (this.saveRef?.damageNumbers !== false) {
+    if (!lethal && this.saveRef?.damageNumbers !== false) {
       this.fx.floatText(
         target.x + (Math.random() * 16 - 8),
         target.y - target.radius - 14,
@@ -1256,8 +1299,8 @@ export class Battle {
       this.fx.burst(target.x, target.y - target.radius * 0.6, opts.color ?? "#e8564a", 5, 70);
     }
     if (lethal) {
-      // killing blow: bigger, golder, longer
-      if (this.saveRef?.damageNumbers !== false) this.fx.floatText(target.x, target.y - target.radius - 26, `${amount}`, "#ffd76b", 20);
+      // One killing number replaces the old stacked normal + lethal pair.
+      if (this.saveRef?.damageNumbers !== false) this.fx.floatText(target.x, target.y - target.radius - 26, `✦ ${amount}`, "#ffd76b", 20);
       this.hitstop = Math.max(this.hitstop, 0.09);
     }
     if (target.team === "enemy" && source && source.team === "hero" && !target.aggro) {
@@ -1370,6 +1413,7 @@ export class Battle {
   }
 
   private kill(unit: Unit, killer: Unit | null = null, impactPlayed = false): void {
+    const deathCurse = unit.effects.find((effect) => effect.kind === "cursed" && effect.source?.alive);
     if (unit.team === "hero") this.heroDeaths++;
     // a VENGEFUL elite doesn't go quietly — back away from the body
     if (unit.team === "enemy" && unit.affix === "vengeful") {
@@ -1476,6 +1520,30 @@ export class Battle {
         ally.effects = ally.effects.filter((e) => e.kind !== "haste" || e.power > 1.13);
         ally.effects.push(makeEffect("haste", 2, 1.12, killer));
       }
+    }
+    // Gravebind is a promise made before the kill: whoever lands the final
+    // blow, the cursed body answers the Necromancer who marked it.
+    if (unit.team === "enemy" && deathCurse?.source?.discipline === "necromancer" && deathCurse.source.element) {
+      const necro = deathCurse.source;
+      const necroElement = necro.element as ElementId;
+      const empowered = BOSS_KINDS.includes(unit.enemyKind ?? "") || deathCurse.power >= 2;
+      this.raiseNecroServant(necro, necroElement, unit.x, unit.y, empowered);
+      unit.deathTime = 99;
+      if (necroElement === "venom") {
+        const next = this.livingEnemies()
+          .filter((enemy) => !this.effect(enemy, "cursed"))
+          .sort((a, b) => Math.hypot(a.x - unit.x, a.y - unit.y) - Math.hypot(b.x - unit.x, b.y - unit.y))[0];
+        if (next && Math.hypot(next.x - unit.x, next.y - unit.y) < 150) {
+          this.refreshPathEffect(next, "cursed", 8, 1, necro);
+          this.fx.floatText(next.x, next.y - next.radius * 2.8, "PLAGUE PASSES", ELEMENT_COLORS.venom, 10);
+        }
+      } else if (necroElement === "radiant") {
+        const ally = this.mostWoundedAlly();
+        if (ally) this.heal(ally, 8 + necro.stats.damage * 0.25, true, necro);
+      } else if (necroElement === "shadow") {
+        for (const enemy of this.livingEnemies()) if (enemy.aggro === necro || enemy.attackTarget === necro) { enemy.aggro = null; enemy.attackTarget = null; }
+      }
+      this.fx.floatText(unit.x, unit.y - unit.radius * 2.6, "THE DEAD ANSWER", ELEMENT_COLORS[necroElement], 11);
     }
     // Necromancer: every nearby death leaves Remains. Liches immediately turn
     // a portion of that deathly momentum back into technique recovery.
@@ -2555,36 +2623,61 @@ export class Battle {
       }
       case "necromancer": {
         if (!enemies.length) return false;
-        payBloodPrice();
         const remains = hero.pathResource ?? 0;
-        const spend = tier === "core" ? 0 : tier === "focus" ? Math.min(50, remains) : remains;
-        const nearest = enemies.sort((a, b) => unitDist(hero, a) - unitDist(hero, b))[0];
+        const nearest = [...enemies].sort((a, b) => unitDist(hero, a) - unitDist(hero, b))[0];
         const center = this.clampToField(aim ?? { x: nearest.x, y: nearest.y }, 0);
         signatureCenter = center;
-        const radius = [92, 126, 190][tierRank] + spend * 0.18;
+        const radius = [92, 132, 190][tierRank];
         const candidates = enemies
           .filter((enemy) => Math.hypot(enemy.x - center.x, enemy.y - center.y) < radius + enemy.radius)
           .sort((a, b) => PRIORITY_ENEMIES.has(a.enemyKind!) === PRIORITY_ENEMIES.has(b.enemyKind!) ? a.hp - b.hp : PRIORITY_ENEMIES.has(a.enemyKind!) ? -1 : 1);
-        const servantCount = tier === "core" ? 1 : tier === "focus" ? 2 + Math.floor(spend / 25) : 4 + Math.floor(spend / 20);
-        const targets = candidates.slice(0, Math.max(1, servantCount));
-        for (const [index, target] of targets.entries()) {
-          const multiplier = (tier === "core" ? 0.9 : 0.82) * (1 + spend / 125) * (hero.advCalling?.endsWith("-paragon") ? 1.16 : 1);
-          hit(target, multiplier);
-          const side = index % 2 ? -1 : 1;
-          const sx = hero.x + side * (26 + index * 8);
-          const sy = hero.y - 24 - (index % 3) * 10;
-          this.fx.tracer(sx, sy, target.x, target.y - 12, color, 0.55, 3.5);
-          this.fx.burst(sx, sy, color, 8, 70, { glow: true, gravity: -40, life: 0.5 });
-        }
+        const targets = tier === "core" ? candidates.slice(0, 1) : candidates;
         if (!targets.length) return false;
-        if (tier !== "core") hero.pathResource = Math.max(0, remains - spend);
-        if (hero.advCalling?.endsWith("-ascendant")) {
-          const ally = this.livingHeroes().sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0] ?? hero;
-          this.refreshPathEffect(ally, "shield", 5 + tierRank, damage * (0.25 + servantCount * 0.05), hero);
-          this.refreshPathEffect(ally, "guard", 3.5 + tierRank, 0.1 + tierRank * 0.05, hero);
+        payBloodPrice();
+
+        // Necromancy begins with a curse, not an elemental projectile. A
+        // Gravebound foe rises for this caster no matter which hero kills it.
+        for (const target of targets) {
+          hit(target, tier === "core" ? 0.22 : tier === "focus" ? 0.34 : 0.48);
+          if (!target.alive) continue;
+          this.refreshPathEffect(target, "cursed", [12, 16, 22][tierRank], tierRank + 1, hero);
+          if (element === "flame") this.refreshPathEffect(target, "burn", 4 + tierRank, Math.max(1.5, damage * 0.06), hero);
+          else if (element === "frost") this.refreshPathEffect(target, "slow", 3 + tierRank, 0.22 + tierRank * 0.05, hero);
+          else if (element === "venom") this.refreshPathEffect(target, "vulnerable", 4 + tierRank, 0.08 + tierRank * 0.04, hero);
+          else if (element === "blood") this.refreshPathEffect(target, "bleeding", 4 + tierRank, Math.max(1.2, damage * 0.05), hero);
+          else if (element === "shadow") {
+            if (target.aggro === hero) target.aggro = null;
+            if (target.attackTarget === hero) target.attackTarget = null;
+          }
+        }
+
+        // Focus and ultimate rites always call part of the host. Fresh bodies
+        // add servants for free; stored Remains buy additional shades.
+        let servantCount = tier === "core" ? 0 : tier === "focus" ? 1 : 3;
+        const corpseLimit = tier === "core" ? 1 : tier === "focus" ? 2 : 4;
+        const corpses = this.units
+          .filter((unit) => !unit.alive && unit.team === "enemy" && unit.deathTime < 12 && Math.hypot(unit.x - center.x, unit.y - center.y) < radius + 45)
+          .slice(0, corpseLimit);
+        for (const corpse of corpses) {
+          this.raiseNecroServant(hero, element, corpse.x, corpse.y, tier === "ultimate");
+          corpse.deathTime = 99;
+          signatureEvents++;
+        }
+        const remainSpend = tier === "core" ? 0 : tier === "focus" ? Math.min(50, remains) : remains;
+        servantCount += tier === "focus" ? Math.floor(remainSpend / 25) : tier === "ultimate" ? Math.floor(remainSpend / 20) : 0;
+        for (let index = 0; index < servantCount; index++) {
+          const angle = (index / Math.max(1, servantCount)) * Math.PI * 2;
+          this.raiseNecroServant(hero, element, center.x + Math.cos(angle) * (30 + (index % 2) * 16), center.y + Math.sin(angle) * 24, tier === "ultimate");
+        }
+        if (remainSpend > 0) hero.pathResource = Math.max(0, remains - remainSpend);
+        if (hero.advCalling?.endsWith("-ascendant") && (servantCount || corpses.length)) {
+          const ally = [...this.livingHeroes()].sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0] ?? hero;
+          this.refreshPathEffect(ally, "shield", 5 + tierRank, damage * (0.3 + (servantCount + corpses.length) * 0.06), hero);
+          this.refreshPathEffect(ally, "guard", 3.5 + tierRank, 0.12 + tierRank * 0.05, hero);
         }
         this.fx.pool(center.x, center.y, radius, ELEMENT_POOL_COLORS[element], 0.75 + tierRank * 0.2);
         this.fx.ring(center.x, center.y, radius, color, { width: 4 + tierRank, life: 0.6 });
+        this.fx.floatText(center.x, center.y - 42, tier === "core" ? "GRAVEBOUND" : tier === "focus" ? "THE GRAVE OPENS" : "THE HOST MARCHES", color, tier === "ultimate" ? 14 : 11);
         this.fx.floatText(hero.x, hero.y - hero.radius * 3.8, `REMAINS ${Math.round(hero.pathResource ?? 0)}`, color, 10);
         break;
       }
@@ -4079,6 +4172,100 @@ export class Battle {
     return bestFrac < 0.999 ? best : null;
   }
 
+  private raiseNecroServant(owner: Unit, element: ElementId, x: number, y: number, empowered = false): NecroServant {
+    const guardian = owner.advCalling?.endsWith("-ascendant") === true;
+    const maxLife = (element === "earth" ? 16 : element === "shadow" ? 9 : 12) + (guardian ? 4 : 0) + (empowered ? 4 : 0);
+    const servant: NecroServant = {
+      id: this.nextUnitId++,
+      owner,
+      element,
+      x,
+      y,
+      life: maxLife,
+      maxLife,
+      attackTimer: 0.35,
+      strength: (guardian ? 0.9 : 1) * (empowered ? 1.35 : 1),
+      bob: Math.random() * Math.PI * 2,
+    };
+    this.necroServants.push(servant);
+    while (this.necroServants.length > 10) this.necroServants.shift();
+    this.fx.ring(x, y, empowered ? 62 : 45, ELEMENT_COLORS[element], { width: empowered ? 5 : 3, life: 0.55 });
+    this.fx.burst(x, y - 12, ELEMENT_COLORS[element], empowered ? 18 : 11, 100, { glow: true, gravity: -70, life: 0.65 });
+    audio.play("bolt");
+    return servant;
+  }
+
+  private updateNecroServants(dt: number): void {
+    for (let index = this.necroServants.length - 1; index >= 0; index--) {
+      const servant = this.necroServants[index];
+      servant.life -= dt;
+      servant.attackTimer -= dt;
+      servant.bob += dt * (servant.element === "shadow" ? 8 : 5.5);
+      if (!servant.owner.alive || servant.life <= 0) {
+        this.fx.burst(servant.x, servant.y - 10, ELEMENT_COLORS[servant.element], 7, 60, { glow: true, gravity: -50, life: 0.45 });
+        this.necroServants.splice(index, 1);
+        continue;
+      }
+
+      const enemies = [...this.livingEnemies()].sort((a, b) => {
+        const priority = Number(PRIORITY_ENEMIES.has(b.enemyKind!)) - Number(PRIORITY_ENEMIES.has(a.enemyKind!));
+        return priority || Math.hypot(a.x - servant.x, a.y - servant.y) - Math.hypot(b.x - servant.x, b.y - servant.y);
+      });
+      const target = enemies[0];
+      if (!target) {
+        const orbit = { x: servant.owner.x - 28 + (servant.id % 3) * 24, y: servant.owner.y - 10 + Math.sin(servant.bob) * 8 };
+        const delta = this.normalize({ x: orbit.x - servant.x, y: orbit.y - servant.y });
+        servant.x += delta.x * Math.min(75 * dt, Math.hypot(orbit.x - servant.x, orbit.y - servant.y));
+        servant.y += delta.y * Math.min(75 * dt, Math.hypot(orbit.x - servant.x, orbit.y - servant.y));
+        continue;
+      }
+
+      const dx = target.x - servant.x;
+      const dy = target.y - servant.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance > target.radius + 34) {
+        const speed = servant.element === "shadow" ? 155 : servant.element === "earth" ? 95 : 125;
+        servant.x += (dx / Math.max(1, distance)) * Math.min(speed * dt, distance);
+        servant.y += (dy / Math.max(1, distance)) * Math.min(speed * dt, distance);
+        continue;
+      }
+      if (servant.attackTimer > 0) continue;
+
+      const damage = (6 + servant.owner.stats.damage * 0.62) * servant.strength;
+      this.damage(target, damage, servant.owner, { spell: true, color: ELEMENT_COLORS[servant.element], element: servant.element, secondary: true });
+      if (target.alive) this.applyPathElement(servant.owner, target, servant.element, "core", damage, true);
+      servant.owner.pathResource = Math.min(100, (servant.owner.pathResource ?? 0) + 3);
+      servant.attackTimer = servant.element === "shadow" ? 0.72 : servant.element === "storm" ? 0.9 : 1.18;
+      this.fx.tracer(servant.x, servant.y - 12, target.x, target.y - 10, ELEMENT_COLORS[servant.element], 0.3, 2.5);
+      this.fx.burst(target.x, target.y - 10, ELEMENT_COLORS[servant.element], 5, 55, { glow: true, life: 0.35 });
+
+      if (servant.element === "flame" && target.alive) {
+        this.refreshPathEffect(target, "burn", 3.5, Math.max(1.5, damage * 0.08), servant.owner);
+      } else if (servant.element === "frost" && target.alive) {
+        this.refreshPathEffect(target, "slow", 2.5, 0.28, servant.owner);
+      } else if (servant.element === "storm") {
+        const fork = enemies.find((enemy) => enemy !== target && Math.hypot(enemy.x - target.x, enemy.y - target.y) < 135);
+        if (fork) {
+          this.damage(fork, damage * 0.42, servant.owner, { spell: true, color: ELEMENT_COLORS.storm, element: "storm", secondary: true });
+          this.fx.tracer(target.x, target.y - 10, fork.x, fork.y - 10, ELEMENT_COLORS.storm, 0.25, 2);
+        }
+      } else if (servant.element === "earth") {
+        const ally = this.livingHeroes().sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0] ?? servant.owner;
+        this.refreshPathEffect(ally, "guard", 2.2, 0.12, servant.owner);
+      } else if (servant.element === "venom" && target.alive) {
+        this.refreshPathEffect(target, "vulnerable", 3.5, 0.1, servant.owner);
+      } else if (servant.element === "radiant") {
+        const ally = this.mostWoundedAlly();
+        if (ally) this.heal(ally, damage * 0.38, true, servant.owner);
+      } else if (servant.element === "blood") {
+        this.heal(servant.owner, damage * 0.25, false, servant.owner);
+      } else if (servant.element === "shadow" && target.alive) {
+        if (target.aggro === servant.owner) target.aggro = null;
+        if (target.attackTarget === servant.owner) target.attackTarget = null;
+      }
+    }
+  }
+
   private normalize(v: Vec): Vec {
     const len = Math.hypot(v.x, v.y);
     if (len < 0.0001) return { x: 1, y: 0 };
@@ -4108,7 +4295,9 @@ export class Battle {
         band.forEach((hero, rank) => {
           hero.celebrate = false;
           hero.facing = 1;
-          hero.moveTarget = { x: this.field.right + 220, y: this.field.top + 50 + rank * 38 };
+          hero.moveTarget = this.descending
+            ? { x: (this.field.left + this.field.right) / 2 + (rank - (band.length - 1) / 2) * 72, y: this.field.bottom + 220 }
+            : { x: this.field.right + 220, y: this.field.top + 50 + rank * 38 };
           this.moveToward(hero, hero.moveTarget, dt, 4);
         });
       }
@@ -4140,10 +4329,11 @@ export class Battle {
     // sights the band has passed drift on and fade once the fighting starts
     if (this.state === "fighting") {
       for (const lm of this.landmarks) {
-        lm.x -= dt * 60;
+        if (this.descending) lm.y -= dt * 60;
+        else lm.x -= dt * 60;
         lm.alpha = Math.max(0, lm.alpha - dt * 0.5);
       }
-      this.landmarks = this.landmarks.filter((lm) => lm.alpha > 0 && lm.x > -120);
+      this.landmarks = this.landmarks.filter((lm) => lm.alpha > 0 && (this.descending ? lm.y > this.field.top - 120 : lm.x > -120));
     }
     // stragglers crash in on their own schedule
     for (let i = this.pendingSpawns.length - 1; i >= 0; i--) {
@@ -4174,16 +4364,33 @@ export class Battle {
           // the band marches on: the world slides past while they walk
           this.travel += dt * 150;
           // what the fight left behind stays behind
-          for (const lm of this.landmarks) lm.x -= dt * 150;
-          this.landmarks = this.landmarks.filter((lm) => lm.x > -120);
-          for (const u of this.units) if (!u.alive) u.x -= dt * 150;
-          for (const d of this.decals) d.x -= dt * 150;
-          for (const z of this.zones) z.x -= dt * 150;
-          for (const hero of this.livingHeroes()) {
-            const rank = this.heroes().indexOf(hero);
-            const fx = this.field.left + 70 + (rank % 2) * 46;
-            const fy = this.field.top + 40 + rank * ((this.field.bottom - this.field.top - 80) / 4);
-            hero.moveTarget = { x: fx + 26, y: fy };
+          for (const lm of this.landmarks) {
+            if (this.descending) lm.y -= dt * 150;
+            else lm.x -= dt * 150;
+          }
+          this.landmarks = this.landmarks.filter((lm) => this.descending ? lm.y > this.field.top - 120 : lm.x > -120);
+          for (const u of this.units) if (!u.alive) {
+            if (this.descending) u.y -= dt * 150;
+            else u.x -= dt * 150;
+          }
+          for (const d of this.decals) {
+            if (this.descending) d.y -= dt * 150;
+            else d.x -= dt * 150;
+          }
+          for (const z of this.zones) {
+            if (this.descending) z.y -= dt * 150;
+            else z.x -= dt * 150;
+          }
+          const marchers = this.livingHeroes();
+          for (let rank = 0; rank < marchers.length; rank++) {
+            const hero = marchers[rank];
+            const fx = this.descending
+              ? (this.field.left + this.field.right) / 2 + (rank - (marchers.length - 1) / 2) * 72
+              : this.field.left + 70 + (rank % 2) * 46;
+            const fy = this.descending
+              ? this.field.top + 72 + (rank % 2) * 28
+              : this.field.top + 40 + rank * ((this.field.bottom - this.field.top - 80) / 4);
+            hero.moveTarget = this.descending ? { x: fx, y: fy + 26 } : { x: fx + 26, y: fy };
             hero.facing = 1;
             hero.marching = true;
             if (this.moveToward(hero, { x: fx, y: fy }, dt, 8)) hero.bobPhase += dt * 10;
@@ -4200,8 +4407,12 @@ export class Battle {
           const seed = this.stage.id * 7.3 + this.waveIndex * 3.1;
           this.landmarks.push({
             type: Math.floor((Math.sin(seed * 127.1) * 43758.5453 % 1 + 1) % 1 * 5),
-            x: this.field.right + 120,
-            y: this.field.top + 4 + ((Math.sin(seed * 311.7) * 12345.678 % 1 + 1) % 1) * 26,
+            x: this.descending
+              ? this.field.left + 70 + ((Math.sin(seed * 311.7) * 12345.678 % 1 + 1) % 1) * (this.field.right - this.field.left - 140)
+              : this.field.right + 120,
+            y: this.descending
+              ? this.field.bottom + 120
+              : this.field.top + 4 + ((Math.sin(seed * 311.7) * 12345.678 % 1 + 1) % 1) * 26,
             alpha: 1,
           });
         }
@@ -4280,6 +4491,8 @@ export class Battle {
       if (unit.team === "hero") this.updateHero(unit, dt, save);
       else this.updateEnemy(unit, dt);
     }
+
+    this.updateNecroServants(dt);
 
     this.updateBossObjectives(dt);
     this.separateUnits(dt);
@@ -4642,8 +4855,9 @@ export class Battle {
 
   private updateEnemy(enemy: Unit, dt: number): void {
     // jog onto the field first
-    if (enemy.x > this.field.right - enemy.radius) {
-      enemy.x -= this.speedOf(enemy) * 1.8 * dt;
+    if (this.descending ? enemy.y > this.field.bottom - enemy.radius : enemy.x > this.field.right - enemy.radius) {
+      if (this.descending) enemy.y -= this.speedOf(enemy) * 1.8 * dt;
+      else enemy.x -= this.speedOf(enemy) * 1.8 * dt;
       enemy.bobPhase += dt * 14;
       return;
     }
@@ -4654,7 +4868,7 @@ export class Battle {
       this.fx.burst(enemy.x, enemy.y + 2, "rgba(185, 170, 145, 0.7)", 6, 60, { gravity: -30, size: 3 });
       this.fx.addShake(enemy.radius > 20 ? 4 : 1.5);
       enemy.lunge = 0.5;
-      enemy.lungeDir = { x: -1, y: 0 };
+      enemy.lungeDir = this.descending ? { x: 0, y: -1 } : { x: -1, y: 0 };
       if (enemy.affix) {
         this.fx.floatText(enemy.x, enemy.y - enemy.radius * 3 - 8, Battle.AFFIX_NAMES[enemy.affix] ?? enemy.affix, "#ffd76b", 13);
         this.fx.ring(enemy.x, enemy.y, enemy.radius * 2.6, "#ffd76b", { width: 2.5, life: 0.6 });
@@ -6977,9 +7191,10 @@ export class Battle {
     }
     for (const unit of living) {
       const clamped = this.clampToField(unit, unit.radius);
-      // enemies are allowed to be off-field on the right while entering
-      if (unit.team === "enemy" && unit.x > this.field.right - unit.radius) {
-        unit.y = Math.min(this.field.bottom - unit.radius, Math.max(this.field.top + unit.radius, unit.y));
+      // enemies may wait just beyond the active edge while entering a room
+      if (unit.team === "enemy" && (this.descending ? unit.y > this.field.bottom - unit.radius : unit.x > this.field.right - unit.radius)) {
+        if (this.descending) unit.x = Math.min(this.field.right - unit.radius, Math.max(this.field.left + unit.radius, unit.x));
+        else unit.y = Math.min(this.field.bottom - unit.radius, Math.max(this.field.top + unit.radius, unit.y));
         continue;
       }
       unit.x = clamped.x;

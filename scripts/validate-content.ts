@@ -3,6 +3,8 @@ import {
   ABILITIES,
   ALL_GEAR,
   arenaPurse,
+  ARENA_TRIALS,
+  arenaTrialPurse,
   ARMOR_ACTIVES,
   bestiaryThresholds,
   BOSS_PHASES,
@@ -39,13 +41,13 @@ import {
   talentMods,
   TRINKETS,
 } from "../src/data";
-import { assignRecruitStarterPath, defaultSave, grantHeroXp, loadSave, persist, recoveryKey, rejectedSaveKey, slotKey } from "../src/save";
+import { assignRecruitRoadKit, defaultSave, grantHeroXp, loadSave, persist, recoveryKey, rejectedSaveKey, slotKey } from "../src/save";
 import { LATE_FOE_KINDS } from "../src/late-content";
 import { LATE_ROAD_BOSS_INTENTS, LATE_ROAD_ELITE_STAGES, LATE_ROAD_REGIONS, LATE_ROAD_STAGES } from "../src/late-road";
 import { Battle } from "../src/battle";
 import { FxSystem } from "../src/fx";
 import { runBattleSimulation } from "../src/simulation";
-import type { HeroSave, SaveData } from "../src/types";
+import type { HeroSave, SaveData, StageDef } from "../src/types";
 
 function unique(values: string[], label: string): void {
   assert.equal(new Set(values).size, values.length, `${label} must be unique`);
@@ -67,11 +69,11 @@ for (const ability of ABILITIES) {
   assert.ok(ability.gate.value >= 0, `${ability.id} has an invalid attribute gate`);
 }
 assert.equal(HERO_STARTER_ABILITIES.length, HEROES.length, "every recruit needs an archetype starter kit");
-assert.equal(HERO_STARTER_PATHS.length, HEROES.length, "every companion needs an authored starter Path");
+assert.equal(HERO_STARTER_PATHS.length, HEROES.length, "every companion needs an authored Path recommendation");
 assert.equal(new Set(HERO_STARTER_PATHS.map((starter) => starter.discipline)).size, DISCIPLINE_IDS.length, "the starter roster should represent every Discipline");
 HERO_STARTER_PATHS.forEach((starter, index) => {
-  assert.ok(CALLINGS.some((calling) => calling.id === pathId(starter.discipline, starter.element)), `${HEROES[index].name} needs a valid starter Path`);
-  assert.ok(starter.reason.length >= 45, `${HEROES[index].name}'s starter Path needs an authored reason`);
+  assert.ok(CALLINGS.some((calling) => calling.id === pathId(starter.discipline, starter.element)), `${HEROES[index].name} needs a valid recommended Path`);
+  assert.ok(starter.reason.length >= 45, `${HEROES[index].name}'s recommended Path needs an authored reason`);
 });
 HERO_STARTER_ABILITIES.forEach((ids, index) => {
   assert.equal(ids.length, 2, `${HEROES[index].name} needs exactly two road skills`);
@@ -111,6 +113,18 @@ STAGES.forEach((stage, index) => {
   });
 });
 assert.equal(priorityViolations.length, 0, `priority-enemy budget exceeded:\n${priorityViolations.join("\n")}`);
+const roomCounts = STAGES.filter((stage) => stage.waves.length > 1).reduce((counts, stage) => {
+  counts.set(stage.waves.length, (counts.get(stage.waves.length) ?? 0) + 1);
+  return counts;
+}, new Map<number, number>());
+assert.ok((roomCounts.get(2) ?? 0) >= 9, "the campaign needs deliberate two-room skirmishes");
+assert.ok((roomCounts.get(3) ?? 0) >= 10, "the campaign should retain medium three-room roads");
+assert.ok((roomCounts.get(4) ?? 0) >= 10, "the campaign needs deliberate four-room gauntlets");
+const descents = STAGES.filter((stage) => stage.travelDirection === "south");
+assert.equal(descents.length, 10, "each six-stage region needs one vertical descent");
+for (let start = 0; start < STAGES.length; start += 6) {
+  assert.equal(STAGES.slice(start, start + 6).filter((stage) => stage.travelDirection === "south").length, 1, `region ${start / 6 + 1} needs one vertical descent`);
+}
 for (let start = 0; start < STAGES.length; start += 6) {
   const counts = new Map<string, number>();
   for (const stage of STAGES.slice(start, start + 6)) {
@@ -163,6 +177,17 @@ assert.ok(coastKinds.size >= 12, "Stormbreak needs at least twelve distinct enem
 
 unique(BOSS_STAGES.map(String), "boss stage indexes");
 for (const stageIndex of BOSS_STAGES) assert.ok(STAGES[stageIndex], `boss stage ${stageIndex} does not exist`);
+unique(ARENA_TRIALS.map((trial) => trial.id), "arena trial ids");
+assert.equal(ARENA_TRIALS.length, 5, "the Ring should offer one signature trial for each campaign act pair");
+for (const trial of ARENA_TRIALS) {
+  assert.equal(trial.bossStages.length, 3, `${trial.id} must remain a three-boss trial`);
+  unique(trial.bossStages.map(String), `${trial.id} boss stages`);
+  assert.ok(trial.name && trial.subtitle, `${trial.id} needs presentation copy`);
+  assert.ok(trial.marks > 0 && trial.purse > 0 && trial.scale > 0, `${trial.id} rewards and scaling must be positive`);
+  assert.ok(trial.bossStages.every((stage) => BOSS_STAGES.includes(stage)), `${trial.id} may only use main boss stages`);
+  assert.ok(trial.bossStages.every((stage, index) => index === 0 || trial.bossStages[index - 1] < stage), `${trial.id} boss order must follow the road`);
+  assert.ok(arenaTrialPurse(trial, true) > arenaTrialPurse(trial, false), `${trial.id} needs a meaningful first-clear purse`);
+}
 for (const [kind, marks] of Object.entries(BOSS_PHASES)) {
   assert.ok(enemyKinds.has(kind), `boss phases reference missing enemy ${kind}`);
   assert.ok(marks?.length, `${kind} needs at least one phase marker`);
@@ -379,6 +404,66 @@ runBattleSimulation(STAGES[18], structuredClone(simulationSave), simulationField
 const lateRunAfterOtherBattle = runBattleSimulation(STAGES[59], structuredClone(simulationSave), simulationField, { seed: 6060, maxSeconds: 90 });
 assert.deepEqual(lateRunAfterOtherBattle, isolatedLateRun, "seeded simulations must not depend on battles run before them");
 
+// Ring Trials are true gauntlets: advancing a gate replaces the boss while
+// preserving the party's wounds and spent techniques.
+const trialDef = ARENA_TRIALS[0];
+const trialStage: StageDef = {
+  ...STAGES[trialDef.bossStages[2]],
+  name: trialDef.name,
+  subtitle: trialDef.subtitle,
+  waves: trialDef.bossStages.map((stage) => STAGES[stage].waves.at(-1)!),
+  scale: STAGES[trialDef.bossStages[2]].scale * trialDef.scale,
+  terrain: undefined,
+};
+const trialBattle = new Battle(trialStage, defaultSave(), simulationField, new FxSystem());
+const advanceTrial = (trialBattle as unknown as { startNextWave: () => void }).startNextWave.bind(trialBattle);
+advanceTrial();
+const firstTrialBoss = trialBattle.bossRef;
+assert.ok(firstTrialBoss, "a Ring Trial must open with a visible boss");
+const trialHero = trialBattle.heroes()[0];
+trialHero.hp = Math.max(1, trialHero.stats.maxHp - 17);
+trialHero.abilities[0].timer = 4.25;
+firstTrialBoss.alive = false;
+advanceTrial();
+assert.equal(trialBattle.waveIndex, 1, "clearing the first gate must advance the Ring Trial");
+assert.notEqual(trialBattle.bossRef?.enemyKind, firstTrialBoss.enemyKind, "each Ring Trial gate must introduce its next boss");
+assert.equal(trialHero.hp, trialHero.stats.maxHp - 17, "Ring Trials must carry wounds between bosses");
+assert.equal(trialHero.abilities[0].timer, 4.25, "Ring Trials must carry cooldowns between bosses");
+
+// Necromancers must play through curses, corpses, and persistent servants—not
+// through a Mage-shaped area hit wearing a spectral palette.
+const necroSave = defaultSave();
+const necroHeroSave = necroSave.heroes[0];
+necroHeroSave.calling = pathId("necromancer", "flame");
+necroHeroSave.discipline = "necromancer";
+necroHeroSave.element = "flame";
+necroHeroSave.equipped = pathAbilities("necromancer", "flame").map((ability) => ability.id);
+const necroBattle = new Battle(STAGES[0], necroSave, simulationField, new FxSystem());
+necroBattle.state = "fighting";
+const necro = necroBattle.heroes().find((hero) => hero.heroIndex === 0)!;
+necroBattle.spawnEnemy("goblin", { x: necro.x + 80, y: necro.y, scale: 1 });
+const gravebound = necroBattle.livingEnemies()[0];
+const gravebind = necro.abilities.find((ability) => ability.def.pathSkill === "core")!;
+assert.equal(necroBattle.castAbility(necro, gravebind, necroSave, { x: gravebound.x, y: gravebound.y }, null), true, "Gravebind must be castable before a corpse exists");
+assert.ok(gravebound.effects.some((effect) => effect.kind === "cursed" && effect.source === necro), "Gravebind must mark its victim with a real death curse");
+(
+  necroBattle as unknown as { damage: (target: typeof gravebound, amount: number, source: typeof necro) => void }
+).damage(gravebound, gravebound.stats.maxHp * 2, necroBattle.heroes().find((hero) => hero !== necro)!);
+assert.equal(necroBattle.necroServants.length, 1, "a Gravebound enemy must rise for the Necromancer even when an ally lands the kill");
+assert.equal(necroBattle.necroServants[0].element, "flame", "raised servants must inherit their master's Attunement");
+necroBattle.spawnEnemy("goblin", { x: necroBattle.necroServants[0].x + 10, y: necroBattle.necroServants[0].y, scale: 1 });
+const servantTarget = necroBattle.livingEnemies()[0];
+const targetHpBeforeServant = servantTarget.hp;
+necroBattle.necroServants[0].attackTimer = 0;
+necroBattle.update(0.05, necroSave);
+assert.ok(servantTarget.hp < targetHpBeforeServant, "a raised servant must persist and attack independently on later frames");
+const servantCountBeforeRite = necroBattle.necroServants.length;
+necro.pathResource = 50;
+const servantRite = necro.abilities.find((ability) => ability.def.pathSkill === "focus")!;
+assert.equal(necroBattle.castAbility(necro, servantRite, necroSave, { x: servantTarget.x, y: servantTarget.y }, null), true, "a Necromancer's elemental rite must open the grave");
+assert.ok(necroBattle.necroServants.length >= servantCountBeforeRite + 3, "stored Remains must become additional on-field servants");
+assert.equal(necro.pathResource, 0, "a greater servant rite must spend its stored Remains");
+
 // Result cards are not extra combat time: waiting on Victory must never spoil a
 // best time/contract or let a projectile change the final death count.
 const settledSave = defaultSave();
@@ -469,10 +554,17 @@ assert.equal(loadSave().armory.length, 2, "duplicate armor copies must remain in
 const masterySave = defaultSave();
 const recruitSave = defaultSave();
 const recruitedWren = recruitSave.heroes[1];
-const wrenPath = assignRecruitStarterPath(recruitedWren, 1);
-assert.equal(wrenPath?.id, pathId("archer", "storm"), "Wren should arrive on her authored Storm Archer Path");
-assert.deepEqual(recruitedWren.equipped, pathAbilities("archer", "storm").map((ability) => ability.id), "a recruited hero should arrive with the Path's coherent Q/W bar");
-assert.equal(recruitedWren.callingLevels[wrenPath!.id], 0, "starter Path practice begins at zero rather than granting free mastery");
+recruitedWren.recruited = true;
+recruitedWren.active = true;
+const wrenRoadKit = assignRecruitRoadKit(recruitedWren, 1);
+assert.deepEqual(wrenRoadKit, [...HERO_STARTER_ABILITIES[1]], "Wren should arrive with her authored road techniques");
+assert.deepEqual(recruitedWren.equipped, [...HERO_STARTER_ABILITIES[1]], "a recruit should have a coherent Q/W road bar");
+assert.equal(recruitedWren.calling, null, "a recruit must remain unsworn");
+assert.equal(recruitedWren.discipline, null, "a recruit must not receive a Discipline by default");
+assert.equal(recruitedWren.element, null, "a recruit must not receive an Attunement by default");
+const recruitBattle = new Battle(STAGES[0], recruitSave, { left: 26, right: 1798, top: 170, bottom: 470 }, new FxSystem());
+const battleWren = recruitBattle.units.find((unit) => unit.heroIndex === 1)!;
+assert.ok(battleWren.abilities.length > 0 && battleWren.abilities.every((ability) => !ability.ult), "an unsworn recruit must enter battle without an ultimate");
 const firstPath = pathId("knight", "earth");
 masterySave.heroes[0].calling = firstPath;
 masterySave.heroes[0].discipline = "knight";
@@ -554,6 +646,7 @@ delete (legacy as Partial<SaveData>).unlockedSpells;
 delete (legacy as Partial<SaveData>).inventory;
 delete (legacy as Partial<SaveData>).armory;
 delete (legacy as Partial<SaveData>).arenaRecords;
+delete (legacy as Partial<SaveData>).arenaTrialRecords;
 delete (legacy as Partial<SaveData>).contractRecords;
 delete (legacy as Partial<SaveData>).arenaMarks;
 delete (legacy as Partial<SaveData>).contractRenown;
@@ -583,6 +676,7 @@ assert.equal(migrated.heroes[0].element, null, "pre-path heroes must remain free
 assert.deepEqual(migrated.heroes[0].elementLevels, {}, "pre-path heroes must gain elemental progress");
 assert.deepEqual(migrated.heroes[0].masteredElements, [], "pre-path heroes must gain an empty Elemental Legacy list");
 assert.equal(migrated.arenaMarks, 0, "pre-arena saves must gain zero marks");
+assert.deepEqual(migrated.arenaTrialRecords, {}, "pre-trial saves must gain an empty Ring Trial ledger");
 assert.equal(migrated.contractRenown, 0, "pre-contract saves must gain zero renown");
 assert.deepEqual(migrated.challengeMilestones, [], "pre-challenge saves must gain an empty milestone list");
 assert.equal(migrated.keybinds.ability3, "r", "the former default ultimate key must migrate to slot three");

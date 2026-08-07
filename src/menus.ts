@@ -2,6 +2,8 @@ import { audio } from "./audio";
 import {
   ABILITIES,
   arenaPurse,
+  ARENA_TRIALS,
+  arenaTrialPurse,
   ALL_GEAR,
   ARMORS,
   ARMOR_FAMILY_TIER,
@@ -85,7 +87,7 @@ import { drawAbilityGlyph, ico } from "./icons";
 import { lateRoadMapMarkup, LATE_ROAD_REGIONS, type LateRoadRegion } from "./late-road";
 import { drawLateEnemyIcon } from "./late-sprites";
 import { drawHeroFigure, setColorSafe } from "./render";
-import { activeSlot, assignRecruitStarterPath, defaultSave, DEFAULT_KEYBINDS, grantHeroXp, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
+import { activeSlot, assignRecruitRoadKit, defaultSave, DEFAULT_KEYBINDS, grantHeroXp, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
 import { exportTelemetry, telemetrySummary } from "./telemetry";
 import type { SaveData } from "./types";
 
@@ -1027,6 +1029,8 @@ export class Menus {
 
   /** Append the page with the tab bar riding along. */
   private mount(page: HTMLElement, section: "battle" | "party" | "shop" | "tavern" | "records" | null): void {
+    page.classList.add("menu-page-enter");
+    if (section) page.dataset.section = section;
     if (section) page.appendChild(this.sectionBar(section));
     this.root.appendChild(page);
   }
@@ -1661,18 +1665,51 @@ export class Menus {
     this.root.innerHTML = "";
     this.show();
     const defeated = BOSS_STAGES.filter((stage) => (this.save.stageStats[stage]?.clears ?? 0) > 0);
+    const rank = this.save.arenaMarks >= 55 ? "Crowned of the Ring" : this.save.arenaMarks >= 35 ? "Gold contender" : this.save.arenaMarks >= 20 ? "Silver contender" : this.save.arenaMarks >= 12 ? "Iron contender" : this.save.arenaMarks >= 5 ? "Bronze contender" : "Unmarked challenger";
     const page = el(`
       <div class="page challenge-page arena-page">
         <div class="challenge-mast arena-mast">
           <button class="back-rune" data-act="back" aria-label="Back to map">‹</button>
-          <span><em>The Ruined Ring</em><strong>Old victories do not stay buried.</strong></span>
+          <span><em>The Ruined Ring · ${rank}</em><strong>Old victories do not stay buried.</strong></span>
           <div class="challenge-count">${this.save.arenaMarks} arena marks</div>
         </div>
-        <div class="arena-rule"><span>THE TERMS</span><p>Choose a defeated boss. Arena victories grant experience and gold; the first clear of each rematch pays an additional purse.</p></div>
-        <div class="reward-road">${[5, 12, 20].map((mark) => `<span class="${this.save.arenaMarks >= mark ? "earned" : ""}"><b>${mark}</b><em>${mark === 5 ? "200 gold" : mark === 12 ? "rare curio" : "500 gold"}</em></span>`).join("")}</div>
+        <div class="arena-rule"><span>THE TERMS</span><p>Duels replay one defeated foe. Ring Trials chain three bosses without restoring health or cooldowns between gates. Every victory pays experience, gold, and permanent Arena Marks.</p></div>
+        <div class="reward-road arena-reward-road">${[5, 12, 20, 35, 55].map((mark) => `<span class="${this.save.arenaMarks >= mark ? "earned" : ""}"><b>${mark} marks</b><em>${mark === 5 ? "200 gold" : mark === 12 ? "rare curio" : mark === 20 ? "500 gold" : mark === 35 ? "masterwork gear" : "1,000 gold"}</em></span>`).join("")}</div>
+        <section class="arena-trial-section">
+          <div class="arena-section-head"><span>RING TRIALS</span><strong>Three gates. One company.</strong><em>Health and cooldowns carry forward.</em></div>
+          <div class="arena-trials"></div>
+        </section>
+        <div class="arena-section-head duel-head"><span>DUEL LEDGER</span><strong>Choose one old enemy.</strong><em>Personal bests and first-clear purses.</em></div>
         <div class="challenge-list"></div>
       </div>
     `);
+    const trials = page.querySelector(".arena-trials")!;
+    for (const trial of ARENA_TRIALS) {
+      const unlocked = trial.bossStages.every((stage) => defeated.includes(stage));
+      const record = this.save.arenaTrialRecords[trial.id];
+      const first = !record?.clears;
+      const purse = arenaTrialPurse(trial, first);
+      const card = el(`
+        <article class="arena-trial-card ${unlocked ? "" : "sealed"}">
+          <div class="trial-gates" aria-label="${unlocked ? "Three defeated bosses" : "Defeat all three bosses on the Long Road to unlock"}">
+            ${trial.bossStages.map((stage) => {
+              const known = defeated.includes(stage);
+              const wave = STAGES[stage].waves[STAGES[stage].waves.length - 1];
+              const kind = wave[wave.length - 1]?.kind;
+              return `<span class="${known ? "known" : ""}" data-trial-boss="${known ? kind : ""}">${known ? `<canvas width="48" height="48"></canvas>` : "?"}<i>${known ? STAGES[stage].name : "Unmarked"}</i></span>`;
+            }).join("")}
+          </div>
+          <div class="trial-copy"><em>${first ? "FIRST-CLEAR TRIAL" : `${record.clears} CLEAR${record.clears === 1 ? "" : "S"}`}</em><strong>${trial.name}</strong><p>${trial.subtitle}</p><small>${record ? `Best ${record.bestTime.toFixed(1)}s` : unlocked ? "The three gates are open." : "Defeat every marked boss on the Long Road."}</small></div>
+          <div class="trial-stake"><span>${ico("coin")} ${purse}</span><b>+${trial.marks + (first ? 2 : 0)} marks</b><button class="big-btn primary" data-arena-trial="${trial.id}" data-trial-stage="${trial.bossStages[2]}" ${unlocked ? "" : "disabled"}>Enter trial</button></div>
+        </article>
+      `);
+      card.querySelectorAll<HTMLElement>("[data-trial-boss]").forEach((gate) => {
+        const kind = gate.dataset.trialBoss as EnemyKind;
+        const canvas = gate.querySelector("canvas");
+        if (kind && canvas) drawBeastIcon(canvas, kind);
+      });
+      trials.appendChild(card);
+    }
     const list = page.querySelector(".challenge-list")!;
     if (!defeated.length) {
       list.appendChild(el(`<div class="challenge-empty"><strong>The gates remain barred.</strong><span>Defeat the Gloaming Alpha on the Long Road to draw the arena keeper's attention.</span></div>`));
@@ -1697,6 +1734,14 @@ export class Menus {
     page.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
       if (target.closest('[data-act="back"]')) return void this.goBack(() => this.renderMap());
+      const trial = target.closest("[data-arena-trial]");
+      if (trial) {
+        const id = trial.getAttribute("data-arena-trial")!;
+        const stage = Number(trial.getAttribute("data-trial-stage"));
+        audio.play("warcry");
+        this.callbacks.startChallenge("arena", stage, id);
+        return;
+      }
       const fight = target.closest("[data-arena]");
       if (!fight) return;
       const stage = Number(fight.getAttribute("data-arena"));
@@ -2157,7 +2202,8 @@ export class Menus {
           <button class="big-btn primary embark-btn" data-act="embark">${ico("play")} Set out</button>
         </div>
         <div class="scout-row">
-          <span class="scout-chip">${ico("sword")} ${stage.waves.length <= 1 ? "a single great trial" : stage.waves.length <= 3 ? "a short road" : "a long road"}</span>
+          <span class="scout-chip">${ico("sword")} ${stage.waves.length <= 1 ? "a single great trial" : `${stage.waves.length} combat rooms`}</span>
+          ${stage.travelDirection === "south" ? `<span class="scout-chip">↓ descending route</span>` : ""}
           <span class="scout-chip">${ico("star")} ≈${Math.round(stage.xpReward * mult)} xp</span>
           <span class="scout-chip">${ico("gem")} ${rare ? "RARE trinket" : "trinket drop"}</span>
           ${terrainScout ? `<span class="scout-chip">${terrainScout}</span>` : ""}
@@ -3406,9 +3452,7 @@ export class Menus {
       const arrived = heroArrived(save, i);
       const starterPath = HERO_STARTER_PATHS[i];
       const starterCalling = starterPath ? callingById(pathId(starterPath.discipline, starterPath.element)) : null;
-      const starterAbilities = starterPath
-        ? pathAbilities(starterPath.discipline, starterPath.element)
-        : (HERO_STARTER_ABILITIES[i] ?? []).map(abilityById).filter(Boolean);
+      const starterAbilities = (HERO_STARTER_ABILITIES[i] ?? []).map(abilityById).filter(Boolean);
       const currentCalling = callingById(hero.calling);
       if (!arrived && !hero.recruited) {
         body.appendChild(
@@ -3437,8 +3481,8 @@ export class Menus {
               <div class="hero-meta">${hero.recruited ? "Already rides with the band." : `A wanderer for hire — ${ATTR_NAMES[bestAttr(i)]} comes naturally.`}</div>
               ${hero.recruited && currentCalling
                 ? `<div class="recruit-path current"><b>Current Path</b><strong>${currentCalling.name}</strong><span>${DISCIPLINES.find((entry) => entry.id === currentCalling.discipline)?.name} × ${elementById(currentCalling.element)?.name}</span></div>`
-                : `<div class="recruit-path"><b>${hero.recruited ? "Path prospect" : "Arrives sworn"}</b><strong>${starterCalling?.name ?? "Road-trained"}</strong><span>${starterPath ? `${DISCIPLINES.find((entry) => entry.id === starterPath.discipline)?.name} × ${elementById(starterPath.element)?.name}` : "Personal road kit"}</span><em>${starterPath?.reason ?? "Ready for the opening road."}</em></div>
-                   <div class="recruit-kit"><b>Battle bar</b><span>Q ${starterAbilities[0]?.name ?? "—"} · W ${starterAbilities[1]?.name ?? "—"}${starterCalling ? ` · R ${starterCalling.signature.name}` : ""}</span></div>`}
+                : `<div class="recruit-path"><b>Unsworn recruit</b><strong>Road-trained</strong><span>${starterPath ? `Likely Path: ${starterCalling?.name ?? `${DISCIPLINES.find((entry) => entry.id === starterPath.discipline)?.name} × ${elementById(starterPath.element)?.name}`}` : "Personal road kit"}</span><em>No ultimate until you choose their Discipline and Attunement.</em></div>
+                   <div class="recruit-kit"><b>Starting battle bar</b><span>Q ${starterAbilities[0]?.name ?? "—"} · W ${starterAbilities[1]?.name ?? "—"} · R locked</span></div>`}
             </div>
             ${
               hero.recruited
@@ -3486,11 +3530,10 @@ export class Menus {
       const recruit = this.save.heroes[i];
       recruit.recruited = true;
       recruit.active = partyRoster(this.save).length < PARTY_CAP;
-      const starterCalling = assignRecruitStarterPath(recruit, i);
-      const starters = recruit.equipped.slice(0, MAX_EQUIPPED);
+      const starters = assignRecruitRoadKit(recruit, i);
       for (const id of starters) if (!this.save.unlockedSpells.includes(id)) this.save.unlockedSpells.push(id);
       persist(this.save);
-      this.showToast(`${HEROES[i].name} joins as ${starterCalling?.name ?? "a road-trained companion"}.`);
+      this.showToast(`${HEROES[i].name} joins unsworn with two road techniques. Choose a Path to unlock their ultimate.`);
       this.renderShop("tavern");
     });
   }

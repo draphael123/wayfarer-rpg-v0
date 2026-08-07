@@ -1,6 +1,6 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { ADV_CALLING_LEVEL, ALL_GEAR, ARMORS, arenaPurse, BOSS_STAGES, CALLING_UNLOCK_LEVEL, contractFulfilled, contractPurse, CONTRACTS, DIFFICULTIES, elementById, HEROES, STAGES, TRINKETS } from "./data";
+import { ADV_CALLING_LEVEL, ALL_GEAR, ARMORS, arenaPurse, arenaTrialById, arenaTrialPurse, BOSS_STAGES, CALLING_UNLOCK_LEVEL, contractFulfilled, contractPurse, CONTRACTS, DIFFICULTIES, elementById, HEROES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { drawHeroPortrait, Menus } from "./menus";
@@ -62,11 +62,12 @@ let autoDecisionTimer = 0;
 /** Battle fields run nearly two screens wide — the fight itself travels the land. */
 const FIELD_SCREENS = 1.9;
 
-function fieldRect(): FieldRect {
+function fieldRect(stage?: StageDef): FieldRect {
   const horizon = (logicalH - HUD_H) * 0.34;
+  const descending = stage?.travelDirection === "south";
   return {
     left: 26,
-    right: logicalW * FIELD_SCREENS - 26,
+    right: logicalW * (descending ? 1 : FIELD_SCREENS) - 26,
     top: horizon + 16,
     bottom: logicalH - HUD_H - 10,
   };
@@ -94,7 +95,7 @@ function resize(): void {
   canvas.style.height = `${cssH}px`;
   ctx.setTransform(dpr * viewScale, 0, 0, dpr * viewScale, 0, 0);
   if (battle && hud) {
-    battle.field = fieldRect();
+    battle.field = fieldRect(battle.stage);
     hud.width = logicalW;
     hud.height = logicalH;
     for (const unit of battle.units) {
@@ -110,6 +111,48 @@ function resize(): void {
   }
 }
 
+const ROAD_REGIONS = [
+  "The South Road", "The Winterreach", "Stormbreak Coast", "The Cinderwild", "The Verdant Maw",
+  "The Nightglass Waste", "The Shattered Reliquary", "Skygrave Heights", "The Bloodwood", "The Last Meridian",
+];
+let sceneTransition = false;
+
+function roman(value: number): string {
+  const pairs: [number, string][] = [[50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]];
+  let left = value;
+  let out = "";
+  for (const [amount, glyph] of pairs) while (left >= amount) { out += glyph; left -= amount; }
+  return out;
+}
+
+/** A waymark-sized bridge makes embarking and returning feel spatially connected. */
+function roadPassage(stage: StageDef, direction: "depart" | "return"): HTMLElement {
+  document.querySelector(".road-passage")?.remove();
+  const region = ROAD_REGIONS[Math.max(0, Math.min(ROAD_REGIONS.length - 1, Math.floor(stage.id / 6)))];
+  const progress = Math.max(2, Math.round(((stage.id + 1) / STAGES.length) * 100));
+  const overlay = document.createElement("div");
+  overlay.className = `road-passage ${direction}`;
+  overlay.setAttribute("role", "status");
+  overlay.setAttribute("aria-live", "polite");
+  overlay.innerHTML = `
+    <div class="road-passage-rule"></div>
+    <div class="road-waymark">${roman(stage.id + 1)}</div>
+    <div class="road-copy">
+      <em>${direction === "depart" ? "SETTING OUT" : "THE ROAD RESUMES"} · ${region}</em>
+      <strong>${stage.name}</strong>
+      <span>${direction === "depart" ? stage.subtitle : "The band carries its record onward."}</span>
+    </div>
+    <div class="road-progress" aria-hidden="true"><i style="width:${progress}%"></i></div>
+  `;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add("show"));
+  audio.travel(direction);
+  const reduced = document.body.classList.contains("reduced-motion");
+  window.setTimeout(() => overlay.classList.add("passing"), reduced ? 180 : 650);
+  window.setTimeout(() => overlay.remove(), reduced ? 320 : 1050);
+  return overlay;
+}
+
 window.addEventListener("resize", resize);
 window.visualViewport?.addEventListener("resize", resize);
 resize();
@@ -117,11 +160,11 @@ resize();
 const menus = new Menus("ui", save, {
   startStage(stageIndex: number) {
     activeChallenge = null;
-    startBattle(stageIndex);
+    departForBattle(stageIndex);
   },
   startChallenge(kind, stageIndex, id) {
     activeChallenge = { kind, stage: stageIndex, id };
-    startBattle(stageIndex, true);
+    departForBattle(stageIndex, true);
   },
   startTutorial(kind: string, returnTo: "map" | "handbook") {
     startTutorial(kind, returnTo);
@@ -145,6 +188,16 @@ const menus = new Menus("ui", save, {
   },
 });
 
+function departForBattle(stageIndex: number, keepChallenge = false): void {
+  if (sceneTransition) return;
+  sceneTransition = true;
+  menus.hide();
+  roadPassage(STAGES[stageIndex], "depart");
+  const reduced = document.body.classList.contains("reduced-motion");
+  window.setTimeout(() => startBattle(stageIndex, keepChallenge), reduced ? 90 : 310);
+  window.setTimeout(() => { sceneTransition = false; }, reduced ? 340 : 1080);
+}
+
 function startBattle(stageIndex: number, keepChallenge = false): void {
   if (!keepChallenge) activeChallenge = null;
   rolledLoot = null;
@@ -161,10 +214,25 @@ function startBattle(stageIndex: number, keepChallenge = false): void {
   battleSave = save;
   fx = new FxSystem();
   const baseStage = STAGES[stageIndex];
-  const arenaStage: StageDef | null = activeChallenge?.kind === "arena"
-    ? { ...baseStage, name: `${baseStage.name} · Arena`, subtitle: "The crowd calls for the great foe", waves: [baseStage.waves[baseStage.waves.length - 1]], xpReward: Math.round(baseStage.xpReward * 0.55) }
-    : null;
-  battle = new Battle(arenaStage ?? baseStage, save, fieldRect(), fx);
+  const trial = activeChallenge?.kind === "arena" ? arenaTrialById(activeChallenge.id) : null;
+  const arenaStage: StageDef | null = activeChallenge?.kind !== "arena"
+    ? null
+    : trial
+      ? {
+          ...baseStage,
+          name: trial.name,
+          subtitle: trial.subtitle,
+          fieldNote: "Three gates close behind the band. The Ring permits no rest between names.",
+          objective: "Carry health and cooldowns through all three contenders.",
+          waves: trial.bossStages.map((bossStage) => STAGES[bossStage].waves[STAGES[bossStage].waves.length - 1]),
+          scale: baseStage.scale * trial.scale,
+          xpReward: Math.round(trial.bossStages.reduce((sum, bossStage) => sum + STAGES[bossStage].xpReward, 0) * 0.28),
+          terrain: undefined,
+          travelDirection: "east",
+        }
+      : { ...baseStage, name: `${baseStage.name} · Arena`, subtitle: "The crowd calls for the great foe", waves: [baseStage.waves[baseStage.waves.length - 1]], xpReward: Math.round(baseStage.xpReward * 0.55) };
+  const encounterStage = arenaStage ?? baseStage;
+  battle = new Battle(encounterStage, save, fieldRect(encounterStage), fx);
   // Every encounter starts from a neutral camera. Without this, a late-stage
   // zoom or shake could leak into retries and make the next battlefield jump.
   cam.x = 0;
@@ -225,7 +293,7 @@ function startTutorial(kind = "basics", returnTo: "map" | "handbook" = "map"): v
   }
   battleSave = temp;
   fx = new FxSystem();
-  battle = new Battle(TUTORIAL_STAGE, temp, fieldRect(), fx, true);
+  battle = new Battle(TUTORIAL_STAGE, temp, fieldRect(TUTORIAL_STAGE), fx, true);
   hud = new Hud(battle, temp, logicalW, logicalH);
   tutorial = new Tutorial(battle, hud, kind);
   // lessons keep the calm campfire theme
@@ -262,6 +330,7 @@ function bankRetreatSalvage(): void {
 
 function endBattleToMap(after?: () => void): void {
   const showFinale = menus.pendingFinale;
+  if (battle && !battle.tutorialMode) roadPassage(STAGES[currentStage], "return");
   if (battle && !battle.tutorialMode) {
     logEvent("battle_end", {
       stage: currentStage,
@@ -415,14 +484,18 @@ function settleChallengeVictory(challenge: NonNullable<typeof activeChallenge>):
     if (hero.recruited) grantHeroXp(save, index, hero.active ? xp : xp * 0.35);
   });
   if (challenge.kind === "arena") {
-    const old = save.arenaRecords[challenge.stage];
+    const trial = arenaTrialById(challenge.id);
+    const old = trial ? save.arenaTrialRecords[trial.id] : save.arenaRecords[challenge.stage];
     const first = !old?.clears;
-    const gold = arenaPurse(challenge.stage, first);
+    const gold = trial ? arenaTrialPurse(trial, first) : arenaPurse(challenge.stage, first);
+    const marks = trial ? trial.marks + (first ? 2 : 0) : first ? 3 : 1;
     save.gold += gold;
-    save.arenaMarks += first ? 3 : 1;
-    save.arenaRecords[challenge.stage] = { clears: (old?.clears ?? 0) + 1, bestTime: old ? Math.min(old.bestTime, t) : t };
+    save.arenaMarks += marks;
+    const record = { clears: (old?.clears ?? 0) + 1, bestTime: old ? Math.min(old.bestTime, t) : t };
+    if (trial) save.arenaTrialRecords[trial.id] = record;
+    else save.arenaRecords[challenge.stage] = record;
     const milestone = claimChallengeMilestones("arena");
-    setTimeout(() => menus.showToast(`${first ? "FIRST ARENA VICTORY" : "ARENA CLEARED"} · +${gold} gold · +${first ? 3 : 1} marks${milestone}`), 120);
+    setTimeout(() => menus.showToast(`${first ? "FIRST ARENA VICTORY" : "ARENA CLEARED"} · +${gold} gold · +${marks} marks${milestone}`), 120);
   } else {
     const contract = CONTRACTS.find((item) => item.id === challenge.id);
     if (!contract) return;
@@ -457,7 +530,7 @@ function settleChallengeVictory(challenge: NonNullable<typeof activeChallenge>):
 
 function claimChallengeMilestones(kind: "arena" | "contract"): string {
   const value = kind === "arena" ? save.arenaMarks : save.contractRenown;
-  const milestones = kind === "arena" ? [5, 12, 20] : [4, 8, 14];
+  const milestones = kind === "arena" ? [5, 12, 20, 35, 55] : [4, 8, 14];
   const notes: string[] = [];
   for (const threshold of milestones) {
     const key = `${kind}-${threshold}`;
@@ -473,8 +546,12 @@ function claimChallengeMilestones(kind: "arena" | "contract"): string {
         if (gear) { save.armory.push(gear.id); notes.push(gear.name); }
         else { save.gold += 300; notes.push("+300 milestone gold"); }
       }
+    } else if (kind === "arena" && threshold === 35) {
+      const gear = ALL_GEAR.find((piece) => piece.cost >= 600 && !save.armory.includes(piece.id));
+      if (gear) { save.armory.push(gear.id); notes.push(gear.name); }
+      else { save.gold += 700; notes.push("+700 milestone gold"); }
     } else {
-      const bonus = threshold === milestones[0] ? 200 : 500;
+      const bonus = threshold === milestones[0] ? 200 : threshold === 55 ? 1000 : 500;
       save.gold += bonus;
       notes.push(`+${bonus} milestone gold`);
     }
@@ -486,8 +563,13 @@ function syncChallengeReward(): void {
   if (!activeChallenge || !battle || !hud || battle.state !== "victory" || hud.rewardOverride) return;
   const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * 0.55);
   if (activeChallenge.kind === "arena") {
-    const first = !(save.arenaRecords[activeChallenge.stage]?.clears ?? 0);
-    hud.rewardOverride = { xp, gold: arenaPurse(activeChallenge.stage, first), note: first ? "First-clear purse secured" : "Arena rematch complete" };
+    const trial = arenaTrialById(activeChallenge.id);
+    const first = trial ? !(save.arenaTrialRecords[trial.id]?.clears ?? 0) : !(save.arenaRecords[activeChallenge.stage]?.clears ?? 0);
+    hud.rewardOverride = {
+      xp,
+      gold: trial ? arenaTrialPurse(trial, first) : arenaPurse(activeChallenge.stage, first),
+      note: trial ? `${trial.name} conquered · ${trial.marks + (first ? 2 : 0)} marks` : first ? "First-clear purse secured" : "Arena rematch complete",
+    };
     return;
   }
   const contract = CONTRACTS.find((item) => item.id === activeChallenge?.id);
@@ -900,12 +982,12 @@ function runFrame(now: number): void {
     const calm = save.reducedMotion;
     if (!calm && battle.cinematic > 0 && battle.bossRef?.alive) {
       // the camera crosses the whole field now — it follows the story
-      const maxCam = Math.max(0, logicalW * FIELD_SCREENS - logicalW);
+      const maxCam = battle.stage.travelDirection === "south" ? 0 : Math.max(0, logicalW * FIELD_SCREENS - logicalW);
       targetX = Math.max(0, Math.min(maxCam, battle.bossRef.x - logicalW / 2));
       targetY = Math.max(-24, Math.min(24, (battle.bossRef.y - (logicalH - HUD_H) * 0.55) * 0.3));
     } else if (living.length) {
       // follow the band first; fall back to whatever still stands
-      const maxCam = Math.max(0, logicalW * FIELD_SCREENS - logicalW);
+      const maxCam = battle.stage.travelDirection === "south" ? 0 : Math.max(0, logicalW * FIELD_SCREENS - logicalW);
       const bandUnits = living.filter((u) => u.team === "hero");
       const focus = bandUnits.length ? bandUnits : living;
       let cx = 0;
@@ -970,6 +1052,7 @@ function runFrame(now: number): void {
       drawBackground(ctx, battle.stage, logicalW, worldH, horizon, battle.time, {
         camX: cam.x,
         camY: cam.y,
+        travel: battle.travel,
         dusk: battle.tutorialMode ? 0 : dusk * 0.8,
         units: battle.units,
       });
@@ -1062,7 +1145,7 @@ function runSim(
   opts: { maxSeconds?: number; saveOverride?: SaveData; seed?: number } = {},
 ): { result: string; time: number; deaths: number; casts: number } {
   const simSave: SaveData = opts.saveOverride ?? (JSON.parse(JSON.stringify(save)) as SaveData);
-  return runBattleSimulation(STAGES[stageIndex], simSave, fieldRect(), opts);
+  return runBattleSimulation(STAGES[stageIndex], simSave, fieldRect(STAGES[stageIndex]), opts);
 }
 
 // debug/testing hook

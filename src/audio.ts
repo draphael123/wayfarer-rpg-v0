@@ -7,6 +7,7 @@
  * TAD's "Once Upon a Time" title loop (CC0; see audio/LICENSES.md).
  * SFX: ninja-adventure & medieval-fantasy packs (Superpowers, CC0).
  */
+import type { DamageElement } from "./types";
 
 type SfxName =
   | "click"
@@ -593,6 +594,34 @@ class AudioKit {
       this.noise(0.13, 0.16 + weight * 0.08, 430, 0.08);
       this.tone(76 - weight * 18, 0.22, "sine", 0.25 + weight * 0.12, -28, 0.075);
     }
+  }
+
+  /** A compact road cue bridges menus and battle without interrupting music. */
+  travel(direction: "depart" | "return"): void {
+    if (!this.soundOn) return;
+    if (direction === "depart") {
+      this.noise(0.12, 0.07, 850);
+      this.tone(147, 0.28, "triangle", 0.13, 34);
+      this.tone(220, 0.34, "triangle", 0.1, 18, 0.11);
+    } else {
+      this.noise(0.09, 0.055, 1200);
+      this.tone(220, 0.26, "triangle", 0.1, -18);
+      this.tone(294, 0.3, "sine", 0.09, 0, 0.1);
+    }
+  }
+
+  /** Elemental reactions share a cadence but retain a distinct material voice. */
+  reaction(element: DamageElement): void {
+    if (!this.soundOn || element === "physical") return;
+    const roots: Record<Exclude<DamageElement, "physical">, number> = {
+      flame: 330, frost: 523, storm: 659, earth: 147,
+      venom: 277, radiant: 784, blood: 220, shadow: 196,
+    };
+    const root = roots[element];
+    const wave: OscillatorType = element === "storm" ? "square" : element === "earth" || element === "blood" ? "sawtooth" : "triangle";
+    this.tone(root, 0.18, wave, 0.14, element === "frost" ? -90 : 60);
+    this.tone(root * 1.5, 0.24, "sine", 0.11, -35, 0.055);
+    this.noise(0.08, element === "earth" ? 0.12 : 0.07, element === "storm" ? 2600 : element === "frost" ? 1800 : 1100, 0.025);
   }
 
   play(name: SfxName): void {

@@ -52,11 +52,10 @@ from two readable choices:
   through heavy impacts, Radiant Necromancers call ancestors, and Radiant
   Priests redirect danger and support allies rather than sharing a generic heal.
 
-Founders choose a Path at level 5. Tavern recruits arrive with an authored Path
-and complete Q/W/R battle bar that fits their historyâ€”Wren reads a storm firing
-lane, Kellan spends Earth Fury through a greatsword, and Maren calls drowned
-spirits as a Storm Necromancer. These are strong starting identities, not locks;
-the player can still change them. Ten levels spent with an attunement unlock its
+Founders and Tavern recruits begin unsworn. Every companion has two personal
+road techniques that fit their history, but nobody receives an ultimate until
+the player chooses a Discipline and Attunement. The Tavern suggests a fitting
+Path for each recruit without choosing it for them. Ten levels spent with an attunement unlock its
 Elemental Legacy for use with another discipline. At level 20, a seasoned Path
 chooses one of two combat-changing Specializations. Ten active levels in that
 Specialization master its **Legacy technique**, which can then occupy the W slot
