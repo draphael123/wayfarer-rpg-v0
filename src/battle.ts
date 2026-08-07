@@ -206,7 +206,11 @@ export class Battle {
     const def = ENEMIES[kind];
     const scale = (overrides.scale ?? this.stage.scale) * this.difficultyMult;
     const y = overrides.y ?? this.field.top + 20 + Math.random() * (this.field.bottom - this.field.top - 40);
-    const x = overrides.x ?? this.field.right + 30 + Math.random() * 60;
+    // foes are MET on the road, about a screen ahead of wherever the band has
+    // pushed to — the wide field means the fight travels, not the walking
+    const living = this.livingHeroes();
+    const frontier = living.length ? Math.max(...living.map((h) => h.x)) : this.field.left + 200;
+    const x = overrides.x ?? Math.min(this.field.right + 30, frontier + 620 + Math.random() * 90);
     this.units.push({
       id: nextUnitId++,
       name: def.name,

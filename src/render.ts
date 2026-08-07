@@ -449,8 +449,11 @@ function drawWinterSkyline(ctx: CanvasRenderingContext2D, stage: StageDef, w: nu
 }
 
 /** The winter grounds answer too: black ice, crystal light, wind-scoured drifts. */
-function drawWinterGround(ctx: CanvasRenderingContext2D, stage: StageDef, w: number, h: number, horizon: number, time: number, travel: number): void {
+function drawWinterGround(ctx: CanvasRenderingContext2D, stage: StageDef, w: number, h: number, horizon: number, time: number, travel: number, camX = 0): void {
   const M = OVERSCAN;
+  // world-anchored scatter: each item holds its ground until it leaves the
+  // camera's window, then its twin enters from the far side
+  const wrapW = (v: number, span: number) => camX - M + ((((v - (camX - M)) % span) + span) % span);
   if (stage.id === 8 || stage.id === 11) {
     // black ice underfoot: a cold sheen and pale pressure-cracks wandering the lake
     const sheen = ctx.createLinearGradient(0, horizon, 0, h);
@@ -458,11 +461,11 @@ function drawWinterGround(ctx: CanvasRenderingContext2D, stage: StageDef, w: num
     sheen.addColorStop(0.5, "rgba(40, 70, 100, 0.14)");
     sheen.addColorStop(1, "rgba(120, 170, 200, 0.08)");
     ctx.fillStyle = sheen;
-    ctx.fillRect(-M, horizon, w + M * 2, h - horizon + M);
+    ctx.fillRect(camX - M, horizon, w + M * 2, h - horizon + M);
     ctx.strokeStyle = "rgba(220, 237, 245, 0.28)";
     ctx.lineWidth = 1.6;
     for (let i = 0; i < 6; i++) {
-      let cx = ((hash01(i * 31) * w - travel * 0.9) % (w + 120) + (w + 120)) % (w + 120) - 60;
+      let cx = wrapW(hash01(i * 31) * w - travel * 0.9, w + 120) - 60;
       let cy = horizon + 20 + hash01(i * 7) * (h - horizon - 50);
       ctx.beginPath();
       ctx.moveTo(cx, cy);
@@ -482,7 +485,7 @@ function drawWinterGround(ctx: CanvasRenderingContext2D, stage: StageDef, w: num
   } else if (stage.id === 9) {
     // crystal light pooling on the cave floor
     for (let i = 0; i < 4; i++) {
-      const cx = ((hash01(i * 23) * w - travel * 0.9) % (w + 80) + (w + 80)) % (w + 80) - 40;
+      const cx = wrapW(hash01(i * 23) * w - travel * 0.9, w + 80) - 40;
       const cy = horizon + 30 + hash01(i * 7) * (h - horizon - 60);
       const glow = 0.14 + Math.abs(Math.sin(time * 1.3 + i * 2)) * 0.12;
       const hue = i % 2 === 0 ? "159, 214, 232" : "180, 138, 232";
@@ -499,7 +502,7 @@ function drawWinterGround(ctx: CanvasRenderingContext2D, stage: StageDef, w: num
     ctx.strokeStyle = "rgba(240, 248, 252, 0.30)";
     ctx.lineWidth = 2;
     for (let i = 0; i < 9; i++) {
-      const gx = ((hash01(i * 41) * w - travel * 0.9 - time * 26) % (w + 100) + (w + 100)) % (w + 100) - 50;
+      const gx = wrapW(hash01(i * 41) * w - travel * 0.9 - time * 26, w + 100) - 50;
       const gy = horizon + 16 + hash01(i * 13) * (h - horizon - 34);
       ctx.beginPath();
       ctx.moveTo(gx, gy);
@@ -524,9 +527,12 @@ export function drawBackground(
   const camY = opts.camY ?? 0;
   const dusk = opts.dusk ?? 0;
   const travel = opts.travel ?? 0;
-  // far layer barely moves with the camera (parallax)
+  // the far layer rides WITH the camera (so it always fills the view) and lags
+  // behind the world inside its patterns — march-scroll and camera pan share
+  // one parallax clock
+  const px = travel + camX;
   ctx.save();
-  ctx.translate(camX * 0.72, camY * 0.72);
+  ctx.translate(camX, camY * 0.72);
   const M = OVERSCAN;
   const sky = ctx.createLinearGradient(0, 0, 0, horizon);
   sky.addColorStop(0, p.skyTop);
@@ -628,7 +634,7 @@ export function drawBackground(
   ctx.beginPath();
   ctx.moveTo(-M, horizon + 2);
   for (let x = -M; x <= w + M; x += 10) {
-    ctx.lineTo(x, horizon - 48 - Math.sin((x + travel * 0.18) * 0.005 + 4.2) * 26 - Math.sin((x + travel * 0.18) * 0.013 + 1) * 12);
+    ctx.lineTo(x, horizon - 48 - Math.sin((x + px * 0.18) * 0.005 + 4.2) * 26 - Math.sin((x + px * 0.18) * 0.013 + 1) * 12);
   }
   ctx.lineTo(w + M, horizon + 2);
   ctx.closePath();
@@ -638,7 +644,7 @@ export function drawBackground(
   ctx.beginPath();
   ctx.moveTo(-M, horizon + 2);
   for (let x = -M; x <= w + M; x += 8) {
-    ctx.lineTo(x, horizon - 22 - Math.sin((x + travel * 0.32) * 0.008 + 1.7) * 18 - Math.sin((x + travel * 0.32) * 0.021) * 9);
+    ctx.lineTo(x, horizon - 22 - Math.sin((x + px * 0.32) * 0.008 + 1.7) * 18 - Math.sin((x + px * 0.32) * 0.021) * 9);
   }
   ctx.lineTo(w + M, horizon + 2);
   ctx.closePath();
@@ -646,12 +652,13 @@ export function drawBackground(
   }
 
   // each Winterreach stage composes its own skyline over (or instead of) the hills
-  drawWinterSkyline(ctx, stage, w, horizon, time, travel);
+  drawWinterSkyline(ctx, stage, w, horizon, time, px);
 
-  // tree / rock silhouettes on the ridge
+  // tree / rock silhouettes on the ridge — they stream past at the near-hill rate
   for (let i = 0; i < (cave ? 0 : 9); i++) {
-    const tx = hash01(i * 13 + stage.id * 7) * w;
-    const ridgeY = horizon - 22 - Math.sin(tx * 0.008 + 1.7) * 18 - Math.sin(tx * 0.021) * 9;
+    const span9 = w + 60;
+    const tx = ((hash01(i * 13 + stage.id * 7) * w - px * 0.32) % span9 + span9) % span9 - 30;
+    const ridgeY = horizon - 22 - Math.sin((tx + px * 0.32) * 0.008 + 1.7) * 18 - Math.sin((tx + px * 0.32) * 0.021) * 9;
     const th = 16 + hash01(i * 5 + 1) * 22;
     ctx.fillStyle = p.prop;
     if (hash01(i * 11 + stage.id) > 0.4) {
@@ -683,22 +690,25 @@ export function drawBackground(
   ctx.translate(camX * 0.35, camY * 0.35);
   ctx.restore();
 
-  // ground: cached static layer (gradient, mottling, worn path, fringe)
+  // ground: cached static layer, tiled across wherever the camera looks
   const gl = groundLayer(stage, w, h, horizon);
   const gspan = w + M * 2;
   const goff = ((travel * 0.9) % gspan + gspan) % gspan;
-  ctx.drawImage(gl, -M - goff, horizon - 12, gspan, h - (horizon - 12) + M);
-  ctx.drawImage(gl, -M - goff + gspan, horizon - 12, gspan, h - (horizon - 12) + M);
+  const k0 = Math.floor((camX - M + goff) / gspan);
+  for (let k = k0; k * gspan - goff - M < camX + w + M; k++) {
+    ctx.drawImage(gl, k * gspan - goff - M, horizon - 12, gspan, h - (horizon - 12) + M);
+  }
   if (dusk > 0) {
     ctx.fillStyle = `rgba(30, 18, 50, ${dusk * 0.14})`;
-    ctx.fillRect(-M, horizon, w + M * 2, h - horizon + M);
+    ctx.fillRect(camX - M, horizon, w + M * 2, h - horizon + M);
   }
   // winter grounds get their own dressing over the cached terrain
-  if (stage.id >= 6) drawWinterGround(ctx, stage, w, h, horizon, time, travel);
+  if (stage.id >= 6) drawWinterGround(ctx, stage, w, h, horizon, time, travel, camX);
 
-  // texture: swaying tufts + stones
+  // texture: swaying tufts + stones — world-anchored, windowed to the camera
+  const wrapG = (v: number, span: number) => camX - M + ((((v - (camX - M)) % span) + span) % span);
   for (let i = 0; i < 22; i++) {
-    const gx = ((hash01(i * 127 + stage.id * 3) * w - travel * 0.9) % w + w) % w;
+    const gx = wrapG(hash01(i * 127 + stage.id * 3) * w - travel * 0.9, w + M * 2);
     const gy = horizon + 10 + hash01(i * 311 + stage.id) * (h - horizon - 26);
     let sway = Math.sin(time * 1.6 + i) * 1.4;
     if (opts.units) {
@@ -718,13 +728,16 @@ export function drawBackground(
     ctx.stroke();
   }
   for (let i = 0; i < 6; i++) {
-    const gx = hash01(i * 71 + stage.id * 19) * w;
+    const gx = wrapG(hash01(i * 71 + stage.id * 19) * w, w + M * 2);
     const gy = horizon + 20 + hash01(i * 37 + 9) * (h - horizon - 40);
     ctx.beginPath();
     ctx.ellipse(gx, gy, 6 + hash01(i * 2) * 5, 4 + hash01(i * 5) * 3, 0, 0, Math.PI);
     outlined(ctx, "rgba(255,255,255,0.18)", 1.6);
   }
 
+  // screen-space skyworks (storms, weather, motes) ride with the camera
+  ctx.save();
+  ctx.translate(camX, 0);
   // lightning over Gloaming Pass: periodic flashes — the storm answers the Alpha's howl
   if (stage.id === 4) {
     const alphaUnit = opts.units?.find((u) => u.enemyKind === "alpha" && u.alive);
@@ -824,22 +837,28 @@ export function drawBackground(
       ctx.fill();
     }
   }
+  ctx.restore();
 
   // stage set-dressing: each region gets its own furniture (drawn behind units),
-  // drawn twice so the furniture streams past seamlessly as the band marches
+  // tiled in world space so it streams past marches AND camera pans alike
   {
     const span = w + OVERSCAN * 2;
     const dist = travel * 0.9;
-    const seg = Math.floor(dist / span);
     const soff = ((dist % span) + span) % span;
+    const seg = Math.floor(dist / span);
+    const kd0 = Math.floor((camX - OVERSCAN + soff) / span);
     ctx.save();
-    ctx.translate(-soff, 0);
-    drawSetDressing(ctx, stage, w, h, horizon, time, seg);
-    ctx.translate(span, 0);
-    drawSetDressing(ctx, stage, w, h, horizon, time, seg + 1);
+    ctx.translate(kd0 * span - soff, 0);
+    for (let k = kd0; k * span - soff < camX + w + OVERSCAN; k++) {
+      drawSetDressing(ctx, stage, w, h, horizon, time, seg + k);
+      ctx.translate(span, 0);
+    }
     ctx.restore();
   }
 
+  // ambient motes / mist / leaves / rays / stars are all camera-space atmosphere
+  ctx.save();
+  ctx.translate(camX, 0);
   // ambient motes per region: leaves, dusk fireflies, witchlights, embers
   const MOTES: Record<number, { color: string; glow: boolean }> = {
     0: { color: "rgba(190,225,140,0.6)", glow: false }, // drifting leaves
@@ -944,6 +963,7 @@ export function drawBackground(
       ctx.lineCap = "butt";
     }
   }
+  ctx.restore();
 }
 
 function drawSetDressing(
@@ -4152,13 +4172,16 @@ export function drawForeground(
   opts: BgOpts = {},
 ): void {
   ctx.save();
-  // the near layer overshoots the camera slightly for depth
-  ctx.translate(-(opts.camX ?? 0) * 0.35, -(opts.camY ?? 0) * 0.35);
+  // the near layer overshoots camera AND march for depth: world coords already
+  // pan at 1.0, so the camera only adds its extra 0.15 here
+  const camX = opts.camX ?? 0;
+  const fdrift = (opts.travel ?? 0) * 1.15 + camX * 0.15;
   ctx.fillStyle = stage.palette.prop;
   ctx.globalAlpha = 0.85;
   for (let i = 0; i < 11; i++) {
     const fspan = w + OVERSCAN * 2;
-    const gx = ((hash01(i * 41 + stage.id * 5) * fspan - (opts.travel ?? 0) * 1.15) % fspan + fspan) % fspan - OVERSCAN;
+    const winL = camX - OVERSCAN;
+    const gx = winL + ((hash01(i * 41 + stage.id * 5) * fspan - fdrift - winL) % fspan + fspan) % fspan;
     const base = h - 2 + hash01(i * 7) * 6;
     const s = 14 + hash01(i * 13) * 16;
     let sway = Math.sin(time * 1.3 + i * 2.2) * 3;

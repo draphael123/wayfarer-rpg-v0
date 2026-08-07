@@ -53,11 +53,14 @@ let battleSave: SaveData = save; // the save the running battle reads (tutorial 
 let currentStage = 0;
 let xpGranted = false;
 
+/** Battle fields run nearly two screens wide — the fight itself travels the land. */
+const FIELD_SCREENS = 1.9;
+
 function fieldRect(): FieldRect {
   const horizon = (logicalH - HUD_H) * 0.34;
   return {
     left: 26,
-    right: logicalW - 26,
+    right: logicalW * FIELD_SCREENS - 26,
     top: horizon + 16,
     bottom: logicalH - HUD_H - 10,
   };
@@ -573,18 +576,38 @@ function frame(now: number): void {
     let targetX = cam.x;
     let targetY = cam.y;
     if (battle.cinematic > 0 && battle.bossRef?.alive) {
-      targetX = Math.max(-40, Math.min(40, (battle.bossRef.x - logicalW / 2) * 0.35));
+      // the camera crosses the whole field now — it follows the story
+      const maxCam = Math.max(0, logicalW * FIELD_SCREENS - logicalW);
+      targetX = Math.max(0, Math.min(maxCam, battle.bossRef.x - logicalW / 2));
       targetY = Math.max(-24, Math.min(24, (battle.bossRef.y - (logicalH - HUD_H) * 0.55) * 0.3));
     } else if (living.length) {
+      // follow the band first; fall back to whatever still stands
+      const maxCam = Math.max(0, logicalW * FIELD_SCREENS - logicalW);
+      const bandUnits = living.filter((u) => u.team === "hero");
+      const focus = bandUnits.length ? bandUnits : living;
       let cx = 0;
       let cy = 0;
-      for (const u of living) {
+      for (const u of focus) {
         cx += u.x;
         cy += u.y;
       }
-      cx /= living.length;
-      cy /= living.length;
-      targetX = Math.max(-14, Math.min(14, (cx - logicalW / 2) * 0.12));
+      cx /= focus.length;
+      cy /= focus.length;
+      // lean the frame toward the nearest fight so foes stay in view
+      const foes = living.filter((u) => u.team === "enemy");
+      if (foes.length && bandUnits.length) {
+        let nearest = foes[0];
+        let nd = Infinity;
+        for (const e of foes) {
+          const d = Math.abs(e.x - cx);
+          if (d < nd) {
+            nd = d;
+            nearest = e;
+          }
+        }
+        cx = cx * 0.65 + nearest.x * 0.35;
+      }
+      targetX = Math.max(0, Math.min(maxCam, cx - logicalW / 2));
       targetY = Math.max(-8, Math.min(8, (cy - (logicalH - HUD_H) * 0.55) * 0.1));
     }
     cam.x += (targetX - cam.x) * Math.min(1, dt * (battle.cinematic > 0 ? 4 : 2.2));
