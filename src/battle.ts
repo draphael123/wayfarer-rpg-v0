@@ -4731,54 +4731,63 @@ export class Battle {
       const to = this.clampToField({ x: shaman.x + away.x * 70, y: shaman.y + away.y * 70 }, shaman.radius);
       this.moveToward(shaman, to, dt, 4);
     }
-    if (shaman.supportTimer > 0) return;
 
-    let wounded: Unit | null = null;
-    let worst = 0.92;
-    for (const ally of this.livingEnemies()) {
-      if (ally === shaman) continue;
-      const frac = ally.hp / ally.stats.maxHp;
-      if (frac < worst && unitDist(shaman, ally) < 260) {
-        worst = frac;
-        wounded = ally;
+    // Healing is checked on its own cadence. Normal attacks are not: a support
+    // unit should keep fighting between checks instead of idling until its next
+    // heal is ready.
+    if (shaman.supportTimer <= 0) {
+      let wounded: Unit | null = null;
+      let worst = 0.92;
+      for (const ally of this.livingEnemies()) {
+        if (ally === shaman) continue;
+        const frac = ally.hp / ally.stats.maxHp;
+        if (frac < worst && unitDist(shaman, ally) < 260) {
+          worst = frac;
+          wounded = ally;
+        }
       }
-    }
-    if (wounded) {
-      shaman.supportTimer = 2.6;
-      shaman.castGlow = 0.4;
-      shaman.facing = wounded.x >= shaman.x ? 1 : -1;
-      this.projectiles.push({
-        x: shaman.x,
-        y: shaman.y - 16,
-        target: wounded,
-        aim: { x: shaman.facing, y: 0 },
-        speed: 240,
-        damage: 24 * this.stage.scale,
-        from: shaman,
-        kind: "spark",
-        color: "#7de8c9",
-        heals: true,
-        life: 3,
-      });
-      audio.play(shaman.enemyKind === "snowhag" ? "hagChant" : "bolt");
-    } else if (shaman.enemyKind === "snowhag" && nearest && Math.random() < 0.5) {
-      // the hag sings the ground to ice beneath your feet
-      shaman.supportTimer = 3.2;
-      shaman.castGlow = 0.4;
-      this.zones.push({ x: nearest.x, y: nearest.y, radius: 58, time: 0, duration: 4.5, kind: "frost", power: 0.35, dps: 0, from: shaman });
-      this.fx.ring(nearest.x, nearest.y, 58, "#b8e0f0", { width: 3, life: 0.5 });
-      audio.play("frost");
-    } else if (nearest) {
-      // nothing to mend: the shaman fights like everyone else
-      const dist = unitDist(shaman, nearest);
-      if (dist > shaman.stats.range) {
-        this.moveToward(shaman, nearest, dt, shaman.stats.range - 12);
-      } else if (shaman.attackTimer <= 0) {
-        shaman.facing = nearest.x >= shaman.x ? 1 : -1;
-        this.performAttack(shaman, nearest);
-        shaman.attackTimer = this.attackIntervalOf(shaman);
+      if (wounded) {
+        shaman.supportTimer = 2.6;
+        shaman.castGlow = 0.4;
+        shaman.facing = wounded.x >= shaman.x ? 1 : -1;
+        this.projectiles.push({
+          x: shaman.x,
+          y: shaman.y - 16,
+          target: wounded,
+          aim: { x: shaman.facing, y: 0 },
+          speed: 240,
+          damage: 24 * this.stage.scale,
+          from: shaman,
+          kind: "spark",
+          color: "#7de8c9",
+          heals: true,
+          life: 3,
+        });
+        audio.play(shaman.enemyKind === "snowhag" ? "hagChant" : "bolt");
+        return;
+      }
+      if (shaman.enemyKind === "snowhag" && nearest && Math.random() < 0.5) {
+        // the hag sings the ground to ice beneath your feet
+        shaman.supportTimer = 3.2;
+        shaman.castGlow = 0.4;
+        this.zones.push({ x: nearest.x, y: nearest.y, radius: 58, time: 0, duration: 4.5, kind: "frost", power: 0.35, dps: 0, from: shaman });
+        this.fx.ring(nearest.x, nearest.y, 58, "#b8e0f0", { width: 3, life: 0.5 });
+        audio.play("frost");
+        return;
       }
       shaman.supportTimer = 0.4; // keep glancing for wounded packmates
+    }
+
+    if (!nearest) return;
+    // Nothing to mend: fight like any other ranged enemy while the next support
+    // check counts down.
+    const dist = unitDist(shaman, nearest);
+    const attackRange = shaman.stats.range + nearest.radius - 4;
+    if (dist > attackRange) {
+      this.moveToward(shaman, nearest, dt, attackRange - 8);
+    } else if (shaman.attackTimer <= 0 && shaman.windup <= 0) {
+      shaman.facing = nearest.x >= shaman.x ? 1 : -1;
+      this.startAttack(shaman, nearest);
     }
   }
 
