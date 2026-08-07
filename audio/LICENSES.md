@@ -2,11 +2,15 @@
 
 ## Title music
 
-`music-menu-new.mp3` is **Once Upon a Time (loop)** by TAD, downloaded from
-[OpenGameArt](https://opengameart.org/content/once-upon-a-time-loop). It is
+`music-menu-town.mp3` is **Town Theme RPG** by cynicmusic, downloaded from
+[OpenGameArt](https://opengameart.org/content/town-theme-rpg). It is
 released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
 Attribution is not legally required, but the source and creator are retained
 here as part of the project's asset record.
+
+`music-menu-new.mp3`, the previous **Once Upon a Time (loop)** title track by
+TAD, remains in the repository as an inactive CC0 alternative. Its source is
+[OpenGameArt](https://opengameart.org/content/once-upon-a-time-loop).
 
 ## Existing music and effects
 

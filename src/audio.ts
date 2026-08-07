@@ -4,7 +4,7 @@
  * fallback while samples stream in (or if they fail to load).
  *
  * Music: medieval-fantasy & rpg-battle-system packs (Superpowers, CC0), plus
- * TAD's "Once Upon a Time" title loop (CC0; see audio/LICENSES.md).
+ * cynicmusic's "Town Theme RPG" menu theme (CC0; see audio/LICENSES.md).
  * SFX: ninja-adventure & medieval-fantasy packs (Superpowers, CC0).
  */
 import type { DamageElement, DisciplineId } from "./types";
@@ -117,7 +117,7 @@ const MUSIC_TRACKS = [
 ];
 
 const SAMPLE_FILES: Partial<Record<string, string>> = {
-  "music-menu": "audio/music-menu-new.mp3",
+  "music-menu": "audio/music-menu-town.mp3",
   "music-coast": "audio/music-coast.ogg",
 };
 
@@ -502,9 +502,9 @@ class AudioKit {
     src.loopStart = 0.03;
     src.loopEnd = Math.max(0.1, buffer.duration - 0.06);
     const gain = ctx.createGain();
-    // The orchestral title loop is deliberately a touch broader than the
-    // combat beds; the user's music-volume setting still controls both.
-    const level = want === "music-menu" ? 0.38 : 0.32;
+    // Keep the relaxed title arrangement behind menu feedback and narration.
+    // The user's music-volume setting still controls both music buses.
+    const level = want === "music-menu" ? 0.27 : 0.32;
     gain.gain.setValueAtTime(0.0001, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(level, ctx.currentTime + 0.8);
     src.connect(gain);
@@ -1182,16 +1182,21 @@ class AudioKit {
       const chord = chords[Math.floor(this.musicStep / 8) % chords.length];
       const g = this.musicGain!;
       if (this.mood === "menu") {
-        // CAMPFIRE FOLK: plucked strings around the fire — a band at rest.
-        // Am — F — C — G, fingerpicked with a wandering thumb, warm and unhurried.
+        // CAMPFIRE FOLK fallback: a longer, breathing phrase so a slow sample
+        // download never exposes the old four-bar loop.
         const folk = [
           [110, 220, 261.6, 329.6], // Am: bass, then broken chord
           [87.3, 174.6, 220, 261.6], // F
           [130.8, 196, 261.6, 329.6], // C
           [98, 196, 246.9, 293.7], // G
+          [110, 220, 261.6, 329.6], // Am
+          [82.4, 164.8, 196, 246.9], // Em
+          [87.3, 174.6, 220, 261.6], // F
+          [98, 196, 246.9, 293.7], // G
         ];
         const bar = folk[Math.floor(this.musicStep / 8) % folk.length];
         const s8 = this.musicStep % 8;
+        const phrase = Math.floor(this.musicStep / 64) % 3;
         // the pluck: fast-decay triangle doubled with a whisper-detuned partner
         const pluck = (f: number, vol: number, delay = 0) => {
           this.tone(f, 0.55, "triangle", vol, 0, delay, g);
@@ -1199,14 +1204,21 @@ class AudioKit {
         };
         // thumb bass on the strong beats, fingers answering between
         if (s8 === 0) {
-          pluck(bar[0], 0.5);
-          this.tone(bar[0] / 2, 3.4, "sine", 0.2, 0, 0, g); // fire-warm drone underneath
-        } else if (s8 === 2 || s8 === 5) pluck(bar[1], 0.34);
-        else if (s8 === 3 || s8 === 6) pluck(bar[2], 0.38);
-        else if (s8 === 4) pluck(bar[3], 0.4);
-        else if (s8 === 7 && this.musicStep % 16 === 15) pluck(bar[3] * 2, 0.26, 0.12); // a grace note before the turn
-        // now and then a harmonic rings out over the fire
-        if (this.musicStep % 32 === 20) this.tone(bar[2] * 4, 2.2, "sine", 0.09, 0, 0.15, g);
+          pluck(bar[0], phrase === 1 ? 0.38 : 0.44);
+          this.tone(bar[0] / 2, 3.4, "sine", 0.14, 0, 0, g);
+        } else if (s8 === 2 && phrase !== 2) pluck(bar[1], 0.27);
+        else if (s8 === 3 && phrase === 1) pluck(bar[2], 0.25);
+        else if (s8 === 4) pluck(phrase === 2 ? bar[2] : bar[3], 0.3);
+        else if (s8 === 5 && phrase === 0) pluck(bar[1], 0.24);
+        else if (s8 === 6 && phrase !== 1) pluck(bar[2], 0.27);
+        else if (s8 === 7 && this.musicStep % 16 === 15 && phrase === 0) {
+          pluck(bar[3] * 2, 0.18, 0.12);
+        }
+        // A rare harmonic gives the phrase shape without becoming a hook that
+        // calls attention to every repeat.
+        if (this.musicStep % 64 === 44 && phrase !== 2) {
+          this.tone(bar[2] * 4, 2.2, "sine", 0.065, 0, 0.15, g);
+        }
       } else if (this.mood === "battle" && this.stageId >= 18) {
         // Every six-stage late-road region has its own scale, pulse and timbre.
         // Bosses keep the regional motif but force it into a denser, lower register,
