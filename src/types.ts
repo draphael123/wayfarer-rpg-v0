@@ -261,6 +261,10 @@ export interface StageDef {
   id: number;
   name: string;
   subtitle: string;
+  /** A short, authored observation shown as the band enters the field. */
+  fieldNote?: string;
+  /** The tactical lesson or objective this encounter is built to teach. */
+  objective?: string;
   palette: {
     skyTop: string;
     skyBottom: string;

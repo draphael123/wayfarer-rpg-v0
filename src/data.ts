@@ -2084,6 +2084,8 @@ export const STAGES: StageDef[] = [
     id: 0,
     name: "Millbrook Fields",
     subtitle: "Goblins in the barley",
+    fieldNote: "The mill wheel still turns. Nothing else in the fields dares move.",
+    objective: "Break the rush, then close on the sniper.",
     palette: {
       skyTop: "#8fc7e8",
       skyBottom: "#dcecc8",
@@ -2104,6 +2106,8 @@ export const STAGES: StageDef[] = [
     id: 1,
     name: "Thornwood Deep",
     subtitle: "The pines have eyes",
+    fieldNote: "Claw marks circle every trail marker. The pack is steering travelers inward.",
+    objective: "Protect the back line and punish the ogre after its slam.",
     palette: {
       skyTop: "#54799c",
       skyBottom: "#9fc2a4",
@@ -2125,6 +2129,8 @@ export const STAGES: StageDef[] = [
     id: 2,
     name: "Mirebrook Hollow",
     subtitle: "Witchlights in the mist",
+    fieldNote: "Green lanterns drift against the wind. Somewhere in the reeds, a healer is chanting.",
+    objective: "Reach the shaman before the shield line closes.",
     palette: {
       skyTop: "#6b8b85",
       skyBottom: "#b3c29c",
@@ -2145,6 +2151,8 @@ export const STAGES: StageDef[] = [
     id: 3,
     name: "The Charwood",
     subtitle: "Still smoldering",
+    fieldNote: "The fire is weeks old, but fresh footprints cross the ash without leaving toes.",
+    objective: "Identify the caller and assassin; only one can be answered first.",
     palette: {
       skyTop: "#8a5744",
       skyBottom: "#d9b48a",
@@ -2165,6 +2173,8 @@ export const STAGES: StageDef[] = [
     id: 4,
     name: "Gloaming Pass",
     subtitle: "The pack answers one voice",
+    fieldNote: "Every lesser track ends here. One set of prints continues beneath the moon.",
+    objective: "Dodge the pounce. Strike during exhaustion. Survive the hunt.",
     palette: {
       skyTop: "#4a5a8c",
       skyBottom: "#8d7ba8",
@@ -2183,6 +2193,8 @@ export const STAGES: StageDef[] = [
     id: 5,
     name: "Gorehulk's Hollow",
     subtitle: "The warlord himself",
+    fieldNote: "Broken banners face the road like warning stakes. The hollow is already an arena.",
+    objective: "Break his support, spread for the sweep, then take the banner.",
     palette: {
       skyTop: "#8c4a4a",
       skyBottom: "#d9a878",
@@ -2867,6 +2879,7 @@ export const TALENTS: TalentDef[] = [
   { id: "runeMemory", tree: "sorcery", tier: 1, name: "Rune Memory", blurb: "+2% spell power, -1% cooldowns", maxRank: 5 },
   { id: "attune", tree: "sorcery", tier: 2, name: "Attunement", blurb: "-3% ability cooldowns", maxRank: 5, requires: "focus" },
   { id: "kindledMind", tree: "sorcery", tier: 2, name: "Kindled Mind", blurb: "Your damaging spells scorch foes for 8 over 3s", maxRank: 1, keystone: true, requires: "runeMemory" },
+  { id: "elementalConduit", tree: "sorcery", tier: 3, name: "Elemental Conduit", blurb: "Triggering an elemental reaction shaves 1.5 seconds from every technique", maxRank: 1, keystone: true, requires: "kindledMind" },
   { id: "archon", tree: "sorcery", tier: 3, name: "Archon", blurb: "+3% spell power and healing power", maxRank: 3, requires: "attune" },
   { id: "deepReservoir", tree: "sorcery", tier: 4, name: "Deep Reservoir", blurb: "+3% spell power and -1% cooldowns", maxRank: 5, requires: "archon" },
   { id: "arcanePulse", tree: "sorcery", tier: 4, name: "Arcane Pulse", blurb: "+4% spell power", maxRank: 3, requires: "kindledMind" },
@@ -2887,6 +2900,7 @@ export const TALENTS: TalentDef[] = [
   { id: "thickHide", tree: "bulwark", tier: 1, name: "Thick Hide", blurb: "+1% armor", maxRank: 5 },
   { id: "stoneSkin", tree: "bulwark", tier: 2, name: "Stone Skin", blurb: "+1.5% armor", maxRank: 5, requires: "thickHide" },
   { id: "secondBreath", tree: "bulwark", tier: 2, name: "Second Breath", blurb: "Recover 6% health as each new fight begins", maxRank: 1, keystone: true, requires: "oxBlood" },
+  { id: "holdFast", tree: "bulwark", tier: 3, name: "Hold Fast", blurb: "Once per battle below 35% health, gain a ward worth 18% of maximum health", maxRank: 1, keystone: true, requires: "secondBreath" },
   { id: "juggernaut", tree: "bulwark", tier: 3, name: "Juggernaut", blurb: "Cannot be stunned while above two-thirds health", maxRank: 1, keystone: true, requires: "stoneSkin" },
   { id: "fortress", tree: "bulwark", tier: 3, name: "Fortress", blurb: "+2% health and +0.5% armor", maxRank: 3, requires: "secondBreath" },
   { id: "ironHeart", tree: "bulwark", tier: 4, name: "Iron Heart", blurb: "+3% maximum health and +0.5% armor", maxRank: 5, requires: "juggernaut" },
@@ -2988,6 +3002,7 @@ export interface TrinketDef {
   blurb: string;
   rarity: "common" | "rare";
   icon: string;
+  hook?: "packbreaker" | "reactionEcho" | "lastLight" | "priorityMark" | "graveWard";
 }
 
 export const TRINKETS: TrinketDef[] = [
@@ -3003,13 +3018,13 @@ export const TRINKETS: TrinketDef[] = [
   { id: "wayfarerBoots", name: "Wayfarer's Boots", blurb: "+8% move speed", rarity: "common", icon: "🥾" },
   { id: "dentedBuckler", name: "Dented Buckler", blurb: "battles start with a 12 hp ward", rarity: "common", icon: "🛡️" },
   { id: "owlTalon", name: "Owl Talon", blurb: "+4% attack speed, +4% move speed", rarity: "common", icon: "🦉" },
-  { id: "alphaFang", name: "Alpha's Fang", blurb: "+8% attack speed, +6% melee damage", rarity: "rare", icon: "🐺" },
+  { id: "alphaFang", name: "Alpha's Fang", blurb: "+8% attack speed, +6% melee damage. Kills trigger Packbreaker haste.", rarity: "rare", icon: "🐺", hook: "packbreaker" },
   { id: "gorehornShard", name: "Gorehulk Horn Shard", blurb: "+10% melee damage, +30 health", rarity: "rare", icon: "🐮" },
-  { id: "witchLocket", name: "Witchlight Locket", blurb: "+10% spell power, -5% cooldowns", rarity: "rare", icon: "🔮" },
-  { id: "saintRelic", name: "Saint's Relic", blurb: "+10% healing, battles start with a 20 hp ward", rarity: "rare", icon: "✨" },
+  { id: "witchLocket", name: "Witchlight Locket", blurb: "+10% spell power, -5% cooldowns. Reactions echo 2 seconds into every technique.", rarity: "rare", icon: "🔮", hook: "reactionEcho" },
+  { id: "saintRelic", name: "Saint's Relic", blurb: "+10% healing, battles start with a 20 hp ward. Once per battle, Last Light rallies a wounded band.", rarity: "rare", icon: "✨", hook: "lastLight" },
   { id: "moonPendant", name: "Moonlit Pendant", blurb: "-8% cooldowns, +6% spell power", rarity: "rare", icon: "🌙" },
-  { id: "gravewardenSeal", name: "Gravewarden's Seal", blurb: "+6% armor, battles start with a 25 hp ward", rarity: "rare", icon: "🗿" },
-  { id: "marksmanEye", name: "Marksman's Eye", blurb: "+10% ranged damage, +5% critical chance", rarity: "rare", icon: "🎯" },
+  { id: "gravewardenSeal", name: "Gravewarden's Seal", blurb: "+6% armor, battles start with a 25 hp ward. The first fatal blow leaves you standing.", rarity: "rare", icon: "🗿", hook: "graveWard" },
+  { id: "marksmanEye", name: "Marksman's Eye", blurb: "+10% ranged damage, +5% critical chance. Your first hit exposes each priority foe.", rarity: "rare", icon: "🎯", hook: "priorityMark" },
   { id: "harvestIdol", name: "Harvest Idol", blurb: "+12% healing, +20 health", rarity: "rare", icon: "🌾" },
   { id: "frostBead", name: "Frost Bead", blurb: "+8% spell power", rarity: "common", icon: "❄️" },
   { id: "wolfclawCharm", name: "Wolfclaw Charm", blurb: "+7% melee damage, +3% move", rarity: "common", icon: "🐾" },

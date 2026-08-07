@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { BOSS_PHASES, DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, boonMods, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, talentMods, trinketMods, SET_BONUSES } from "./data";
+import { BOSS_PHASES, DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, boonMods, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, talentMods, trinketById, trinketMods, SET_BONUSES } from "./data";
 import { isLateBossKind, isLateFoeKind, type LateBossKind, type LateEnemyKind } from "./late-content";
 
 // Battleheart pacing: cooldowns run 2.5× longer, so each cast must matter more.
@@ -133,6 +133,7 @@ export class Battle {
   tallies: Record<number, { dealt: number; taken: number; healed: number }> = {};
   ordersIssued = 0;
   introBanner = 2.6;
+  roleCallout: { title: string; text: string; color: string; time: number } | null = null;
   zoomPunch = 0;
   decals: { x: number; y: number; kind: "scorch" | "stain" | "print"; age: number; size: number; angle: number }[] = [];
   kickX = 0;
@@ -155,6 +156,10 @@ export class Battle {
   private elementWeakShown = new Set<string>();
   private elementResistShown = new Set<string>();
   private roleIntroduced = new Set<EnemyKind>();
+  private lastLightSpent = new Set<number>();
+  private graveWardSpent = new Set<number>();
+  private holdFastSpent = new Set<number>();
+  private priorityMarked = new Set<string>();
   private warningScale = 1;
 
   constructor(
@@ -165,6 +170,7 @@ export class Battle {
     public tutorialMode = false,
   ) {
     const diff = DIFFICULTIES[save.difficulty ?? 1];
+    this.introBanner = stage.fieldNote ? 4 : 2.6;
     this.warningScale = save.telegraphAssist === "extra" ? 1.5 : save.telegraphAssist === "long" ? 1.25 : 1;
     this.difficultyMult = this.tutorialMode ? 1 : diff.enemyMult;
     this.telegraphTime = (this.tutorialMode ? 1.5 : diff.telegraph) * this.warningScale;
@@ -561,6 +567,11 @@ export class Battle {
     );
   }
 
+  private trinketHookOf(unit: Unit): string | null {
+    if (unit.team !== "hero" || unit.heroIndex < 0 || !this.saveRef) return null;
+    return trinketById(this.saveRef.heroes[unit.heroIndex]?.trinket)?.hook ?? null;
+  }
+
   private setElementCondition(target: Unit, element: ElementId, source: Unit | null): void {
     const specs: Record<ElementId, { kind: StatusEffect["kind"]; time: number; power: number; label: string }> = {
       flame: { kind: "burn", time: 4.5, power: target.team === "hero" ? 2.4 : 3.2, label: "BURNING" },
@@ -693,27 +704,42 @@ export class Battle {
     }
     // Conditions create advantages, never hard locks. Reactions consume the
     // setup that enabled them so control cannot become permanent.
+    let triggeredReaction = false;
     const frozen = this.effect(target, "frozen");
     const burning = this.effect(target, "burn");
     const conductive = this.effect(target, "conductive");
     const brittle = this.effect(target, "brittle");
     if (damageElement === "flame" && frozen) {
+      triggeredReaction = true;
       rawAmount *= 1.25;
       target.effects = target.effects.filter((effect) => effect !== frozen && effect.kind !== "slow");
       this.fx.floatText(target.x, target.y - target.radius * 3 - 22, "THAW SHATTER +25%", ELEMENT_COLORS.flame, 11);
     } else if (damageElement === "frost" && burning) {
+      triggeredReaction = true;
       rawAmount *= 1.2;
       target.effects = target.effects.filter((effect) => effect !== burning);
       this.fx.floatText(target.x, target.y - target.radius * 3 - 22, "QUENCHED +20%", ELEMENT_COLORS.frost, 11);
     } else if (damageElement === "storm" && conductive) {
+      triggeredReaction = true;
       rawAmount *= 1.15;
       target.effects = target.effects.filter((effect) => effect !== conductive);
       target.effects.push(makeEffect("stun", target.team === "hero" ? 0.35 : 0.6, 1, source));
       this.fx.floatText(target.x, target.y - target.radius * 3 - 22, "SURGE +15%", ELEMENT_COLORS.storm, 11);
     } else if ((damageElement === "earth" || damageElement === "physical") && brittle) {
+      triggeredReaction = true;
       rawAmount *= 1.2;
       target.effects = target.effects.filter((effect) => effect !== brittle);
       this.fx.floatText(target.x, target.y - target.radius * 3 - 22, "FRACTURED +20%", ELEMENT_COLORS.earth, 11);
+    }
+    if (
+      triggeredReaction &&
+      source?.team === "hero" &&
+      (this.trinketHookOf(source) === "reactionEcho" || this.heroTalentRank(source, "elementalConduit") > 0)
+    ) {
+      const refund = this.trinketHookOf(source) === "reactionEcho" ? 2 : 1.5;
+      for (const ability of source.abilities) if (!ability.ult) ability.timer = Math.max(0, ability.timer - refund);
+      this.fx.floatText(source.x, source.y - source.radius * 3 - 8, "reaction echo", "#c8a8f0", 11);
+      audio.play("ready");
     }
     const exposed = this.effect(target, "exposed");
     if (exposed) rawAmount *= 1 + exposed.power;
@@ -876,9 +902,35 @@ export class Battle {
       if (amount <= 0) return;
     }
     target.hp -= amount;
+    if (target.team === "hero" && target.hp > 0 && target.hp < target.stats.maxHp * 0.35) {
+      if (this.heroTalentRank(target, "holdFast") > 0 && !this.holdFastSpent.has(target.id)) {
+        this.holdFastSpent.add(target.id);
+        target.effects.push(makeEffect("shield", 9999, Math.round(target.stats.maxHp * 0.18), target));
+        this.fx.ring(target.x, target.y - 12, 50, "#9fc6e8", { width: 4, life: 0.8 });
+        this.fx.floatText(target.x, target.y - target.radius * 3, "HOLD FAST", "#d8edf8", 14);
+        audio.play("shield");
+      }
+      if (this.trinketHookOf(target) === "lastLight" && !this.lastLightSpent.has(target.id)) {
+        this.lastLightSpent.add(target.id);
+        this.heal(target, target.stats.maxHp * 0.2, true, target);
+        for (const ally of this.livingHeroes()) {
+          ally.effects.push(makeEffect("shield", 9999, Math.max(12, Math.round(ally.stats.maxHp * 0.1)), target));
+          this.fx.ring(ally.x, ally.y - 12, 38, "#ffe9a3", { width: 2.5, life: 0.65 });
+        }
+        this.fx.floatText(target.x, target.y - target.radius * 3 - 10, "LAST LIGHT", "#ffe9a3", 14);
+        audio.play("levelup");
+      }
+    }
     if (this.carry && target === this.carry.ogre) this.carry.hurt += amount;
     if (this.tutorialMode && target.team === "hero" && target.hp < 1) target.hp = 1;
-    if (target.team === "hero" && target.hp <= 0 && this.heroTalentRank(target, "miracle") > 0 && !this.miracleSpent.has(target.id)) {
+    if (target.team === "hero" && target.hp <= 0 && this.trinketHookOf(target) === "graveWard" && !this.graveWardSpent.has(target.id)) {
+      this.graveWardSpent.add(target.id);
+      target.hp = Math.max(1, Math.round(target.stats.maxHp * 0.1));
+      target.effects.push(makeEffect("shield", 9999, Math.round(target.stats.maxHp * 0.12), target));
+      this.fx.burst(target.x, target.y - 10, "#b8b29a", 14, 110, { glow: true });
+      this.fx.floatText(target.x, target.y - target.radius * 3, "GRAVEWARD", "#e4dfc8", 15);
+      audio.play("staggerBreak");
+    } else if (target.team === "hero" && target.hp <= 0 && this.heroTalentRank(target, "miracle") > 0 && !this.miracleSpent.has(target.id)) {
       this.miracleSpent.add(target.id);
       target.hp = Math.max(1, Math.round(target.stats.maxHp * 0.25));
       this.fx.ring(target.x, target.y - 12, 48, "#ffe9a3", { width: 4, life: 0.7 });
@@ -900,6 +952,15 @@ export class Battle {
         if (target === this.bossRef && this.bossStaggerMax > 0 && !this.effect(target, "stun")) {
           this.bossStagger += amount * (this.effect(target, "vulnerable") ? 0.9 : 0.5);
           if (this.bossStagger >= this.bossStaggerMax) this.staggerBoss(target);
+        }
+      }
+      if (target.enemyKind && ENEMIES[target.enemyKind].priority && this.trinketHookOf(source) === "priorityMark") {
+        const markKey = `${source.id}:${target.id}`;
+        if (!this.priorityMarked.has(markKey)) {
+          this.priorityMarked.add(markKey);
+          target.effects.push(makeEffect("exposed", 3.5, 0.12, source));
+          this.fx.ring(target.x, target.y, target.radius * 2.8, "#ffd76b", { width: 3, life: 0.65 });
+          this.fx.floatText(target.x, target.y - target.radius * 3 - 8, "TRUE MARK", "#ffd76b", 12);
         }
       }
     }
@@ -1161,6 +1222,12 @@ export class Battle {
       killer.effects = killer.effects.filter((e) => e.kind !== "haste");
       killer.effects.push(makeEffect("haste", 2.5, 1.35, killer));
       this.fx.burst(killer.x, killer.y - 16, "#ffd27d", 8, 90, { glow: true });
+    }
+    if (unit.team === "enemy" && killer?.team === "hero" && this.trinketHookOf(killer) === "packbreaker") {
+      killer.effects = killer.effects.filter((effect) => effect.kind !== "haste" || effect.power > 1.25);
+      killer.effects.push(makeEffect("haste", 2.2, 1.25, killer));
+      killer.attackTimer = 0;
+      this.fx.floatText(killer.x, killer.y - killer.radius * 3, "PACKBREAKER", "#d9b07d", 11);
     }
     if (unit.team === "enemy" && killer?.team === "hero") {
       const feast = this.heroTalentRank(killer, "warFeast") * 0.02 + this.heroTalentRank(killer, "redHarvest") * 0.08;
@@ -3432,6 +3499,10 @@ export class Battle {
     this.updateTerrain(dt);
     this.waveBanner = Math.max(0, this.waveBanner - dt);
     this.introBanner = Math.max(0, this.introBanner - dt);
+    if (this.roleCallout) {
+      this.roleCallout.time -= dt;
+      if (this.roleCallout.time <= 0) this.roleCallout = null;
+    }
     if (this.ultFlash) {
       this.ultFlash.time -= dt;
       if (this.ultFlash.time <= 0) this.ultFlash = null;
@@ -3971,6 +4042,23 @@ export class Battle {
         this.fx.floatText(enemy.x, enemy.y - enemy.radius * 3.5 - 14, `${def.name.toUpperCase()} · ${role}`, def.trim, 13);
         this.fx.ring(enemy.x, enemy.y, enemy.radius * 2.8, def.trim, { width: 3, life: 0.7 });
         audio.play("page");
+        if (this.saveRef?.tutorialHints && this.stage.id <= 5) {
+          const lessons: Record<string, string> = {
+            assassin: "It ignores the front line. Intercept it before it reaches a wounded hero.",
+            support: "Its allies become harder to kill while it lives. Reach it early.",
+            summoner: "Every corpse becomes another problem. Stop the caller first.",
+            disruptor: "It breaks formations and interrupts techniques. Keep room to recover.",
+            artillery: "Its warning reaches the back line. Move before returning fire.",
+            tank: "It protects more dangerous allies. Turn it or go around.",
+            controller: "It changes where the band can safely stand. Preserve an escape lane.",
+          };
+          this.roleCallout = {
+            title: `${role} · ${def.name}`,
+            text: lessons[def.role ?? ""] ?? def.habit,
+            color: def.trim,
+            time: 5.2,
+          };
+        }
       }
     }
     // mid-leap the body belongs to the arc, not the brain

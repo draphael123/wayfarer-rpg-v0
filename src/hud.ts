@@ -75,6 +75,30 @@ const BOSS_INTRO_TIPS: Partial<Record<EnemyKind, string>> = {
   wayeater: "Recall every road. Each old warning still tells the truth.",
 };
 
+const BOSS_EPITHETS: Partial<Record<EnemyKind, string>> = {
+  alpha: "THE MOON'S FIRST HUNTER",
+  ogre: "CART-BREAKER OF THORNWOOD",
+  warlord: "LAST BANNER OF THE SOUTH ROAD",
+  rimeheart: "THE WINTER BENEATH",
+  wyrm: "CROWN OF THE FROZEN COURT",
+  bellwidow: "KEEPER OF THE DROWNED TOLL",
+  stormjaw: "THE REEF THAT HUNGERS",
+  kilntyrant: "MASTER OF THE OPEN FURNACE",
+  cindermaw: "HEART OF THE CALDERA",
+  rootboundmatriarch: "MOTHER BENEATH THE ROOTS",
+  verdantcolossus: "THE WALKING HEARTWOOD",
+  dunerevenant: "THE FALSE MOON'S WITNESS",
+  nightmother: "SILK ACROSS THE STARS",
+  gildedinquisitor: "THE UNBROKEN VERDICT",
+  reliquaryseraph: "WARDEN OF THE LAST RELIC",
+  tempestroc: "CROWN OF THE HIGH STORM",
+  skybreaker: "THE THUNDER MADE FLESH",
+  redhuntsman: "HORN-BEARER OF THE RED CHASE",
+  bloodmoonstag: "THE HUNT'S FINAL SHAPE",
+  lastpilgrim: "THE ONE WHO WALKED TOO FAR",
+  wayeater: "THE END WAITING ON EVERY ROAD",
+};
+
 /** Key labels on ability buttons only make sense where a keyboard likely exists. */
 const FINE_POINTER = typeof matchMedia !== "undefined" && matchMedia("(pointer: fine)").matches;
 
@@ -662,6 +686,7 @@ export class Hud {
     this.drawAbilityTooltip(ctx);
     this.drawBanner(ctx);
     this.drawIntroBanner(ctx);
+    this.drawRoleCallout(ctx);
     this.drawTutorialCard(ctx);
     this.drawHintText(ctx);
     this.overlayButtons = [];
@@ -896,7 +921,7 @@ export class Hud {
       ctx.globalAlpha = 1;
       ctx.font = "800 9px 'Trebuchet MS', Verdana, sans-serif";
       ctx.fillStyle = "rgba(255,240,205,.78)";
-      ctx.fillText(`GREAT FOE · WAYMARK ${this.battle.stage.id + 1}`, this.width / 2, y - 34);
+      ctx.fillText((bossKind && BOSS_EPITHETS[bossKind]) ?? `GREAT FOE · WAYMARK ${this.battle.stage.id + 1}`, this.width / 2, y - 34);
       ctx.font = "600 italic 13px Georgia, serif";
       ctx.fillStyle = "#e6dcc2";
       const tip = (bossKind && BOSS_INTRO_TIPS[bossKind]) ?? "Read the warning. Move first, then answer.";
@@ -999,7 +1024,8 @@ export class Hud {
 
   private drawIntroBanner(ctx: CanvasRenderingContext2D): void {
     if (this.battle.introBanner <= 0 || this.tutorial) return;
-    const t = 2.6 - this.battle.introBanner;
+    const duration = this.battle.stage.fieldNote ? 4 : 2.6;
+    const t = duration - this.battle.introBanner;
     const alpha = Math.min(1, this.battle.introBanner / 0.6, t / 0.35);
     const slide = t < 0.35 ? (1 - t / 0.35) * -26 : 0;
     ctx.globalAlpha = Math.max(0, alpha);
@@ -1016,6 +1042,43 @@ export class Hud {
     ctx.strokeText(this.battle.stage.subtitle, this.width / 2, y + 24);
     ctx.fillStyle = "#e6dcc2";
     ctx.fillText(this.battle.stage.subtitle, this.width / 2, y + 24);
+    if (this.battle.stage.fieldNote) {
+      ctx.font = "600 11px Georgia, serif";
+      ctx.fillStyle = "rgba(231,221,195,.82)";
+      ctx.fillText(`“${this.battle.stage.fieldNote}”`, this.width / 2, y + 48);
+    }
+    if (this.battle.stage.objective) {
+      ctx.font = "800 9px 'Trebuchet MS', Verdana, sans-serif";
+      ctx.fillStyle = "#d9bd7c";
+      ctx.fillText(`FIELD ORDER · ${this.battle.stage.objective.toUpperCase()}`, this.width / 2, y + 70);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  private drawRoleCallout(ctx: CanvasRenderingContext2D): void {
+    const note = this.battle.roleCallout;
+    if (!note || this.tutorial || this.battle.cinematic > 0 || this.battle.introBanner > 0.25) return;
+    const alpha = Math.min(1, note.time / 0.45, (5.2 - note.time) / 0.25);
+    const width = Math.min(430, this.width - 32);
+    const x = this.width / 2 - width / 2;
+    const y = 58;
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.fillStyle = "rgba(18,14,24,.92)";
+    roundRect(ctx, x, y, width, 58, 6);
+    ctx.fill();
+    ctx.fillStyle = note.color;
+    ctx.fillRect(x, y, 5, 58);
+    ctx.strokeStyle = "rgba(220,196,145,.35)";
+    ctx.lineWidth = 1;
+    roundRect(ctx, x, y, width, 58, 6);
+    ctx.stroke();
+    ctx.textAlign = "left";
+    ctx.font = "800 10px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.fillStyle = note.color;
+    ctx.fillText(note.title, x + 18, y + 20);
+    ctx.font = "600 11px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.fillStyle = "#eee5d2";
+    ctx.fillText(note.text.length > 72 ? `${note.text.slice(0, 69)}…` : note.text, x + 18, y + 41);
     ctx.globalAlpha = 1;
   }
 
