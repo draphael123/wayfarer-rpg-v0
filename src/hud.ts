@@ -49,6 +49,25 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
+/** Canvas text does not wrap on its own. Keep teaching copy inside its panel
+ * at every viewport width without shrinking it below a comfortable size. */
+function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.trim().split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(candidate).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
 const ABILITY_REACH: Record<string, number> = { pierce: 430, frostwake: 360 };
 
 const BOSS_INTRO_TIPS: Partial<Record<EnemyKind, string>> = {
@@ -1142,18 +1161,21 @@ export class Hud {
     const note = this.battle.roleCallout;
     if (!note || this.tutorial || this.battle.cinematic > 0 || this.battle.introBanner > 0.25) return;
     const alpha = Math.min(1, note.time / 0.45, (5.2 - note.time) / 0.25);
-    const width = Math.min(430, this.width - 32);
+    const width = Math.max(220, Math.min(430, this.width - 24));
     const x = this.width / 2 - width / 2;
     const y = 58;
+    ctx.font = "600 11px 'Trebuchet MS', Verdana, sans-serif";
+    const bodyLines = wrapCanvasText(ctx, note.text, width - 36).slice(0, 2);
+    const height = 43 + bodyLines.length * 14;
     ctx.globalAlpha = Math.max(0, alpha);
     ctx.fillStyle = "rgba(18,14,24,.92)";
-    roundRect(ctx, x, y, width, 58, 6);
+    roundRect(ctx, x, y, width, height, 6);
     ctx.fill();
     ctx.fillStyle = note.color;
-    ctx.fillRect(x, y, 5, 58);
+    ctx.fillRect(x, y, 5, height);
     ctx.strokeStyle = "rgba(220,196,145,.35)";
     ctx.lineWidth = 1;
-    roundRect(ctx, x, y, width, 58, 6);
+    roundRect(ctx, x, y, width, height, 6);
     ctx.stroke();
     ctx.textAlign = "left";
     ctx.font = "800 10px 'Trebuchet MS', Verdana, sans-serif";
@@ -1161,7 +1183,7 @@ export class Hud {
     ctx.fillText(note.title, x + 18, y + 20);
     ctx.font = "600 11px 'Trebuchet MS', Verdana, sans-serif";
     ctx.fillStyle = "#eee5d2";
-    ctx.fillText(note.text.length > 72 ? `${note.text.slice(0, 69)}…` : note.text, x + 18, y + 41);
+    bodyLines.forEach((line, index) => ctx.fillText(line, x + 18, y + 41 + index * 14));
     ctx.globalAlpha = 1;
   }
 
@@ -1190,11 +1212,18 @@ export class Hud {
     this.skipRect = null;
     if (!this.tutorial) return;
     const t = this.tutorial;
-    ctx.font = "700 16px 'Trebuchet MS', Verdana, sans-serif";
-    const w = Math.max(ctx.measureText(t.text).width + 44, 320);
+    const maxWidth = Math.max(210, this.width - 24);
+    const w = Math.min(680, maxWidth);
     const x = this.width / 2 - w / 2;
-    const y = 50;
-    const h = t.sub ? 74 : 54;
+    const y = Math.max(12, Math.min(50, this.height * 0.08));
+    const innerWidth = w - 36;
+    ctx.font = "700 16px 'Trebuchet MS', Verdana, sans-serif";
+    const titleLines = wrapCanvasText(ctx, t.text, innerWidth);
+    ctx.font = "600 12.5px 'Trebuchet MS', Verdana, sans-serif";
+    const subLines = t.sub ? wrapCanvasText(ctx, t.sub, innerWidth) : [];
+    const titleHeight = titleLines.length * 19;
+    const subHeight = subLines.length ? 7 + subLines.length * 16 : 0;
+    const h = 20 + titleHeight + subHeight + 18;
     ctx.fillStyle = "rgba(24, 18, 38, 0.92)";
     roundRect(ctx, x, y, w, h, 12);
     ctx.fill();
@@ -1204,12 +1233,12 @@ export class Hud {
     ctx.stroke();
     ctx.fillStyle = "#ffeebe";
     ctx.textAlign = "center";
-    ctx.fillText(t.text, this.width / 2, y + 26);
-    if (t.sub) {
-      ctx.font = "600 12.5px 'Trebuchet MS', Verdana, sans-serif";
-      ctx.fillStyle = "#b9aed0";
-      ctx.fillText(t.sub, this.width / 2, y + 47);
-    }
+    ctx.font = "700 16px 'Trebuchet MS', Verdana, sans-serif";
+    titleLines.forEach((line, index) => ctx.fillText(line, this.width / 2, y + 22 + index * 19));
+    ctx.font = "600 12.5px 'Trebuchet MS', Verdana, sans-serif";
+    ctx.fillStyle = "#b9aed0";
+    const subY = y + 22 + titleHeight + 4;
+    subLines.forEach((line, index) => ctx.fillText(line, this.width / 2, subY + index * 16));
     // step dots
     for (let i = 0; i < t.total; i++) {
       ctx.beginPath();
@@ -1269,11 +1298,13 @@ export class Hud {
     ctx.textAlign = "center";
     ctx.fillStyle = "rgba(20,16,28,0.6)";
     const y = this.height - HUD_H - 26;
-    const w = ctx.measureText(this.hint).width + 26;
-    roundRect(ctx, this.width / 2 - w / 2, y - 17, w, 24, 10);
+    const w = Math.max(210, Math.min(this.width - 24, 620));
+    const lines = wrapCanvasText(ctx, this.hint, w - 28).slice(0, 2);
+    const h = 10 + lines.length * 18;
+    roundRect(ctx, this.width / 2 - w / 2, y - h + 7, w, h, 10);
     ctx.fill();
     ctx.fillStyle = "#ffeebe";
-    ctx.fillText(this.hint, this.width / 2, y);
+    lines.forEach((line, index) => ctx.fillText(line, this.width / 2, y - (lines.length - 1 - index) * 18));
     ctx.globalAlpha = 1;
   }
 
