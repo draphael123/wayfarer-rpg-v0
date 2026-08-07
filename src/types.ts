@@ -212,6 +212,9 @@ export interface HeroSave {
   trinket: string | null;
   calling: string | null; // sworn calling id (band level 5+), null = unsworn
   advCalling: string | null; // advanced branch id (band level 20+), null = not yet advanced
+  callingLevels: Record<string, number>; // levels earned while each calling was active
+  masteredCallings: string[]; // ten-level passives retained after switching
+  advancedCallings: Record<string, string>; // chosen promotion retained per mastered calling
 }
 
 export interface SaveData {
@@ -238,6 +241,9 @@ export interface SaveData {
   stageStats: Record<number, { bestTime: number; clears: number }>; // per-stage clear records
   arenaRecords: Record<number, { clears: number; bestTime: number }>;
   contractRecords: Record<string, { clears: number; bestTime: number }>;
+  arenaMarks: number;
+  contractRenown: number;
+  challengeMilestones: string[];
   lifetime: LifetimeStats; // the band's whole story in numbers
   presets: (PartyPreset | null)[]; // two savable band configurations
   reducedMotion: boolean; // calmer screen: no shake/zoom punch, no menu animation

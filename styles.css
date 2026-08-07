@@ -3178,6 +3178,12 @@ body.reduced-motion .forge-sparks i { animation: none; }
 .arena-rule span { color: #a58b56; font: 700 9px/1.4 ui-monospace, Consolas, monospace; letter-spacing: .12em; }
 .arena-rule p { color: #a79ead; font-size: 11px; line-height: 1.4; }
 .challenge-list, .contract-ledger { display: flex; flex-direction: column; gap: 8px; }
+.reward-road { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: -4px 0 12px; background: #3e3547; border: 1px solid #4b4053; }
+.reward-road span { display: flex; flex-direction: column; padding: 7px 10px; background: #1d1725; color: #746b7e; }
+.reward-road b { font: 800 10px/1 ui-monospace, Consolas, monospace; }
+.reward-road em { font-size: 9px; font-style: normal; }
+.reward-road span.earned { color: #dfc27a; background: #292117; }
+.contract-road span.earned { color: #5d4728; background: #d2bf91; }
 .challenge-card { display: grid; grid-template-columns: 76px 1fr auto; align-items: center; gap: 12px; padding: 11px; border: 1px solid #50465a; border-left: 3px solid #8d6b42; background: #211b29; }
 .challenge-card.sealed, .contract-sheet.sealed { opacity: .5; }
 .challenge-portrait { width: 72px; height: 72px; display: grid; place-items: center; border: 1px solid #4d424f; background: #17121c; color: #6f6577; font: 700 24px/1 Georgia, serif; }
@@ -3206,6 +3212,15 @@ body.reduced-motion .forge-sparks i { animation: none; }
 .contract-bottom > span { color: #5b4729; font-size: 11px; font-weight: 800; }
 .contract-bottom > em { grid-column: 1; color: #75664f; font-size: 9px; font-style: normal; }
 .contract-bottom .big-btn { grid-column: 2; grid-row: 1 / span 2; min-height: 34px; padding: 6px 10px; font-size: 10px; }
+
+.mastery-track { display: flex; flex-direction: column; gap: 5px; padding: 8px 9px; border: 1px solid rgba(255,255,255,.09); background: rgba(0,0,0,.12); }
+.mastery-track > span { display: flex; justify-content: space-between; gap: 10px; }
+.mastery-track b { color: #b6a9c5; font-size: 10px; }
+.mastery-track em { color: #766d81; font-size: 9px; font-style: normal; text-align: right; }
+.mastery-track > i { height: 3px; background: #332c3b; overflow: hidden; }
+.mastery-track > i > b { display: block; height: 100%; background: var(--chip, #d3b66e); }
+.mastery-track.complete { border-color: color-mix(in srgb, var(--chip) 45%, transparent); }
+.mastery-track.complete b { color: var(--chip); }
 
 @media (max-width: 560px) {
   .contract-ledger { grid-template-columns: 1fr; }

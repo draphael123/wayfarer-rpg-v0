@@ -1,7 +1,7 @@
 import { audio } from "./audio";
 import { speedLabel } from "./save";
 import type { Battle } from "./battle";
-import { callingById, DIFFICULTIES, HEROES } from "./data";
+import { BOSS_PHASES, callingById, DIFFICULTIES, HEROES } from "./data";
 import { drawAbilityGlyph } from "./icons";
 import type { AbilityState, SaveData, Unit } from "./types";
 
@@ -795,9 +795,9 @@ export class Hud {
         ctx.fillText("STAGGERED — strike now!", this.width / 2, y + 36);
       }
     }
-    // phase markers (Alpha 60/30, Gorehulk 66/33)
-    if (["alpha", "warlord", "rimeheart"].includes(this.battle.bossRef?.enemyKind ?? "")) {
-      for (const mark of this.battle.bossRef?.enemyKind === "alpha" ? [0.6, 0.3] : [0.66, 0.33]) {
+    const phaseMarks = BOSS_PHASES[this.battle.bossRef?.enemyKind ?? "goblin"] ?? [];
+    if (phaseMarks.length) {
+      for (const mark of phaseMarks) {
         ctx.fillStyle = frac > mark ? "#ffe9a3" : "rgba(255,255,255,0.25)";
         ctx.fillRect(x + w * mark - 1, y + 9, 2, 13);
       }

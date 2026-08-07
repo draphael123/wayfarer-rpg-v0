@@ -1,6 +1,7 @@
 import { audio } from "./audio";
 import {
   ABILITIES,
+  arenaPurse,
   ALL_GEAR,
   ARMORS,
   ARMOR_FAMILY_TIER,
@@ -20,10 +21,13 @@ import {
   advCallingById,
   CALLINGS,
   CALLING_SWITCH_COST,
+  CALLING_MASTERY_LEVELS,
   CALLING_UNLOCK_LEVEL,
   callingById,
   callingEligible,
   CONTRACTS,
+  contractPurse,
+  FOUNDATIONAL_CALLING_IDS,
   DIFFICULTIES,
   heroArrived,
   TRINKETS,
@@ -985,9 +989,10 @@ export class Menus {
         <div class="challenge-mast arena-mast">
           <button class="back-rune" data-act="back" aria-label="Back to map">‹</button>
           <span><em>The Ruined Ring</em><strong>Old victories do not stay buried.</strong></span>
-          <div class="challenge-count">${Object.values(this.save.arenaRecords).reduce((n, r) => n + (r?.clears ?? 0), 0)} wins</div>
+          <div class="challenge-count">${this.save.arenaMarks} arena marks</div>
         </div>
         <div class="arena-rule"><span>THE TERMS</span><p>Choose a defeated boss. Arena victories grant experience and gold; the first clear of each rematch pays an additional purse.</p></div>
+        <div class="reward-road">${[5, 12, 20].map((mark) => `<span class="${this.save.arenaMarks >= mark ? "earned" : ""}"><b>${mark}</b><em>${mark === 5 ? "200 gold" : mark === 12 ? "rare curio" : "500 gold"}</em></span>`).join("")}</div>
         <div class="challenge-list"></div>
       </div>
     `);
@@ -999,7 +1004,7 @@ export class Menus {
       const stage = STAGES[stageIndex];
       const unlocked = defeated.includes(stageIndex);
       const rec = this.save.arenaRecords[stageIndex];
-      const purse = 70 + stageIndex * 9 + (rec?.clears ? 0 : 120);
+      const purse = arenaPurse(stageIndex, !rec?.clears);
       const finalWave = stage.waves[stage.waves.length - 1];
       const bossKind = finalWave?.[finalWave.length - 1]?.kind;
       const card = el(`
@@ -1033,9 +1038,10 @@ export class Menus {
         <div class="challenge-mast contract-mast">
           <button class="back-rune" data-act="back" aria-label="Back to tavern">‹</button>
           <span><em>The Nail &amp; Notice</em><strong>Work that cannot wait for heroes.</strong></span>
-          <div class="challenge-count">${Object.keys(this.save.contractRecords).length}/${CONTRACTS.length} signed</div>
+          <div class="challenge-count">${this.save.contractRenown} renown</div>
         </div>
         <div class="arena-rule"><span>PAYMENT</span><p>Every fulfilled contract pays gold and experience. Its first completion also includes a useful piece of unowned gear.</p></div>
+        <div class="reward-road contract-road">${[4, 8, 14].map((mark) => `<span class="${this.save.contractRenown >= mark ? "earned" : ""}"><b>${mark}</b><em>${mark === 4 ? "200 gold" : mark === 8 ? "veteran gear" : "500 gold"}</em></span>`).join("")}</div>
         <div class="contract-ledger"></div>
       </div>
     `);
@@ -1043,7 +1049,7 @@ export class Menus {
     for (const contract of CONTRACTS) {
       const available = this.save.unlockedStage >= contract.unlockStage;
       const rec = this.save.contractRecords[contract.id];
-      const firstPay = contract.reward + Math.round(contract.reward * 0.5);
+      const firstPay = contractPurse(contract, true, true);
       const term = contract.condition === "flawless" ? "No hero may fall"
         : contract.condition === "threeHeroes" ? "Three active heroes maximum"
           : contract.condition === "swift" ? `Finish within ${contract.target} seconds`
@@ -2226,7 +2232,7 @@ export class Menus {
           <div class="shop-note"><strong>🍺 The Tavern</strong> — recruit new heroes to the band. Anyone hired can be rotated in or out of your fighting party of ${PARTY_CAP} on the Party screen.</div>
           <div class="shop-note"><strong>${ico("shield")} The Armory</strong> — weapons upgrade in tiers, but armor is a WARDROBE across THREE slots: body, helm, and boots. Every piece changes passive stats or combat traits; wear two or three pieces of one family and the SET answers with more. The Forge reworks any owned piece up to +3, and the great foes each guard a RELIC piece for whoever fells them first.</div>
           <div class="shop-note"><strong>${ico("spark")} The Spell Shop</strong> — unlock a spell once for the whole band, then assign it to any hero whose attributes meet its bar. Each hero carries up to ${MAX_EQUIPPED} spells.</div>
-          <div class="shop-note"><strong>${ico("banner")} Callings</strong> — at level ${CALLING_UNLOCK_LEVEL} a hero may swear an oath their stats have earned: an always-on passive, regalia, and an ULTIMATE that charges as they play their role. At level ${ADV_CALLING_LEVEL} every oath deepens down one of two paths. Stats never lock — but drop below an oath's bar and it sleeps.</div>
+          <div class="shop-note"><strong>${ico("banner")} Six founding callings</strong> — swear an oath at level ${CALLING_UNLOCK_LEVEL}. Earn ${CALLING_MASTERY_LEVELS} levels beneath it to retain its mastery lesson after switching. At level ${ADV_CALLING_LEVEL}, a mastered oath promotes down one of two permanent paths.</div>
           <div class="shop-note"><strong>${ico("skull")} Bosses</strong> — the great foes hunt whoever HURTS them most. Pour damage in and a boss turns on you; your warrior holds its anger just by standing in its face, and taunts trump everything. Marked ground means MOVE.</div>
           <div class="shop-note"><strong>⌨ Keyboard</strong> — on a computer: 1–4 picks a hero, Q/W/E casts, R is the ultimate. Aimed spells follow the mouse; click casts, Esc cancels. Rebind in Settings.</div>
           <div class="shop-note"><strong>${ico("star")} Talents</strong> — every 2 band levels, each hero earns a talent point for the Strength, Dexterity, and Magic trees. Find them on the Party screen.</div>
@@ -3140,6 +3146,7 @@ export class Menus {
       oathHolds ? hero.calling : null,
       oathHolds ? hero.advCalling : null,
       hero.boons,
+      hero.masteredCallings,
     );
     const weapon = dominantWeapon(hero.attrs, oathHolds ? hero.calling : null);
     const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
@@ -3274,7 +3281,7 @@ export class Menus {
         return c && callingEligible(c, hero.attrs) ? hero.calling : null;
       };
       const effAdv = () => (effCalling() ? hero.advCalling : null);
-      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.boons);
+      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.boons, hero.masteredCallings);
       hero.attrs[key] += 1;
       save.unspent[index] -= 1;
       const before = unlocked.length;
@@ -3295,7 +3302,7 @@ export class Menus {
         audio.play("click");
       }
       persist(save);
-      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.boons);
+      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.boons, hero.masteredCallings);
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, statsBefore, statsAfter);
     });
@@ -3315,7 +3322,7 @@ export class Menus {
         const c = callingById(hero.calling);
         return c && callingEligible(c, hero.attrs) ? hero.calling : null;
       };
-      const before = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.boons);
+      const before = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.boons, hero.masteredCallings);
       for (let p = 0; p < pts; p++) {
         let bestK = ATTR_KEYS[0];
         let bestScore = -1;
@@ -3338,7 +3345,7 @@ export class Menus {
       persist(save);
       audio.play("levelup");
       this.showToast(`${def.name}'s training follows their nature — ${pts} point${pts === 1 ? "" : "s"} spent`);
-      const after = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.boons);
+      const after = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.boons, hero.masteredCallings);
       const freshCard = this.refreshCard(card, index);
       flashStatDeltas(freshCard, before, after);
     });
@@ -3383,8 +3390,10 @@ export class Menus {
     `);
     page.querySelector(".map-header")!.after(this.heroTabs(index, "calling"));
     const grid = page.querySelector(".calling-grid")!;
-    const FAMILY_ORDER = ["Iron", "Blade", "Hunt", "Elemental", "Faith & Shadow", "Song & Craft"];
-    const ordered = [...CALLINGS].sort((a, b) => FAMILY_ORDER.indexOf(a.family) - FAMILY_ORDER.indexOf(b.family));
+    const FAMILY_ORDER = ["Iron", "Blade", "Hunt", "Elemental", "Faith & Shadow"];
+    const visibleIds = new Set<string>(FOUNDATIONAL_CALLING_IDS);
+    if (hero.calling) visibleIds.add(hero.calling); // legacy oaths remain playable and switchable
+    const ordered = CALLINGS.filter((calling) => visibleIds.has(calling.id)).sort((a, b) => FAMILY_ORDER.indexOf(a.family) - FAMILY_ORDER.indexOf(b.family));
     let lastFamily = "";
     for (const c of ordered) {
       if (c.family !== lastFamily) {
@@ -3393,6 +3402,8 @@ export class Menus {
       }
       const eligible = callingEligible(c, hero.attrs);
       const isSworn = hero.calling === c.id;
+      const practice = Math.min(CALLING_MASTERY_LEVELS, hero.callingLevels[c.id] ?? 0);
+      const mastered = hero.masteredCallings.includes(c.id);
       const card = el(`
         <div class="calling-card ${isSworn ? "sworn" : ""} ${eligible ? "" : "locked"}" style="--chip:${c.color}">
           <div class="calling-head">
@@ -3409,6 +3420,7 @@ export class Menus {
             .map((e) => `<span class="req-chip ${hero.attrs[e.attr] >= e.value ? "met" : ""}">${ATTR_NAMES[e.attr]} ${e.value}</span>`)
             .join("")}</div>
           <div class="calling-passive">${c.passive}</div>
+          <div class="mastery-track ${mastered ? "complete" : ""}"><span><b>${mastered ? "Mastered" : `Mastery ${practice}/${CALLING_MASTERY_LEVELS}`}</b><em>${mastered ? "Passive retained when another oath is active" : "Earn hero levels while this oath is active"}</em></span><i><b style="width:${(practice / CALLING_MASTERY_LEVELS) * 100}%"></b></i></div>
           <div class="calling-sig">
             <span class="spell-ico"></span>
             <span class="spell-info">
@@ -3436,10 +3448,10 @@ export class Menus {
       holder.appendChild(canvas);
       // level-20 advancement: the sworn calling shows its two branches
       if (isSworn && c.advanced) {
-        const advReady = hero.level >= ADV_CALLING_LEVEL;
+        const advReady = hero.level >= ADV_CALLING_LEVEL && mastered;
         const advWrap = el(`
           <div class="adv-section">
-            <div class="adv-head">Advancement ${advReady ? "" : `<span>at level ${ADV_CALLING_LEVEL}</span>`}</div>
+            <div class="adv-head">Promotion ${advReady ? "" : `<span>requires level ${ADV_CALLING_LEVEL} + mastery</span>`}</div>
             <div class="adv-branches"></div>
           </div>
         `);
@@ -3472,9 +3484,10 @@ export class Menus {
       const advance = target.closest("[data-advance]");
       if (advance) {
         const id = advance.getAttribute("data-advance")!;
-        if (hero.level < ADV_CALLING_LEVEL) return;
+        if (hero.level < ADV_CALLING_LEVEL || !hero.masteredCallings.includes(hero.calling ?? "")) return;
         if (hero.advCalling && !this.spend(ADV_SWITCH_COST)) return;
         hero.advCalling = id;
+        if (hero.calling) hero.advancedCallings[hero.calling] = id;
         persist(save);
         audio.play("levelup");
         navigator.vibrate?.([20, 30, 50]);
@@ -3490,7 +3503,7 @@ export class Menus {
         if (!callingEligible(c, hero.attrs)) return;
         if (hero.calling && !this.spend(CALLING_SWITCH_COST)) return;
         hero.calling = id;
-        hero.advCalling = null; // a new oath starts unadvanced
+        hero.advCalling = hero.advancedCallings[id] ?? null;
         persist(save);
         audio.play("levelup");
         this.showToast(`${def.name} swears the ${c.name}'s oath — ${c.signature.name} joins the battle bar`);
@@ -3519,7 +3532,7 @@ export class Menus {
     const oathHolds = sworn ? callingEligible(sworn, hero.attrs) : false;
     const weapon = dominantWeapon(hero.attrs, oathHolds ? hero.calling : null);
     const currentGear = () => heroGearOf(hero, save.forge);
-    const currentStats = () => deriveStats(hero.attrs, hero.weaponTier, currentGear(), hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.boons);
+    const currentStats = () => deriveStats(hero.attrs, hero.weaponTier, currentGear(), hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.boons, hero.masteredCallings);
     const wornSet = armorSetOf(currentGear());
     const slotInfo = [
       { key: "weapon", label: "Weapon", icon: "sword", value: `${WEAPON_TIERS[hero.weaponTier].name} ${WEAPON_LABEL[weapon]}` },
@@ -3593,7 +3606,7 @@ export class Menus {
       const choices: (typeof pool[number] | null)[] = [null, ...pool];
       list.innerHTML = choices.map((piece) => {
         const altGear = { ...currentGear(), [kind === "body" ? "body" : kind]: piece?.id ?? null };
-        const alt = deriveStats(hero.attrs, hero.weaponTier, altGear, hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.boons);
+        const alt = deriveStats(hero.attrs, hero.weaponTier, altGear, hero.talents, hero.trinket, oathHolds ? hero.calling : null, oathHolds ? hero.advCalling : null, hero.boons, hero.masteredCallings);
         const deltas = [[alt.maxHp - cur.maxHp, "hp"], [Math.round((alt.armor - cur.armor) * 100), "% armor"], [Math.round(((alt.speed - cur.speed) / cur.speed) * 100), "% move"]] as const;
         const deltaHtml = deltas.filter(([n]) => n).map(([n, label]) => `<i class="${n > 0 ? "up" : "dn"}">${n > 0 ? "+" : ""}${n}${label}</i>`).join("");
         const active = wornId === (piece?.id ?? null);
@@ -3706,7 +3719,7 @@ export class Menus {
     const gearHolder = page.querySelector(".gear-slots")!;
     const gearNow = () => heroGearOf(hero, save.forge);
     const statsWith = (gear: ReturnType<typeof gearNow>) =>
-      deriveStats(hero.attrs, hero.weaponTier, gear, hero.talents, hero.trinket, sheetHolds ? hero.calling : null, sheetHolds ? hero.advCalling : null, hero.boons);
+      deriveStats(hero.attrs, hero.weaponTier, gear, hero.talents, hero.trinket, sheetHolds ? hero.calling : null, sheetHolds ? hero.advCalling : null, hero.boons, hero.masteredCallings);
     const buildSlot = (kind: "body" | "helm" | "boots") => {
       const catalog = kind === "body" ? ARMORS : kind === "helm" ? HELMS : BOOTS;
       const wornId = kind === "body" ? hero.armor : kind === "helm" ? hero.helm : hero.boots;

@@ -1,6 +1,6 @@
 import { audio } from "./audio";
 import { Battle, type FieldRect } from "./battle";
-import { ADV_CALLING_LEVEL, ALL_GEAR, ARMORS, BOSS_STAGES, CALLING_UNLOCK_LEVEL, CONTRACTS, DIFFICULTIES, HEROES, STAGES, TRINKETS } from "./data";
+import { ADV_CALLING_LEVEL, ALL_GEAR, ARMORS, arenaPurse, BOSS_STAGES, CALLING_UNLOCK_LEVEL, contractFulfilled, contractPurse, CONTRACTS, DIFFICULTIES, HEROES, STAGES, TRINKETS } from "./data";
 import { FxSystem } from "./fx";
 import { HUD_H, Hud } from "./hud";
 import { drawHeroPortrait, Menus } from "./menus";
@@ -283,9 +283,13 @@ function settleVictory(): void {
   save.heroes.forEach((h, i) => {
     if (!h.recruited) return;
     const before = h.level;
+    const beforeMasteries = new Set(h.masteredCallings);
     levels += grantHeroXp(save, i, h.active ? xp : xp * 0.5);
     if (before < CALLING_UNLOCK_LEVEL && h.level >= CALLING_UNLOCK_LEVEL) milestones.push(`${HEROES[i].name} may swear a CALLING`);
     if (before < ADV_CALLING_LEVEL && h.level >= ADV_CALLING_LEVEL) milestones.push(`${HEROES[i].name}'s oath can DEEPEN`);
+    for (const mastery of h.masteredCallings) {
+      if (!beforeMasteries.has(mastery)) milestones.push(`${HEROES[i].name} mastered the ${mastery} oath — its lesson is now permanent`);
+    }
   });
   persist(save);
   for (const m of milestones) setTimeout(() => menus.showToast(m), 1200);
@@ -346,28 +350,27 @@ function settleChallengeVictory(challenge: NonNullable<typeof activeChallenge>):
   if (challenge.kind === "arena") {
     const old = save.arenaRecords[challenge.stage];
     const first = !old?.clears;
-    const gold = 70 + challenge.stage * 9 + (first ? 120 : 0);
+    const gold = arenaPurse(challenge.stage, first);
     save.gold += gold;
+    save.arenaMarks += first ? 3 : 1;
     save.arenaRecords[challenge.stage] = { clears: (old?.clears ?? 0) + 1, bestTime: old ? Math.min(old.bestTime, t) : t };
-    setTimeout(() => menus.showToast(`${first ? "FIRST ARENA VICTORY" : "ARENA CLEARED"} · +${gold} gold · +${xp} xp`), 120);
+    const milestone = claimChallengeMilestones("arena");
+    setTimeout(() => menus.showToast(`${first ? "FIRST ARENA VICTORY" : "ARENA CLEARED"} · +${gold} gold · +${first ? 3 : 1} marks${milestone}`), 120);
   } else {
     const contract = CONTRACTS.find((item) => item.id === challenge.id);
     if (!contract) return;
     const activeHeroes = save.heroes.filter((hero) => hero.recruited && hero.active).length;
-    const fulfilled =
-      contract.condition === "flawless" ? battle.heroDeaths === 0
-        : contract.condition === "threeHeroes" ? activeHeroes <= 3
-          : contract.condition === "swift" ? t <= (contract.target ?? Infinity)
-            : save.difficulty >= 2;
+    const fulfilled = contractFulfilled(contract, { heroDeaths: battle.heroDeaths, activeHeroes, time: t, difficulty: save.difficulty });
     if (!fulfilled) {
-      const consolation = Math.round(contract.reward * 0.2);
+      const consolation = contractPurse(contract, false, false);
       save.gold += consolation;
       setTimeout(() => menus.showToast(`CONTRACT MISSED · the fight is won, but the terms were not · +${consolation} gold`), 120);
     } else {
       const old = save.contractRecords[contract.id];
       const first = !old?.clears;
-      const gold = contract.reward + (first ? Math.round(contract.reward * 0.5) : 0);
+      const gold = contractPurse(contract, first, true);
       save.gold += gold;
+      save.contractRenown += first ? 2 : 1;
       save.contractRecords[contract.id] = { clears: (old?.clears ?? 0) + 1, bestTime: old ? Math.min(old.bestTime, t) : t };
       let prize = "";
       if (first) {
@@ -378,10 +381,38 @@ function settleChallengeVictory(challenge: NonNullable<typeof activeChallenge>):
           prize = ` · ${piece.name}`;
         }
       }
-      setTimeout(() => menus.showToast(`CONTRACT FULFILLED · +${gold} gold · +${xp} xp${prize}`), 120);
+      const milestone = claimChallengeMilestones("contract");
+      setTimeout(() => menus.showToast(`CONTRACT FULFILLED · +${gold} gold · +${first ? 2 : 1} renown${prize}${milestone}`), 120);
     }
   }
   persist(save);
+}
+
+function claimChallengeMilestones(kind: "arena" | "contract"): string {
+  const value = kind === "arena" ? save.arenaMarks : save.contractRenown;
+  const milestones = kind === "arena" ? [5, 12, 20] : [4, 8, 14];
+  const notes: string[] = [];
+  for (const threshold of milestones) {
+    const key = `${kind}-${threshold}`;
+    if (value < threshold || save.challengeMilestones.includes(key)) continue;
+    save.challengeMilestones.push(key);
+    if (threshold === milestones[1]) {
+      if (kind === "arena") {
+        const rare = TRINKETS.find((item) => item.rarity === "rare" && !save.inventory.includes(item.id));
+        if (rare) { save.inventory.push(rare.id); notes.push(rare.name); }
+        else { save.gold += 300; notes.push("+300 milestone gold"); }
+      } else {
+        const gear = ALL_GEAR.find((piece) => piece.cost >= 350 && !save.armory.includes(piece.id));
+        if (gear) { save.armory.push(gear.id); notes.push(gear.name); }
+        else { save.gold += 300; notes.push("+300 milestone gold"); }
+      }
+    } else {
+      const bonus = threshold === milestones[0] ? 200 : 500;
+      save.gold += bonus;
+      notes.push(`+${bonus} milestone gold`);
+    }
+  }
+  return notes.length ? ` · MILESTONE: ${notes.join(" + ")}` : "";
 }
 
 function syncChallengeReward(): void {
@@ -389,20 +420,17 @@ function syncChallengeReward(): void {
   const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * 0.55);
   if (activeChallenge.kind === "arena") {
     const first = !(save.arenaRecords[activeChallenge.stage]?.clears ?? 0);
-    hud.rewardOverride = { xp, gold: 70 + activeChallenge.stage * 9 + (first ? 120 : 0), note: first ? "First-clear purse secured" : "Arena rematch complete" };
+    hud.rewardOverride = { xp, gold: arenaPurse(activeChallenge.stage, first), note: first ? "First-clear purse secured" : "Arena rematch complete" };
     return;
   }
   const contract = CONTRACTS.find((item) => item.id === activeChallenge?.id);
   if (!contract) return;
   const activeHeroes = save.heroes.filter((hero) => hero.recruited && hero.active).length;
-  const fulfilled = contract.condition === "flawless" ? battle.heroDeaths === 0
-    : contract.condition === "threeHeroes" ? activeHeroes <= 3
-      : contract.condition === "swift" ? battle.time <= (contract.target ?? Infinity)
-        : save.difficulty >= 2;
+  const fulfilled = contractFulfilled(contract, { heroDeaths: battle.heroDeaths, activeHeroes, time: battle.time, difficulty: save.difficulty });
   const first = !(save.contractRecords[contract.id]?.clears ?? 0);
   hud.rewardOverride = {
     xp,
-    gold: fulfilled ? contract.reward + (first ? Math.round(contract.reward * 0.5) : 0) : Math.round(contract.reward * 0.2),
+    gold: contractPurse(contract, first, fulfilled),
     note: fulfilled ? "Contract terms fulfilled" : "Battle won · contract terms missed",
   };
 }

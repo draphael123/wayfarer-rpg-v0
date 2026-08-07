@@ -1,4 +1,4 @@
-import { ATTR_KEYS, HEROES, MAX_EQUIPPED, MAX_LEVEL, POINTS_PER_LEVEL, rollBoonPair, unlockedAbilities, xpForLevel } from "./data";
+import { ATTR_KEYS, CALLING_MASTERY_LEVELS, HEROES, MAX_EQUIPPED, MAX_LEVEL, POINTS_PER_LEVEL, rollBoonPair, unlockedAbilities, xpForLevel } from "./data";
 import type { Attributes, HeroSave, SaveData } from "./types";
 
 const KEY = "wayband-save-v1";
@@ -69,7 +69,7 @@ function defaultHero(index: number): HeroSave {
     .filter((a) => STARTING_SPELLS.includes(a.id))
     .slice(0, MAX_EQUIPPED)
     .map((a) => a.id);
-  return { attrs, level: 1, xp: 0, boons: [], equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null };
+  return { attrs, level: 1, xp: 0, boons: [], equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null, callingLevels: {}, masteredCallings: [], advancedCallings: {} };
 }
 
 /** Out of the box: 1-4 picks a hero, Q/W cast chosen abilities, R casts the ultimate. */
@@ -111,6 +111,9 @@ export function defaultSave(): SaveData {
     stageStats: {},
     arenaRecords: {},
     contractRecords: {},
+    arenaMarks: 0,
+    contractRenown: 0,
+    challengeMilestones: [],
     lifetime: emptyLifetime(),
     presets: [null, null],
     reducedMotion: false,
@@ -199,6 +202,9 @@ export function loadSave(): SaveData {
       if (hero.trinket === undefined) hero.trinket = null;
       if (hero.calling === undefined) hero.calling = null;
       if (hero.advCalling === undefined) hero.advCalling = null;
+      if (!hero.callingLevels || typeof hero.callingLevels !== "object") hero.callingLevels = {};
+      if (!Array.isArray(hero.masteredCallings)) hero.masteredCallings = [];
+      if (!hero.advancedCallings || typeof hero.advancedCallings !== "object") hero.advancedCallings = hero.calling && hero.advCalling ? { [hero.calling]: hero.advCalling } : {};
       // pre-variant saves at plate tier default to the classic juggernaut look
     });
     if (typeof parsed.speed !== "number" || parsed.speed < 0.25 || parsed.speed > 1) parsed.speed = 0.5;
@@ -221,6 +227,9 @@ export function loadSave(): SaveData {
     if (!parsed.stageStats || typeof parsed.stageStats !== "object") parsed.stageStats = {};
     if (!parsed.arenaRecords || typeof parsed.arenaRecords !== "object") parsed.arenaRecords = {};
     if (!parsed.contractRecords || typeof parsed.contractRecords !== "object") parsed.contractRecords = {};
+    if (typeof parsed.arenaMarks !== "number") parsed.arenaMarks = 0;
+    if (typeof parsed.contractRenown !== "number") parsed.contractRenown = 0;
+    if (!Array.isArray(parsed.challengeMilestones)) parsed.challengeMilestones = [];
     if (!parsed.lifetime || typeof parsed.lifetime !== "object") {
       // veterans keep credit for what the save already proves
       parsed.lifetime = emptyLifetime();
@@ -281,6 +290,12 @@ export function grantHeroXp(save: SaveData, index: number, amount: number): numb
     hero.xp -= xpForLevel(hero.level);
     hero.level += 1;
     gained += 1;
+    if (hero.calling) {
+      hero.callingLevels[hero.calling] = (hero.callingLevels[hero.calling] ?? 0) + 1;
+      if (hero.callingLevels[hero.calling] >= CALLING_MASTERY_LEVELS && !hero.masteredCallings.includes(hero.calling)) {
+        hero.masteredCallings.push(hero.calling);
+      }
+    }
     save.unspent[index] += POINTS_PER_LEVEL;
     save.pendingBoons.push({ hero: index, ...rollBoonPair() });
   }

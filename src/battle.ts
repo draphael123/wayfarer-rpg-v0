@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, boonMods, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, talentMods, trinketMods, SET_BONUSES } from "./data";
+import { BOSS_PHASES, DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, boonMods, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, talentMods, trinketMods, SET_BONUSES } from "./data";
 
 // Battleheart pacing: cooldowns run 2.5× longer, so each cast must matter more.
 // Heals compensate harder than damage — a mend that has to cover a 20s window
@@ -36,7 +36,7 @@ function makeEffect(kind: StatusEffect["kind"], time: number, power: number, sou
 }
 
 /** The great foes — they hunt by threat, not by proximity or frailty. */
-const BOSS_KINDS = ["alpha", "warlord", "ogre", "rimeheart", "wyrm", "bellwidow", "stormjaw"];
+const BOSS_KINDS = Object.keys(BOSS_PHASES);
 
 export class Battle {
   units: Unit[] = [];
@@ -144,7 +144,7 @@ export class Battle {
       const sworn = callingById(heroSave.calling);
       const oath = sworn && callingEligible(sworn, heroSave.attrs) ? sworn : null;
       const advanced = oath ? heroSave.advCalling : null;
-      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroGearOf(heroSave, save.forge), heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced, heroSave.boons);
+      const stats = deriveStats(heroSave.attrs, heroSave.weaponTier, heroGearOf(heroSave, save.forge), heroSave.talents, heroSave.trinket, oath?.id ?? null, advanced, heroSave.boons, heroSave.masteredCallings);
       const abilities: AbilityState[] = heroSave.equipped
         .map((id) => abilityById(id))
         .filter((d): d is NonNullable<typeof d> => !!d)

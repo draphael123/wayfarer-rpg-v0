@@ -2,20 +2,26 @@ import assert from "node:assert/strict";
 import {
   ABILITIES,
   ALL_GEAR,
+  arenaPurse,
   ARMOR_ACTIVES,
   BOONS,
+  BOSS_PHASES,
   BOSS_STAGES,
+  CALLING_MASTERY_LEVELS,
   CALLINGS,
   CONTRACTS,
+  contractFulfilled,
+  contractPurse,
   ENEMIES,
   HEROES,
   HERO_GATE_STAGE,
+  FOUNDATIONAL_CALLING_IDS,
   PARTY_CAP,
   STAGES,
   TALENTS,
   TRINKETS,
 } from "../src/data";
-import { defaultSave, loadSave, persist, slotKey } from "../src/save";
+import { defaultSave, grantHeroXp, loadSave, persist, slotKey } from "../src/save";
 import { runBattleSimulation } from "../src/simulation";
 import type { SaveData } from "../src/types";
 
@@ -41,6 +47,7 @@ for (const ability of ABILITIES) {
 
 const enemyKinds = new Set(Object.keys(ENEMIES));
 assert.ok(STAGES.length > 0, "the campaign needs at least one stage");
+assert.equal(STAGES.length % 6, 0, "the continuous map requires complete six-stage regions");
 unique(STAGES.map((stage) => String(stage.id)), "stage ids");
 STAGES.forEach((stage, index) => {
   assert.equal(stage.id, index, `stage ${index} must keep a sequential id`);
@@ -58,18 +65,35 @@ STAGES.forEach((stage, index) => {
 
 unique(BOSS_STAGES.map(String), "boss stage indexes");
 for (const stageIndex of BOSS_STAGES) assert.ok(STAGES[stageIndex], `boss stage ${stageIndex} does not exist`);
+for (const [kind, marks] of Object.entries(BOSS_PHASES)) {
+  assert.ok(enemyKinds.has(kind), `boss phases reference missing enemy ${kind}`);
+  assert.ok(marks?.length, `${kind} needs at least one phase marker`);
+  assert.ok(marks!.every((mark) => mark > 0 && mark < 1), `${kind} has an invalid phase threshold`);
+}
 unique(CONTRACTS.map((contract) => contract.id), "contract ids");
 for (const contract of CONTRACTS) {
   assert.ok(STAGES[contract.stage], `${contract.id} references missing stage ${contract.stage}`);
   assert.ok(contract.unlockStage >= contract.stage, `${contract.id} cannot unlock before its stage is reachable`);
   assert.ok(contract.reward > 0, `${contract.id} needs a positive reward`);
 }
+const flawless = CONTRACTS.find((contract) => contract.condition === "flawless")!;
+assert.ok(contractFulfilled(flawless, { heroDeaths: 0, activeHeroes: 4, time: 999, difficulty: 0 }), "flawless contract should accept a clean victory");
+assert.ok(!contractFulfilled(flawless, { heroDeaths: 1, activeHeroes: 4, time: 1, difficulty: 3 }), "flawless contract must reject a fallen hero");
+assert.ok(arenaPurse(4, true) > arenaPurse(4, false), "first arena clears need a larger purse");
+assert.ok(contractPurse(flawless, true, true) > contractPurse(flawless, false, true), "first contract clears need a bonus");
+assert.ok(contractPurse(flawless, false, false) < contractPurse(flawless, false, true), "missed terms must only pay consolation gold");
 
 unique(ALL_GEAR.map((piece) => piece.id), "gear ids");
 unique(TRINKETS.map((trinket) => trinket.id), "trinket ids");
 unique(BOONS.map((boon) => boon.id), "boon ids");
 unique(TALENTS.map((talent) => talent.id), "talent ids");
 unique(CALLINGS.map((calling) => calling.id), "calling ids");
+assert.equal(FOUNDATIONAL_CALLING_IDS.length, 6, "the foundation must remain six readable choices");
+for (const id of FOUNDATIONAL_CALLING_IDS) {
+  const calling = CALLINGS.find((item) => item.id === id);
+  assert.ok(calling, `missing foundational calling ${id}`);
+  assert.equal(calling.advanced?.length, 2, `${id} needs exactly two level-20 promotions`);
+}
 
 for (const [family, ability] of Object.entries(ARMOR_ACTIVES)) {
   assert.ok(ability.id && ability.name, `${family} armor active is incomplete`);
@@ -103,6 +127,12 @@ assert.equal(loadSave().gold, 137, "saved progress must round-trip");
 assert.equal(loadSave().formation, "wedge", "formation must persist");
 assert.equal(loadSave().pinnedGoal, "Recruit Wren", "pinned goals must persist");
 assert.equal(loadSave().journal[0]?.time, 42.5, "Chronicle entries must persist");
+const masterySave = defaultSave();
+masterySave.heroes[0].calling = "vanguard";
+for (let i = 0; i < CALLING_MASTERY_LEVELS; i++) grantHeroXp(masterySave, 0, 99999);
+assert.ok(masterySave.heroes[0].masteredCallings.includes("vanguard"), "ten active calling levels must unlock permanent mastery");
+masterySave.heroes[0].calling = "reaver";
+assert.ok(masterySave.heroes[0].masteredCallings.includes("vanguard"), "switching callings must preserve prior mastery");
 storage.set(slotKey(), "{broken json");
 assert.equal(loadSave().unlockedStage, 0, "corrupt saves must recover to a new campaign");
 

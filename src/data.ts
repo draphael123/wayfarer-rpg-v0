@@ -974,6 +974,8 @@ export const CALLING_UNLOCK_LEVEL = 5;
 export const CALLING_SWITCH_COST = 150;
 export const ADV_CALLING_LEVEL = 20;
 export const ADV_SWITCH_COST = 300;
+export const CALLING_MASTERY_LEVELS = 10;
+export const FOUNDATIONAL_CALLING_IDS = ["vanguard", "reaver", "ranger", "arcanist", "chaplain", "trickster"] as const;
 
 const sig = (id: string, name: string, targeting: AbilityDef["targeting"], cooldown: number, color: string, blurb: string): AbilityDef => ({
   id,
@@ -1401,7 +1403,7 @@ export function callingEligible(calling: CallingDef, attrs: Attributes): boolean
   return calling.entry.every((e) => attrs[e.attr] >= e.value);
 }
 
-function callingStatMods(calling?: string | null, advCalling?: string | null) {
+function callingStatMods(calling?: string | null, advCalling?: string | null, masteries: string[] = []) {
   const m = { meleeDmg: 0, rangedDmg: 0, hpPct: 0, armorFlat: 0, cdr: 0, atkSpeed: 0, moveSpeed: 0, crit: 0, spellPower: 0, healPower: 0, startShield: 0 };
   switch (calling) {
     case "duelist":
@@ -1496,6 +1498,14 @@ function callingStatMods(calling?: string | null, advCalling?: string | null) {
       m.moveSpeed += 0.06;
       break;
   }
+  for (const mastered of masteries) {
+    if (mastered === "vanguard") m.armorFlat += 0.02;
+    else if (mastered === "reaver") m.meleeDmg += 0.04;
+    else if (mastered === "ranger") m.rangedDmg += 0.04;
+    else if (mastered === "arcanist") m.spellPower += 0.04;
+    else if (mastered === "chaplain") m.healPower += 0.05;
+    else if (mastered === "trickster") m.cdr += 0.03;
+  }
   return m;
 }
 
@@ -1516,10 +1526,11 @@ export function deriveStats(
   calling?: string | null,
   advCalling?: string | null,
   boons?: string[],
+  masteries?: string[],
 ): DerivedStats {
   const t = talentMods(talents);
   const k = trinketMods(trinket);
-  const c = callingStatMods(calling, advCalling);
+  const c = callingStatMods(calling, advCalling, masteries);
   const v = gearMods(armor);
   const bn = boonMods(boons);
   const mods = {
@@ -2049,7 +2060,7 @@ export const STAGES: StageDef[] = [
       groundDark: "#584e70",
       prop: "#3d3554",
     },
-    scale: 1.95,
+    scale: 1.33,
     xpReward: 72,
     // a true boss level: the Alpha from the first breath, its pack arriving
     // as the fight itself summons them (howl at 60%, frenzy at 30%)
@@ -2067,12 +2078,12 @@ export const STAGES: StageDef[] = [
       groundDark: "#6e5440",
       prop: "#4a3226",
     },
-    scale: 2.1,
+    scale: 1.48,
     xpReward: 90,
     waves: [
       [{ kind: "goblin", count: 3 }, { kind: "shaman", count: 1 }, { kind: "drummer", count: 1 }],
       [{ kind: "brute", count: 2 }, { kind: "archer", count: 2 }, { kind: "shieldbearer", count: 1 }],
-      [{ kind: "warlord", count: 1 }, { kind: "shaman", count: 2 }],
+      [{ kind: "warlord", count: 1 }, { kind: "shaman", count: 1 }],
     ],
   },
   // ---- ACT II: THE WINTERREACH (band levels ~12-20) ----
@@ -2146,7 +2157,7 @@ export const STAGES: StageDef[] = [
     name: "The Hollow Crown",
     subtitle: "The heart of winter stirs",
     palette: { skyTop: "#101a30", skyBottom: "#243450", hills: "#1a2640", ground: "#303f58", groundDark: "#243248", prop: "#3d5570" },
-    scale: 3.4,
+    scale: 2.98,
     xpReward: 170,
     waves: [[{ kind: "wyrm", count: 1 }]],
   },
@@ -2434,6 +2445,12 @@ export function trinketFlatHp(id: string | null | undefined): number {
 /** Stages whose final wave is a boss — these drop rare trinkets. */
 export const BOSS_STAGES = [4, 5, 11, 15, 17];
 
+/** Health thresholds belong to the boss definition, not the HUD. */
+export const BOSS_PHASES: Partial<Record<EnemyKind, number[]>> = {
+  alpha: [0.6, 0.3], ogre: [0.66, 0.33], warlord: [0.66, 0.33], rimeheart: [0.66, 0.33],
+  wyrm: [0.66, 0.33], bellwidow: [0.66, 0.33], stormjaw: [0.68, 0.34],
+};
+
 export interface ContractDef {
   id: string;
   name: string;
@@ -2453,6 +2470,29 @@ export const CONTRACTS: ContractDef[] = [
   { id: "bellBeforeDark", name: "Before the Bell", issuer: "Winterreach courier", stage: 8, unlockStage: 8, brief: "Cross the Frozen Lake in under 55 seconds.", condition: "swift", target: 55, reward: 230 },
   { id: "hardTerms", name: "Salt in the Wound", issuer: "Stormbreak quartermaster", stage: 13, unlockStage: 13, brief: "Clear the Weeping Reeds on Hard or Brutal.", condition: "hard", reward: 320 },
 ];
+
+export interface ContractResult {
+  heroDeaths: number;
+  activeHeroes: number;
+  time: number;
+  difficulty: number;
+}
+
+export function contractFulfilled(contract: ContractDef, result: ContractResult): boolean {
+  if (contract.condition === "flawless") return result.heroDeaths === 0;
+  if (contract.condition === "threeHeroes") return result.activeHeroes <= 3;
+  if (contract.condition === "swift") return result.time <= (contract.target ?? Infinity);
+  return result.difficulty >= 2;
+}
+
+export function arenaPurse(stage: number, firstClear: boolean): number {
+  return 70 + stage * 9 + (firstClear ? 120 : 0);
+}
+
+export function contractPurse(contract: ContractDef, firstClear: boolean, fulfilled: boolean): number {
+  if (!fulfilled) return Math.round(contract.reward * 0.2);
+  return contract.reward + (firstClear ? Math.round(contract.reward * 0.5) : 0);
+}
 
 // ------------------------------------------------------------------ deeds
 
