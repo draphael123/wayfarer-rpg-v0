@@ -2225,7 +2225,7 @@ export class Menus {
         <div class="scout-row">
           <span class="scout-chip">${ico("sword")} ${stage.waves.length <= 1 ? "a single great trial" : `${stage.waves.length} combat rooms`}</span>
           ${stage.travelDirection === "south" ? `<span class="scout-chip">↓ descending route</span>` : ""}
-          <span class="scout-chip">${ico("star")} ≈${Math.round(stage.xpReward * mult)} xp</span>
+          <span class="scout-chip">${ico("star")} ≈${Math.round(stage.xpReward * mult)} XP / hero</span>
           <span class="scout-chip">${ico("gem")} ${rare ? "RARE trinket" : "trinket drop"}</span>
           ${terrainScout ? `<span class="scout-chip">${terrainScout}</span>` : ""}
           ${

@@ -20,7 +20,7 @@ import {
   drawZones,
   setColorSafe,
 } from "./render";
-import { defaultSave, grantHeroXp, loadSave, nextSpeed, persist } from "./save";
+import { defaultSave, grantHeroXp, loadSave, nextSpeed, persist, personalBattleXp } from "./save";
 import { autopilotTick, runBattleSimulation } from "./simulation";
 import { exportTelemetry, logEvent, logRuntimeError } from "./telemetry";
 import { Tutorial } from "./tutorial";
@@ -413,15 +413,19 @@ function settleVictory(): void {
   const rewardMult = DIFFICULTIES[save.difficulty ?? 1].rewardMult;
   const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * rewardMult);
   const gold = Math.round((battle.goldEarned + Math.round(battle.stage.xpReward * 0.8)) * rewardMult);
-  // heroes grow individually now: the four who fought earn full XP, the bench
-  // keeps pace at half so nobody is ever hopeless to field
+  // XP belongs to the hero who took the field. Survivors earn the full award;
+  // anyone still fallen at victory earns half. Revived heroes count as alive,
+  // while the bench advances through Road Tutelage rather than free battle XP.
   let levels = 0;
   const milestones: string[] = [];
+  const outcomes = new Map(battle.heroes().map((unit) => [unit.heroIndex, unit.alive]));
   save.heroes.forEach((h, i) => {
     if (!h.recruited) return;
+    const earnedXp = personalBattleXp(xp, outcomes.has(i), outcomes.get(i) === true);
+    if (earnedXp <= 0) return;
     const before = h.level;
     const beforeMasteries = new Set(h.masteredElements);
-    levels += grantHeroXp(save, i, h.active ? xp : xp * 0.5);
+    levels += grantHeroXp(save, i, earnedXp);
     if (before < CALLING_UNLOCK_LEVEL && h.level >= CALLING_UNLOCK_LEVEL) milestones.push(`${HEROES[i].name} may choose a PATH`);
     if (before < ADV_CALLING_LEVEL && h.level >= ADV_CALLING_LEVEL) milestones.push(`${HEROES[i].name}'s path can be PROMOTED`);
     for (const mastery of h.masteredElements) {
@@ -482,8 +486,11 @@ function settleChallengeVictory(challenge: NonNullable<typeof activeChallenge>):
   if (!battle) return;
   const t = Math.round(battle.time * 10) / 10;
   const xp = Math.round((battle.xpEarned + battle.stage.xpReward) * 0.55);
+  const outcomes = new Map(battle.heroes().map((unit) => [unit.heroIndex, unit.alive]));
   save.heroes.forEach((hero, index) => {
-    if (hero.recruited) grantHeroXp(save, index, hero.active ? xp : xp * 0.35);
+    if (!hero.recruited) return;
+    const earnedXp = personalBattleXp(xp, outcomes.has(index), outcomes.get(index) === true);
+    if (earnedXp > 0) grantHeroXp(save, index, earnedXp);
   });
   if (challenge.kind === "arena") {
     const trial = arenaTrialById(challenge.id);

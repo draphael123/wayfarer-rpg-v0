@@ -42,7 +42,7 @@ import {
   talentMods,
   TRINKETS,
 } from "../src/data";
-import { assignRecruitRoadKit, defaultSave, grantHeroXp, loadSave, persist, recoveryKey, rejectedSaveKey, slotKey } from "../src/save";
+import { assignRecruitRoadKit, defaultSave, grantHeroXp, loadSave, persist, personalBattleXp, recoveryKey, rejectedSaveKey, slotKey } from "../src/save";
 import { LATE_FOE_KINDS } from "../src/late-content";
 import { LATE_ROAD_BOSS_INTENTS, LATE_ROAD_ELITE_STAGES, LATE_ROAD_REGIONS, LATE_ROAD_STAGES } from "../src/late-road";
 import { Battle } from "../src/battle";
@@ -56,6 +56,9 @@ function unique(values: string[], label: string): void {
 
 assert.ok(HEROES.length >= PARTY_CAP, "the roster must fill a party");
 unique(HEROES.map((hero) => hero.name), "hero names");
+assert.equal(personalBattleXp(101, true, true), 101, "a surviving participant earns full personal XP");
+assert.equal(personalBattleXp(101, true, false), 51, "a participant still fallen at victory earns half personal XP");
+assert.equal(personalBattleXp(101, false, true), 0, "a benched hero earns no battle XP");
 
 for (const [rawIndex, gate] of Object.entries(HERO_GATE_STAGE)) {
   const heroIndex = Number(rawIndex);

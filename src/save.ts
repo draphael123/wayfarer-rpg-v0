@@ -588,6 +588,11 @@ export function persist(save: SaveData): void {
 }
 
 /** Grants personal XP. Each level yields attributes and a talent point. */
+export function personalBattleXp(baseXp: number, participated: boolean, survived: boolean): number {
+  if (!participated || baseXp <= 0) return 0;
+  return Math.round(baseXp * (survived ? 1 : 0.5));
+}
+
 export function grantHeroXp(save: SaveData, index: number, amount: number): number {
   const hero = save.heroes[index];
   if (!hero || hero.level >= MAX_LEVEL) {

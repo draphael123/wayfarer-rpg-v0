@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { speedLabel } from "./save";
+import { personalBattleXp, speedLabel } from "./save";
 import type { Battle } from "./battle";
 import { BOSS_PHASES, callingById, DIFFICULTIES, elementById, ENEMIES, HEROES } from "./data";
 import { drawAbilityGlyph } from "./icons";
@@ -2017,13 +2017,13 @@ export class Hud {
         ctx.fillText(text, ix + 12, y);
         ctx.textAlign = "center";
       };
-      drawReward(rowY, `+${shownXp}`, "experience", "star");
+      drawReward(rowY, `+${shownXp}`, "XP per survivor", "star");
       drawReward(rowY + 24, `+${shownGold}`, "gold", "coin");
       // battle summary
       ctx.font = "600 12px 'Trebuchet MS', Verdana, sans-serif";
       ctx.fillStyle = "#a89fc0";
       ctx.fillText(
-        this.rewardOverride?.note ?? `Cleared in ${mins}:${secs} · ${this.battle.heroDeaths === 0 ? "no heroes fell" : `${this.battle.heroDeaths} hero${this.battle.heroDeaths === 1 ? "" : "es"} fell`}`,
+        this.rewardOverride?.note ?? `Cleared in ${mins}:${secs} · ${this.battle.heroDeaths === 0 ? "every hero earned full XP" : `${this.battle.heroDeaths} fallen · 50% XP`}`,
         this.width / 2,
         rowY + 44,
       );
@@ -2070,12 +2070,14 @@ export class Hud {
           ctx.fillText(`heal ${Math.round(t.healed)}`, cx, recapY + 38);
           ctx.fillStyle = "#c98f9a";
           ctx.fillText(`took ${Math.round(t.taken)}`, cx, recapY + 51);
+          ctx.fillStyle = h.alive ? "#ffe9a3" : "#a89fc0";
+          ctx.fillText(`xp +${personalBattleXp(xp, true, h.alive)}`, cx, recapY + 64);
           if (i > 0) {
             ctx.strokeStyle = "rgba(255,245,225,0.1)";
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(frame.x + 26 + cw * i, recapY + 2);
-            ctx.lineTo(frame.x + 26 + cw * i, recapY + 48);
+            ctx.lineTo(frame.x + 26 + cw * i, recapY + 62);
             ctx.stroke();
           }
         });
