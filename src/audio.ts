@@ -101,7 +101,14 @@ const MUSIC_TRACKS = [
   "music-stage4",
   "music-stage5",
   "music-boss",
+  "music-coast",
+  "music-miniboss",
+  "music-mainboss",
 ];
+
+const SAMPLE_FILES: Partial<Record<string, string>> = {
+  "music-coast": "audio/music-coast.ogg",
+};
 
 const ALL_SAMPLES = [...MUSIC_TRACKS, ...Object.values(SAMPLE_SFX).flat()];
 
@@ -288,7 +295,8 @@ class AudioKit {
 
   private desiredTrack(): string {
     if (this.mood === "menu") return "music-menu";
-    if (this.bossActive) return "music-boss";
+    if (this.bossActive) return [5, 11, 17].includes(this.stageId) ? "music-mainboss" : "music-miniboss";
+    if (this.stageId >= 12) return "music-coast";
     if (this.stageId >= 6) return "music-winter"; // no sample bears this name: the synth winter theme owns Act 2
     return `music-stage${Math.max(0, Math.min(5, this.stageId))}`;
   }
@@ -343,7 +351,7 @@ class AudioKit {
     if (!ctx) return;
     const overrides = (window as unknown as { __WAYBAND_AUDIO?: Record<string, string> }).__WAYBAND_AUDIO ?? {};
     for (const name of ALL_SAMPLES) {
-      const url = overrides[name] ?? `audio/${name}.mp3`;
+      const url = overrides[name] ?? SAMPLE_FILES[name] ?? `audio/${name}.mp3`;
       fetch(url)
         .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`))))
         .then((buf) => ctx.decodeAudioData(buf))
