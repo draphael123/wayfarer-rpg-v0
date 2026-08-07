@@ -5124,7 +5124,7 @@ button.hero-points { font: inherit; cursor: pointer; }
 
 /* The first-run card is a compact field doctrine, not another settings grid. */
 .first-mile-title { max-width: 610px; }
-.first-mile-rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; width: min(700px, 94vw); text-align: left; }
+.first-mile-rules { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; width: min(880px, 94vw); text-align: left; }
 .first-mile-rules article { position: relative; min-height: 154px; padding: 16px 14px 14px; background: linear-gradient(155deg, rgba(46, 38, 57, 0.96), rgba(27, 23, 34, 0.96)); border: 1px solid rgba(205, 177, 115, 0.22); border-top: 3px solid #927044; box-shadow: 0 12px 30px rgba(7, 5, 12, 0.25); }
 .first-mile-rules article > span { position: absolute; top: 9px; right: 11px; color: rgba(226, 195, 126, 0.28); font: 900 23px/1 Cinzel, Georgia, serif; }
 .first-mile-rules i { display: block; width: 34px; height: 34px; color: #e0bd72; font: 400 25px/34px Georgia, serif; font-style: normal; }
@@ -5204,6 +5204,7 @@ body.big-text .handbook-page { font-size: 112%; }
   .settings-panel { padding-left: 0; }
   .command-ribbon { grid-template-columns: repeat(3, 1fr); }
   .command-ribbon > div { border-bottom: 1px solid rgba(205, 177, 115, 0.12); }
+  .first-mile-rules { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 560px) {

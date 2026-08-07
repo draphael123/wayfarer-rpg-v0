@@ -259,7 +259,7 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
     habit: "A fast flanker that opens voids beneath clustered heroes. Split briefly, then collapse on it.", weakTo: "radiant", resists: "shadow",
   },
   kilntyrant: {
-    name: "The Kiln Tyrant", maxHp: 1925, damage: 26, range: 48, attackCooldown: 1.65, speed: 70, armor: 0.2, radius: 28, xp: 150,
+    name: "The Kiln Tyrant", maxHp: 2655, damage: 26, range: 48, attackCooldown: 1.65, speed: 70, armor: 0.2, radius: 28, xp: 150,
     body: "#66342b", trim: "#ffb253", lore: "The foreman remained when the foundry burned, fused forever to its walking crucible.",
     habit: "A true elite. Empty its eruption marks to crack its iron shell and stagger the furnace within.", weakTo: "frost", resists: "flame",
   },
@@ -269,7 +269,7 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
     habit: "Her cages punish a scattered band. Regroup through one opening and burn the exposed heartwood.", weakTo: "flame", resists: "earth",
   },
   dunerevenant: {
-    name: "Dune Revenant", maxHp: 1900, damage: 28, range: 170, attackCooldown: 1.8, speed: 83, armor: 0.16, radius: 29, xp: 185,
+    name: "Dune Revenant", maxHp: 3335, damage: 28, range: 170, attackCooldown: 1.8, speed: 83, armor: 0.16, radius: 29, xp: 185,
     body: "#403650", trim: "#d7c1f3", lore: "A caravan king reflected once too often in the black glass dunes.",
     habit: "Its false eclipse reverses safe space between phases. Read the ring instead of following habit.", weakTo: "radiant", resists: "shadow",
   },
@@ -279,12 +279,12 @@ export const LATE_ENEMIES: Record<LateEnemyKind, LateEnemyBlueprint> = {
     habit: "Crossing verdict-lines leave narrow dark seams. Stand in those seams, then answer the judgment.", weakTo: "shadow", resists: "radiant",
   },
   tempestroc: {
-    name: "The Tempest Roc", maxHp: 1510, damage: 32, range: 64, attackCooldown: 1.55, speed: 105, armor: 0.16, radius: 32, xp: 225,
+    name: "The Tempest Roc", maxHp: 2115, damage: 32, range: 64, attackCooldown: 1.55, speed: 105, armor: 0.16, radius: 32, xp: 225,
     body: "#416477", trim: "#c7f6ff", lore: "The summit's oldest thunderhead learned wings and began collecting climbers.",
     habit: "Its cross-shaped shatters overlap with the storm. Dodge diagonally and turn lightning against it.", weakTo: "earth", resists: "storm",
   },
   redhuntsman: {
-    name: "The Red Huntsman", maxHp: 3170, damage: 34, range: 46, attackCooldown: 1.35, speed: 112, armor: 0.14, radius: 29, xp: 245,
+    name: "The Red Huntsman", maxHp: 3805, damage: 34, range: 46, attackCooldown: 1.35, speed: 112, armor: 0.14, radius: 29, xp: 245,
     body: "#542733", trim: "#f47a70", lore: "The Stag's favored rider, wearing the antlers of every quarry that begged.",
     habit: "It names the weakest hero and heals on contact. Make the marked charge miss to starve the hunt.", weakTo: "frost", resists: "blood",
   },

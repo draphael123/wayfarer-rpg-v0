@@ -241,7 +241,9 @@ function startBattle(stageIndex: number, keepChallenge = false): void {
   cam.punch = 0;
   hud = new Hud(battle, save, logicalW, logicalH);
   hud.autopilot = save.autoBattle;
-  hud.freshPlayer = save.tutorialHints && save.unlockedStage === 0 && save.level < 3;
+  // Coaching follows the player through the opening trio rather than vanishing
+  // after one encounter, where priority roles and danger marks have barely appeared.
+  hud.freshPlayer = save.tutorialHints && save.unlockedStage <= 2 && save.level < 5;
   audio.setMood("battle", stageIndex);
   menus.beginBattleHistory();
   menus.hide();

@@ -2174,6 +2174,17 @@ function poseOf(unit: Unit, time: number): Pose {
   if (unit.alert > 0) bounce += Math.sin((1 - unit.alert / 0.5) * Math.PI) * 5;
   if (unit.celebrate) bounce += Math.abs(Math.sin(time * 6 + unit.id)) * 5;
   if (unit.idleAnim > 0) bounce += Math.sin((1 - unit.idleAnim / 0.7) * Math.PI * 2) * 1.6;
+  // Discipline, rather than element color, owns the hero's casting body language.
+  if (unit.team === "hero" && unit.discipline && unit.castGlow > 0) {
+    const cast = Math.min(1, unit.castGlow);
+    if (unit.discipline === "knight") swing = Math.min(swing, -0.18 * cast);
+    else if (unit.discipline === "warrior") swing = Math.max(swing, 0.42 + cast * 0.36);
+    else if (unit.discipline === "rogue") bounce += Math.sin(cast * Math.PI) * 3.5;
+    else if (unit.discipline === "archer") swing = Math.max(swing, 0.34 + cast * 0.3);
+    else if (unit.discipline === "priest") bounce += cast * 1.7;
+    else if (unit.discipline === "mage") bounce += cast * 3.2;
+    else if (unit.discipline === "necromancer") bounce += cast * 1.1;
+  }
   const lx = unit.lungeDir.x * unit.lunge * 9;
   const ly = unit.lungeDir.y * unit.lunge * 9;
   return {
@@ -2185,6 +2196,124 @@ function poseOf(unit: Unit, time: number): Pose {
     swing,
     breathe: Math.sin(time * 2.4 + unit.id) * 0.8 + (unit.idleAnim > 0 ? Math.sin((1 - unit.idleAnim / 0.7) * Math.PI) * 1.4 : 0),
   };
+}
+
+/** A restrained cast gesture per Discipline. These sit behind the paper doll
+ * so a crowded fight reads as seven different motions, not seven tints. */
+function drawDisciplineCastSilhouette(
+  ctx: CanvasRenderingContext2D,
+  unit: Unit,
+  cx: number,
+  gy: number,
+  H: number,
+  time: number,
+  reducedMotion: boolean,
+): void {
+  if (!unit.discipline || !unit.element || unit.castGlow <= 0.04) return;
+  const color = ELEMENT_MARK_COLORS[unit.element];
+  const pulse = Math.min(1, unit.castGlow * 1.45);
+  const t = reducedMotion ? 0 : time;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineCap = "round";
+  ctx.globalAlpha = 0.2 + pulse * 0.48;
+
+  if (unit.discipline === "knight") {
+    for (let plate = -1; plate <= 1; plate++) {
+      const x = cx + unit.facing * H * 0.42 + plate * H * 0.14;
+      ctx.lineWidth = 3 + pulse * 2;
+      ctx.beginPath();
+      ctx.moveTo(x - H * 0.08, gy - H * (0.2 + Math.abs(plate) * 0.03));
+      ctx.lineTo(x, gy - H * 0.46);
+      ctx.lineTo(x + H * 0.08, gy - H * (0.2 + Math.abs(plate) * 0.03));
+      ctx.stroke();
+    }
+  } else if (unit.discipline === "warrior") {
+    ctx.lineWidth = 5 + pulse * 3;
+    for (let echo = 0; echo < 2; echo++) {
+      ctx.globalAlpha = (echo ? 0.28 : 0.56) * pulse;
+      ctx.beginPath();
+      ctx.arc(cx, gy - H * 0.28, H * (0.48 + echo * 0.13), -Math.PI * 0.88, Math.PI * 0.18);
+      ctx.stroke();
+    }
+  } else if (unit.discipline === "rogue") {
+    for (let echo = 1; echo <= 3; echo++) {
+      ctx.globalAlpha = (0.42 / echo) * pulse;
+      ctx.beginPath();
+      ctx.ellipse(cx - unit.facing * H * echo * 0.18, gy - H * 0.35, H * 0.13, H * 0.3, -unit.facing * 0.22, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else if (unit.discipline === "archer") {
+    ctx.lineWidth = 1.5 + pulse * 1.2;
+    const far = cx + unit.facing * H * 1.55;
+    ctx.setLineDash([8, 7]);
+    ctx.lineDashOffset = -t * 28;
+    ctx.beginPath();
+    ctx.moveTo(cx + unit.facing * H * 0.22, gy - H * 0.48);
+    ctx.lineTo(far, gy - H * 0.48);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(far - unit.facing * 9, gy - H * 0.55);
+    ctx.lineTo(far, gy - H * 0.48);
+    ctx.lineTo(far - unit.facing * 9, gy - H * 0.41);
+    ctx.stroke();
+  } else if (unit.discipline === "priest") {
+    ctx.lineWidth = 2.2;
+    for (let ray = 0; ray < 6; ray++) {
+      const angle = ray * Math.PI / 3 + t * 0.22;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(angle) * H * 0.3, gy - H * 0.64 + Math.sin(angle) * H * 0.11);
+      ctx.lineTo(cx + Math.cos(angle) * H * 0.48, gy - H * 0.64 + Math.sin(angle) * H * 0.17);
+      ctx.stroke();
+    }
+  } else if (unit.discipline === "mage") {
+    ctx.lineWidth = 2;
+    ctx.save();
+    ctx.translate(cx, gy - H * 0.42);
+    ctx.rotate(t * 0.8);
+    for (let rune = 0; rune < 3; rune++) {
+      ctx.rotate(Math.PI * 2 / 3);
+      ctx.strokeRect(H * 0.42, -H * 0.055, H * 0.11, H * 0.11);
+    }
+    ctx.restore();
+  } else if (unit.discipline === "necromancer") {
+    ctx.lineWidth = 2.4;
+    for (let hand = -1; hand <= 1; hand++) {
+      const x = cx + hand * H * 0.24;
+      const lift = H * (0.08 + pulse * (0.12 + (hand + 1) * 0.025));
+      ctx.beginPath();
+      ctx.moveTo(x, gy);
+      ctx.quadraticCurveTo(x - hand * 5, gy - lift * 0.55, x + hand * 3, gy - lift);
+      ctx.stroke();
+      for (let finger = -1; finger <= 1; finger++) {
+        ctx.beginPath();
+        ctx.moveTo(x + hand * 3, gy - lift);
+        ctx.lineTo(x + finger * 4, gy - lift - H * 0.08);
+        ctx.stroke();
+      }
+    }
+  }
+  if (unit.advCalling && pulse > 0.45) {
+    const ascendant = unit.advCalling.endsWith("-ascendant");
+    ctx.globalAlpha = pulse * 0.44;
+    ctx.lineWidth = 1.8 + pulse;
+    if (ascendant) {
+      ctx.beginPath();
+      ctx.ellipse(cx, gy - H * 0.08, H * 0.55, H * 0.16, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * H * 0.28, gy - H * 0.2);
+        ctx.lineTo(cx + side * H * 0.52, gy - H * 0.35);
+        ctx.lineTo(cx + side * H * 0.3, gy - H * 0.5);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
 }
 
 /** How far into dusk this battle is (0-1) — set by drawUnits, stretches every shadow. */
@@ -2526,6 +2655,8 @@ function drawHero(ctx: CanvasRenderingContext2D, unit: Unit, save: SaveData, sel
   const BOOT_TINTS: Record<string, string> = { cloth: "#5d5378", leather: "#6e5236", mail: "#7e8794", plate: "#98a2b2" };
   const bootColor = bootsPiece ? (bootsPiece.tint ?? BOOT_TINTS[bootsPiece.family]) : null;
   const bodyForge = gear?.armor ? (save.forge?.[gear.armor] ?? 0) : 0;
+
+  drawDisciplineCastSilhouette(ctx, unit, cx, gy, H, time, save.reducedMotion);
 
   // Path identity is carried by a physical silhouette first and magic second:
   // quiver, shield, stole, scarf, or orbiting folio. The attunement stays low

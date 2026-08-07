@@ -2855,7 +2855,8 @@ export class Battle {
         this.fx.ring(signatureCenter.x, signatureCenter.y, flourish * 0.62, color, { width: 2 + tierRank, life: 0.72 });
         break;
     }
-    hero.castGlow = 0.55;
+    hero.castGlow = tier === "ultimate" ? 1.05 : tier === "focus" ? 0.72 : 0.48;
+    audio.disciplineCast(discipline, tier);
     audio.elementCast(element, tier);
     return true;
   }
@@ -2991,7 +2992,8 @@ export class Battle {
 
     hero.castGlow = 0.65;
     this.fx.floatText(hero.x, hero.y - hero.radius * 3.8, "MASTERED LEGACY", color, 11);
-    audio.play(element === "radiant" ? "heal" : discipline === "warrior" || discipline === "knight" ? "slash" : "bolt");
+    audio.disciplineCast(discipline, "focus");
+    audio.elementCast(element, "focus");
     return true;
   }
 

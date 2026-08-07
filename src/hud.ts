@@ -193,6 +193,8 @@ export class Hud {
   private ultHintShown = false;
   private threatHintShown = false;
   private marchHintShown = false;
+  private dangerCoachShown = false;
+  private priorityCoachShown = false;
   private coachStage = 0;
   private lastLivingHeroes = -1;
   private readyFlash: Record<number, number> = {}; // per ability-slot key
@@ -579,6 +581,15 @@ export class Hud {
       ) {
         this.showHint("Glowing buttons are ready abilities — tap one, or drag it if it shows a dot");
         this.coachStage = 2;
+      }
+      if (!this.dangerCoachShown && b.telegraphs.length > 0 && this.hintTime <= 0) {
+        this.dangerCoachShown = true;
+        this.showHint("Marked ground is a promise: move outside it before the boundary closes");
+      }
+      const priority = b.livingEnemies().find((enemy) => !!enemy.enemyKind && ENEMIES[enemy.enemyKind].priority);
+      if (!this.priorityCoachShown && priority && this.hintTime <= 0 && b.time > 8) {
+        this.priorityCoachShown = true;
+        this.showHint(`${ENEMIES[priority.enemyKind!].name} is a priority role — double-tap it to focus the band`);
       }
       const living = this.battle.livingHeroes().length;
       if (this.lastLivingHeroes > 0 && living < this.lastLivingHeroes) {

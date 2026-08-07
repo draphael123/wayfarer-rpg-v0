@@ -7,7 +7,7 @@
  * TAD's "Once Upon a Time" title loop (CC0; see audio/LICENSES.md).
  * SFX: ninja-adventure & medieval-fantasy packs (Superpowers, CC0).
  */
-import type { DamageElement } from "./types";
+import type { DamageElement, DisciplineId } from "./types";
 
 type SfxName =
   | "click"
@@ -607,6 +607,44 @@ class AudioKit {
       this.noise(0.09, 0.055, 1200);
       this.tone(220, 0.26, "triangle", 0.1, -18);
       this.tone(294, 0.3, "sine", 0.09, 0, 0.1);
+    }
+  }
+
+  /** The Discipline supplies the physical verb; the element layered after it
+   * supplies material. Together they prevent every spell from becoming a tint. */
+  disciplineCast(discipline: DisciplineId, intent: "core" | "focus" | "ultimate"): void {
+    if (!this.soundOn) return;
+    const weight = intent === "ultimate" ? 1 : intent === "focus" ? 0.7 : 0.42;
+    switch (discipline) {
+      case "knight":
+        this.noise(0.04 + weight * 0.05, 0.045, 720);
+        this.tone(105, 0.16 + weight * 0.18, "triangle", 0.08 + weight * 0.08, -12);
+        break;
+      case "warrior":
+        this.noise(0.06 + weight * 0.08, 0.06 + weight * 0.04, 430);
+        this.tone(78, 0.12 + weight * 0.16, "sawtooth", 0.07 + weight * 0.09, -24);
+        break;
+      case "rogue":
+        this.noise(0.035 + weight * 0.045, 0.035, 2600);
+        this.tone(310, 0.08 + weight * 0.1, "square", 0.025 + weight * 0.035, 140);
+        break;
+      case "archer":
+        this.tone(196, 0.11 + weight * 0.1, "triangle", 0.04 + weight * 0.045, 260);
+        this.noise(0.025, 0.025 + weight * 0.025, 3400);
+        break;
+      case "priest":
+        this.tone(392, 0.24 + weight * 0.24, "sine", 0.05 + weight * 0.055, 0, 0.08);
+        this.tone(587, 0.2 + weight * 0.2, "sine", 0.035 + weight * 0.045, 0, 0.12);
+        break;
+      case "mage":
+        this.tone(233, 0.16 + weight * 0.25, "triangle", 0.045 + weight * 0.055, 420);
+        this.tone(466, 0.14 + weight * 0.16, "sine", 0.03 + weight * 0.035, -120, 0.05);
+        break;
+      case "necromancer":
+        this.noise(0.08 + weight * 0.08, 0.035 + weight * 0.04, 560);
+        this.tone(92, 0.28 + weight * 0.24, "sine", 0.07 + weight * 0.07, -18);
+        this.tone(138, 0.2 + weight * 0.2, "triangle", 0.035 + weight * 0.04, -28, 0.08);
+        break;
     }
   }
 

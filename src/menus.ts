@@ -2982,13 +2982,14 @@ export class Menus {
       <div class="page title-page">
         <div class="title-block first-mile-title">
           <div class="title-kicker">BEFORE THE FIRST MILE</div>
-          <div class="game-logo" style="font-size:34px">THREE FIELD RULES</div>
+          <div class="game-logo" style="font-size:34px">FOUR FIELD RULES</div>
           <div class="game-sub">Wayband is about giving a few clear orders, then reading what the battlefield says back.</div>
         </div>
         <div class="first-mile-rules">
           <article><span>01</span><i>↗</i><strong>Place the band</strong><p>Drag a hero to move or attack. Tap a portrait, then the field, for the same command.</p></article>
           <article><span>02</span><i>◇</i><strong>Read, then cast</strong><p>Tap instant techniques. Drag aimed techniques. Leave marked ground before it resolves.</p></article>
-          <article><span>03</span><i>✦</i><strong>Shape a Path</strong><p>At level ${CALLING_UNLOCK_LEVEL}, a Discipline plus an Attunement becomes two techniques and one ultimate.</p></article>
+          <article><span>03</span><i>◎</i><strong>Solve the dangerous role</strong><p>Priority enemies carry a bright role mark. Double-tap one to focus the whole band before it controls the fight.</p></article>
+          <article><span>04</span><i>✦</i><strong>Shape a Path</strong><p>At level ${CALLING_UNLOCK_LEVEL}, a Discipline plus an Attunement becomes two techniques and one ultimate.</p></article>
         </div>
         <div class="title-buttons">
           <button class="big-btn primary" data-act="learn">Enter the practice ring <small>about two minutes</small></button>
