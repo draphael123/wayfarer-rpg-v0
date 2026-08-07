@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { ARMOR_ACTIVES, DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, boonMods, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, talentMods, trinketMods, SET_BONUSES } from "./data";
+import { DIFFICULTIES, ENEMIES, HEROES, abilityById, armorById, armorSetOf, boonMods, callingById, callingEligible, cooldownReduction, deriveStats, heroGearOf, partyRoster, talentMods, trinketMods, SET_BONUSES } from "./data";
 
 // Battleheart pacing: cooldowns run 2.5× longer, so each cast must matter more.
 // Heals compensate harder than damage — a mend that has to cover a 20s window
@@ -150,9 +150,10 @@ export class Battle {
         .filter((d): d is NonNullable<typeof d> => !!d)
         .map((def) => ({ def, timer: 0 }));
       if (oath) abilities.push({ def: oath.signature, timer: 1, ult: true });
-      // the worn body armor's family grants its skill as a fifth button
+      // Ordinary armor is passive-only. A future legendary may explicitly
+      // carry an active without reopening the old family-skill system.
       const bodyPiece = armorById(heroSave.armor);
-      if (bodyPiece) abilities.push({ def: ARMOR_ACTIVES[bodyPiece.family], timer: 0, armorSkill: true });
+      if (bodyPiece?.active) abilities.push({ def: bodyPiece.active, timer: 0, armorSkill: true });
       this.units.push({
         id: nextUnitId++,
         name: HEROES[i].name,

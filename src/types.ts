@@ -69,7 +69,7 @@ export interface AbilityState {
   def: AbilityDef;
   timer: number; // seconds until ready; 0 = ready (ultimates mirror charge here: 1 = charging, 0 = full)
   ult?: boolean; // calling ultimate: gated by Unit.ultCharge, not time
-  armorSkill?: boolean; // family skill granted by the worn body armor
+  armorSkill?: boolean; // exceptional active granted by a legendary armor piece
 }
 
 export interface DerivedStats {
@@ -201,7 +201,7 @@ export interface HeroSave {
   level: number; // personal level — heroes grow by fighting, not by decree
   xp: number; // progress toward the next personal level
   boons: string[]; // chosen level-up boons (stack; picked one-of-two per level)
-  equipped: string[]; // ability ids, max 3
+  equipped: string[]; // chosen normal ability ids, max 2 (Calling ultimate is added separately)
   recruited: boolean;
   active: boolean; // in the fighting party (max 4)
   weaponTier: number; // 0-3

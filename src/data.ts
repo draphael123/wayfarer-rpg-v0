@@ -570,9 +570,10 @@ export interface ArmorDef {
   cost: number; // 0 = not sold (boss unique or starter)
   blurb: string;
   icon: string; // ico() name
-  slot?: ArmorSlot; // omitted = body (the piece that carries family identity, hook, and skill)
+  slot?: ArmorSlot; // omitted = body (the piece that carries family identity and passive hook)
   tint?: string; // metal/cloth accent on the sprite (mail/plate families)
   hook?: "dodgeFirstHit" | "burnOnSpell" | "allyAura" | "waveShield" | "regen" | "retaliate" | "slowProof";
+  active?: AbilityDef; // reserved for exceptional legendary pieces; ordinary armor is passive-only
   boss?: EnemyKind; // first kill of this boss awards it
   mods: Partial<{ hpFlat: number; armorFlat: number; moveSpeed: number; atkSpeed: number; spellPower: number; healPower: number; rangedDmg: number; meleeDmg: number; cdr: number; crit: number }>;
 }
@@ -752,7 +753,7 @@ function gearMods(input: GearWorn | string | null | undefined) {
   return m;
 }
 
-// --- armor skills: the worn body piece's family grants a fifth battle button ---
+// --- retired family actives, kept only for compatibility with older content ids ---
 
 export const ARMOR_ACTIVES: Record<ArmorFamily, AbilityDef> = {
   cloth: {
@@ -2191,7 +2192,7 @@ export function xpForLevel(level: number): number {
 }
 
 export const POINTS_PER_LEVEL = 2;
-export const MAX_EQUIPPED = 3;
+export const MAX_EQUIPPED = 2;
 
 // ------------------------------------------------------------------ talents
 

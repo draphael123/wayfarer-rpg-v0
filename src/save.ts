@@ -72,7 +72,7 @@ function defaultHero(index: number): HeroSave {
   return { attrs, level: 1, xp: 0, boons: [], equipped, recruited: founder, active: founder, weaponTier: 0, armor: null, helm: null, boots: null, talents: {}, trinket: null, calling: null, advCalling: null };
 }
 
-/** Out of the box: 1-4 picks a hero, QWER casts their abilities (R = ultimate). */
+/** Out of the box: 1-4 picks a hero, Q/W cast chosen abilities, R casts the ultimate. */
 export const DEFAULT_KEYBINDS: Record<string, string> = {
   hero1: "1",
   hero2: "2",
@@ -80,9 +80,8 @@ export const DEFAULT_KEYBINDS: Record<string, string> = {
   hero4: "4",
   ability1: "q",
   ability2: "w",
-  ability3: "e",
-  ability4: "r",
-  ability5: "f", // the armor's family skill
+  ability3: "r",
+  ability4: "f", // reserved for a future legendary armor exception
 };
 
 function emptyLifetime() {
@@ -231,6 +230,12 @@ export function loadSave(): SaveData {
     if (typeof parsed.colorSafe !== "boolean") parsed.colorSafe = false;
     if (typeof parsed.bigText !== "boolean") parsed.bigText = false;
     if (!parsed.keybinds || typeof parsed.keybinds !== "object") parsed.keybinds = { ...DEFAULT_KEYBINDS };
+    // Migrate the exact former default (E = third spell, R = ultimate).
+    // Custom key layouts remain untouched.
+    if (parsed.keybinds.ability3 === "e" && parsed.keybinds.ability4 === "r" && parsed.keybinds.ability5 === "f") {
+      parsed.keybinds.ability3 = "r";
+      parsed.keybinds.ability4 = "f";
+    }
     for (const k of Object.keys(DEFAULT_KEYBINDS)) {
       if (typeof parsed.keybinds[k] !== "string") parsed.keybinds[k] = DEFAULT_KEYBINDS[k];
     }

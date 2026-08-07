@@ -3,7 +3,6 @@ import {
   ABILITIES,
   ALL_GEAR,
   ARMORS,
-  ARMOR_ACTIVES,
   ARMOR_FAMILY_TIER,
   type ArmorDef,
   armorById,
@@ -1655,9 +1654,7 @@ export class Menus {
       ["hero4", "Select hero 4"],
       ["ability1", "Cast ability 1"],
       ["ability2", "Cast ability 2"],
-      ["ability3", "Cast ability 3"],
-      ["ability4", "Cast the ULTIMATE"],
-      ["ability5", "Cast the ARMOR SKILL"],
+      ["ability3", "Cast the ULTIMATE"],
     ];
     const page = el(`
       <div class="page">
@@ -2025,7 +2022,7 @@ export class Menus {
         <div class="guide-list">
           <div class="shop-note"><strong>${ico("coin")} Gold</strong> — every foe you slay and stage you clear pays gold. Even defeats salvage half the spoils.</div>
           <div class="shop-note"><strong>🍺 The Tavern</strong> — recruit new heroes to the band. Anyone hired can be rotated in or out of your fighting party of ${PARTY_CAP} on the Party screen.</div>
-          <div class="shop-note"><strong>${ico("shield")} The Armory</strong> — weapons upgrade in tiers, but armor is a WARDROBE across THREE slots: body, helm, and boots. The body piece grants its family's battle skill (cloth Surge, leather Tumble, mail Rally, plate Brace — the extra button in battle); wear two or three pieces of one family and the SET answers with more. The Forge reworks any owned piece up to +3, and the great foes each guard a RELIC piece for whoever fells them first.</div>
+          <div class="shop-note"><strong>${ico("shield")} The Armory</strong> — weapons upgrade in tiers, but armor is a WARDROBE across THREE slots: body, helm, and boots. Every piece changes passive stats or combat traits; wear two or three pieces of one family and the SET answers with more. The Forge reworks any owned piece up to +3, and the great foes each guard a RELIC piece for whoever fells them first.</div>
           <div class="shop-note"><strong>${ico("spark")} The Spell Shop</strong> — unlock a spell once for the whole band, then assign it to any hero whose attributes meet its bar. Each hero carries up to ${MAX_EQUIPPED} spells.</div>
           <div class="shop-note"><strong>${ico("banner")} Callings</strong> — at level ${CALLING_UNLOCK_LEVEL} a hero may swear an oath their stats have earned: an always-on passive, regalia, and an ULTIMATE that charges as they play their role. At level ${ADV_CALLING_LEVEL} every oath deepens down one of two paths. Stats never lock — but drop below an oath's bar and it sleeps.</div>
           <div class="shop-note"><strong>${ico("skull")} Bosses</strong> — the great foes hunt whoever HURTS them most. Pour damage in and a boss turns on you; your warrior holds its anger just by standing in its face, and taunts trump everything. Marked ground means MOVE.</div>
@@ -2548,7 +2545,7 @@ export class Menus {
     const rack = el(`
       <div class="hero-card">
         <div class="hero-name">The Armorer's Rack</div>
-        <div class="hero-meta">Every piece has its own character. Body pieces grant their family's battle skill; matching helm and boots complete a set. Buy a copy, then dress a hero on their Equip screen.</div>
+        <div class="hero-meta">Every piece has its own passive character. Match body armor, helm, and boots to complete a family set. Buy a copy, then dress a hero on their Gear screen.</div>
         <div class="armor-rack"></div>
       </div>
     `);
@@ -3386,7 +3383,7 @@ export class Menus {
         const deltaHtml = deltas.filter(([n]) => n).map(([n, label]) => `<i class="${n > 0 ? "up" : "dn"}">${n > 0 ? "+" : ""}${n}${label}</i>`).join("");
         const active = wornId === (piece?.id ?? null);
         const dataKey = kind === "body" ? "armor" : kind;
-        const extra = piece && kind === "body" ? ARMOR_ACTIVES[piece.family] : null;
+        const extra = piece?.active ?? null;
         return `<button class="item-choice ${active ? "equipped" : ""}" data-${dataKey}="${piece?.id ?? "none"}"><span class="choice-icon">${piece ? ico(piece.icon) : "◇"}</span><span><strong>${piece ? pieceLabel(piece, save.forge) : kind === "body" ? "Traveler's Garb" : "Empty"}</strong><em>${piece?.blurb ?? "Leave this slot unequipped"}${extra ? ` · Grants ${extra.name}` : ""}</em><span class="choice-deltas">${deltaHtml || "No stat change"}</span></span><b>${active ? "✓" : "Equip"}</b></button>`;
       }).join("");
       if (wornId && save.heroes.some((h, hi) => hi !== index && h.recruited)) list.insertAdjacentHTML("beforeend", `<button class="picker-shop" data-handoff="${kind}">Hand this piece to another hero</button>`);
@@ -3507,7 +3504,7 @@ export class Menus {
       });
       const title = kind === "body" ? "Armor" : kind === "helm" ? "Helm" : "Boots";
       const sectionIcon = kind === "body" ? "shield" : kind === "helm" ? "moon" : "arrow";
-      const skill = kind === "body" && worn ? ARMOR_ACTIVES[worn.family] : null;
+      const skill = kind === "body" && worn ? worn.active : null;
       const cur = statsWith(gearNow());
       const options = pool
         .map((p) => {
@@ -3534,7 +3531,7 @@ export class Menus {
               worn
                 ? `<div class="equip-blurb">${worn.blurb}${worn.boss ? ' <span class="rare-tag">RELIC</span>' : ""}${skill ? ` · grants <strong>${skill.name}</strong> in battle` : ""}</div>`
                 : kind === "body"
-                  ? `<div class="equip-blurb">Road-worn and honest — a body piece also grants its family's battle skill.</div>`
+                  ? `<div class="equip-blurb">Road-worn and honest — armor changes passive stats and combat traits without adding another battle button.</div>`
                   : ""
             }
             <div class="trinket-options armor-options">

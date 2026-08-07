@@ -93,16 +93,16 @@ export class Hud {
     audio.play("click");
   }
 
-  /** Hotkey: cast the selected hero's Nth ability (3 = ultimate, 4 = armor skill). */
+  /** Hotkey: cast the selected hero's Nth ability (2 = ultimate, 3 = legendary armor exception). */
   hotkeyAbility(slot: number): void {
     if (this.overlayActive() || this.tutorial) return;
     const hero = this.selected && this.selected.alive ? this.selected : this.battle.livingHeroes()[0];
     if (!hero) return;
     this.selected = hero;
     const ability =
-      slot === 3
-        ? (hero.abilities.find((a) => a.ult) ?? hero.abilities[3])
-        : slot === 4
+      slot === 2
+        ? (hero.abilities.find((a) => a.ult) ?? hero.abilities[2])
+        : slot === 3
           ? hero.abilities.find((a) => a.armorSkill)
           : hero.abilities[slot];
     if (!ability) return;
@@ -1320,7 +1320,7 @@ export class Hud {
         this.drawAbilityButton(ctx, bx, by, bs, hero, ability, this.readyFlash[hero.id * 10 + a] ?? 0);
         // key label for keyboard players
         if (FINE_POINTER) {
-          const bind = this.save.keybinds?.[ability.ult ? "ability4" : ability.armorSkill ? "ability5" : `ability${a + 1}`];
+          const bind = this.save.keybinds?.[ability.ult ? "ability3" : ability.armorSkill ? "ability4" : `ability${a + 1}`];
           if (bind && bind.length === 1) {
             ctx.fillStyle = "rgba(12, 9, 18, 0.85)";
             roundRect(ctx, bx - 3, by - 3, 13, 13, 4);

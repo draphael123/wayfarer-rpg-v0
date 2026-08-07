@@ -101,6 +101,8 @@ assert.equal(loadSave().unlockedStage, 0, "corrupt saves must recover to a new c
 
 const legacy = defaultSave() as SaveData & { reducedMotion?: boolean; keybinds?: Record<string, string> };
 legacy.heroes = legacy.heroes.slice(0, 4);
+legacy.heroes[0].equipped = ["cleave", "bellow", "mend"];
+legacy.keybinds = { hero1: "1", hero2: "2", hero3: "3", hero4: "4", ability1: "q", ability2: "w", ability3: "e", ability4: "r", ability5: "f" };
 delete legacy.reducedMotion;
 delete legacy.keybinds;
 delete (legacy as Partial<SaveData>).formation;
@@ -111,6 +113,8 @@ const migrated = loadSave();
 assert.equal(migrated.heroes.length, HEROES.length, "older rosters must gain new hero records");
 assert.equal(migrated.reducedMotion, false, "older saves must gain comfort defaults");
 assert.ok(migrated.keybinds.ability1, "older saves must gain default keybinds");
+assert.deepEqual(migrated.heroes[0].equipped, ["cleave", "bellow"], "older three-spell loadouts must trim safely to two choices");
+assert.equal(migrated.keybinds.ability3, "r", "the former default ultimate key must migrate to slot three");
 assert.equal(migrated.formation, "line", "older saves must gain the default formation");
 assert.deepEqual(migrated.journal, [], "older saves must gain an empty Chronicle");
 

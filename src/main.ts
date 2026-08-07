@@ -534,12 +534,13 @@ window.addEventListener("keydown", (event) => {
       hud.selectHeroByIndex(i);
       return;
     }
-    if (key === binds[`ability${i + 1}`]) {
+    if (i < 2 && key === binds[`ability${i + 1}`]) {
       hud.hotkeyAbility(i);
       return;
     }
   }
-  if (key === binds.ability5) hud.hotkeyAbility(4); // the armor's family skill
+  if (key === binds.ability3) hud.hotkeyAbility(2); // Calling ultimate
+  if (key === binds.ability4) hud.hotkeyAbility(3); // reserved legendary armor active
 });
 
 // When a victory/defeat overlay appears, settling XP waits for the button —
