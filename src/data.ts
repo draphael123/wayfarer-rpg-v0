@@ -3148,7 +3148,7 @@ export function pathDoctrineNodes(path: CallingDef): readonly PathDoctrineNode[]
 
 /** Number of earned doctrine passives (0-5). The five ability nodes are
  * available on swearing the Path; the remaining road is earned by practice
- * plus investment in the Discipline's defining attribute. */
+ * while automatic growth reaches the Discipline's defining thresholds. */
 export function pathDoctrineRank(hero: HeroSave): number {
   const path = callingById(hero.calling);
   if (!path) return 0;
@@ -3213,6 +3213,8 @@ export function roadTutelageCost(level: number): number {
   return 250 + Math.max(1, level) * 60;
 }
 
+/** Kept as a named budget for save migration and balance tooling. These two
+ * points are applied automatically; players no longer allocate attributes. */
 export const POINTS_PER_LEVEL = 2;
 export const MAX_EQUIPPED = 2;
 
@@ -3220,7 +3222,9 @@ export const MAX_EQUIPPED = 2;
 
 export const MAX_LEVEL = 100;
 
-export type TalentTree = "might" | "precision" | "sorcery" | "faith" | "bulwark" | "swiftness" | "fortune";
+export type TalentTree =
+  | "might" | "precision" | "sorcery" | "faith" | "bulwark" | "swiftness" | "fortune"
+  | "command" | "elemental" | "blood" | "shadow" | "grave";
 
 export interface TalentDef {
   id: string;
@@ -3241,10 +3245,17 @@ export const TALENT_TREES: Record<TalentTree, { name: string; color: string; ico
   bulwark: { name: "Bulwark", color: "#8fd0a8", icon: "🛡" },
   swiftness: { name: "Swiftness", color: "#7bc8d8", icon: "»" },
   fortune: { name: "Gambit", color: "#e8b85a", icon: "◈" },
+  command: { name: "Command", color: "#d6a85f", icon: "⚑" },
+  elemental: { name: "Confluence", color: "#68b9d8", icon: "✦" },
+  blood: { name: "Bloodcraft", color: "#c45564", icon: "◆" },
+  shadow: { name: "Gloam", color: "#8e78bd", icon: "☾" },
+  grave: { name: "Gravecraft", color: "#9eaa82", icon: "☠" },
 };
 
 /** Hero levels that open each row. Direct prerequisites still have to be learned. */
 export const TALENT_TIER_LEVELS = [2, 8, 14, 22, 30] as const;
+/** Commitment gates keep deep doctrines meaningful even when a hero branches. */
+export const TALENT_TIER_POINTS = [0, 3, 7, 12, 18] as const;
 
 export const TALENTS: TalentDef[] = [
   // MIGHT — hit harder
@@ -3322,6 +3333,61 @@ export const TALENTS: TalentDef[] = [
   { id: "scavenger", tree: "fortune", tier: 4, name: "Fieldcraft", blurb: "+2% move speed and −2% technique cooldowns", maxRank: 3, requires: "deepPockets" },
   { id: "fateweaver", tree: "fortune", tier: 5, name: "Fateweaver", blurb: "+5% critical chance and an opening 40 hp ward", maxRank: 1, keystone: true, requires: "loadedDice" },
   { id: "kingsRansom", tree: "fortune", tier: 5, name: "Against the Crown", blurb: "+20% damage against bosses and priority enemies", maxRank: 1, keystone: true, requires: "scavenger" },
+  // COMMAND — make four heroes fight like one company
+  { id: "fieldDrill", tree: "command", tier: 1, name: "Field Drill", blurb: "+2% attack speed and +1% move speed", maxRank: 5 },
+  { id: "wardStandard", tree: "command", tier: 1, name: "Ward Standard", blurb: "Begin battle behind a 5 hp ward", maxRank: 5 },
+  { id: "priorityOrders", tree: "command", tier: 2, name: "Priority Orders", blurb: "+15% damage to priority enemies", maxRank: 1, keystone: true, requires: "fieldDrill" },
+  { id: "rallyPoint", tree: "command", tier: 2, name: "Rally Point", blurb: "At each wave, grant every ally an 8 hp ward", maxRank: 1, keystone: true, requires: "wardStandard" },
+  { id: "formationCraft", tree: "command", tier: 3, name: "Formation Craft", blurb: "+2% health and +0.5% armor", maxRank: 3, requires: "rallyPoint" },
+  { id: "decisiveCall", tree: "command", tier: 3, name: "Decisive Call", blurb: "A priority kill grants the whole company 8 ultimate charge", maxRank: 1, keystone: true, requires: "priorityOrders" },
+  { id: "veteranCadence", tree: "command", tier: 4, name: "Veteran Cadence", blurb: "+2% attack speed and −1% technique cooldowns", maxRank: 5, requires: "decisiveCall" },
+  { id: "shieldwallLesson", tree: "command", tier: 4, name: "Shieldwall Lesson", blurb: "+1% armor; nearby allies take 2% less damage", maxRank: 3, requires: "formationCraft" },
+  { id: "grandMarshal", tree: "command", tier: 5, name: "Grand Marshal", blurb: "Priority kills also reset the killer's Discipline technique", maxRank: 1, keystone: true, requires: "veteranCadence" },
+  { id: "oathStandard", tree: "command", tier: 5, name: "The Oath Standard", blurb: "Rally Point wards are doubled and nearby allies take 8% less damage", maxRank: 1, keystone: true, requires: "shieldwallLesson" },
+  // CONFLUENCE — read weaknesses and turn conditions into reactions
+  { id: "primalStudy", tree: "elemental", tier: 1, name: "Primal Study", blurb: "+3% spell power", maxRank: 5 },
+  { id: "weakpointLore", tree: "elemental", tier: 1, name: "Weakpoint Lore", blurb: "+2% damage when striking an elemental weakness", maxRank: 5 },
+  { id: "lingeringSigil", tree: "elemental", tier: 2, name: "Lingering Sigil", blurb: "+2% spell power and −1% technique cooldowns", maxRank: 5, requires: "primalStudy" },
+  { id: "countercurrent", tree: "elemental", tier: 2, name: "Countercurrent", blurb: "Elemental weaknesses take another 10% damage", maxRank: 1, keystone: true, requires: "weakpointLore" },
+  { id: "reactionWard", tree: "elemental", tier: 3, name: "Reaction Ward", blurb: "Triggering a reaction grants a ward worth 10% of maximum health", maxRank: 1, keystone: true, requires: "lingeringSigil" },
+  { id: "volatileFormula", tree: "elemental", tier: 3, name: "Volatile Formula", blurb: "+4% spell power", maxRank: 3, requires: "countercurrent" },
+  { id: "resonance", tree: "elemental", tier: 4, name: "Resonance", blurb: "+3% spell power and −1% technique cooldowns", maxRank: 5, requires: "reactionWard" },
+  { id: "resistBreaker", tree: "elemental", tier: 4, name: "Break the Pattern", blurb: "Enemy elemental resistance is reduced by half", maxRank: 1, keystone: true, requires: "volatileFormula" },
+  { id: "worldshaper", tree: "elemental", tier: 5, name: "Worldshaper", blurb: "Reactions deal 15% more damage and recover another second of techniques", maxRank: 1, keystone: true, requires: "resonance" },
+  { id: "perfectAnswer", tree: "elemental", tier: 5, name: "Perfect Answer", blurb: "Weakness hits gain another 20% damage and build ultimate twice as fast", maxRank: 1, keystone: true, requires: "resistBreaker" },
+  // BLOODCRAFT — trade safety for sustain and finishing pressure
+  { id: "ironPulse", tree: "blood", tier: 1, name: "Iron Pulse", blurb: "+3% maximum health", maxRank: 5 },
+  { id: "redEdge", tree: "blood", tier: 1, name: "Red Edge", blurb: "+2% melee, ranged, and spell damage", maxRank: 5 },
+  { id: "hunger", tree: "blood", tier: 2, name: "Hunger", blurb: "Damage heals you for 1.5% of the amount dealt", maxRank: 3, requires: "ironPulse" },
+  { id: "openVein", tree: "blood", tier: 2, name: "Open Vein", blurb: "+15% damage while below half health", maxRank: 1, keystone: true, requires: "redEdge" },
+  { id: "bloodRush", tree: "blood", tier: 3, name: "Blood Rush", blurb: "Below half health, attack 20% faster", maxRank: 1, keystone: true, requires: "openVein" },
+  { id: "crimsonRecovery", tree: "blood", tier: 3, name: "Crimson Recovery", blurb: "+2% health and +0.5% armor", maxRank: 3, requires: "hunger" },
+  { id: "redDoctrine", tree: "blood", tier: 4, name: "Red Doctrine", blurb: "+3% damage and +1% critical chance", maxRank: 5, requires: "bloodRush" },
+  { id: "deathDefied", tree: "blood", tier: 4, name: "Death Defied", blurb: "Once per battle, survive a fatal blow at 10% health", maxRank: 1, keystone: true, requires: "crimsonRecovery" },
+  { id: "sanguineLord", tree: "blood", tier: 5, name: "Sanguine Lord", blurb: "Below half health, Hunger and Blood Rush are twice as strong", maxRank: 1, keystone: true, requires: "redDoctrine" },
+  { id: "feastEternal", tree: "blood", tier: 5, name: "The Feast Eternal", blurb: "Kills heal 12% health and refresh Death Defied once", maxRank: 1, keystone: true, requires: "deathDefied" },
+  // GLOAM — openings, flanks, and disappearing after the right kill
+  { id: "duskStep", tree: "shadow", tier: 1, name: "Dusk Step", blurb: "+2% move speed and −1% technique cooldowns", maxRank: 5 },
+  { id: "cruelOpening", tree: "shadow", tier: 1, name: "Cruel Opening", blurb: "+3% damage to uninjured enemies", maxRank: 5 },
+  { id: "smokeMemory", tree: "shadow", tier: 2, name: "Smoke Memory", blurb: "Begin each wave behind a 6 hp ward", maxRank: 5, requires: "duskStep" },
+  { id: "backstabber", tree: "shadow", tier: 2, name: "Turn the Knife", blurb: "Flanking damage rises from 25% to 45%", maxRank: 1, keystone: true, requires: "cruelOpening" },
+  { id: "vanishingAct", tree: "shadow", tier: 3, name: "Vanishing Act", blurb: "A priority kill clears enemy attention from you", maxRank: 1, keystone: true, requires: "backstabber" },
+  { id: "hush", tree: "shadow", tier: 3, name: "Hush", blurb: "+2% critical chance and +2% move speed", maxRank: 3, requires: "smokeMemory" },
+  { id: "nightTempo", tree: "shadow", tier: 4, name: "Night Tempo", blurb: "+2% attack speed, move speed, and critical chance", maxRank: 5, requires: "vanishingAct" },
+  { id: "umbralGuard", tree: "shadow", tier: 4, name: "Umbral Guard", blurb: "+4% move speed and begin battle behind a 10 hp ward", maxRank: 3, requires: "hush" },
+  { id: "shadowMaster", tree: "shadow", tier: 5, name: "Shadow Master", blurb: "Vanishing Act also hastes you and resets your Utility technique", maxRank: 1, keystone: true, requires: "nightTempo" },
+  { id: "noWitnesses", tree: "shadow", tier: 5, name: "No Witnesses", blurb: "+20% damage to isolated priority enemies and bosses", maxRank: 1, keystone: true, requires: "umbralGuard" },
+  // GRAVECRAFT — curses, remains, and servants that keep fighting
+  { id: "graveLore", tree: "grave", tier: 1, name: "Grave Lore", blurb: "+3% spell power", maxRank: 5 },
+  { id: "boneTalisman", tree: "grave", tier: 1, name: "Bone Talisman", blurb: "Begin battle behind a 6 hp ward", maxRank: 5 },
+  { id: "soulTithe", tree: "grave", tier: 2, name: "Soul Tithe", blurb: "Kills recover 0.5 seconds from every technique", maxRank: 3, requires: "graveLore" },
+  { id: "corpseBloom", tree: "grave", tier: 2, name: "Corpse Bloom", blurb: "Slain cursed foes burst for 35% weapon damage", maxRank: 1, keystone: true, requires: "boneTalisman" },
+  { id: "servantBond", tree: "grave", tier: 3, name: "Servant Bond", blurb: "Raised servants deal 15% more damage", maxRank: 3, requires: "soulTithe" },
+  { id: "wastingTouch", tree: "grave", tier: 3, name: "Wasting Touch", blurb: "+15% damage to cursed enemies", maxRank: 1, keystone: true, requires: "corpseBloom" },
+  { id: "deathCurrent", tree: "grave", tier: 4, name: "Death Current", blurb: "+3% spell power and −1% technique cooldowns", maxRank: 5, requires: "servantBond" },
+  { id: "boneLegion", tree: "grave", tier: 4, name: "Bone Legion", blurb: "Focus and ultimate summons raise one additional servant", maxRank: 1, keystone: true, requires: "wastingTouch" },
+  { id: "graveSovereign", tree: "grave", tier: 5, name: "Grave Sovereign", blurb: "Servants last 50% longer and strike 30% faster", maxRank: 1, keystone: true, requires: "deathCurrent" },
+  { id: "paleCompact", tree: "grave", tier: 5, name: "The Pale Compact", blurb: "Curses spread on death and cursed foes take another 20% damage", maxRank: 1, keystone: true, requires: "boneLegion" },
 ];
 
 export interface TalentRanks {
@@ -3345,17 +3411,17 @@ export interface TalentMods {
 export function talentMods(ranks: TalentRanks | undefined): TalentMods {
   const r = (id: string) => ranks?.[id] ?? 0;
   return {
-    meleeDmg: r("ironGrip") * 0.03 + r("slayer") * 0.02 + r("relentless") * 0.03 + r("avatarOfWar") * 0.15,
-    rangedDmg: r("keenEye") * 0.03 + r("puncture") * 0.03 + r("patientKiller") * 0.02 + r("eagleSoul") * 0.12,
-    hpPct: r("oxBlood") * 0.03 + r("fortress") * 0.02 + r("ironHeart") * 0.03 + r("avatarOfWar") * 0.1 + r("livingCitadel") * 0.12,
-    armorFlat: r("stoneSkin") * 0.015 + r("thickHide") * 0.01 + r("devotion") * 0.01 + r("fortress") * 0.005 + r("graceUnderFire") * 0.005 + r("ironHeart") * 0.005 + r("evasiveFootwork") * 0.005 + r("livingCitadel") * 0.05,
-    cdr: Math.min(0.45, r("warEcho") * 0.03 + r("attune") * 0.03 + r("runeMemory") * 0.01 + r("surefoot") * 0.01 + r("deepReservoir") * 0.01 + r("scavenger") * 0.02 + r("highArcanum") * 0.05),
-    atkSpeed: r("quickHands") * 0.03 + r("huntersRhythm") * 0.02 + r("momentum") * 0.02 + r("relentless") * 0.02 + r("tempo") * 0.02 + r("stormDancer") * 0.1,
-    moveSpeed: r("fleetFoot") * 0.03 + r("huntersRhythm") * 0.02 + r("surefoot") * 0.02 + r("momentum") * 0.02 + r("tempo") * 0.02 + r("evasiveFootwork") * 0.03 + r("scavenger") * 0.02 + r("stormDancer") * 0.1,
-    crit: r("deadEye") * 0.03 + r("slayer") * 0.02 + r("luckyCharm") * 0.02 + r("gamblersEdge") * 0.03 + r("patientKiller") * 0.02 + r("eagleSoul") * 0.06 + r("loadedDice") * 0.02 + r("fateweaver") * 0.05,
-    spellPower: r("focus") * 0.04 + r("archon") * 0.03 + r("runeMemory") * 0.02 + r("deepReservoir") * 0.03 + r("arcanePulse") * 0.04 + r("highArcanum") * 0.15,
+    meleeDmg: r("ironGrip") * 0.03 + r("slayer") * 0.02 + r("relentless") * 0.03 + r("avatarOfWar") * 0.15 + r("redEdge") * 0.02 + r("redDoctrine") * 0.03,
+    rangedDmg: r("keenEye") * 0.03 + r("puncture") * 0.03 + r("patientKiller") * 0.02 + r("eagleSoul") * 0.12 + r("redEdge") * 0.02 + r("redDoctrine") * 0.03,
+    hpPct: r("oxBlood") * 0.03 + r("fortress") * 0.02 + r("ironHeart") * 0.03 + r("avatarOfWar") * 0.1 + r("livingCitadel") * 0.12 + r("formationCraft") * 0.02 + r("ironPulse") * 0.03 + r("crimsonRecovery") * 0.02,
+    armorFlat: r("stoneSkin") * 0.015 + r("thickHide") * 0.01 + r("devotion") * 0.01 + r("fortress") * 0.005 + r("graceUnderFire") * 0.005 + r("ironHeart") * 0.005 + r("evasiveFootwork") * 0.005 + r("livingCitadel") * 0.05 + r("formationCraft") * 0.005 + r("shieldwallLesson") * 0.01 + r("crimsonRecovery") * 0.005,
+    cdr: Math.min(0.45, r("warEcho") * 0.03 + r("attune") * 0.03 + r("runeMemory") * 0.01 + r("surefoot") * 0.01 + r("deepReservoir") * 0.01 + r("scavenger") * 0.02 + r("highArcanum") * 0.05 + r("veteranCadence") * 0.01 + r("lingeringSigil") * 0.01 + r("resonance") * 0.01 + r("duskStep") * 0.01 + r("deathCurrent") * 0.01),
+    atkSpeed: r("quickHands") * 0.03 + r("huntersRhythm") * 0.02 + r("momentum") * 0.02 + r("relentless") * 0.02 + r("tempo") * 0.02 + r("stormDancer") * 0.1 + r("fieldDrill") * 0.02 + r("veteranCadence") * 0.02 + r("nightTempo") * 0.02,
+    moveSpeed: r("fleetFoot") * 0.03 + r("huntersRhythm") * 0.02 + r("surefoot") * 0.02 + r("momentum") * 0.02 + r("tempo") * 0.02 + r("evasiveFootwork") * 0.03 + r("scavenger") * 0.02 + r("stormDancer") * 0.1 + r("fieldDrill") * 0.01 + r("duskStep") * 0.02 + r("hush") * 0.02 + r("nightTempo") * 0.02 + r("umbralGuard") * 0.04,
+    crit: r("deadEye") * 0.03 + r("slayer") * 0.02 + r("luckyCharm") * 0.02 + r("gamblersEdge") * 0.03 + r("patientKiller") * 0.02 + r("eagleSoul") * 0.06 + r("loadedDice") * 0.02 + r("fateweaver") * 0.05 + r("redDoctrine") * 0.01 + r("hush") * 0.02 + r("nightTempo") * 0.02,
+    spellPower: r("focus") * 0.04 + r("archon") * 0.03 + r("runeMemory") * 0.02 + r("deepReservoir") * 0.03 + r("arcanePulse") * 0.04 + r("highArcanum") * 0.15 + r("redEdge") * 0.02 + r("redDoctrine") * 0.03 + r("primalStudy") * 0.03 + r("lingeringSigil") * 0.02 + r("volatileFormula") * 0.04 + r("resonance") * 0.03 + r("graveLore") * 0.03 + r("deathCurrent") * 0.03,
     healPower: r("springs") * 0.04 + r("archon") * 0.03 + r("devotion") * 0.02 + r("sanctified") * 0.03 + r("graceUnderFire") * 0.04 + r("hierophant") * 0.15,
-    startShield: r("aegis") * 8 + r("providence") * 10 + r("sanctified") * 4 + r("hierophant") * 15 + r("fateweaver") * 40,
+    startShield: r("aegis") * 8 + r("providence") * 10 + r("sanctified") * 4 + r("hierophant") * 15 + r("fateweaver") * 40 + r("wardStandard") * 5 + r("smokeMemory") * 6 + r("umbralGuard") * 10 + r("boneTalisman") * 6,
   };
 }
 

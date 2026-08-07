@@ -497,9 +497,7 @@ function settleVictory(): void {
         ? "Choose a Discipline and Attunement on the Paths screen."
         : !h.advCalling && h.level >= ADV_CALLING_LEVEL
           ? "Compare both Specializations; each changes your combat rhythm."
-          : (save.unspent[i] ?? 0) > 0
-            ? "Spend the new attribute point toward your Path requirements or strongest scaling."
-            : "Review the next talent tier and keep building toward your chosen battlefield role.";
+          : "Mark a talent or save the point for a deeper doctrine in the Field Ledger.";
       progress.push({ heroIndex: i, before, after: h.level, unlocked, next });
     }
   });
@@ -571,7 +569,7 @@ function settleChallengeVictory(challenge: NonNullable<typeof activeChallenge>):
         for (const element of hero.masteredElements) if (!beforeElements.has(element)) unlocked.push(`${elementById(element)?.name ?? element} Elemental Legacy`);
         for (const path of hero.masteredCallings) if (!beforePaths.has(path)) unlocked.push(`${callingById(path)?.name ?? "Path"} mastery`);
         for (const spec of hero.masteredSpecializations) if (!beforeSpecs.has(spec)) unlocked.push(`${advCallingById(spec)?.adv.name ?? "Specialization"} Legacy technique`);
-        const next = !hero.calling && hero.level >= CALLING_UNLOCK_LEVEL ? "Choose a Path before the next expedition." : !hero.advCalling && hero.level >= ADV_CALLING_LEVEL ? "Compare both level-20 Specializations." : "Spend the new attribute point and review the next talent tier.";
+        const next = !hero.calling && hero.level >= CALLING_UNLOCK_LEVEL ? "Choose a Path before the next expedition." : !hero.advCalling && hero.level >= ADV_CALLING_LEVEL ? "Compare both level-20 Specializations." : "Mark a talent or save the point for a deeper doctrine.";
         progress.push({ heroIndex: index, before, after: hero.level, unlocked, next });
       }
     }

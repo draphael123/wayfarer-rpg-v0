@@ -1596,7 +1596,7 @@ export class Hud {
         ctx.font = "600 9px 'Trebuchet MS', Verdana, sans-serif";
         ctx.textAlign = "left";
         ctx.fillText("no abilities —", bx0, py + 20);
-        ctx.fillText("train attributes", bx0, py + 32);
+        ctx.fillText("choose a Path", bx0, py + 32);
       }
     }
   }
@@ -2133,9 +2133,7 @@ export class Hud {
             ? "Next try: use ready abilities early instead of saving every cooldown"
             : this.battle.ordersIssued < 3
               ? "Next try: reposition often and pull wounded heroes out of focus fire"
-              : this.save.heroes.some((hero, index) => hero.recruited && this.save.unspent[index] > 0)
-                ? "Next try: spend the waiting attribute points in Party"
-                : "Next try: inspect the scout report or lower difficulty for this road";
+              : "Next try: inspect the scout report, talents, or lower difficulty for this road";
       ctx.fillText(
         `The road claimed them · ${mins}:${secs}`,
         this.width / 2,

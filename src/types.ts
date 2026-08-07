@@ -346,7 +346,7 @@ export interface SaveData {
   unlockedStage: number;
   level: number; // legacy mirror: the highest personal level in the band (display/back-compat)
   xp: number; // legacy, unused since heroes level individually
-  unspent: number[]; // per hero
+  unspent: number[]; // legacy save field; migrated into automatic growth and kept at zero
   heroes: HeroSave[];
   sound: boolean;
   music: boolean;

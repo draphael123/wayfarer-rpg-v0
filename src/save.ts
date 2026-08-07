@@ -24,11 +24,27 @@ import {
   trinketById,
   xpForLevel,
 } from "./data";
-import type { Attributes, DisciplineId, ElementId, HeroSave, SaveData } from "./types";
+import type { AttrKey, Attributes, DisciplineId, ElementId, HeroSave, SaveData } from "./types";
 
 const KEY = "wayband-save-v1";
 const SLOT_POINTER = "wayband-active-slot";
-export const CURRENT_SAVE_VERSION = 2;
+export const CURRENT_SAVE_VERSION = 3;
+
+/** Attribute growth is automatic now. The sequence keeps the old two-points-
+ * per-level power curve, but follows each companion's established strengths. */
+function growthPattern(index: number): readonly AttrKey[] {
+  const base = HEROES[index].baseAttrs;
+  const ranked = [...ATTR_KEYS].sort((a, b) => base[b] - base[a] || ATTR_KEYS.indexOf(a) - ATTR_KEYS.indexOf(b));
+  return [ranked[0], ranked[1], ranked[0], ranked[2], ranked[1], ranked[3], ranked[0], ranked[4]];
+}
+
+export function applyAutomaticGrowth(hero: HeroSave, index: number, points: number, offset = 0): void {
+  const pattern = growthPattern(index);
+  for (let point = 0; point < Math.max(0, points); point++) {
+    const key = pattern[(offset + point) % pattern.length];
+    hero.attrs[key] += 1;
+  }
+}
 
 /** Six fully independent bands. Slot 0 keeps the legacy key so existing saves just work. */
 export const SLOT_NAMES = [
@@ -361,8 +377,8 @@ export function loadSave(): SaveData {
     if (!parsed.unlockedSpells.includes("bellow")) parsed.unlockedSpells.push("bellow");
     parsed.inventory = cleanStrings(parsed.inventory, 512, false).filter((id) => !!trinketById(id));
     parsed.armory = cleanStrings(parsed.armory, 512, false).filter((id) => !!armorById(id));
-    // roster growth: older saves gain the late-arrival heroes, benched, with
-    // catch-up attribute points for the levels the band already earned
+    // Roster growth: older saves gain late-arrival heroes. The legacy queue is
+    // immediately converted into the same automatic growth used by level-ups.
     if (!Array.isArray(parsed.unspent)) parsed.unspent = parsed.heroes.map(() => 0);
     while (parsed.heroes.length < HEROES.length) {
       parsed.heroes.push(defaultHero(parsed.heroes.length));
@@ -415,6 +431,14 @@ export function loadSave(): SaveData {
       // heroes level individually now — veterans inherit the old band level
       hero.level = finiteInteger(hero.level, parsed.level, 1, MAX_LEVEL);
       hero.xp = finiteInteger(hero.xp, 0, 0, 1_000_000_000);
+      // Retire the manual allocation queue without discarding earned power.
+      // The offset places old waiting points after whatever that hero already spent.
+      const waiting = parsed.unspent[i] ?? 0;
+      if (waiting > 0) {
+        const earned = Math.max(0, (hero.level - 1) * POINTS_PER_LEVEL);
+        applyAutomaticGrowth(hero, i, waiting, Math.max(0, earned - waiting));
+        parsed.unspent[i] = 0;
+      }
       delete (hero as unknown as { boons?: unknown }).boons;
       hero.talents = cleanNumberRecord(hero.talents, 10);
       if (!trinketById(hero.trinket)) hero.trinket = null;
@@ -605,7 +629,7 @@ export function persist(save: SaveData): void {
   }
 }
 
-/** Grants personal XP. Each level yields attributes and a talent point. */
+/** Grants personal XP. Each level applies automatic growth and yields a talent point. */
 export function personalBattleXp(baseXp: number, participated: boolean, survived: boolean): number {
   if (!participated || baseXp <= 0) return 0;
   return Math.round(baseXp * (survived ? 1 : 0.5));
@@ -633,6 +657,7 @@ export function grantHeroXp(save: SaveData, index: number, amount: number): numb
     hero.xp -= xpForLevel(hero.level);
     hero.level += 1;
     gained += 1;
+    applyAutomaticGrowth(hero, index, POINTS_PER_LEVEL, (hero.level - 2) * POINTS_PER_LEVEL);
     const path = callingById(hero.calling);
     if (path) {
       hero.callingLevels ??= {};
@@ -660,32 +685,9 @@ export function grantHeroXp(save: SaveData, index: number, amount: number): numb
         }
       }
     }
-    save.unspent[index] += POINTS_PER_LEVEL;
+    save.unspent[index] = 0;
   }
   // legacy mirror: the band wears its most seasoned member's number
   save.level = Math.max(save.level, hero.level);
   return gained;
-}
-
-/** Resets a hero's attributes to base and refunds every spent point. */
-export function respecHero(save: SaveData, index: number): void {
-  const base = HEROES[index].baseAttrs;
-  const current = save.heroes[index].attrs;
-  let spent = 0;
-  for (const key of ATTR_KEYS) {
-    spent += current[key] - base[key];
-  }
-  save.unspent[index] += spent;
-  save.heroes[index].attrs = { ...base };
-  const hero = save.heroes[index];
-  const path = callingById(hero.calling);
-  if (path) {
-    hero.equipped = resolvedPathAbilities(path.discipline, path.element, hero.equipped, hero.masteredSpecializations).map((ability) => ability.id);
-  } else {
-    hero.equipped = hero.equipped.filter((id) => {
-      const ability = abilityById(id);
-      return !!ability && hero.attrs[ability.gate.attr] >= ability.gate.value;
-    }).slice(0, MAX_EQUIPPED);
-  }
-  persist(save);
 }

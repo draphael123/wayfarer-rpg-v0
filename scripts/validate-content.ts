@@ -39,8 +39,12 @@ import {
   SPECIALIZATION_TECHNIQUES,
   specializationKey,
   TALENTS,
+  TALENT_TREES,
+  talentPointBudget,
+  talentPointsSpent,
   talentMods,
   TRINKETS,
+  xpForLevel,
 } from "../src/data";
 import { assignHeroPath, assignRecruitRoadKit, claimReward, CURRENT_SAVE_VERSION, defaultSave, grantHeroXp, loadSave, persist, personalBattleXp, recoveryKey, rejectedSaveKey, slotKey } from "../src/save";
 import { LATE_FOE_KINDS } from "../src/late-content";
@@ -321,6 +325,7 @@ for (const tree of new Set(TALENTS.map((talent) => talent.tree))) {
   assert.ok(branch.length >= 9, `${tree} needs an expansive set of at least nine talents`);
   assert.ok(branch.filter((talent) => talent.tier === 5 && talent.keystone).length >= 2, `${tree} needs two final-row capstones`);
 }
+assert.equal(Object.keys(TALENT_TREES).length, 12, "the expanded Field Ledger needs twelve distinct talent trees");
 const gambitBranch = TALENTS.filter((talent) => talent.tree === "fortune");
 assert.ok(gambitBranch.every((talent) => !/gold|coin/i.test(`${talent.name} ${talent.blurb}`)), "Gambit must remain a combat tree, not a passive economy tax");
 const fieldcraft = talentMods({ scavenger: 3 });
@@ -554,6 +559,12 @@ Object.defineProperty(globalThis, "localStorage", {
 });
 const saveRoundTrip = defaultSave();
 assert.equal(saveRoundTrip.version, CURRENT_SAVE_VERSION, "new saves must use the current explicit version");
+const growthBefore = Object.values(saveRoundTrip.heroes[0].attrs).reduce((sum, value) => sum + value, 0);
+grantHeroXp(saveRoundTrip, 0, xpForLevel(1));
+const growthAfter = Object.values(saveRoundTrip.heroes[0].attrs).reduce((sum, value) => sum + value, 0);
+assert.equal(growthAfter - growthBefore, 2, "a level must apply two automatic attribute gains");
+assert.equal(saveRoundTrip.unspent[0], 0, "automatic growth must never create manual attribute points");
+assert.equal(talentPointBudget(saveRoundTrip.heroes[0].level) - talentPointsSpent(saveRoundTrip.heroes[0].talents), 1, "a level must create one talent choice");
 assert.equal(claimReward(saveRoundTrip, "test:reward:1"), true, "a new deterministic reward should be claimable");
 assert.equal(claimReward(saveRoundTrip, "test:reward:1"), false, "the same reward id must never be paid twice");
 saveRoundTrip.gold = 137;
@@ -572,10 +583,15 @@ assert.equal(loadSave().inventory.length, 2, "duplicate trinkets must remain ava
 assert.equal(loadSave().armory.length, 2, "duplicate armor copies must remain independently equippable");
 const legacyV1 = { ...defaultSave(), version: 1 } as SaveData;
 delete (legacyV1 as Partial<SaveData>).rewardClaims;
+legacyV1.heroes[0].level = 3;
+legacyV1.unspent[0] = 4;
+const legacyAttrTotal = Object.values(legacyV1.heroes[0].attrs).reduce((sum, value) => sum + value, 0);
 localStorage.setItem(slotKey(), JSON.stringify(legacyV1));
 const migratedV2 = loadSave();
 assert.equal(migratedV2.version, CURRENT_SAVE_VERSION, "version 1 saves must migrate to the current version");
 assert.deepEqual(migratedV2.rewardClaims, [], "migration must initialize the reward claim ledger");
+assert.equal(migratedV2.unspent[0], 0, "migration must retire waiting manual attribute points");
+assert.equal(Object.values(migratedV2.heroes[0].attrs).reduce((sum, value) => sum + value, 0) - legacyAttrTotal, 4, "migration must preserve waiting points as automatic growth");
 const masterySave = defaultSave();
 const recruitSave = defaultSave();
 const recruitedWren = recruitSave.heroes[1];

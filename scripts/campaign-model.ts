@@ -13,8 +13,8 @@ import {
   STAGES,
   xpForLevel,
 } from "../src/data";
-import { defaultSave } from "../src/save";
-import type { AttrKey, DisciplineId, ElementId, HeroSave, SaveData, StageDef } from "../src/types";
+import { applyAutomaticGrowth, defaultSave } from "../src/save";
+import type { DisciplineId, ElementId, HeroSave, SaveData, StageDef } from "../src/types";
 
 /**
  * Authored reference identities for deterministic reports.  These deliberately
@@ -22,16 +22,6 @@ import type { AttrKey, DisciplineId, ElementId, HeroSave, SaveData, StageDef } f
  * instead of giving every hero whichever legacy spell passes a gate first.
  */
 export const REFERENCE_PATHS: readonly { discipline: DisciplineId; element: ElementId }[] = HERO_STARTER_PATHS;
-
-const ROLE_ATTRIBUTE: Record<DisciplineId, AttrKey> = {
-  knight: "str",
-  warrior: "str",
-  rogue: "dex",
-  archer: "dex",
-  priest: "spi",
-  mage: "int",
-  necromancer: "int",
-};
 
 interface ReferenceKit {
   body: string;
@@ -165,9 +155,8 @@ function applyReferenceHero(save: SaveData, heroIndex: number, stageIndex: numbe
 
   hero.level = progress.level;
   hero.xp = progress.xp;
-  const roleAttribute = ROLE_ATTRIBUTE[path.discipline];
   hero.attrs = { ...HEROES[heroIndex].baseAttrs };
-  hero.attrs[roleAttribute] += (hero.level - 1) * 2;
+  applyAutomaticGrowth(hero, heroIndex, (hero.level - 1) * 2);
 
   if (hero.level >= CALLING_UNLOCK_LEVEL) {
     const calling = pathId(path.discipline, path.element);
@@ -192,8 +181,7 @@ function applyReferenceHero(save: SaveData, heroIndex: number, stageIndex: numbe
 
 /**
  * Expected campaign state immediately before attempting a stage on first-clear
- * progression.  It is intentionally deterministic and spends every earned
- * attribute point in the hero's discipline-defining stat.
+ * progression. It uses the same deterministic automatic growth as live heroes.
  */
 export function referenceSave(stageIndex: number, difficulty: number): SaveData {
   const save = defaultSave();

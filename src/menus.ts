@@ -50,13 +50,13 @@ import {
   TALENT_TREES,
   type TalentTree,
   TALENT_TIER_LEVELS,
+  TALENT_TIER_POINTS,
   talentPointBudget,
   talentPointsInTree,
   talentPointsSpent,
   BOSS_STAGES,
   STAGED_BOSS_KINDS,
   bestiaryThresholds,
-  ATTR_BLURBS,
   ATTR_KEYS,
   ATTR_NAMES,
   bandLevel,
@@ -76,7 +76,6 @@ import {
   deriveStats,
   dominantWeapon,
   partyRoster,
-  unlockedAbilities,
   xpForLevel,
 } from "./data";
 import type { AttrKey, DisciplineId, ElementId, EnemyKind } from "./types";
@@ -89,7 +88,7 @@ import { drawAbilityGlyph, ico } from "./icons";
 import { lateRoadMapMarkup, LATE_ROAD_REGIONS, type LateRoadRegion } from "./late-road";
 import { drawLateEnemyIcon } from "./late-sprites";
 import { drawHeroFigure, setColorSafe } from "./render";
-import { activeSlot, assignHeroPath, assignRecruitRoadKit, CURRENT_SAVE_VERSION, defaultSave, DEFAULT_KEYBINDS, grantHeroXp, nextSpeed, peekSlot, persist, respecHero, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
+import { activeSlot, assignHeroPath, assignRecruitRoadKit, CURRENT_SAVE_VERSION, defaultSave, DEFAULT_KEYBINDS, grantHeroXp, nextSpeed, peekSlot, persist, setActiveSlot, SLOT_NAMES, slotKey, speedLabel } from "./save";
 import { exportTelemetry, telemetrySummary } from "./telemetry";
 import type { SaveData } from "./types";
 
@@ -110,15 +109,16 @@ export interface ProgressReportEntry {
   next: string;
 }
 
-/** Each discipline receives three focused trees, mirroring Diablo's class identity. */
+/** Four authored ledgers give every Discipline a strong identity while still
+ * leaving room for hybrid builds and retained legacy investments. */
 const DISCIPLINE_TALENT_TREES: Record<DisciplineId, readonly TalentTree[]> = {
-  knight: ["might", "bulwark", "faith"],
-  warrior: ["might", "bulwark", "swiftness"],
-  rogue: ["precision", "swiftness", "fortune"],
-  archer: ["precision", "sorcery", "fortune"],
-  priest: ["faith", "bulwark", "sorcery"],
-  mage: ["sorcery", "swiftness", "faith"],
-  necromancer: ["sorcery", "faith", "fortune"],
+  knight: ["bulwark", "might", "faith", "command"],
+  warrior: ["might", "blood", "bulwark", "swiftness"],
+  rogue: ["precision", "shadow", "swiftness", "fortune"],
+  archer: ["precision", "fortune", "command", "elemental"],
+  priest: ["faith", "command", "bulwark", "elemental"],
+  mage: ["sorcery", "elemental", "shadow", "swiftness"],
+  necromancer: ["grave", "blood", "shadow", "sorcery"],
 };
 
 const TALENT_TREE_PROMISES: Record<TalentTree, string> = {
@@ -129,7 +129,14 @@ const TALENT_TREE_PROMISES: Record<TalentTree, string> = {
   bulwark: "Absorb the first crisis, punish attackers, and shelter nearby allies.",
   swiftness: "Avoid opening blows and keep moving between dangerous lanes.",
   fortune: "Read priority targets, begin prepared, and charge ultimates through correct focus.",
+  command: "Coordinate priority kills, opening wards, and company-wide momentum.",
+  elemental: "Read weaknesses, break resistance, and turn conditions into decisive reactions.",
+  blood: "Trade a safe health bar for speed, sustain, and ruthless finishing pressure.",
+  shadow: "Win through openings, flanks, threat breaks, and isolated targets.",
+  grave: "Feed curses and fallen enemies into stronger servants and relentless spell recovery.",
 };
+
+const TALENT_TIER_NAMES = ["Foundation", "Practice", "Turning", "Doctrine", "Oath"] as const;
 
 const NATURAL_DISCIPLINE: Record<AttrKey, DisciplineId> = {
   str: "knight",
@@ -192,41 +199,6 @@ function buildIdentity(save: SaveData, index: number): string {
   const calling = callingById(hero.calling);
   if (calling && callingEligible(calling, hero.attrs)) return calling.name;
   return hero.level >= CALLING_UNLOCK_LEVEL ? "Path unchosen" : "Roadbound";
-}
-
-type Derived = ReturnType<typeof deriveStats>;
-
-/** After spending a point, flash the stat cells that actually moved (green up,
- *  red down — a weapon morph can trade damage away) so cause→effect is visible. */
-function flashStatDeltas(card: HTMLElement, before: Derived, after: Derived): void {
-  const reads: [string, (s: Derived) => number, (d: number) => string][] = [
-    ["Health", (s) => s.maxHp, (d) => `${Math.round(d)}`],
-    ["Damage", (s) => s.damage, (d) => `${Math.abs(d) >= 10 ? Math.round(d) : d.toFixed(1)}`],
-    ["Atk speed", (s) => 1 / s.attackCooldown, (d) => `${d.toFixed(2)}/s`],
-    ["Armor", (s) => s.armor * 100, (d) => `${Math.round(d)}%`],
-    ["Move", (s) => s.speed, (d) => `${Math.round(d)}`],
-    ["Healing", (s) => s.healPower, (d) => `${d.toFixed(1)}/s`],
-    ["Technique power", (s) => s.spellPower, (d) => `${d.toFixed(2)}`],
-  ];
-  const show = (key: string, text: string, up: boolean) => {
-    const cell = card.querySelector(`[data-stat="${key}"]`);
-    if (!cell) return;
-    cell.classList.add(up ? "stat-up" : "stat-down");
-    const chip = el(`<span class="stat-delta ${up ? "" : "down"}">${text}</span>`);
-    cell.appendChild(chip);
-    setTimeout(() => {
-      chip.remove();
-      cell.classList.remove("stat-up", "stat-down");
-    }, 1700);
-  };
-  for (const [key, get, fmt] of reads) {
-    const d = get(after) - get(before);
-    if (Math.abs(d) < 0.005) continue;
-    show(key, `${d > 0 ? "+" : "−"}${fmt(Math.abs(d))}`, d > 0);
-  }
-  const wasRanged = before.range > 90;
-  const isRanged = after.range > 90;
-  if (wasRanged !== isRanged) show("Range", isRanged ? "now ranged" : "now melee", true);
 }
 
 /** Small canvas chip with an ability's glyph (or a dashed empty slot). */
@@ -918,7 +890,7 @@ export class Menus {
   showQueuedProgress(): void {
     if (!this.queuedProgress.length) return;
     const entries = this.queuedProgress.splice(0);
-    const pop = el(`<div class="levelup-pop progress-pop"><div class="levelup-card progress-card" role="dialog" aria-modal="true" aria-labelledby="progress-title"><span class="save-code-kicker">Company growth</span><div class="levelup-title" id="progress-title">THE ROAD CHANGED YOU</div><p class="levelup-line">Every level grants an attribute point. Milestones below are ready now.</p><div class="progress-list">${entries.map((entry) => `<article><div><strong>${HEROES[entry.heroIndex].name}</strong><span>Level ${entry.before} → ${entry.after}</span></div><p><b>Changed:</b> +${entry.after - entry.before} attribute point${entry.after - entry.before === 1 ? "" : "s"}</p>${entry.unlocked.length ? `<p class="progress-unlock"><b>Unlocked:</b> ${entry.unlocked.join(" · ")}</p>` : ""}<p><b>Consider next:</b> ${entry.next}</p></article>`).join("")}</div><div class="levelup-actions"><button class="big-btn primary" data-progress="party">Open Party</button><button class="big-btn" data-progress="close">Continue</button></div></div></div>`);
+    const pop = el(`<div class="levelup-pop progress-pop"><div class="levelup-card progress-card" role="dialog" aria-modal="true" aria-labelledby="progress-title"><span class="save-code-kicker">Company growth</span><div class="levelup-title" id="progress-title">THE ROAD CHANGED YOU</div><p class="levelup-line">Attributes rose automatically. Every new level also grants one talent mark.</p><div class="progress-list">${entries.map((entry) => `<article><div><strong>${HEROES[entry.heroIndex].name}</strong><span>Level ${entry.before} → ${entry.after}</span></div><p><b>Changed:</b> automatic growth · +${entry.after - entry.before} talent mark${entry.after - entry.before === 1 ? "" : "s"}</p>${entry.unlocked.length ? `<p class="progress-unlock"><b>Unlocked:</b> ${entry.unlocked.join(" · ")}</p>` : ""}<p><b>Consider next:</b> ${entry.next}</p></article>`).join("")}</div><div class="levelup-actions"><button class="big-btn primary" data-progress="party">Open Party</button><button class="big-btn" data-progress="close">Continue</button></div></div></div>`);
     pop.addEventListener("click", (event) => {
       const act = (event.target as HTMLElement).closest("[data-progress]")?.getAttribute("data-progress");
       if (!act) return;
@@ -1019,7 +991,7 @@ export class Menus {
   /** Battleheart-style bottom tab bar: five doors, every screen one tap apart. */
   private sectionBar(current: "battle" | "party" | "shop" | "tavern" | "records"): HTMLElement {
     const save = this.save;
-    const unspent = save.heroes.reduce((sum, h, i) => sum + (h.recruited ? save.unspent[i] : 0), 0);
+    const talentReady = save.heroes.reduce((sum, hero) => sum + (hero.recruited ? Math.max(0, talentPointBudget(hero.level) - talentPointsSpent(hero.talents)) : 0), 0);
     const shopDeal =
       save.heroes.some((h) => h.recruited && h.weaponTier + 1 < WEAPON_TIERS.length && WEAPON_TIERS[h.weaponTier + 1].cost <= save.gold) ||
       ALL_GEAR.some((a) => a.cost > 0 && !save.armory.includes(a.id) && a.cost <= save.gold) ||
@@ -1030,7 +1002,7 @@ export class Menus {
     const bar = el(`
       <nav class="nav-bar">
         ${btn("battle", "sword", "Battle")}
-        ${btn("party", "shield", "Party", unspent > 0 ? `<span class="badge">${unspent}</span>` : "")}
+        ${btn("party", "shield", "Party", talentReady > 0 ? `<span class="badge">${talentReady}</span>` : "")}
         ${btn("shop", "bag", "Shop", shopDeal ? '<span class="shop-dot"></span>' : "")}
         ${btn("tavern", "home", "Tavern", recruitReady ? '<span class="shop-dot"></span>' : "")}
         ${btn("records", "book", "Records")}
@@ -1605,12 +1577,12 @@ export class Menus {
       ? ` style="--journey-accent:${lateJourneyRegion.map.accent};--journey-glow:${lateJourneyRegion.map.glow};--journey-ink:${lateJourneyRegion.map.ink}"`
       : "";
     const seasoned = bandLevel(save);
-    const pendingPoints = save.heroes.reduce((sum, hero, index) => sum + (hero.recruited ? save.unspent[index] : 0), 0);
+    const talentReady = save.heroes.reduce((sum, hero) => sum + (hero.recruited ? Math.max(0, talentPointBudget(hero.level) - talentPointsSpent(hero.talents)) : 0), 0);
     const recruitReady = save.heroes.some((hero, index) => !hero.recruited && heroArrived(save, index) && (RECRUIT_COST[index] ?? Infinity) <= save.gold);
     const suggestedJourneyNote = campaignComplete
       ? "Walk onward, revisit a Path, or answer a contract"
-      : pendingPoints > 0
-      ? `${pendingPoints} attribute point${pendingPoints === 1 ? "" : "s"} waiting in Party`
+      : talentReady > 0
+      ? `${talentReady} talent mark${talentReady === 1 ? "" : "s"} waiting in Party`
       : recruitReady
         ? "A new companion can be hired in the Tavern"
         : `Scout ${STAGES[Math.min(save.unlockedStage, STAGES.length - 1)].name} and set out`;
@@ -2145,7 +2117,10 @@ export class Menus {
       wedge: "One hero leads the advance",
       guard: "A front pair shelters the backline",
     } as const;
-    const pendingPoints = party.reduce((sum, index) => sum + (this.save.unspent[index] ?? 0), 0);
+    const talentReady = party.reduce((sum, index) => {
+      const hero = this.save.heroes[index];
+      return sum + Math.max(0, talentPointBudget(hero.level) - talentPointsSpent(hero.talents));
+    }, 0);
     const pathless = party.filter((index) => this.save.heroes[index].level >= CALLING_UNLOCK_LEVEL && !this.save.heroes[index].calling).length;
     const terrainCopy = stage.terrain === "tide-storm"
       ? "Rising water slows the lower field; lightning circles strike after their countdown."
@@ -2175,7 +2150,7 @@ export class Menus {
     const regionalProblem = regionProblems[Math.min(regionProblems.length - 1, Math.floor(stageIndex / 6))];
     const checks = [
       { warn: party.length < PARTY_CAP, text: `${party.length}/${PARTY_CAP} heroes taking the field` },
-      { warn: pendingPoints > 0, text: pendingPoints > 0 ? `${pendingPoints} unspent attribute point${pendingPoints === 1 ? "" : "s"}` : "Attributes are accounted for" },
+      { warn: talentReady > 0, text: talentReady > 0 ? `${talentReady} unmarked talent point${talentReady === 1 ? "" : "s"}` : "Talent ledgers are current" },
       { warn: pathless > 0, text: pathless > 0 ? `${pathless} eligible hero${pathless === 1 ? " has" : "es have"} no Path` : "Path choices are ready" },
     ];
     const pop = el(`
@@ -3086,7 +3061,7 @@ export class Menus {
       { kind: "roles", mark: "III", icon: "⌖", name: "Priority Enemies", time: "2 min", unlock: this.save.unlockedStage >= 2, lockText: "Clear Stage 2", blurb: "Read enemy roles, focus the dangerous support, then dismantle its protector." },
       { kind: "gestures", mark: "IV", icon: "⌁", name: "Aimed Techniques", time: "2 min", unlock: this.save.unlockedStage >= 2, lockText: "Clear Stage 2", blurb: "Practice rays, blast circles, and trails while time bends around your aim." },
       { kind: "elements", mark: "V", icon: "ϟ", name: "Elemental Reactions", time: "3 min", unlock: heroLevel >= 5, lockText: "Reach hero level 5", blurb: "Exploit a weakness, build a condition, then consume it with a counter-element." },
-      { kind: "building", mark: "VI", icon: "◇", name: "Build a Hero", time: "3 min", unlock: heroLevel >= 5, lockText: "Reach hero level 5", blurb: "Pair Discipline and Attunement, compare techniques, and plan your next attribute." },
+      { kind: "building", mark: "VI", icon: "◇", name: "Build a Hero", time: "3 min", unlock: heroLevel >= 5, lockText: "Reach hero level 5", blurb: "Pair Discipline and Attunement, compare techniques, and choose a talent doctrine." },
       { kind: "fieldcraft", mark: "VII", icon: "◎", name: "Read the Field", time: "2 min", unlock: this.save.unlockedStage >= 3, lockText: "Reach the first boss", blurb: "Escape telegraphs, focus the band, read Waymarks, and break boss poise." },
       { kind: "bosses", mark: "VIII", icon: "▰", name: "Boss Rhythm", time: "3 min", unlock: this.save.unlockedStage >= 4, lockText: "Defeat the Alpha", blurb: "Break poise, escape a committed attack, and read phase thresholds." },
     ];
@@ -3194,7 +3169,7 @@ export class Menus {
       const d = DISCIPLINES.find((entry) => entry.id === discipline)!;
       const e = ELEMENTS.find((entry) => entry.id === element)!;
       const techniques = pathAbilities(discipline, element);
-      preview.innerHTML = `<span>YOUR PRACTICE PATH</span><h2 style="color:${e.color}">${e.adjective} ${d.name}</h2><p><b>${techniques[0].name}</b> — ${techniques[0].blurb}</p><p><b>${techniques[1].name}</b> — ${techniques[1].blurb}</p><aside><strong>Consider next:</strong> raise the attributes named on the real Path card, then use talents to sharpen your role. At level ${ADV_CALLING_LEVEL}, a Specialization changes how that role plays.</aside>`;
+      preview.innerHTML = `<span>YOUR PRACTICE PATH</span><h2 style="color:${e.color}">${e.adjective} ${d.name}</h2><p><b>${techniques[0].name}</b> — ${techniques[0].blurb}</p><p><b>${techniques[1].name}</b> — ${techniques[1].blurb}</p><aside><strong>Consider next:</strong> automatic growth keeps the fundamentals moving; spend talent marks on the combat rules you want to emphasize. At level ${ADV_CALLING_LEVEL}, a Specialization changes how that role plays.</aside>`;
     };
     page.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
@@ -3233,7 +3208,7 @@ export class Menus {
           <div class="shop-note"><strong>${ico("banner")} Paths</strong> — at level ${CALLING_UNLOCK_LEVEL}, pair one of seven combat Disciplines with a Waymark Attunement. Practice an element for ${CALLING_MASTERY_LEVELS} levels to preserve its Elemental Legacy. At level ${ADV_CALLING_LEVEL}, choose one of two Specializations; train it for ${SPECIALIZATION_MASTERY_LEVELS} more levels to carry its Legacy technique into another Path.</div>
           <div class="shop-note"><strong>${ico("skull")} Bosses</strong> — the great foes hunt whoever HURTS them most. Pour damage in and a boss turns on you; your warrior holds its anger just by standing in its face, and taunts trump everything. Marked ground means MOVE.</div>
           <div class="shop-note"><strong>⌨ Keyboard</strong> — on a computer: 1–4 picks a hero, Q/W uses their two techniques, and R unleashes the ultimate. Aimed techniques follow the mouse; click casts, Esc cancels. Rebind in Settings.</div>
-          <div class="shop-note"><strong>${ico("star")} Talents</strong> — every 2 band levels, each hero earns a talent point for the Strength, Dexterity, and Magic trees. Find them on the Party screen.</div>
+          <div class="shop-note"><strong>${ico("star")} Talents</strong> — every hero level grants one mark. Each Discipline opens four branching ledgers; deeper doctrines require commitment, and the final Oath is an either/or capstone choice.</div>
         </div>
       </div>
     `);
@@ -3259,7 +3234,7 @@ export class Menus {
     const hero = save.heroes[index];
     const budget = talentPointBudget(hero.level);
     const spent = talentPointsSpent(hero.talents);
-    const free = budget - spent;
+    const free = Math.max(0, budget - spent);
     const learnedKeystones = TALENTS.filter((talent) => talent.keystone && (hero.talents[talent.id] ?? 0) > 0);
     const page = el(`
       <div class="page">
@@ -3267,19 +3242,19 @@ export class Menus {
           <div class="equip-title">
             <div class="hero-avatar portrait" style="background:${def.accent}"><canvas width="64" height="64"></canvas></div>
             <div>
-              <div class="map-title">${def.name}'s Talents</div>
-              <div class="map-level">${free} point${free === 1 ? "" : "s"} to spend · one point each hero level after level 1</div>
+              <div class="map-title">${def.name}'s Field Ledger</div>
+              <div class="map-level">${free} point${free === 1 ? "" : "s"} to mark · four Discipline ledgers · one point each level</div>
             </div>
           </div>
         </div>
-        <div class="shop-note talent-primer"><strong>Your build lives here.</strong> Random boons are gone. Every level now feeds a visible route toward triggers, reactions, and ◆ rule-changing capstones.</div>
+        <div class="shop-note talent-primer"><strong>Choose a fighting doctrine.</strong> Each ledger branches from dependable practice into combat rules. Deep rows require commitment inside that ledger, and at the final Oath you must choose one of two capstones.</div>
         <section class="talent-loadout-strip">
           <div><span>Unspent</span><strong>${free}</strong><em>of ${budget} earned</em></div>
-          <div><span>Rules learned</span><strong>${learnedKeystones.length ? learnedKeystones.map((talent) => talent.name).join(" · ") : "None yet"}</strong><em>${learnedKeystones.length ? "These effects are active in combat." : "First keystones open at level 8."}</em></div>
+          <div><span>Doctrine</span><strong>${learnedKeystones.length ? learnedKeystones.map((talent) => talent.name).join(" · ") : "Unwritten"}</strong><em>${learnedKeystones.length ? "These rules are active in combat." : "Your first turning opens at level 8."}</em></div>
         </section>
         <div class="talent-trees"></div>
         <div class="map-footer">
-          <button class="toggle-btn" data-act="reset-talents">Reforge all points (free)</button>
+          <button class="toggle-btn" data-act="reset-talents">Unmark the ledger (free)</button>
         </div>
       </div>
     `);
@@ -3307,22 +3282,29 @@ export class Menus {
     {
       const tree = TALENT_TREES[treeKey];
       const inTree = talentPointsInTree(hero.talents, treeKey);
+      const chosenOath = TALENTS.find((talent) => talent.tree === treeKey && talent.tier === 5 && talent.keystone && (hero.talents[talent.id] ?? 0) > 0);
       const column = el(`
         <div class="talent-col wide" style="--tree:${tree.color}">
-          <div class="talent-col-head"><span>${tree.icon} ${tree.name}</span><small>${inTree} invested</small><em>${TALENT_TREE_PROMISES[treeKey]}</em></div>
+          <div class="talent-col-head"><span>${tree.icon} ${tree.name}</span><small>${inTree} mark${inTree === 1 ? "" : "s"}</small><em>${TALENT_TREE_PROMISES[treeKey]}</em></div>
+          <div class="talent-ledger-key"><span>Follow a branch</span><b>${chosenOath ? `Oath sworn: ${chosenOath.name}` : "Final Oath: choose one"}</b></div>
         </div>
       `);
       for (const tier of [1, 2, 3, 4, 5] as const) {
         const needLevel = TALENT_TIER_LEVELS[tier - 1];
+        const needPoints = TALENT_TIER_POINTS[tier - 1];
         const levelOpen = hero.level >= needLevel;
-        const row = el(`<div class="talent-tier ${levelOpen ? "open" : "level-locked"}"><div class="tier-rule ${levelOpen ? "open" : ""}"><span>ROW ${tier}</span><b>${levelOpen ? `LEVEL ${needLevel}` : `LOCKED · LEVEL ${needLevel}`}</b></div><div class="talent-tier-nodes"></div></div>`);
+        const pointsOpen = inTree >= needPoints;
+        const tierOpen = levelOpen && pointsOpen;
+        const gateText = !levelOpen ? `LEVEL ${needLevel}` : !pointsOpen ? `${needPoints} MARKS REQUIRED` : tier === 5 ? "CHOOSE ONE OATH" : "OPEN";
+        const row = el(`<div class="talent-tier ${tierOpen ? "open" : levelOpen ? "path-locked" : "level-locked"}"><div class="tier-rule ${tierOpen ? "open" : ""}"><span>${TALENT_TIER_NAMES[tier - 1]}</span><b>${gateText}</b></div><div class="talent-tier-nodes"></div></div>`);
         const nodeLane = row.querySelector(".talent-tier-nodes")!;
         for (const talent of TALENTS.filter((t) => t.tree === treeKey && t.tier === tier)) {
           const rank = hero.talents[talent.id] ?? 0;
           const maxed = rank >= talent.maxRank;
           const prerequisite = talent.requires ? TALENTS.find((entry) => entry.id === talent.requires) : null;
           const prerequisiteMet = !talent.requires || (hero.talents[talent.requires] ?? 0) > 0;
-          const open = rank > 0 || (levelOpen && prerequisiteMet);
+          const oathAvailable = tier !== 5 || !chosenOath || chosenOath.id === talent.id;
+          const open = rank > 0 || (tierOpen && prerequisiteMet && oathAvailable);
           const pips =
             talent.maxRank > 1
               ? `<div class="talent-pips">${Array.from({ length: talent.maxRank }, (_, r) => `<i class="${r < rank ? "on" : ""}"></i>`).join("")}</div>`
@@ -3331,10 +3313,11 @@ export class Menus {
             el(`
               <button class="talent-node ${talent.keystone ? "keystone" : ""} ${maxed ? "maxed" : ""} ${open && free > 0 && !maxed ? "can" : ""} ${open ? "" : "tier-locked"}" data-talent="${talent.id}" aria-label="${talent.name}, rank ${rank} of ${talent.maxRank}">
                 <div class="talent-rank">${rank}/${talent.maxRank}</div>
-                <div class="talent-kind">${talent.keystone ? "Rule-changer" : talent.maxRank > 1 ? "Ranked craft" : "Combat trigger"}</div>
+                <div class="talent-kind">${tier === 5 ? "Final oath" : talent.keystone ? "Rule-changer" : talent.maxRank > 1 ? "Ranked practice" : "Combat trigger"}</div>
                 <div class="talent-name">${talent.keystone ? "◆ " : ""}${talent.name}</div>
                 <div class="talent-blurb">${talent.blurb}${talent.maxRank > 1 ? " <em>/rank</em>" : ""}</div>
                 ${prerequisite && !prerequisiteMet && rank === 0 ? `<div class="talent-requires">Requires ${prerequisite.name}</div>` : ""}
+                ${tier === 5 && chosenOath && chosenOath.id !== talent.id && rank === 0 ? `<div class="talent-requires">Oath sealed by ${chosenOath.name}</div>` : ""}
                 ${pips}
               </button>
             `),
@@ -3359,8 +3342,13 @@ export class Menus {
         const talent = TALENTS.find((t) => t.id === id)!;
         const rank = hero.talents[id] ?? 0;
         const needLevel = TALENT_TIER_LEVELS[talent.tier - 1];
+        const needPoints = TALENT_TIER_POINTS[talent.tier - 1];
         if (rank === 0 && hero.level < needLevel) {
           this.showToast(`Locked — ${talent.name} opens at hero level ${needLevel}`);
+          return;
+        }
+        if (rank === 0 && talentPointsInTree(hero.talents, talent.tree) < needPoints) {
+          this.showToast(`Locked — invest ${needPoints} marks in ${TALENT_TREES[talent.tree].name} first`);
           return;
         }
         if (rank === 0 && talent.requires && (hero.talents[talent.requires] ?? 0) === 0) {
@@ -3371,6 +3359,13 @@ export class Menus {
         if (rank >= talent.maxRank) {
           this.showToast(talent.keystone ? `${talent.name} is already learned` : `${talent.name} is already at max rank`);
           return;
+        }
+        if (rank === 0 && talent.tier === 5) {
+          const sworn = TALENTS.find((entry) => entry.tree === talent.tree && entry.tier === 5 && entry.keystone && (hero.talents[entry.id] ?? 0) > 0);
+          if (sworn && sworn.id !== talent.id) {
+            this.showToast(`Oath already sworn: ${sworn.name}. Unmark the ledger to choose again.`);
+            return;
+          }
         }
         if (talentPointBudget(hero.level) - talentPointsSpent(hero.talents) <= 0) {
           this.showToast("No talent points left — level up the band");
@@ -3641,7 +3636,7 @@ export class Menus {
         audio.play("levelup");
         navigator.vibrate?.([14, 28, 20]);
         this.renderShop("tavern");
-        this.queueProgress([{ heroIndex: index, before, after: hero.level, unlocked: hero.level === ADV_CALLING_LEVEL ? ["Level-20 Specialization"] : [], next: !hero.calling && hero.level >= CALLING_UNLOCK_LEVEL ? "Choose a Discipline and Attunement on the Paths screen." : !hero.advCalling && hero.level >= ADV_CALLING_LEVEL ? "Compare both level-20 Specializations." : "Spend the new attribute point and review the next talent tier." }]);
+        this.queueProgress([{ heroIndex: index, before, after: hero.level, unlocked: hero.level === ADV_CALLING_LEVEL ? ["Level-20 Specialization"] : [], next: !hero.calling && hero.level >= CALLING_UNLOCK_LEVEL ? "Choose a Discipline and Attunement on the Paths screen." : !hero.advCalling && hero.level >= ADV_CALLING_LEVEL ? "Compare both level-20 Specializations." : "Mark a talent or keep the point for a deeper doctrine." }]);
         this.showQueuedProgress();
         return;
       }
@@ -4038,7 +4033,7 @@ export class Menus {
     return strip;
   }
 
-  /** The hero's front page: the full stat/attribute card under the hub tabs. */
+  /** The hero's front page: the full combat-stat card under the hub tabs. */
   renderHeroOverview(index: number): void {
     this.pushNav("hero", index);
     this.root.innerHTML = "";
@@ -4115,7 +4110,7 @@ export class Menus {
           <canvas width="64" height="64"></canvas>
           <span class="p-name">${HEROES[i].name}</span>
           ${h.active ? `<span class="p-flag">${ico("banner")}</span>` : ""}
-          ${this.save.unspent[i] > 0 ? `<span class="badge">${this.save.unspent[i]}</span>` : ""}
+          ${talentPointBudget(h.level) - talentPointsSpent(h.talents) > 0 ? `<span class="badge">${talentPointBudget(h.level) - talentPointsSpent(h.talents)}</span>` : ""}
         </button>
       `);
       drawHeroPortrait(chip.querySelector("canvas") as HTMLCanvasElement, i, this.save);
@@ -4233,7 +4228,6 @@ export class Menus {
       hero.masteredElements,
     );
     const weapon = dominantWeapon(hero.attrs, oathHolds ? hero.calling : null);
-    const unlocked = unlockedAbilities(hero.attrs).map((a) => a.id);
     const inParty = hero.active;
     const partySize = partyRoster(save).length;
 
@@ -4258,7 +4252,7 @@ export class Menus {
           <button class="toggle-btn party-toggle ${inParty ? "in" : ""}" data-act="toggle-party">
             ${inParty ? `${ico("banner")} In party` : `${ico("moon")} Benched`}
           </button>
-          <button class="hero-points ${save.unspent[index] > 0 ? "has" : ""}" data-act="open-hub">${save.unspent[index]} pts</button>
+          <button class="hero-points growth" data-act="open-hub">auto growth</button>
         </div>
         ${full ? `<div class="stat-grid">
           <div data-stat="Health"><span>Health</span><strong>${stats.maxHp}</strong></div>
@@ -4281,9 +4275,8 @@ export class Menus {
           <span class="loadout-text"><strong>Battle Bar</strong><em>${sworn ? "Swap the elemental or mastered Legacy technique" : "Choose the two road skills assigned to Q and W"}</em></span>
           <span class="loadout-go">${ico("arrow")}</span>
         </button>
-        ${full ? '<div class="attr-rows"></div>' : ""}
+        ${full ? '<div class="growth-note"><strong>Steady growth</strong><span>Attributes rise automatically each level according to this hero’s natural strengths. Your choices live in Talents, Paths, techniques, and gear.</span></div>' : ""}
         <div class="card-actions">
-          ${save.unspent[index] > 0 ? `<button class="toggle-btn suggest-btn" data-act="suggest">${ico("spark")} Suggest</button>` : ""}
           <button class="toggle-btn talents-btn" data-act="talents">${ico("star")} Talents</button>
           <button class="toggle-btn calling-btn ${!sworn && hero.level >= CALLING_UNLOCK_LEVEL ? "beckons" : ""}"
             data-act="calling" ${!sworn && hero.level < CALLING_UNLOCK_LEVEL ? "disabled" : ""}
@@ -4296,7 +4289,6 @@ export class Menus {
                   : `Path at level ${CALLING_UNLOCK_LEVEL}`
             }
           </button>
-          <button class="toggle-btn respec" data-act="respec">Respec (free)</button>
         </div>
       </div>
     `);
@@ -4345,100 +4337,6 @@ export class Menus {
       persist(save);
       audio.play("click");
       this.renderParty();
-    });
-
-    const attrRows = card.querySelector(".attr-rows");
-    if (attrRows) for (const key of ATTR_KEYS) {
-      // Attributes shape every Path; techniques come from Discipline + Attunement.
-      const row = el(`
-        <div class="attr-row">
-          <div class="attr-name">
-            ${ATTR_NAMES[key]}
-            <div class="attr-sub">${ATTR_BLURBS[key]}</div>
-          </div>
-          <div class="attr-bar"><div style="width:${Math.min(100, hero.attrs[key] * 5)}%"></div></div>
-          <div class="attr-val">${hero.attrs[key]}</div>
-          <button class="attr-plus" ${save.unspent[index] > 0 ? "" : "disabled"} data-attr="${key}">+</button>
-        </div>
-      `);
-      attrRows.appendChild(row);
-    }
-    attrRows?.addEventListener("click", (event) => {
-      const btn = (event.target as HTMLElement).closest("[data-attr]") as HTMLElement | null;
-      if (!btn || save.unspent[index] <= 0) return;
-      const key = btn.getAttribute("data-attr") as (typeof ATTR_KEYS)[number];
-      const effCalling = () => {
-        const c = callingById(hero.calling);
-        return c && callingEligible(c, hero.attrs) ? hero.calling : null;
-      };
-      const effAdv = () => (effCalling() ? hero.advCalling : null);
-      const statsBefore = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.masteredElements);
-      hero.attrs[key] += 1;
-      save.unspent[index] -= 1;
-      const before = unlocked.length;
-      const after = unlockedAbilities(hero.attrs);
-      if (after.length > before) {
-        const fresh = after[after.length - 1];
-        const owned = save.unlockedSpells.includes(fresh.id);
-        if (owned && hero.equipped.length < MAX_EQUIPPED && !hero.equipped.includes(fresh.id)) {
-          hero.equipped.push(fresh.id);
-        }
-        audio.play("levelup");
-        this.showToast(
-          owned
-            ? `${def.name} can now use ${fresh.name}!`
-            : `${def.name} meets the bar for ${fresh.name} — unlock it at the Village`,
-        );
-      } else {
-        audio.play("click");
-      }
-      persist(save);
-      const statsAfter = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effCalling(), effAdv(), hero.masteredElements);
-      const freshCard = this.refreshCard(card, index);
-      flashStatDeltas(freshCard, statsBefore, statsAfter);
-    });
-
-    card.querySelector('[data-act="respec"]')!.addEventListener("click", () => {
-      respecHero(save, index);
-      audio.play("click");
-      this.refreshCard(card, index);
-    });
-
-    // one tap spends every point along the hero's natural bent
-    card.querySelector('[data-act="suggest"]')?.addEventListener("click", () => {
-      const pts = save.unspent[index];
-      if (pts <= 0) return;
-      const base = HEROES[index].baseAttrs;
-      const effC = () => {
-        const c = callingById(hero.calling);
-        return c && callingEligible(c, hero.attrs) ? hero.calling : null;
-      };
-      const before = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.masteredElements);
-      for (let p = 0; p < pts; p++) {
-        let bestK = ATTR_KEYS[0];
-        let bestScore = -1;
-        for (const k of ATTR_KEYS) {
-          const score = base[k] / (hero.attrs[k] - base[k] + 1);
-          if (score > bestScore) {
-            bestScore = score;
-            bestK = k;
-          }
-        }
-        hero.attrs[bestK] += 1;
-      }
-      save.unspent[index] = 0;
-      // pocket any spells the training just unlocked
-      for (const a of unlockedAbilities(hero.attrs)) {
-        if (save.unlockedSpells.includes(a.id) && !hero.equipped.includes(a.id) && hero.equipped.length < MAX_EQUIPPED) {
-          hero.equipped.push(a.id);
-        }
-      }
-      persist(save);
-      audio.play("levelup");
-      this.showToast(`${def.name}'s training follows their nature — ${pts} point${pts === 1 ? "" : "s"} spent`);
-      const after = deriveStats(hero.attrs, hero.weaponTier, heroGearOf(hero, save.forge), hero.talents, hero.trinket, effC(), effC() ? hero.advCalling : null, hero.masteredElements);
-      const freshCard = this.refreshCard(card, index);
-      flashStatDeltas(freshCard, before, after);
     });
 
     card.querySelector('[data-act="talents"]')!.addEventListener("click", () => {
@@ -5259,13 +5157,4 @@ export class Menus {
     this.renderSpells(index);
   }
 
-  private refreshCard(card: HTMLElement, index: number): HTMLElement {
-    // Spending an attribute on the full hero sheet must keep that same sheet
-    // open. Rebuilding the compact party card here made the rest of the
-    // character controls disappear and felt like an unexpected navigation.
-    const full = card.querySelector(".stat-grid") !== null;
-    const fresh = this.heroCard(index, full);
-    card.replaceWith(fresh);
-    return fresh;
-  }
 }

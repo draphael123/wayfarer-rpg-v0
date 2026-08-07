@@ -204,6 +204,7 @@ export class Battle {
   private hierophantGraceSpent = new Set<number>();
   private graveWardSpent = new Set<number>();
   private holdFastSpent = new Set<number>();
+  private deathDefiedSpent = new Set<number>();
   private priorityMarked = new Set<string>();
   private warningScale = 1;
   private presentedBossPhase = 0;
@@ -540,6 +541,11 @@ export class Battle {
       if (this.heroTalentRank(hero, "deepPockets") > 0) {
         this.gainUlt(hero, 20);
         this.fx.floatText(hero.x, hero.y - hero.radius * 3, "AMBUSH READY", "#e8b85a", 11);
+      }
+      if (this.heroTalentRank(hero, "rallyPoint") > 0) {
+        const ward = this.heroTalentRank(hero, "oathStandard") > 0 ? 16 : 8;
+        for (const ally of this.livingHeroes()) this.refreshPathEffect(ally, "shield", 9999, ward, hero);
+        this.fx.floatText(hero.x, hero.y - hero.radius * 3, "RALLY POINT", "#d6a85f", 11);
       }
       // Second Breath: a gulp of air between fights
       if (this.heroTalentRank(hero, "secondBreath") > 0 && hero.hp < hero.stats.maxHp) {
@@ -916,6 +922,9 @@ export class Battle {
     // Rogues and storm-bound heroes trade a little safety for tempo.
     if (unit.discipline === "rogue") interval /= 1.08;
     if (unit.element === "storm") interval /= 1.05;
+    if (unit.team === "hero" && unit.hp < unit.stats.maxHp * 0.5 && this.heroTalentRank(unit, "bloodRush") > 0) {
+      interval /= this.heroTalentRank(unit, "sanguineLord") > 0 ? 1.4 : 1.2;
+    }
     // the Bard's song carries: allies near one strike quicker
     if (unit.team === "hero" && this.livingHeroes().some((s) => s.calling === "bard" && Math.hypot(s.x - unit.x, s.y - unit.y) < 140)) {
       interval /= 1.06;
@@ -939,6 +948,22 @@ export class Battle {
       this.heroTalentRank(source, "kingsRansom") > 0 &&
       (BOSS_KINDS.includes(target.enemyKind ?? "") || PRIORITY_ENEMIES.has(target.enemyKind!))
     ) rawAmount *= 1.2;
+    if (source?.team === "hero" && target.team === "enemy") {
+      const priority = BOSS_KINDS.includes(target.enemyKind ?? "") || PRIORITY_ENEMIES.has(target.enemyKind!);
+      if (priority && this.heroTalentRank(source, "priorityOrders") > 0) rawAmount *= 1.15;
+      if (priority && this.heroTalentRank(source, "noWitnesses") > 0) {
+        const crowded = this.livingEnemies().some((enemy) => enemy !== target && Math.hypot(enemy.x - target.x, enemy.y - target.y) < 95);
+        if (!crowded || BOSS_KINDS.includes(target.enemyKind ?? "")) rawAmount *= 1.2;
+      }
+      if (target.hp >= target.stats.maxHp * 0.995) rawAmount *= 1 + this.heroTalentRank(source, "cruelOpening") * 0.03;
+      if (source.hp < source.stats.maxHp * 0.5 && this.heroTalentRank(source, "openVein") > 0) {
+        rawAmount *= this.heroTalentRank(source, "sanguineLord") > 0 ? 1.3 : 1.15;
+      }
+      if (this.effect(target, "cursed")) {
+        if (this.heroTalentRank(source, "wastingTouch") > 0) rawAmount *= 1.15;
+        if (this.heroTalentRank(source, "paleCompact") > 0) rawAmount *= 1.2;
+      }
+    }
     if (target.team === "hero") {
       const citadel = this.livingHeroes().find((ally) => ally !== target && this.heroTalentRank(ally, "livingCitadel") > 0 && Math.hypot(ally.x - target.x, ally.y - target.y) < 125);
       if (citadel) rawAmount *= 0.9;
@@ -970,7 +995,7 @@ export class Battle {
     // FLANKING: a blade from behind bites deeper — for everyone. Positioning pays.
     if (source && source.alive && !opts.spell && source.team !== target.team && source.stats.range <= 90) {
       if ((source.x - target.x) * target.facing < 0) {
-        rawAmount *= 1.25;
+        rawAmount *= this.heroTalentRank(source, "backstabber") > 0 ? 1.45 : 1.25;
         if (Math.random() < 0.2) this.fx.floatText(target.x, target.y - target.radius - 28, "flanked!", "#ffd27d", 10);
       }
     }
@@ -1004,6 +1029,7 @@ export class Battle {
       this.fx.floatText(target.x, target.y - target.radius * 3 - 22, "FRACTURED +20%", ELEMENT_COLORS.earth, 11);
     }
     if (triggeredReaction) {
+      if (source?.team === "hero" && this.heroTalentRank(source, "worldshaper") > 0) rawAmount *= 1.15;
       const reactionColor = damageElement === "physical" ? ELEMENT_COLORS.earth : ELEMENT_COLORS[damageElement];
       this.fx.ring(target.x, target.y, target.radius * 3.1, reactionColor, { width: 5, life: 0.48 });
       this.fx.ring(target.x, target.y, target.radius * 2.1, "rgba(255,255,255,.88)", { width: 2, life: 0.3 });
@@ -1011,13 +1037,17 @@ export class Battle {
       this.hitstop = Math.max(this.hitstop, 0.065);
       this.zoomPunch = Math.max(this.zoomPunch, 0.34);
       audio.reaction(damageElement === "physical" ? "earth" : damageElement);
+      if (source?.team === "hero" && this.heroTalentRank(source, "reactionWard") > 0) {
+        this.refreshPathEffect(source, "shield", 9999, Math.round(source.stats.maxHp * 0.1), source);
+        this.fx.floatText(source.x, source.y - source.radius * 3, "REACTION WARD", "#8ed8ea", 10);
+      }
     }
     if (
       triggeredReaction &&
       source?.team === "hero" &&
       (this.trinketHookOf(source) === "reactionEcho" || this.heroTalentRank(source, "elementalConduit") > 0)
     ) {
-      const refund = this.trinketHookOf(source) === "reactionEcho" ? 2 : 1.5;
+      const refund = this.trinketHookOf(source) === "reactionEcho" ? 2 : 1.5 + (this.heroTalentRank(source, "worldshaper") > 0 ? 1 : 0);
       for (const ability of source.abilities) if (!ability.ult) ability.timer = Math.max(0, ability.timer - refund);
       this.fx.floatText(source.x, source.y - source.radius * 3 - 8, "reaction echo", "#c8a8f0", 11);
       audio.play("ready");
@@ -1045,8 +1075,12 @@ export class Battle {
       const phaseResistance: ElementId | undefined = target.enemyKind === "wyrm" && target.element === "flame" ? "flame" : def.resists;
       const key = `${target.id}:${element}`;
       if (phaseWeakness === element) {
-        const bonus = boss ? 0.15 : 0.25;
+        const lore = source?.team === "hero" ? this.heroTalentRank(source, "weakpointLore") * 0.02 : 0;
+        const counter = source?.team === "hero" && this.heroTalentRank(source, "countercurrent") > 0 ? 0.1 : 0;
+        const perfect = source?.team === "hero" && this.heroTalentRank(source, "perfectAnswer") > 0 ? 0.2 : 0;
+        const bonus = (boss ? 0.15 : 0.25) + lore + counter + perfect;
         amount *= 1 + bonus;
+        if (source?.team === "hero" && perfect > 0) this.gainUlt(source, 2);
         if (!this.elementWeakShown.has(key)) {
           this.elementWeakShown.add(key);
           this.fx.floatText(target.x, target.y - target.radius * 3 - 12, `WEAK +${Math.round(bonus * 100)}%`, ELEMENT_COLORS[element], 12);
@@ -1054,7 +1088,7 @@ export class Battle {
           this.fx.burst(target.x, target.y - 8, ELEMENT_COLORS[element], 7, 80, { glow: true, gravity: 30, life: 0.36 });
         }
       } else if (phaseResistance === element) {
-        const reduction = boss ? 0.1 : 0.15;
+        const reduction = (boss ? 0.1 : 0.15) * (source?.team === "hero" && this.heroTalentRank(source, "resistBreaker") > 0 ? 0.5 : 1);
         amount *= 1 - reduction;
         if (!this.elementResistShown.has(key)) {
           this.elementResistShown.add(key);
@@ -1088,6 +1122,8 @@ export class Battle {
         (z) => z.kind === "smoke" && Math.hypot(target.x - z.x, target.y - z.y) < z.radius + target.radius,
       );
       if (smoke) amount *= 1 - smoke.power;
+      const standard = this.livingHeroes().find((ally) => ally !== target && this.heroTalentRank(ally, "shieldwallLesson") > 0 && Math.hypot(ally.x - target.x, ally.y - target.y) < 125);
+      if (standard) amount *= 1 - (this.heroTalentRank(standard, "oathStandard") > 0 ? 0.08 : this.heroTalentRank(standard, "shieldwallLesson") * 0.02);
     }
     // Bulwark Saint: allies shelter in the living wall's shadow
     if (
@@ -1186,6 +1222,10 @@ export class Battle {
       if (amount <= 0) return;
     }
     target.hp -= amount;
+    if (source?.team === "hero" && target.team === "enemy") {
+      const hunger = this.heroTalentRank(source, "hunger") * 0.015 * (this.heroTalentRank(source, "sanguineLord") > 0 && source.hp < source.stats.maxHp * 0.5 ? 2 : 1);
+      if (hunger > 0) this.heal(source, amount * hunger, false, source);
+    }
     if (target.team === "hero") {
       const mechanic = source?.enemyKind ?? (opts.element && opts.element !== "physical" ? `${opts.element} hazard` : "environment");
       this.damageTakenByMechanic[mechanic] = (this.damageTakenByMechanic[mechanic] ?? 0) + amount;
@@ -1239,6 +1279,12 @@ export class Battle {
       this.fx.ring(target.x, target.y - 12, 48, "#ffe9a3", { width: 4, life: 0.7 });
       this.fx.floatText(target.x, target.y - target.radius * 3, "miracle!", "#ffe9a3", 15);
       audio.play("levelup");
+    } else if (target.team === "hero" && target.hp <= 0 && this.heroTalentRank(target, "deathDefied") > 0 && !this.deathDefiedSpent.has(target.id)) {
+      this.deathDefiedSpent.add(target.id);
+      target.hp = Math.max(1, Math.round(target.stats.maxHp * 0.1));
+      this.fx.ring(target.x, target.y - 12, 48, "#c45564", { width: 4, life: 0.7 });
+      this.fx.floatText(target.x, target.y - target.radius * 3, "DEATH DEFIED", "#ef8994", 15);
+      audio.play("thud");
     } else if (target.team === "hero" && target.hp <= 0 && this.heroTalentRank(target, "undying") > 0 && !this.undyingSpent.has(target.id)) {
       this.undyingSpent.add(target.id);
       target.hp = Math.max(1, Math.round(target.stats.maxHp * 0.15));
@@ -1552,6 +1598,35 @@ export class Battle {
       this.gainUlt(killer, priority ? 12 : 4);
       this.fx.floatText(unit.x, unit.y - unit.radius - 6, priority ? "+12 ultimate" : "+4 ultimate", "#e8b85a", 11);
     }
+    if (unit.team === "enemy" && killer?.team === "hero") {
+      const tithe = this.heroTalentRank(killer, "soulTithe") * 0.5;
+      if (tithe > 0) for (const ability of killer.abilities) ability.timer = Math.max(0, ability.timer - tithe);
+      if (this.heroTalentRank(killer, "feastEternal") > 0) {
+        this.heal(killer, killer.stats.maxHp * 0.12, false, killer);
+        this.deathDefiedSpent.delete(killer.id);
+      }
+      const priority = BOSS_KINDS.includes(unit.enemyKind ?? "") || PRIORITY_ENEMIES.has(unit.enemyKind!);
+      if (priority && this.heroTalentRank(killer, "decisiveCall") > 0) {
+        for (const ally of this.livingHeroes()) this.gainUlt(ally, 8);
+        if (this.heroTalentRank(killer, "grandMarshal") > 0) {
+          const core = killer.abilities.find((ability) => ability.def.pathSkill === "core");
+          if (core) core.timer = 0;
+        }
+        this.fx.floatText(killer.x, killer.y - killer.radius * 3, "DECISIVE CALL", "#d6a85f", 11);
+      }
+      if (priority && this.heroTalentRank(killer, "vanishingAct") > 0) {
+        for (const enemy of this.livingEnemies()) {
+          if (enemy.aggro === killer) enemy.aggro = null;
+          if (enemy.attackTarget === killer) enemy.attackTarget = null;
+        }
+        if (this.heroTalentRank(killer, "shadowMaster") > 0) {
+          killer.effects.push(makeEffect("haste", 2.5, 1.3, killer));
+          const utility = killer.abilities.find((ability) => ability.def.pathSkill === "focus");
+          if (utility) utility.timer = 0;
+        }
+        this.fx.floatText(killer.x, killer.y - killer.radius * 3, "VANISHED", "#9d8bc8", 11);
+      }
+    }
     if (unit.team === "enemy" && killer?.team === "hero" && this.heroTalentRank(killer, "avatarOfWar") > 0) {
       const disciplineSkill = killer.abilities.find((ability) => ability.def.pathSkill === "core");
       if (disciplineSkill) disciplineSkill.timer = Math.max(0, disciplineSkill.timer - 2);
@@ -1569,15 +1644,22 @@ export class Battle {
       const necro = deathCurse.source;
       const necroElement = necro.element as ElementId;
       const empowered = BOSS_KINDS.includes(unit.enemyKind ?? "") || deathCurse.power >= 2;
+      if (this.heroTalentRank(necro, "corpseBloom") > 0) {
+        const bloom = necro.stats.damage * 0.35;
+        for (const enemy of this.livingEnemies()) {
+          if (Math.hypot(enemy.x - unit.x, enemy.y - unit.y) < 95 + enemy.radius) this.damage(enemy, bloom, necro, { spell: true, element: necroElement, secondary: true });
+        }
+        this.fx.burst(unit.x, unit.y - 10, ELEMENT_COLORS[necroElement], 12, 105, { glow: true });
+      }
       this.raiseNecroServant(necro, necroElement, unit.x, unit.y, empowered);
       unit.deathTime = 99;
-      if (necroElement === "venom") {
+      if (necroElement === "venom" || this.heroTalentRank(necro, "paleCompact") > 0) {
         const next = this.livingEnemies()
           .filter((enemy) => !this.effect(enemy, "cursed"))
           .sort((a, b) => Math.hypot(a.x - unit.x, a.y - unit.y) - Math.hypot(b.x - unit.x, b.y - unit.y))[0];
         if (next && Math.hypot(next.x - unit.x, next.y - unit.y) < 150) {
           this.refreshPathEffect(next, "cursed", 8, 1, necro);
-          this.fx.floatText(next.x, next.y - next.radius * 2.8, "PLAGUE PASSES", ELEMENT_COLORS.venom, 10);
+          this.fx.floatText(next.x, next.y - next.radius * 2.8, necroElement === "venom" ? "PLAGUE PASSES" : "CURSE PASSES", ELEMENT_COLORS[necroElement], 10);
         }
       } else if (necroElement === "radiant") {
         const ally = this.mostWoundedAlly();
@@ -2731,6 +2813,7 @@ export class Battle {
         // Focus and ultimate rites always call part of the host. Fresh bodies
         // add servants for free; stored Remains buy additional shades.
         let servantCount = tier === "core" ? 0 : tier === "focus" ? 1 : 3;
+        if (tier !== "core" && this.heroTalentRank(hero, "boneLegion") > 0) servantCount += 1;
         const corpseLimit = tier === "core" ? 1 : tier === "focus" ? 2 : 4;
         const corpses = this.units
           .filter((unit) => !unit.alive && unit.team === "enemy" && unit.deathTime < 12 && Math.hypot(unit.x - center.x, unit.y - center.y) < radius + 45)
@@ -4284,7 +4367,8 @@ export class Battle {
 
   private raiseNecroServant(owner: Unit, element: ElementId, x: number, y: number, empowered = false): NecroServant {
     const guardian = owner.advCalling?.endsWith("-ascendant") === true;
-    const maxLife = (element === "earth" ? 16 : element === "shadow" ? 9 : 12) + (guardian ? 4 : 0) + (empowered ? 4 : 0);
+    const sovereign = this.heroTalentRank(owner, "graveSovereign") > 0;
+    const maxLife = ((element === "earth" ? 16 : element === "shadow" ? 9 : 12) + (guardian ? 4 : 0) + (empowered ? 4 : 0)) * (sovereign ? 1.5 : 1);
     const servant: NecroServant = {
       id: this.nextUnitId++,
       owner,
@@ -4294,7 +4378,7 @@ export class Battle {
       life: maxLife,
       maxLife,
       attackTimer: 0.35,
-      strength: (guardian ? 0.9 : 1) * (empowered ? 1.35 : 1),
+      strength: (guardian ? 0.9 : 1) * (empowered ? 1.35 : 1) * (1 + this.heroTalentRank(owner, "servantBond") * 0.15),
       bob: Math.random() * Math.PI * 2,
     };
     this.necroServants.push(servant);
@@ -4345,7 +4429,7 @@ export class Battle {
       this.damage(target, damage, servant.owner, { spell: true, color: ELEMENT_COLORS[servant.element], element: servant.element, secondary: true });
       if (target.alive) this.applyPathElement(servant.owner, target, servant.element, "core", damage, true);
       servant.owner.pathResource = Math.min(100, (servant.owner.pathResource ?? 0) + 3);
-      servant.attackTimer = servant.element === "shadow" ? 0.72 : servant.element === "storm" ? 0.9 : 1.18;
+      servant.attackTimer = (servant.element === "shadow" ? 0.72 : servant.element === "storm" ? 0.9 : 1.18) / (this.heroTalentRank(servant.owner, "graveSovereign") > 0 ? 1.3 : 1);
       this.fx.tracer(servant.x, servant.y - 12, target.x, target.y - 10, ELEMENT_COLORS[servant.element], 0.3, 2.5);
       this.fx.burst(target.x, target.y - 10, ELEMENT_COLORS[servant.element], 5, 55, { glow: true, life: 0.35 });
 

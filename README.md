@@ -35,9 +35,9 @@ then open the printed URL. `npm run build` bundles `src/` into `dist/game.js`
 
 ## Elemental paths
 
-Every hero still grows through five freely trained attributes — Strength,
-Dexterity, Intellect, Vitality, and Spirit — but their battle identity comes
-from two readable choices:
+Every hero grows automatically through Strength, Dexterity, Intellect, Vitality,
+and Spirit according to their established strengths. Their battle identity comes
+from deliberate choices rather than routine stat allocation:
 
 - A **discipline** determines how they fight: Knight, Warrior, Rogue, Archer,
   Priest, Mage, or Necromancer. It controls weapon, range, movement, resource,
@@ -76,11 +76,13 @@ counter-hits consume selected conditions for a short reaction bonus. Authored
 waves cap must-answer priority enemies at one early and two later in the road.
 
 You set out with Bram and Sol, then recruit and shape a larger company as the
-road opens. Heroes earn personal XP, levels, equipment, and one talent point
-per level after the first. Each Discipline offers three connected, five-row
-talent trees with ranked crafts, combat triggers, and build-changing keystones.
-The Gambit branch specifically rewards solving priority enemies rather than
-passively increasing gold. Path promotions follow later. The sixty-stage campaign is one continuous Long
+road opens. Heroes earn personal XP, automatic attribute growth, equipment, and
+one talent point per level after the first. Each Discipline opens four connected,
+five-row ledgers drawn from twelve talent trees. Ranked practices lead into combat
+triggers, commitment gates, and one of two mutually exclusive final Oaths. Command,
+Confluence, Bloodcraft, Gloam, and Gravecraft add company tactics, elemental
+counterplay, risk-and-sustain builds, threat manipulation, curses, and servants.
+Path promotions follow later. The sixty-stage campaign is one continuous Long
 Road across ten regions, from the South Road and Winterreach through Stormbreak,
 the Cinderwild, Verdant Maw, Nightglass Waste, Shattered Reliquary, Skygrave,
 Bloodwood, and the Last Meridian. Twelve great bosses and seven named late-road
