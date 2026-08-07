@@ -3992,6 +3992,12 @@ function drawHarrier(ctx: CanvasRenderingContext2D, unit: Unit, time: number): v
       ctx.stroke();
     }
   }
+  // Flying enemies still need the same combat read as grounded foes. Anchor
+  // their chrome to the airborne body so the bar follows dives and landings.
+  const barTop = by - (aloft ? 34 : 25);
+  flashOverlay(ctx, unit, cx, by, unit.radius * 1.45);
+  drawEffectPips(ctx, unit, cx, barTop - 6);
+  drawHealthBar(ctx, unit, barTop);
 }
 
 /** Stormbreak's shield-beast: a reef crab, broad and low rather than another ogre. */
