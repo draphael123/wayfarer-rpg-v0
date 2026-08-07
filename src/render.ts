@@ -3022,6 +3022,14 @@ function drawWolf(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void
   const wolfBody = new Path2D();
   wolfBody.ellipse(cx, bodyY, r * 1.3 * stretchB, r * 0.62, -f * 0.08, 0, Math.PI * 2);
   shaded(ctx, wolfBody, colors.body, f, cx, bodyY, r * 0.9, 3);
+  if (unit.enemyKind === "reefhound") {
+    // Coral dorsal plates and a fin-tail keep it from reading as a recolored wolf.
+    ctx.fillStyle = colors.trim; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
+    for (let i = -2; i <= 2; i++) {
+      const sx = cx + f * i * r * 0.34;
+      ctx.beginPath(); ctx.moveTo(sx - f * r * 0.16, bodyY - r * 0.48); ctx.lineTo(sx, bodyY - r * (0.95 - Math.abs(i) * 0.08)); ctx.lineTo(sx + f * r * 0.18, bodyY - r * 0.46); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+  }
   // every wolf carries a little ruff at the neck (the Alpha's is grander)
   if (!isAlpha) {
     ctx.beginPath();
@@ -3250,7 +3258,7 @@ function drawIceWisp(ctx: CanvasRenderingContext2D, unit: Unit, time: number): v
 
 /** Moor Harrier: all wing and grudge — circles aloft, folds to dive, sulks when grounded. */
 function drawHarrier(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
-  const colors = regionalColors("harrier");
+  const colors = regionalColors(unit.enemyKind ?? "harrier");
   const aloft = !!unit.aloft || !!unit.leap;
   const lift = unit.leap ? 26 : aloft ? 32 + Math.sin(time * 2.1 + unit.id) * 4 : 0;
   const f = unit.facing;
@@ -3308,6 +3316,53 @@ function drawHarrier(ctx: CanvasRenderingContext2D, unit: Unit, time: number): v
       ctx.stroke();
     }
   }
+}
+
+/** Stormbreak's shield-beast: a reef crab, broad and low rather than another ogre. */
+function drawBrinecrawler(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const c = regionalColors("brinecrawler");
+  const r = unit.radius;
+  const f = unit.facing;
+  const bob = Math.sin(time * 5 + unit.id) * 1.5;
+  const x = unit.x, y = unit.y - r * 0.55 + bob;
+  drawShadow(ctx, unit, 0);
+  ctx.strokeStyle = c.shade; ctx.lineWidth = 5; ctx.lineCap = "round";
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+    const oy = (i - 1) * r * 0.35;
+    ctx.beginPath(); ctx.moveTo(x + s * r * 0.55, y + oy); ctx.lineTo(x + s * r * (1.05 + i * 0.08), y + oy + r * 0.38); ctx.lineTo(x + s * r * 1.35, unit.y + 1); ctx.stroke();
+  }
+  const shell = new Path2D(); shell.ellipse(x, y, r * 1.05, r * 0.72, 0, 0, Math.PI * 2);
+  shaded(ctx, shell, c.body, f, x, y, r, 3);
+  ctx.strokeStyle = c.trim; ctx.lineWidth = 2;
+  for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(x + i * r * 0.3, y - r * 0.55); ctx.lineTo(x + i * r * 0.2, y + r * 0.48); ctx.stroke(); }
+  // One huge forward claw explains its frontal protection at a glance.
+  const clawX = x + f * r * 1.15;
+  ctx.beginPath(); ctx.ellipse(clawX, y - r * 0.08, r * 0.58, r * 0.48, f * 0.25, 0, Math.PI * 2); outlined(ctx, c.trim, 2.5);
+  ctx.beginPath(); ctx.moveTo(clawX + f * r * 0.2, y - r * 0.1); ctx.lineTo(clawX + f * r * 0.72, y - r * 0.52); ctx.lineTo(clawX + f * r * 0.48, y + r * 0.05); ctx.closePath(); outlined(ctx, c.trim, 2);
+  ctx.fillStyle = "#d9f3df";
+  for (const ey of [-0.3, 0.3]) { ctx.beginPath(); ctx.arc(x + f * r * 0.72, y + ey * r, 2.3, 0, Math.PI * 2); ctx.fill(); }
+  flashOverlay(ctx, unit, x, y, r * 1.2); drawEffectPips(ctx, unit, x, y - r); drawHealthBar(ctx, unit, y - r * 1.15);
+  ctx.lineCap = "butt";
+}
+
+/** A drowned suit held upright by living weed: narrow, trailing, unmistakably coastal. */
+function drawKelpbound(ctx: CanvasRenderingContext2D, unit: Unit, time: number): void {
+  const c = regionalColors("kelpbound");
+  const r = unit.radius, f = unit.facing;
+  const x = unit.x, gy = unit.y;
+  const sway = Math.sin(time * 2.2 + unit.id) * 5;
+  drawShadow(ctx, unit, 0);
+  ctx.strokeStyle = c.trim; ctx.lineWidth = 4; ctx.lineCap = "round";
+  for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(x + i * 4, gy - r * 0.8); ctx.quadraticCurveTo(x + sway + i * 7, gy - r * 2, x + i * 5 - sway * 0.4, gy - r * (2.8 + Math.abs(i) * 0.12)); ctx.stroke(); }
+  ctx.fillStyle = c.shade; roundRect(ctx, x - r * 0.6, gy - r * 2.25, r * 1.2, r * 1.55, 5); ctx.fill();
+  ctx.strokeStyle = "#9bb0a1"; ctx.lineWidth = 2; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x + f * 2, gy - r * 2.45, r * 0.52, 0, Math.PI * 2); outlined(ctx, c.body, 2.3);
+  ctx.fillStyle = "#9fe0bd"; ctx.beginPath(); ctx.arc(x + f * r * 0.22, gy - r * 2.48, 2.2, 0, Math.PI * 2); ctx.fill();
+  // Hooked kelp tether carried like a drowned boat-hook.
+  ctx.strokeStyle = "#6d7250"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x + f * r * 0.45, gy - r * 1.7); ctx.lineTo(x + f * r * 1.35, gy - r * 3); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x + f * r * 1.25, gy - r * 3, r * 0.28, -0.8, 1.2); ctx.stroke();
+  flashOverlay(ctx, unit, x, gy - r * 1.6, r); drawEffectPips(ctx, unit, x, gy - r * 3.2); drawHealthBar(ctx, unit, gy - r * 3.1);
+  ctx.lineCap = "butt";
 }
 
 /** THE WINTER WYRM — a serpent of old ice wearing the mountain like a shell.
@@ -3461,6 +3516,8 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     drawWyrm(ctx, unit, time);
     return;
   }
+  if (kind === "brinecrawler") { drawBrinecrawler(ctx, unit, time); return; }
+  if (kind === "kelpbound") { drawKelpbound(ctx, unit, time); return; }
   if (kind === "warbanner") {
     // Gorehulk's standard: a spear-shaft driven into the dirt, rag snapping
     const bx = unit.x;
@@ -3631,7 +3688,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.closePath();
     outlined(ctx, colors.body, 2);
   }
-  if (kind === "shaman" || kind === "snowhag" || kind === "bonecaller") {
+  if (kind === "shaman" || kind === "snowhag" || kind === "bonecaller" || kind === "saltwitch" || kind === "stormcaller") {
     // hood + glowing mask eyes + ritual paint
     ctx.beginPath();
     ctx.arc(cx + f * 1, headY - 1.5, headR * 1.04, Math.PI * 0.85, Math.PI * 2.15);
@@ -3747,7 +3804,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
       ctx.closePath();
       ctx.fill();
     }
-  } else if (kind !== "shaman" && kind !== "stalker") {
+  } else if (!["shaman", "snowhag", "bonecaller", "saltwitch", "stormcaller", "stalker"].includes(kind)) {
     // brutes: deep-set glower under a single heavy brow
     const glow = kind === "warlord";
     const eyeY = headY + headR * 0.02;
@@ -3838,7 +3895,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.arc(0, 0, H * 0.24, -Math.PI / 2.5, Math.PI / 2.5);
     ctx.stroke();
     ctx.restore();
-  } else if (kind === "shaman" || kind === "snowhag") {
+  } else if (kind === "shaman" || kind === "snowhag" || kind === "saltwitch" || kind === "stormcaller") {
     limb(ctx, shX, shY, shX + f * H * 0.16, shY - H * 0.1 - pose.swing * 5, legW * 0.8, colors.body);
     const sx = shX + f * H * 0.2;
     limb(ctx, sx, shY + H * 0.16, sx, shY - H * 0.42 - pose.swing * 4, 3, "#6d5638");
@@ -3873,12 +3930,17 @@ function drawEnemy(ctx: CanvasRenderingContext2D, unit: Unit, time: number): voi
     ctx.fillStyle = "#2c3830";
     ctx.fillRect(-1.6, -1, 3.4, 4.5);
     ctx.restore();
-  } else if (kind === "drummer") {
-    // the hide drum slung at the belly, sticks mid-beat
+  } else if (kind === "drummer" || kind === "bellkeeper") {
+    // A support instrument slung at the belly: hide drum inland, drowned bell on the coast.
     const drumY = hipY - H * 0.06;
     ctx.beginPath();
-    ctx.ellipse(cx + f * 2, drumY, bodyW * 0.42, H * 0.11, 0, 0, Math.PI * 2);
-    outlined(ctx, "#d9c9a0", 2.2);
+    if (kind === "bellkeeper") {
+      ctx.moveTo(cx - bodyW * 0.38, drumY - H * 0.1); ctx.lineTo(cx + bodyW * 0.38, drumY - H * 0.1); ctx.lineTo(cx + bodyW * 0.5, drumY + H * 0.12); ctx.lineTo(cx - bodyW * 0.5, drumY + H * 0.12); ctx.closePath();
+      outlined(ctx, "#b59458", 2.2);
+      ctx.fillStyle = "#d2ae67"; ctx.beginPath(); ctx.arc(cx, drumY + H * 0.15, 2.5, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.ellipse(cx + f * 2, drumY, bodyW * 0.42, H * 0.11, 0, 0, Math.PI * 2); outlined(ctx, "#d9c9a0", 2.2);
+    }
     ctx.strokeStyle = "#8a5a3c";
     ctx.lineWidth = 2;
     ctx.beginPath();
