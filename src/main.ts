@@ -115,6 +115,18 @@ const ROAD_REGIONS = [
   "The South Road", "The Winterreach", "Stormbreak Coast", "The Cinderwild", "The Verdant Maw",
   "The Nightglass Waste", "The Shattered Reliquary", "Skygrave Heights", "The Bloodwood", "The Last Meridian",
 ];
+const ROAD_CAMP_NOTES = [
+  ["Mill smoke thins beyond the hedgerows.", "Fresh tracks cross the old king's road.", "A westward bell counts the empty miles."],
+  ["Snow gathers in the band's footprints.", "Blue fire keeps the bitter dark at bay.", "Something vast moves beneath the white horizon."],
+  ["Salt dries white on every cloak.", "Far thunder rolls beneath a clear sky.", "The tide leaves black glass among the stones."],
+  ["Ash settles softly on the bedrolls.", "The kiln-glow turns midnight copper.", "Hot wind worries the camp's iron stakes."],
+  ["Roots shift beneath the sleeping earth.", "Green light pulses through the canopy.", "Rain finds the leaves but never the ground."],
+  ["Mirages keep walking after sunset.", "The stars look close enough to cut.", "Black sand whispers against the cookpot."],
+  ["Broken saints watch from the roadside.", "Relic bells ring without wind.", "Gold dust clings to every boot and buckle."],
+  ["Clouds drift below the camp tonight.", "Rime feathers the climbing ropes.", "Lightning walks the distant peaks."],
+  ["The trees drink every scrap of firelight.", "Red leaves fall though there is no wind.", "Old hunt-marks circle the clearing."],
+  ["The road ends beneath an unfamiliar sky.", "Every waymark burns toward the same horizon.", "The dark ahead has begun to remember names."],
+] as const;
 let sceneTransition = false;
 
 function roman(value: number): string {
@@ -128,28 +140,57 @@ function roman(value: number): string {
 /** A waymark-sized bridge makes embarking and returning feel spatially connected. */
 function roadPassage(stage: StageDef, direction: "depart" | "return"): HTMLElement {
   document.querySelector(".road-passage")?.remove();
-  const region = ROAD_REGIONS[Math.max(0, Math.min(ROAD_REGIONS.length - 1, Math.floor(stage.id / 6)))];
+  const regionIndex = Math.max(0, Math.min(ROAD_REGIONS.length - 1, Math.floor(stage.id / 6)));
+  const region = ROAD_REGIONS[regionIndex];
   const progress = Math.max(2, Math.round(((stage.id + 1) / STAGES.length) * 100));
+  const note = ROAD_CAMP_NOTES[regionIndex][(stage.id + (direction === "return" ? 1 : 0)) % 3];
+  const survivors = battle?.heroes().filter((hero) => hero.alive).length ?? save.heroes.filter((hero) => hero.recruited && hero.active).length;
+  const partySize = battle?.heroes().length ?? save.heroes.filter((hero) => hero.recruited && hero.active).length;
+  const returnState = battle?.state === "victory" ? "The field is won" : battle?.state === "defeat" ? "The band regroups" : "The road keeps its price";
+  const watch = direction === "depart"
+    ? ["Straps checked", "Waymark sighted", "Steel made ready"][stage.id % 3]
+    : survivors === partySize ? "Every bedroll filled" : `${survivors} of ${partySize} return standing`;
   const overlay = document.createElement("div");
-  overlay.className = `road-passage ${direction}`;
+  overlay.className = `road-passage ${direction} region-${regionIndex}`;
   overlay.setAttribute("role", "status");
   overlay.setAttribute("aria-live", "polite");
+  overlay.tabIndex = 0;
   overlay.innerHTML = `
     <div class="road-passage-rule"></div>
-    <div class="road-waymark">${roman(stage.id + 1)}</div>
-    <div class="road-copy">
-      <em>${direction === "depart" ? "SETTING OUT" : "THE ROAD RESUMES"} · ${region}</em>
-      <strong>${stage.name}</strong>
-      <span>${direction === "depart" ? stage.subtitle : "The band carries its record onward."}</span>
+    <div class="road-camp" aria-hidden="true">
+      <i class="camp-moon"></i><i class="camp-ridge far"></i><i class="camp-ridge near"></i>
+      <div class="camp-fire"><i></i><b></b><span></span></div>
+      <i class="camp-spark s1"></i><i class="camp-spark s2"></i><i class="camp-spark s3"></i>
     </div>
+    <div class="road-ledger">
+      <div class="road-waymark">${roman(stage.id + 1)}</div>
+      <div class="road-copy">
+        <em>${direction === "depart" ? "BREAKING CAMP" : "NIGHT CAMP"} &middot; ${region}</em>
+        <strong>${stage.name}</strong>
+        <span>${direction === "depart" ? stage.subtitle : note}</span>
+      </div>
+    </div>
+    <div class="camp-record"><span><em>${direction === "depart" ? "ROAD" : "RECORD"}</em><b>${direction === "depart" ? `Waymark ${roman(stage.id + 1)}` : returnState}</b></span><span><em>${direction === "depart" ? "OMEN" : "WATCH"}</em><b>${watch}</b></span></div>
     <div class="road-progress" aria-hidden="true"><i style="width:${progress}%"></i></div>
+    <button class="road-continue" type="button">Continue <span aria-hidden="true">&rsaquo;</span></button>
   `;
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add("show"));
   audio.travel(direction);
   const reduced = document.body.classList.contains("reduced-motion");
-  window.setTimeout(() => overlay.classList.add("passing"), reduced ? 180 : 650);
-  window.setTimeout(() => overlay.remove(), reduced ? 320 : 1050);
+  let leaving = false;
+  const leave = () => {
+    if (leaving || !overlay.classList.contains("ready")) return;
+    leaving = true;
+    overlay.classList.add("passing");
+    window.setTimeout(() => overlay.remove(), reduced ? 30 : 360);
+  };
+  overlay.addEventListener("click", leave);
+  overlay.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") leave();
+  });
+  window.setTimeout(() => overlay.classList.add("ready"), reduced ? 420 : 1250);
+  window.setTimeout(leave, reduced ? 1900 : 2850);
   return overlay;
 }
 
@@ -194,8 +235,8 @@ function departForBattle(stageIndex: number, keepChallenge = false): void {
   menus.hide();
   roadPassage(STAGES[stageIndex], "depart");
   const reduced = document.body.classList.contains("reduced-motion");
-  window.setTimeout(() => startBattle(stageIndex, keepChallenge), reduced ? 90 : 310);
-  window.setTimeout(() => { sceneTransition = false; }, reduced ? 340 : 1080);
+  window.setTimeout(() => startBattle(stageIndex, keepChallenge), reduced ? 420 : 1250);
+  window.setTimeout(() => { sceneTransition = false; }, reduced ? 1940 : 2890);
 }
 
 function startBattle(stageIndex: number, keepChallenge = false): void {

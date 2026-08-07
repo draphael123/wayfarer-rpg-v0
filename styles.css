@@ -4347,22 +4347,38 @@ button.hero-points { font: inherit; cursor: pointer; }
 
 /* ---- Road passage: one authored bridge between ledger and battlefield ---- */
 .road-passage {
+  --camp-sky: #151b13;
+  --camp-horizon: #3b4430;
+  --camp-earth: #10150e;
+  --camp-accent: #d6b667;
   position: fixed;
   inset: 0;
   z-index: 220;
   display: grid;
-  grid-template-columns: minmax(42px, 72px) minmax(240px, 520px);
+  grid-template-columns: minmax(190px, 330px) minmax(280px, 520px);
+  grid-template-rows: auto auto auto;
   place-content: center;
   align-items: center;
-  gap: 18px;
+  gap: 13px 32px;
   padding: 28px;
   overflow: hidden;
   color: #eee4cc;
-  background: #11160f;
+  background:
+    radial-gradient(circle at 26% 48%, color-mix(in srgb, var(--camp-accent) 12%, transparent), transparent 30%),
+    linear-gradient(160deg, var(--camp-sky), #0b0e0a 72%);
   opacity: 0;
   pointer-events: all;
-  transition: opacity 180ms ease;
+  transition: opacity 320ms ease;
 }
+.road-passage.region-1 { --camp-sky: #14212a; --camp-horizon: #7895a0; --camp-earth: #172027; --camp-accent: #b9e2ee; }
+.road-passage.region-2 { --camp-sky: #17242a; --camp-horizon: #526f75; --camp-earth: #10191a; --camp-accent: #78d2df; }
+.road-passage.region-3 { --camp-sky: #291711; --camp-horizon: #79402c; --camp-earth: #1b100c; --camp-accent: #ef8a4d; }
+.road-passage.region-4 { --camp-sky: #102119; --camp-horizon: #38684d; --camp-earth: #0b160f; --camp-accent: #79c98b; }
+.road-passage.region-5 { --camp-sky: #211a2d; --camp-horizon: #665079; --camp-earth: #15101c; --camp-accent: #c19ce5; }
+.road-passage.region-6 { --camp-sky: #211f1a; --camp-horizon: #786d54; --camp-earth: #15130f; --camp-accent: #e1c87e; }
+.road-passage.region-7 { --camp-sky: #15212c; --camp-horizon: #526f8c; --camp-earth: #0d151b; --camp-accent: #9ed7f3; }
+.road-passage.region-8 { --camp-sky: #281416; --camp-horizon: #733c43; --camp-earth: #180c0d; --camp-accent: #dc757c; }
+.road-passage.region-9 { --camp-sky: #151225; --camp-horizon: #51427a; --camp-earth: #0d0b17; --camp-accent: #bd9cff; }
 .road-passage::before,
 .road-passage::after {
   content: "";
@@ -4384,9 +4400,40 @@ button.hero-points { font: inherit; cursor: pointer; }
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 50% 52%, rgba(137,116,65,.11), transparent 34%),
+    radial-gradient(circle at 56% 52%, color-mix(in srgb, var(--camp-accent) 8%, transparent), transparent 34%),
     repeating-linear-gradient(104deg, transparent 0 54px, rgba(221,198,143,.018) 55px 56px);
 }
+.road-camp {
+  position: relative;
+  grid-row: 1 / 4;
+  width: 100%;
+  height: 225px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--camp-accent) 45%, #343a2e);
+  border-bottom-width: 3px;
+  background: linear-gradient(var(--camp-sky), var(--camp-horizon) 66%, var(--camp-earth) 67%);
+  box-shadow: 9px 11px 0 rgba(0,0,0,.25), inset 0 0 36px rgba(0,0,0,.22);
+  transform: translateY(12px);
+  transition: transform 620ms cubic-bezier(.2,.8,.25,1);
+}
+.road-passage.show .road-camp { transform: translateY(0); }
+.camp-moon { position: absolute; top: 24px; right: 30px; width: 34px; height: 34px; border-radius: 50%; background: color-mix(in srgb, var(--camp-accent) 72%, #fff); box-shadow: 0 0 24px color-mix(in srgb, var(--camp-accent) 30%, transparent); opacity: .78; }
+.camp-ridge { position: absolute; left: -8%; right: -8%; bottom: 32%; height: 46%; background: color-mix(in srgb, var(--camp-horizon) 74%, #111); clip-path: polygon(0 80%, 15% 43%, 29% 70%, 45% 22%, 59% 66%, 75% 35%, 100% 76%, 100% 100%, 0 100%); }
+.camp-ridge.near { bottom: 19%; height: 43%; background: color-mix(in srgb, var(--camp-earth) 78%, #1f251b); transform: scaleX(-1); opacity: .96; }
+.camp-fire { position: absolute; left: 48%; bottom: 25px; width: 42px; height: 56px; filter: drop-shadow(0 0 15px rgba(245,135,54,.45)); }
+.camp-fire::before, .camp-fire::after { content: ""; position: absolute; bottom: 1px; width: 31px; height: 5px; border-radius: 4px; background: #5c3525; }
+.camp-fire::before { left: 1px; transform: rotate(16deg); }
+.camp-fire::after { right: 1px; transform: rotate(-16deg); }
+.camp-fire i, .camp-fire b, .camp-fire span { position: absolute; left: 50%; bottom: 8px; display: block; border-radius: 52% 48% 55% 45%; transform: translateX(-50%) rotate(45deg); }
+.camp-fire i { width: 27px; height: 27px; background: #e85f31; animation: camp-flame 1.1s ease-in-out infinite alternate; }
+.camp-fire b { width: 19px; height: 19px; background: #f6a444; animation: camp-flame .8s .2s ease-in-out infinite alternate-reverse; }
+.camp-fire span { width: 10px; height: 10px; background: #ffe49a; }
+.camp-spark { position: absolute; left: calc(48% + 19px); bottom: 73px; width: 3px; height: 3px; border-radius: 50%; background: #ffd985; opacity: 0; animation: camp-spark 1.8s ease-out infinite; }
+.camp-spark.s2 { margin-left: -12px; animation-delay: .55s; }
+.camp-spark.s3 { margin-left: 8px; animation-delay: 1.1s; }
+@keyframes camp-flame { to { transform: translateX(-50%) rotate(42deg) scale(.88, 1.12); } }
+@keyframes camp-spark { 10% { opacity: .9; } 100% { opacity: 0; transform: translate(-8px, -48px); } }
+.road-ledger { position: relative; display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 18px; }
 .road-waymark {
   position: relative;
   display: grid;
@@ -4411,15 +4458,21 @@ button.hero-points { font: inherit; cursor: pointer; }
 .road-copy em { color: #c2a866; font: 800 9px/1.2 "Segoe UI", system-ui, sans-serif; letter-spacing: .16em; text-transform: uppercase; }
 .road-copy strong { margin-top: 8px; color: #fff0c5; font: 800 clamp(24px, 5vw, 42px)/1 Cinzel, Palatino, Georgia, serif; letter-spacing: .025em; }
 .road-copy span { margin-top: 8px; color: #aeb3a1; font: 600 italic 13px/1.4 Georgia, serif; }
+.camp-record { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.camp-record > span { min-width: 0; padding: 10px 12px; border-left: 2px solid color-mix(in srgb, var(--camp-accent) 72%, #7e714c); background: rgba(255,255,255,.025); }
+.camp-record em, .camp-record b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camp-record em { margin-bottom: 4px; color: color-mix(in srgb, var(--camp-accent) 78%, #aaa); font: 800 8px/1 "Segoe UI", sans-serif; letter-spacing: .15em; }
+.camp-record b { color: #d9d6c8; font: 700 11px/1.2 Georgia, serif; }
 .road-progress {
   position: relative;
-  grid-column: 2;
   height: 3px;
-  margin-top: -7px;
   background: #303728;
   overflow: hidden;
 }
-.road-progress i { display: block; height: 100%; background: #d6b667; box-shadow: 0 0 9px rgba(214,182,103,.42); }
+.road-progress i { display: block; height: 100%; background: var(--camp-accent); box-shadow: 0 0 9px color-mix(in srgb, var(--camp-accent) 42%, transparent); }
+.road-continue { position: fixed; right: 24px; bottom: 20px; padding: 7px 10px; color: #aaa995; font: 700 10px/1 "Segoe UI", sans-serif; letter-spacing: .08em; border: 0; background: transparent; opacity: 0; transition: opacity 200ms ease; cursor: pointer; }
+.road-passage.ready .road-continue { opacity: .8; }
+.road-continue:hover, .road-continue:focus-visible { color: #fff0c5; opacity: 1; outline: 1px solid var(--camp-accent); outline-offset: 3px; }
 
 .menu-page-enter { animation: menu-page-enter 190ms cubic-bezier(.2,.75,.25,1) both; }
 @keyframes menu-page-enter {
@@ -4428,16 +4481,26 @@ button.hero-points { font: inherit; cursor: pointer; }
 }
 
 @media (max-width: 560px) {
-  .road-passage { grid-template-columns: 50px minmax(0, 1fr); gap: 13px; padding: 20px; }
+  .road-passage { grid-template-columns: minmax(0, 1fr); grid-template-rows: 118px auto auto auto; gap: 10px; padding: 18px 20px 30px; }
+  .road-camp { grid-row: 1; height: 118px; box-shadow: 6px 7px 0 rgba(0,0,0,.25); }
+  .road-ledger { grid-row: 2; grid-template-columns: 50px minmax(0, 1fr); gap: 13px; }
   .road-waymark { width: 50px; height: 64px; font-size: 15px; }
-  .road-progress { grid-column: 1 / -1; margin-top: -3px; }
+  .camp-record { grid-row: 3; }
+  .road-progress { grid-row: 4; }
   .road-copy strong { font-size: clamp(21px, 7vw, 31px); }
+  .road-copy span { font-size: 12px; }
+  .camp-fire { bottom: 12px; transform: scale(.72); transform-origin: bottom; }
+  .road-continue { right: 12px; bottom: 10px; }
 }
 .reduced-motion .road-passage,
 .reduced-motion .road-passage::before,
 .reduced-motion .road-passage::after,
+.reduced-motion .road-camp,
 .reduced-motion .road-waymark,
 .reduced-motion .road-copy { transition-duration: .001ms !important; }
+.reduced-motion .camp-fire i,
+.reduced-motion .camp-fire b,
+.reduced-motion .camp-spark { animation: none !important; }
 .reduced-motion .menu-page-enter { animation: none !important; }
 
 /* ---- calling families ---- */
