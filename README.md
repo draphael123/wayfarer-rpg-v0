@@ -143,6 +143,7 @@ companions up one level at a time without ever pushing them past the active band
 ```sh
 npm run validate
 npm run balance
+npm run paths
 npm run economy
 ```
 
@@ -150,6 +151,9 @@ This typechecks the game, validates campaign content and cross-references, and
 produces the same minified bundle used by the static deployment. GitHub Pages
 runs the full validation before publishing `main`. The separate balance command
 runs seeded elemental reference parties across every stage and difficulty. The
+Path matrix rotates all 56 discipline/element combinations through the same
+late-game reference band, guarding against dead builds and extreme clear-time
+outliers; it is also included in the full validation. The
 economy report models first-clear gold, XP, recruits, gear and Path-change
 affordability; it is also included in the full validation.
 

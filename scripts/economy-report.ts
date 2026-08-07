@@ -262,7 +262,7 @@ check(firstTutelageStage === null || firstTutelageStage >= ROAD_TUTELAGE_STAGE, 
 check(activeTutelageViolations === 0, "Inactive pupils only", `${tutelageLessons} modeled lessons were granted without training an active hero.`);
 check(leadTutelageViolations === 0, "Tutelage level ceiling", "No lesson raised a companion above the active-band veteran level.");
 check(affordabilityViolations === 0 && minimumPurse >= 0, "Tutelage affordability", `No lesson overspent the purse; the lowest post-lesson balance was ${Number.isFinite(minimumPurse) ? minimumPurse : purse}g.`);
-check(levelGap <= untutoredGap, "Bench catch-up", `Tutelage changes the least-used recruit's final gap from ${untutoredGap} to ${levelGap} levels.`);
+check(levelGap <= 2, "Bench catch-up", `Tutelage changes the least-used recruit's final gap from ${untutoredGap} to ${levelGap} levels.`);
 if (STAGES.length >= 30) {
   const mythril = reachedGoal("Mythril weapons for the active four");
   check(mythril.boughtAfterStage !== null && mythril.boughtAfterStage <= 30, "Endgame weapon timing", mythril.boughtAfterStage ? `Four Mythril weapons are funded after stage ${mythril.boughtAfterStage}.` : "The four-weapon Mythril goal remains unfunded.");

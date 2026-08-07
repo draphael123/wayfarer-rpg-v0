@@ -3210,7 +3210,7 @@ export function xpForLevel(level: number): number {
  * late-game sink without raising the active party's power ceiling. */
 export const ROAD_TUTELAGE_STAGE = 18;
 export function roadTutelageCost(level: number): number {
-  return 250 + Math.max(1, level) * 125;
+  return 250 + Math.max(1, level) * 60;
 }
 
 export const POINTS_PER_LEVEL = 2;
@@ -3385,7 +3385,7 @@ export const DIFFICULTIES = [
   { name: "Easy", enemyMult: 0.8, rewardMult: 0.6, color: "#8ee88b", telegraph: 2.1, haste: 0.85, extraSpawn: 0 },
   { name: "Normal", enemyMult: 1, rewardMult: 1, color: "#ffe9a3", telegraph: 1.5, haste: 1, extraSpawn: 0 },
   { name: "Hard", enemyMult: 1.25, rewardMult: 1.4, color: "#e0904b", telegraph: 1.2, haste: 1.15, extraSpawn: 0 },
-  { name: "Brutal", enemyMult: 1.5, rewardMult: 1.85, color: "#ff8a70", telegraph: 0.95, haste: 1.25, extraSpawn: 1 },
+  { name: "Brutal", enemyMult: 1.75, rewardMult: 2.15, color: "#ff8a70", telegraph: 0.8, haste: 1.35, extraSpawn: 2 },
 ];
 
 // ------------------------------------------------------------------ trinkets

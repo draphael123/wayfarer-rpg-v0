@@ -2557,6 +2557,16 @@ export class Battle {
         hero.moveTarget = null;
         hero.lunge = 1;
         signatureCenter = { x: hero.x, y: hero.y };
+        // Opening Cut must actually break pursuit as its doctrine promises.
+        // The short veil protects the reposition without giving the Rogue the
+        // longer safety window reserved for focus and ultimate techniques.
+        if (tier === "core") {
+          this.refreshPathEffect(hero, "guard", 1.15, 0.18, hero);
+          for (const enemy of enemies) {
+            if (enemy.aggro === hero) enemy.aggro = null;
+            if (enemy.attackTarget === hero) enemy.attackTarget = null;
+          }
+        }
         if (tier !== "core") {
           this.refreshPathEffect(hero, "guard", tier === "ultimate" ? 3 : 1.8, tier === "ultimate" ? 0.35 : 0.24, hero);
           this.refreshPathEffect(hero, "haste", tier === "ultimate" ? 3.5 : 2.2, tier === "ultimate" ? 1.35 : 1.2, hero);
